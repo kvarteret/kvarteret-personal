@@ -1,0 +1,16 @@
+{
+  "buildCommand": "npm run build:css && python scripts/prepare_vercel_static.py",
+  "regions": ["arn1"],
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "app/**",
+      "excludeFiles": "{data/**,tests/**,node_modules/**,.venv/**}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
+  ]
+}

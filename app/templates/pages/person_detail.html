@@ -1,0 +1,151 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <header class="flex flex-col gap-4 rounded-[2rem] bg-linear-to-br from-red-700 to-red-900 p-8 text-stone-50 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+      <div class="flex items-center gap-5">
+        <div class="h-24 w-24 overflow-hidden rounded-[1.75rem] bg-red-500/70">
+          {% if person.photo_url %}
+            <img alt="{{ person.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ person.photo_url }}">
+          {% else %}
+            <div class="flex h-full w-full items-center justify-center text-3xl font-semibold">
+              {{ person.last_name[:1] }}
+            </div>
+          {% endif %}
+        </div>
+        <div>
+          <p class="text-sm uppercase tracking-[0.25em] text-red-100">Person detail</p>
+          <h2 class="mt-2 text-4xl font-semibold">{{ person.full_name }}</h2>
+          <p class="mt-2 text-sm text-red-100">ID {{ person.person_id }} · Created {{ person.created_at.strftime("%Y-%m-%d") }}</p>
+        </div>
+      </div>
+      <a class="rounded-xl bg-white px-4 py-2 text-sm font-medium text-red-900" href="/people" preload="mouseover">Back to people</a>
+    </header>
+
+    <div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div class="space-y-6">
+        <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between gap-4">
+            <h3 class="text-lg font-semibold">Contact and profile</h3>
+            {% if current_user.role == "Admin" %}
+              <div class="flex gap-3">
+                <form action="/people/{{ person.person_id }}/photo" enctype="multipart/form-data" method="post">
+                  <label class="cursor-pointer rounded-xl bg-red-700 px-4 py-2 text-sm font-medium text-white">
+                    Upload photo
+                    <input class="hidden" name="file" onchange="this.form.submit()" type="file" accept=".jpg,.jpeg,.png,.webp">
+                  </label>
+                </form>
+                {% if person.photo_url %}
+                  <form action="/people/{{ person.person_id }}/photo/delete" method="post">
+                    <button class="rounded-xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700" type="submit">Delete photo</button>
+                  </form>
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
+          <div class="mt-4 grid gap-4 text-sm text-stone-700 md:grid-cols-2">
+            <div><span class="font-medium text-stone-500">Email:</span> {{ person.email or "No email" }}</div>
+            <div><span class="font-medium text-stone-500">Phone:</span> {{ person.phone or "No phone" }}</div>
+            <div><span class="font-medium text-stone-500">Birth date:</span> {{ person.birth_date.isoformat() if person.birth_date else "No birth date" }}</div>
+            <div><span class="font-medium text-stone-500">Gender:</span> {{ person.gender }}</div>
+            <div><span class="font-medium text-stone-500">Address:</span> {{ person.address or "No address" }}</div>
+            <div><span class="font-medium text-stone-500">Postal code:</span> {{ person.postal_code or "No postal code" }}</div>
+          </div>
+        </section>
+
+        <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-semibold">Recent memberships</h3>
+            <p class="text-sm text-stone-500">{{ person.recent_memberships|length }} recent rows</p>
+          </div>
+          <div class="mt-4 space-y-3">
+            {% for membership in person.recent_memberships %}
+              <div class="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p class="font-medium text-stone-900">{{ membership.group_name }}</p>
+                    <p class="text-sm text-stone-600">{{ membership.role_name or "No role" }}</p>
+                  </div>
+                  <div class="text-sm text-stone-600">
+                    {{ membership.semester_label }} · {% if membership.contract_signed %}Contract signed{% else %}Contract not signed{% endif %}
+                  </div>
+                </div>
+              </div>
+            {% else %}
+              <p class="text-sm text-stone-600">No membership history found.</p>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+
+      <div class="space-y-6">
+        <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+          <h3 class="text-lg font-semibold">Cards</h3>
+          <div class="mt-4 space-y-2 text-sm text-stone-700">
+            {% for card in person.cards %}
+              <p class="rounded-xl bg-stone-50 px-4 py-3">{{ card.card_number }}</p>
+            {% else %}
+              <p class="text-stone-600">No cards registered.</p>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between gap-4">
+            <h3 class="text-lg font-semibold">Documents</h3>
+            {% if current_user.role == "Admin" %}
+              <form action="/people/{{ person.person_id }}/documents" enctype="multipart/form-data" method="post" class="flex flex-wrap items-center gap-3">
+                <input class="rounded-xl border border-stone-300 px-3 py-2 text-sm" name="group_id" placeholder="Group ID (optional)" type="number">
+                <label class="cursor-pointer rounded-xl bg-teal-700 px-4 py-2 text-sm font-medium text-white">
+                  Upload document
+                  <input class="hidden" name="file" onchange="this.form.submit()" type="file" accept=".pdf,.jpg,.jpeg,.png">
+                </label>
+              </form>
+            {% endif %}
+          </div>
+          <div class="mt-4 space-y-3">
+            {% for document in person.documents %}
+              <div class="rounded-xl bg-stone-50 px-4 py-3">
+                <div class="flex flex-col gap-2">
+                  <p class="font-medium text-stone-900">{{ document.filename }}</p>
+                  <p class="text-sm text-stone-600">
+                    {{ document.filetype or "unknown" }} ·
+                    {% if document.group_id %}Group {{ document.group_id }} · {% endif %}
+                    {{ document.created_at.strftime("%Y-%m-%d") }}
+                  </p>
+                  <p class="text-xs text-stone-500">Storage path: {{ document.storage_path }}</p>
+                  {% if document.download_url %}
+                    <a class="text-sm font-medium text-teal-700 underline" href="{{ document.download_url }}">Temporary download link</a>
+                  {% else %}
+                    <p class="text-xs text-stone-500">No storage object available yet.</p>
+                  {% endif %}
+                  {% if current_user.role == "Admin" %}
+                    <form action="/people/{{ person.person_id }}/documents/{{ document.document_id }}/delete" method="post">
+                      <button class="w-fit rounded-xl border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700" type="submit">Delete document</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </div>
+            {% else %}
+              <p class="text-sm text-stone-600">No documents registered.</p>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+          <h3 class="text-lg font-semibold">Next of kin</h3>
+          <div class="mt-4 space-y-3">
+            {% for item in person.next_of_kin %}
+              <div class="rounded-xl bg-stone-50 px-4 py-3">
+                <p class="font-medium text-stone-900">{{ item.name }}</p>
+                <p class="text-sm text-stone-600">{{ item.phone }}</p>
+              </div>
+            {% else %}
+              <p class="text-sm text-stone-600">No next-of-kin records.</p>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+{% endblock %}

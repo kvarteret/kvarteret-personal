@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>{{ title }}</title>
+    <link href="{{ url_for('static', path='css/output.css') }}" rel="stylesheet">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/idiomorph@0.7.4/dist/idiomorph-ext.min.js"></script>
+    <script src="https://unpkg.com/htmx-ext-preload@2.1.0/preload.js"></script>
+  </head>
+  <body class="min-h-screen bg-stone-100 text-stone-900" hx-boost="true" hx-ext="morph,preload" hx-swap="morph:innerHTML">
+    <div class="mx-auto flex min-h-screen max-w-7xl flex-col lg:flex-row">
+      <aside class="bg-red-700 px-6 py-8 text-stone-50 lg:w-72">
+        <div class="mb-8">
+          <p class="text-xs uppercase tracking-[0.3em] text-red-100">Kvarteret</p>
+          <h1 class="mt-2 text-3xl font-semibold">Personal</h1>
+        </div>
+        <nav class="space-y-2 text-sm">
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/" preload="mouseover">Dashboard</a>
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/login" preload="mouseover">Login</a>
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/people" preload="mouseover">People</a>
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/groups" preload="mouseover">Groups</a>
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/courses" preload="mouseover">Courses</a>
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/users" preload="mouseover">Users</a>
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/search" preload="mouseover">Search</a>
+          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/registrations" preload="mouseover">Registrations</a>
+        </nav>
+      </aside>
+      <main class="flex-1 px-6 py-8 lg:px-10">
+        {% if current_user %}
+          <div class="mb-6 flex items-center justify-between rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
+            <div>
+              <p class="text-sm text-stone-500">Logged in as</p>
+              <p class="text-base font-medium">{{ current_user.display_name or current_user.username }} · {{ current_user.role }}</p>
+            </div>
+            <form action="/logout" method="post">
+              <button class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-medium text-white" type="submit">Logout</button>
+            </form>
+          </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

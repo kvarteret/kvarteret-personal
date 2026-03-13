@@ -1,0 +1,35 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <header class="space-y-2">
+      <p class="text-sm uppercase tracking-[0.2em] text-teal-700">Rewrite status</p>
+      <h2 class="text-4xl font-semibold">Foundation scaffold</h2>
+      <p class="max-w-2xl text-base text-stone-600">
+        The new FastAPI application is running. Health checks, the planning files, the placeholder
+        admin shell, and the first compatibility prototypes live in this repository now.
+      </p>
+      <p class="text-sm text-stone-500">
+        Authenticated route: this page now redirects to <code>/login</code> unless a valid session cookie is present.
+      </p>
+    </header>
+
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <article class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.2em] text-stone-500">Health</p>
+        <h3 class="mt-3 text-xl font-medium">/health</h3>
+        <p class="mt-2 text-sm text-stone-600">Returns JSON so deploy and smoke checks can prove the app is alive.</p>
+      </article>
+      <article class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.2em] text-stone-500">Legacy auth prototype</p>
+        <h3 class="mt-3 text-xl font-medium">ASP.NET Identity verifier</h3>
+        <p class="mt-2 text-sm text-stone-600">Python can parse and verify ASP.NET Identity password hashes.</p>
+      </article>
+      <article class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+        <p class="text-xs uppercase tracking-[0.2em] text-stone-500">Storage prototype</p>
+        <h3 class="mt-3 text-xl font-medium">Signed photo URLs</h3>
+        <p class="mt-2 text-sm text-stone-600">Private photo delivery is wrapped behind a dedicated storage service.</p>
+      </article>
+    </div>
+  </section>
+{% endblock %}

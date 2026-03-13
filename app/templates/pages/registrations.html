@@ -1,0 +1,54 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <header class="rounded-[2rem] bg-linear-to-br from-amber-500 to-orange-600 p-8 text-stone-950 shadow-sm">
+      <p class="text-sm uppercase tracking-[0.25em] text-amber-950/70">Registration flow</p>
+      <h2 class="mt-2 text-4xl font-semibold">Pending registrations</h2>
+      <p class="mt-2 max-w-2xl text-sm text-amber-950/80">Create invitation links, review submitted volunteer details, and approve them into the live personnel table.</p>
+    </header>
+
+    <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+      <h3 class="text-lg font-semibold">Create invite</h3>
+      <form action="/registrations" class="mt-4 flex flex-col gap-3 md:flex-row" method="post">
+        <input class="flex-1 rounded-xl border border-stone-300 px-4 py-3 text-sm" name="email" placeholder="user@example.test" type="email" required>
+        <button class="rounded-xl bg-stone-900 px-5 py-3 text-sm font-medium text-white" type="submit">Create invitation</button>
+      </form>
+    </section>
+
+    <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+      <div class="space-y-4">
+        {% for registration in registrations %}
+          <article class="rounded-2xl border border-stone-200 bg-stone-50 p-5">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div class="space-y-1">
+                <p class="text-sm font-medium text-stone-500">{{ registration.email }}</p>
+                <p class="text-xs text-stone-500">Token: <a class="underline" href="/register/{{ registration.token }}">/register/{{ registration.token }}</a></p>
+                {% if registration.submitted %}
+                  <p class="text-base font-semibold text-stone-900">{{ registration.first_name or "" }} {{ registration.last_name or "" }}</p>
+                  <p class="text-sm text-stone-600">{{ registration.phone or "No phone submitted" }}</p>
+                {% else %}
+                  <p class="text-sm text-stone-600">Invitation sent, waiting for volunteer submission.</p>
+                {% endif %}
+              </div>
+              <div class="flex gap-3">
+                {% if registration.submitted %}
+                  <form action="/registrations/{{ registration.registration_id }}/approve" method="post">
+                    <button class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-medium text-white" type="submit">Approve</button>
+                  </form>
+                {% endif %}
+                <form action="/registrations/{{ registration.registration_id }}/reject" method="post">
+                  <button class="rounded-xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700" type="submit">
+                    {% if registration.submitted %}Reject{% else %}Cancel{% endif %}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </article>
+        {% else %}
+          <p class="text-sm text-stone-600">No pending registrations.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </section>
+{% endblock %}

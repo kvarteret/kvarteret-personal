@@ -1,0 +1,40 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <header class="rounded-[2rem] bg-linear-to-br from-emerald-700 to-emerald-900 p-8 text-white shadow-sm">
+      <p class="text-sm uppercase tracking-[0.25em] text-emerald-100">Semester transfer</p>
+      <h2 class="mt-2 text-4xl font-semibold">{{ preview.group_name }}</h2>
+      <p class="mt-2 text-sm text-emerald-100">Copy members from {{ preview.source_semester_label or preview.source_semester }} into {{ preview.target_semester_label or preview.target_semester }}.</p>
+    </header>
+
+    <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
+      <form action="/groups/{{ preview.group_id }}/semester-transfer" class="space-y-4" method="post">
+        <input name="target_semester" type="hidden" value="{{ preview.target_semester }}">
+        <div class="space-y-3">
+          {% for candidate in preview.candidates %}
+            {% if candidate.role_id %}
+              <div class="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
+                <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p class="font-medium text-stone-900">{{ candidate.person_name }}</p>
+                    <p class="text-sm text-stone-600">{{ candidate.role_name or "No role" }}</p>
+                  </div>
+                  <p class="text-sm text-stone-500">{% if candidate.contract_signed %}Signed previously{% else %}Unsigned previously{% endif %}</p>
+                </div>
+                <input name="person_ids" type="hidden" value="{{ candidate.person_id }}">
+                <input name="role_ids" type="hidden" value="{{ candidate.role_id }}">
+              </div>
+            {% endif %}
+          {% else %}
+            <p class="text-sm text-stone-600">No source members found for this semester.</p>
+          {% endfor %}
+        </div>
+        <div class="flex gap-3">
+          <button class="rounded-xl bg-stone-900 px-5 py-3 text-sm font-medium text-white" type="submit">Transfer members</button>
+          <a class="rounded-xl border border-stone-300 px-5 py-3 text-sm font-medium text-stone-700" href="/groups/{{ preview.group_id }}">Back</a>
+        </div>
+      </form>
+    </section>
+  </section>
+{% endblock %}

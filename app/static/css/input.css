@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  --color-kvarteret-red: #c62828;
+  --color-kvarteret-teal: #0f8b8d;
+  --color-kvarteret-cream: #f7f2e9;
+}
+
+body {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+}
+

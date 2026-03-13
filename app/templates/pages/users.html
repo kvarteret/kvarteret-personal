@@ -1,0 +1,70 @@
+{% extends "layouts/base.html" %}
+
+{% block content %}
+  <section class="space-y-6">
+    <div class="flex flex-col gap-3 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm md:flex-row md:items-end md:justify-between">
+      <div>
+        <p class="text-sm uppercase tracking-[0.2em] text-teal-700">Auth</p>
+        <h2 class="mt-2 text-3xl font-semibold">Users</h2>
+        <p class="mt-3 max-w-2xl text-sm text-stone-600">
+          Direct and migrated `user_accounts` in the new system. This is the new source of truth
+          for web roles and group-admin access.
+        </p>
+      </div>
+      <form class="flex w-full max-w-md gap-3" method="get">
+        <input
+          class="min-w-0 flex-1 rounded-xl border border-stone-300 px-4 py-3"
+          type="search"
+          name="q"
+          value="{{ query }}"
+          placeholder="Search by username, email, or display name"
+        >
+        <button class="rounded-xl bg-stone-900 px-5 py-3 text-sm font-medium text-white" type="submit">
+          Search
+        </button>
+      </form>
+    </div>
+
+    <div class="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-stone-200 text-sm">
+        <thead class="bg-stone-50 text-left text-stone-500">
+          <tr>
+            <th class="px-5 py-4 font-medium">User</th>
+            <th class="px-5 py-4 font-medium">Role</th>
+            <th class="px-5 py-4 font-medium">Legacy</th>
+            <th class="px-5 py-4 font-medium">Group admin</th>
+            <th class="px-5 py-4 font-medium">Last login</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-100">
+          {% for user in users %}
+            <tr class="hover:bg-stone-50">
+              <td class="px-5 py-4 align-top">
+                <a class="font-medium text-stone-900 hover:text-red-700" href="/users/{{ user.user_account_id }}">
+                  {{ user.display_name or user.username }}
+                </a>
+                <div class="text-xs text-stone-500">{{ user.email }}</div>
+              </td>
+              <td class="px-5 py-4 align-top">{{ user.role }}</td>
+              <td class="px-5 py-4 align-top">
+                {% if user.legacy_user_id %}
+                  #{{ user.legacy_user_id }}
+                {% else %}
+                  Direct
+                {% endif %}
+              </td>
+              <td class="px-5 py-4 align-top">{{ user.group_admin_group_count }}</td>
+              <td class="px-5 py-4 align-top">
+                {{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never' }}
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td class="px-5 py-8 text-stone-500" colspan="5">No users matched this filter.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
