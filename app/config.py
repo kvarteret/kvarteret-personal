@@ -22,10 +22,12 @@ class Settings(BaseSettings):
     review_bypass_enabled: bool = Field(default=False)
     review_bypass_email: str | None = Field(default=None)
     review_bypass_token: str | None = Field(default=None)
+    log_level: str = Field(default="INFO")
     session_cookie_name: str = Field(default="kvarteret_session")
     session_ttl_hours: int = Field(default=12)
     session_cache_ttl_seconds: int = Field(default=300)
     person_detail_cache_ttl_seconds: int = Field(default=300)
+    users_cache_ttl_seconds: int = Field(default=60)
     mobile_card_access_code_ttl_minutes: int = Field(default=10)
     mobile_card_access_code_cooldown_seconds: int = Field(default=60)
     mobile_card_session_ttl_days: int = Field(default=7)
@@ -41,6 +43,7 @@ class Settings(BaseSettings):
         "document_bucket",
         "review_bypass_email",
         "review_bypass_token",
+        "log_level",
         "session_cookie_name",
         mode="before",
     )

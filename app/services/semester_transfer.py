@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 
 from sqlalchemy import func, insert, select
 
@@ -109,7 +108,7 @@ class SemesterTransferService:
             raise SemesterTransferGroupNotFoundError(f"Group {group_id} was not found.")
         if not entries:
             return 0
-        person_ids = [entry.person_id for entry in entries if entry.role_id is not None]
+        person_ids = [entry.person_id for entry in entries]
         if not person_ids:
             return 0
         existing_stmt = (
@@ -132,7 +131,7 @@ class SemesterTransferService:
                 "signert_kontrakt": entry.contract_signed,
             }
             for entry in entries
-            if entry.role_id is not None and entry.person_id not in existing_people
+            if entry.person_id not in existing_people
         ]
         if not values:
             return 0
@@ -145,8 +144,3 @@ class SemesterTransferService:
 def _default_target_semester(source_semester: int) -> int:
     current = get_current_semester_code()
     return current if current > source_semester else get_next_semester_code(source_semester)
-
-
-@lru_cache(maxsize=1)
-def get_semester_transfer_service() -> SemesterTransferService:
-    return SemesterTransferService()

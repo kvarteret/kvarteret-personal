@@ -2,14 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from functools import lru_cache
 from secrets import token_urlsafe
 from typing import Protocol
-
-from sqlalchemy import delete, func, insert, select, update
-
-from app.db.session import get_session_factory
-from app.db.tables import nytt_personal, personal, registrering
 
 
 class RegistrationError(RuntimeError):
@@ -84,102 +78,53 @@ class RegistrationsServiceProtocol(Protocol):
     async def reject_registration(self, registration_id: int) -> None: ...
 
 
+class RegistrationsRepositoryProtocol(Protocol):
+    async def create_invitation(self, *, email: str, token: str) -> RegistrationInvite: ...
+    async def list_pending(self) -> list[PendingRegistrationItem]: ...
+    async def get_pending_detail(self, registration_id: int) -> PendingRegistrationDetail | None: ...
+    async def get_invitation_by_token(self, token: str) -> PendingRegistrationDetail | None: ...
+    async def save_submission(
+        self,
+        *,
+        registration_id: int,
+        email: str,
+        submission: RegistrationSubmissionInput,
+    ) -> None: ...
+    async def find_person_id_by_email(self, email: str) -> int | None: ...
+    async def approve_registration(self, registration: PendingRegistrationDetail) -> int: ...
+    async def reject_registration(self, registration_id: int) -> None: ...
+
+
 class RegistrationsService:
+    def __init__(self, repository: RegistrationsRepositoryProtocol) -> None:
+        self.repository = repository
+
     async def create_invitation(self, email: str) -> RegistrationInvite:
         normalized_email = email.strip().lower()
         if not normalized_email:
             raise RegistrationConflictError("An email address is required.")
         token = token_urlsafe(24)
-        async with get_session_factory()() as session:
-            async with session.begin():
-                row = (
-                    await session.execute(
-                        insert(registrering)
-                        .values(token=token, epost=normalized_email)
-                        .returning(registrering.c.id, registrering.c.token, registrering.c.epost, registrering.c.opprettet)
-                    )
-                ).mappings().one()
-        return RegistrationInvite(
-            registration_id=row["id"],
-            token=row["token"],
-            email=row["epost"],
-            created_at=row["opprettet"],
-        )
+        return await self.repository.create_invitation(email=normalized_email, token=token)
 
     async def list_pending(self) -> list[PendingRegistrationItem]:
-        stmt = (
-            select(
-                registrering.c.id,
-                registrering.c.token,
-                registrering.c.epost,
-                registrering.c.opprettet,
-                nytt_personal.c.id.label("pending_person_id"),
-                nytt_personal.c.fornavn,
-                nytt_personal.c.etternavn,
-                nytt_personal.c.telefon,
-            )
-            .select_from(registrering.outerjoin(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id))
-            .order_by(registrering.c.opprettet.desc(), registrering.c.id.desc())
-        )
-        async with get_session_factory()() as session:
-            rows = (await session.execute(stmt)).mappings().all()
-        return [
-            PendingRegistrationItem(
-                registration_id=row["id"],
-                token=row["token"],
-                email=row["epost"],
-                created_at=row["opprettet"],
-                submitted=row["pending_person_id"] is not None,
-                first_name=row["fornavn"],
-                last_name=row["etternavn"],
-                phone=row["telefon"],
-            )
-            for row in rows
-        ]
+        return await self.repository.list_pending()
 
     async def get_pending_detail(self, registration_id: int) -> PendingRegistrationDetail | None:
-        return await self._get_detail(select(registrering.c.id).where(registrering.c.id == registration_id))
+        return await self.repository.get_pending_detail(registration_id)
 
     async def get_invitation_by_token(self, token: str) -> PendingRegistrationDetail | None:
-        return await self._get_detail(select(registrering.c.id).where(registrering.c.token == token))
+        return await self.repository.get_invitation_by_token(token)
 
     async def submit_registration(self, token: str, submission: RegistrationSubmissionInput) -> PendingRegistrationDetail:
         existing = await self.get_invitation_by_token(token)
         if existing is None:
             raise RegistrationNotFoundError("Registration token was not found.")
 
-        async with get_session_factory()() as session:
-            existing_row = (
-                await session.execute(
-                    select(nytt_personal.c.id).where(nytt_personal.c.registrering_id == existing.registration_id).limit(1)
-                )
-            ).mappings().first()
-        payload = {
-            "fornavn": submission.first_name,
-            "etternavn": submission.last_name,
-            "epost": existing.email,
-            "arb_status": submission.employment_status,
-            "kjonn": submission.gender,
-            "fodselsdato": submission.birth_date,
-            "gateadresse": submission.address,
-            "postnummerid": submission.postal_code,
-            "telefon": submission.phone,
-        }
-        async with get_session_factory()() as session:
-            async with session.begin():
-                if existing_row:
-                    await session.execute(
-                        update(nytt_personal)
-                        .where(nytt_personal.c.registrering_id == existing.registration_id)
-                        .values(**payload)
-                    )
-                else:
-                    await session.execute(
-                        insert(nytt_personal).values(
-                            registrering_id=existing.registration_id,
-                            **payload,
-                        )
-                    )
+        await self.repository.save_submission(
+            registration_id=existing.registration_id,
+            email=existing.email,
+            submission=submission,
+        )
         detail = await self.get_invitation_by_token(token)
         if detail is None:
             raise RegistrationNotFoundError("Registration token was not found.")
@@ -191,90 +136,13 @@ class RegistrationsService:
             raise RegistrationNotFoundError("Registration was not found.")
         if detail.pending_person_id is None:
             raise RegistrationConflictError("Registration has not been submitted yet.")
-
-        async with get_session_factory()() as session:
-            duplicate_person = await session.scalar(
-                select(personal.c.id)
-                .where(func.lower(func.coalesce(personal.c.epost, "")) == detail.email.lower())
-                .limit(1)
-            )
+        duplicate_person = await self.repository.find_person_id_by_email(detail.email)
         if duplicate_person is not None:
             raise RegistrationConflictError("A person with this email already exists.")
-        async with get_session_factory()() as session:
-            async with session.begin():
-                inserted = (
-                    await session.execute(
-                        insert(personal)
-                        .values(
-                            fornavn=detail.first_name,
-                            etternavn=detail.last_name or "",
-                            epost=detail.email,
-                            arb_status=detail.employment_status,
-                            kjonn=detail.gender or "A",
-                            fodselsdato=detail.birth_date,
-                            gateadresse=detail.address,
-                            postnummerid=detail.postal_code,
-                            telefon=detail.phone,
-                        )
-                        .returning(personal.c.id)
-                    )
-                ).mappings().one()
-                await session.execute(delete(nytt_personal).where(nytt_personal.c.registrering_id == registration_id))
-                await session.execute(delete(registrering).where(registrering.c.id == registration_id))
-        return inserted["id"]
+        return await self.repository.approve_registration(detail)
 
     async def reject_registration(self, registration_id: int) -> None:
         detail = await self.get_pending_detail(registration_id)
         if detail is None:
             raise RegistrationNotFoundError("Registration was not found.")
-        async with get_session_factory()() as session:
-            async with session.begin():
-                await session.execute(delete(nytt_personal).where(nytt_personal.c.registrering_id == registration_id))
-                await session.execute(delete(registrering).where(registrering.c.id == registration_id))
-
-    async def _get_detail(self, id_query) -> PendingRegistrationDetail | None:
-        detail_stmt = (
-            select(
-                registrering.c.id,
-                registrering.c.token,
-                registrering.c.epost,
-                registrering.c.opprettet,
-                nytt_personal.c.id.label("pending_person_id"),
-                nytt_personal.c.fornavn,
-                nytt_personal.c.etternavn,
-                nytt_personal.c.telefon,
-                nytt_personal.c.fodselsdato,
-                nytt_personal.c.kjonn,
-                nytt_personal.c.gateadresse,
-                nytt_personal.c.postnummerid,
-                nytt_personal.c.arb_status,
-            )
-            .select_from(registrering.outerjoin(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id))
-            .where(registrering.c.id.in_(id_query))
-            .limit(1)
-        )
-        async with get_session_factory()() as session:
-            row = (await session.execute(detail_stmt)).mappings().first()
-        if row is None:
-            return None
-        return PendingRegistrationDetail(
-            registration_id=row["id"],
-            token=row["token"],
-            email=row["epost"],
-            created_at=row["opprettet"],
-            submitted=row["pending_person_id"] is not None,
-            pending_person_id=row["pending_person_id"],
-            first_name=row["fornavn"],
-            last_name=row["etternavn"],
-            phone=row["telefon"],
-            birth_date=row["fodselsdato"],
-            gender=row["kjonn"],
-            address=row["gateadresse"],
-            postal_code=row["postnummerid"],
-            employment_status=row["arb_status"],
-        )
-
-
-@lru_cache(maxsize=1)
-def get_registrations_service() -> RegistrationsService:
-    return RegistrationsService()
+        await self.repository.reject_registration(registration_id)

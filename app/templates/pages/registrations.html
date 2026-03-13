@@ -1,52 +1,56 @@
 {% extends "layouts/base.html" %}
 
-{% block content %}
-  <section class="space-y-6">
-    <header class="rounded-[2rem] bg-linear-to-br from-amber-500 to-orange-600 p-8 text-stone-950 shadow-sm">
-      <p class="text-sm uppercase tracking-[0.25em] text-amber-950/70">Registration flow</p>
-      <h2 class="mt-2 text-4xl font-semibold">Pending registrations</h2>
-      <p class="mt-2 max-w-2xl text-sm text-amber-950/80">Create invitation links, review submitted volunteer details, and approve them into the live personnel table.</p>
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Ventende registreringer</h1>
+      <p class="max-w-3xl text-base leading-7 text-stone-700">
+        Opprett invitasjoner, se innsendte detaljer og godkjenn nye frivillige inn i databasen.
+      </p>
     </header>
 
-    <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-      <h3 class="text-lg font-semibold">Create invite</h3>
-      <form action="/registrations" class="mt-4 flex flex-col gap-3 md:flex-row" method="post">
-        <input class="flex-1 rounded-xl border border-stone-300 px-4 py-3 text-sm" name="email" placeholder="user@example.test" type="email" required>
-        <button class="rounded-xl bg-stone-900 px-5 py-3 text-sm font-medium text-white" type="submit">Create invitation</button>
+    <section class="app-panel">
+      <h2 class="text-2xl font-medium tracking-tight text-stone-900">Opprett invitasjon</h2>
+      <form action="/registrations" class="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end" method="post">
+        <label class="grid flex-1 gap-1">
+          <span class="text-sm text-stone-500">E-postadresse</span>
+          <input class="app-input" name="email" placeholder="bruker@example.no" type="email" required>
+        </label>
+        <button class="app-button" type="submit">Opprett invitasjon</button>
       </form>
     </section>
 
-    <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-      <div class="space-y-4">
+    <section class="app-panel">
+      <div class="grid gap-0">
         {% for registration in registrations %}
-          <article class="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div class="space-y-1">
+          <article class="border-b border-stone-300 py-5">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div class="grid gap-1">
                 <p class="text-sm font-medium text-stone-500">{{ registration.email }}</p>
-                <p class="text-xs text-stone-500">Token: <a class="underline" href="/register/{{ registration.token }}">/register/{{ registration.token }}</a></p>
+                <p class="text-xs text-stone-500">Lenke: <a class="underline underline-offset-2" href="/register/{{ registration.token }}">/register/{{ registration.token }}</a></p>
                 {% if registration.submitted %}
-                  <p class="text-base font-semibold text-stone-900">{{ registration.first_name or "" }} {{ registration.last_name or "" }}</p>
-                  <p class="text-sm text-stone-600">{{ registration.phone or "No phone submitted" }}</p>
+                  <p class="text-lg font-medium tracking-tight text-stone-900">{{ registration.first_name or "" }} {{ registration.last_name or "" }}</p>
+                  <p class="text-sm text-stone-700">{{ registration.phone or "Ingen telefon sendt inn" }}</p>
                 {% else %}
-                  <p class="text-sm text-stone-600">Invitation sent, waiting for volunteer submission.</p>
+                  <p class="text-sm text-stone-700">Invitasjon sendt. Venter på innsending fra frivillig.</p>
                 {% endif %}
               </div>
-              <div class="flex gap-3">
+              <div class="flex flex-wrap gap-3">
                 {% if registration.submitted %}
                   <form action="/registrations/{{ registration.registration_id }}/approve" method="post">
-                    <button class="rounded-xl bg-teal-700 px-4 py-2 text-sm font-medium text-white" type="submit">Approve</button>
+                    <button class="inline-flex min-h-11 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" type="submit">Godkjenn</button>
                   </form>
                 {% endif %}
                 <form action="/registrations/{{ registration.registration_id }}/reject" method="post">
-                  <button class="rounded-xl border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700" type="submit">
-                    {% if registration.submitted %}Reject{% else %}Cancel{% endif %}
+                  <button class="inline-flex min-h-11 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" type="submit">
+                    {% if registration.submitted %}Avvis{% else %}Avbryt{% endif %}
                   </button>
                 </form>
               </div>
             </div>
           </article>
         {% else %}
-          <p class="text-sm text-stone-600">No pending registrations.</p>
+          <p class="py-6 text-sm text-stone-600">Ingen ventende registreringer.</p>
         {% endfor %}
       </div>
     </section>

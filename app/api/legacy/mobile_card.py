@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
 
+from app.dependencies import get_mobile_card_service
 from app.services.mobile_card import (
     MobileCardDuplicatePersonError,
     MobileCardInvalidAccessCodeError,
     MobileCardPersonNotFoundError,
-    get_mobile_card_service,
+    MobileCardService,
 )
 
 
@@ -19,18 +20,11 @@ class LegacyDigitalInternKortRequest(BaseModel):
 router = APIRouter()
 
 
-def _get_mobile_card_service_for_request(request: Request):
-    if getattr(request.app.state, "mobile_card_service", None) is not None:
-        return request.app.state.mobile_card_service
-    return get_mobile_card_service()
-
-
 @router.post("/RequestAccessTokenOnEmail")
 async def request_access_token_on_email(
-    app_request: Request,
     payload: LegacyDigitalInternKortRequest,
+    service: MobileCardService = Depends(get_mobile_card_service),
 ) -> dict[str, str]:
-    service = _get_mobile_card_service_for_request(app_request)
     try:
         await service.request_access_code(payload.email)
     except MobileCardPersonNotFoundError as exc:
@@ -42,10 +36,9 @@ async def request_access_token_on_email(
 
 @router.post("/GetInternkortInformation")
 async def get_internkort_information(
-    app_request: Request,
     payload: LegacyDigitalInternKortRequest,
+    service: MobileCardService = Depends(get_mobile_card_service),
 ) -> dict:
-    service = _get_mobile_card_service_for_request(app_request)
     try:
         session = await service.create_session(payload.email, payload.accessToken or "")
     except MobileCardInvalidAccessCodeError as exc:

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from functools import lru_cache
 
 from app.auth.legacy_passwords import verify_aspnet_identity_hash
 from app.auth.models import AuthenticatedUser, UserAccount, WebSession
-from app.auth.repository import AuthRepositoryProtocol, get_auth_repository
+from app.auth.repository import AuthRepositoryProtocol
 from app.auth.roles import highest_role
-from app.auth.session_store import SessionStore, get_session_store
-from app.auth.supabase_auth import SupabaseAuthGatewayProtocol, get_supabase_auth_gateway
+from app.auth.session_store import SessionStore
+from app.auth.supabase_auth import SupabaseAuthGatewayProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class LoginError(Exception):
@@ -41,10 +43,15 @@ class LoginService:
         ip_address: str | None,
         user_agent: str | None,
     ) -> LoginResult:
+        normalized_identifier = identifier.strip().lower()
         account = await self.repository.get_user_account_by_identifier(identifier)
         if account:
             auth_user_id = await self.supabase_auth.sign_in_with_password(account.email, password)
             if auth_user_id is None:
+                logger.warning(
+                    "login failed",
+                    extra={"event": "auth.login.failed", "event_data": {"identifier": normalized_identifier, "reason": "invalid_credentials"}},
+                )
                 raise LoginError("Invalid credentials.")
             session = await self.session_store.create_session(
                 auth_user_id=auth_user_id,
@@ -52,7 +59,7 @@ class LoginService:
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            return LoginResult(
+            result = LoginResult(
                 session=session,
                 user=AuthenticatedUser(
                     auth_user_id=auth_user_id,
@@ -64,9 +71,25 @@ class LoginService:
                 ),
                 migrated_from_legacy=False,
             )
-
+            logger.info(
+                "login succeeded",
+                extra={
+                    "event": "auth.login.succeeded",
+                    "event_data": {
+                        "identifier": normalized_identifier,
+                        "user_account_id": account.id,
+                        "role": account.role.value,
+                        "migrated_from_legacy": False,
+                    },
+                },
+            )
+            return result
         legacy_user = await self.repository.get_legacy_user_by_identifier(identifier)
         if legacy_user is None or not verify_aspnet_identity_hash(legacy_user.password_hash, password):
+            logger.warning(
+                "login failed",
+                extra={"event": "auth.login.failed", "event_data": {"identifier": normalized_identifier, "reason": "invalid_credentials"}},
+            )
             raise LoginError("Invalid credentials.")
 
         legacy_roles = await self.repository.get_legacy_roles(legacy_user.id)
@@ -91,7 +114,7 @@ class LoginService:
             ip_address=ip_address,
             user_agent=user_agent,
         )
-        return LoginResult(
+        result = LoginResult(
             session=session,
             user=AuthenticatedUser(
                 auth_user_id=auth_user_id,
@@ -103,13 +126,16 @@ class LoginService:
             ),
             migrated_from_legacy=True,
         )
-
-
-@lru_cache(maxsize=1)
-def get_login_service() -> LoginService:
-    return LoginService(
-        repository=get_auth_repository(),
-        supabase_auth=get_supabase_auth_gateway(),
-        session_store=get_session_store(),
-    )
-
+        logger.info(
+            "login succeeded",
+            extra={
+                "event": "auth.login.succeeded",
+                "event_data": {
+                    "identifier": normalized_identifier,
+                    "user_account_id": account.id,
+                    "role": account.role.value,
+                    "migrated_from_legacy": True,
+                },
+            },
+        )
+        return result

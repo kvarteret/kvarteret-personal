@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from supabase import Client, create_client
 
 from app.config import Settings, get_settings
+from app.errors import NotConfiguredError
 
 
 class SignedUrlBucket(Protocol):
@@ -29,7 +30,7 @@ class StorageCapableClient(Protocol):
 
 def create_supabase_client(settings: Settings) -> Client:
     if not settings.supabase_url or not settings.supabase_secret_key:
-        raise RuntimeError("Supabase credentials are required for storage integration.")
+        raise NotConfiguredError("Supabase credentials are required for storage integration.")
     return create_client(settings.supabase_url, settings.supabase_secret_key)
 
 
@@ -81,7 +82,7 @@ class StorageService:
             nested = result["data"].get("signedURL") or result["data"].get("signedUrl")
             if nested:
                 return nested
-        raise RuntimeError("Supabase did not return a signed URL.")
+        raise NotConfiguredError("Supabase did not return a signed URL.")
 
 
 @lru_cache(maxsize=1)

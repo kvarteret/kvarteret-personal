@@ -19,9 +19,9 @@ class FakeStorageService:
 
 
 def test_media_photo_route_returns_backend_bytes(monkeypatch) -> None:
-    from app.api import media as media_module
+    from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "get_storage_service", lambda: FakeStorageService())
+    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
     client = TestClient(create_app())
 
     response = client.get(build_photo_media_url("abc123.jpg"))
@@ -32,9 +32,9 @@ def test_media_photo_route_returns_backend_bytes(monkeypatch) -> None:
 
 
 def test_media_document_route_returns_backend_bytes(monkeypatch) -> None:
-    from app.api import media as media_module
+    from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "get_storage_service", lambda: FakeStorageService())
+    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
     client = TestClient(create_app())
 
     response = client.get(build_document_media_url("12/certificate.pdf"))
@@ -45,9 +45,9 @@ def test_media_document_route_returns_backend_bytes(monkeypatch) -> None:
 
 
 def test_media_route_rejects_invalid_token(monkeypatch) -> None:
-    from app.api import media as media_module
+    from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "get_storage_service", lambda: FakeStorageService())
+    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
     client = TestClient(create_app())
     token = sign_media_token(kind="photo", path="other.jpg")
 

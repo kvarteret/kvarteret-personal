@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from functools import lru_cache
 from typing import Protocol
 from uuid import UUID
 
+from sqlalchemy import func, or_, select
+
 from app.auth.roles import UserRole
-from app.postgrest import PostgrestClient, get_postgrest_client
+from app.cache import TTLCache
+from app.config import get_settings
+from app.db.repository import SqlAlchemyRepository
+from app.db.tables import group_admin_memberships, user_accounts
+from app.services.common import coerce_datetime
 
 
 @dataclass(slots=True)
@@ -44,92 +49,136 @@ class UsersServiceProtocol(Protocol):
     async def get_user_detail(self, user_account_id: int) -> UserDetail | None: ...
 
 
-class UsersService:
-    def __init__(self, postgrest_client: PostgrestClient | None = None) -> None:
-        self.postgrest_client = postgrest_client
+class UsersService(SqlAlchemyRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        cache_ttl_seconds = get_settings().users_cache_ttl_seconds
+        self._list_cache: TTLCache[tuple[str | None, int], list[UserListItem]] = TTLCache(
+            ttl_seconds=cache_ttl_seconds,
+            max_entries=128,
+        )
+        self._detail_cache: TTLCache[int, UserDetail] = TTLCache(
+            ttl_seconds=cache_ttl_seconds,
+            max_entries=256,
+        )
 
     async def list_users(self, query: str | None = None, limit: int = 100) -> list[UserListItem]:
-        if self.postgrest_client is None:
-            raise RuntimeError("PostgREST-backed user reads are not configured yet.")
         safe_limit = max(1, min(limit, 200))
-        filters: dict[str, str] = {}
-        if query and query.strip():
-            pattern = _postgrest_ilike_pattern(query.strip())
-            filters["or"] = (
-                f"(username.ilike.{pattern},email.ilike.{pattern},"
-                f"display_name.ilike.{pattern})"
-            )
-        rows = await self.postgrest_client.select_rows(
-            "user_accounts",
-            select="id,auth_user_id,legacy_user_id,username,email,display_name,role,last_login,group_admin_memberships(gruppe_id)",
-            filters=filters,
-            order="role.asc,username.asc",
-            limit=safe_limit,
+        normalized_query = _normalize_query(query)
+        cache_key = (normalized_query, safe_limit)
+        cached = self._list_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        users = await self._list_users_via_database(query=normalized_query, limit=safe_limit)
+        self._list_cache.set(cache_key, users)
+        return users
+
+    async def get_user_detail(self, user_account_id: int) -> UserDetail | None:
+        cached = self._detail_cache.get(user_account_id)
+        if cached is not None:
+            return cached
+        user = await self._get_user_detail_via_database(user_account_id)
+        if user is not None:
+            self._detail_cache.set(user_account_id, user)
+        else:
+            self._detail_cache.pop(user_account_id)
+        return user
+
+    async def _list_users_via_database(self, query: str | None = None, limit: int = 100) -> list[UserListItem]:
+        group_admin_count = (
+            select(func.count())
+            .select_from(group_admin_memberships)
+            .where(group_admin_memberships.c.auth_user_id == user_accounts.c.auth_user_id)
+            .scalar_subquery()
         )
+        stmt = select(
+            user_accounts.c.id,
+            user_accounts.c.auth_user_id,
+            user_accounts.c.legacy_user_id,
+            user_accounts.c.username,
+            user_accounts.c.email,
+            user_accounts.c.display_name,
+            user_accounts.c.role,
+            user_accounts.c.last_login,
+            group_admin_count.label("group_admin_group_count"),
+        ).order_by(user_accounts.c.role.asc(), user_accounts.c.username.asc()).limit(limit)
+        if query and query.strip():
+            pattern = f"%{query.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    user_accounts.c.username.ilike(pattern),
+                    user_accounts.c.email.ilike(pattern),
+                    user_accounts.c.display_name.ilike(pattern),
+                )
+            )
+        rows = await self.fetch_all_mappings(stmt)
         return [
             UserListItem(
                 user_account_id=row["id"],
-                auth_user_id=UUID(row["auth_user_id"]),
+                auth_user_id=row["auth_user_id"],
                 legacy_user_id=row.get("legacy_user_id"),
                 username=row["username"],
                 email=row["email"],
                 display_name=row.get("display_name"),
                 role=UserRole(row["role"]),
-                last_login=_coerce_datetime(row.get("last_login")),
-                group_admin_group_ids=_extract_group_ids(row.get("group_admin_memberships")),
-                group_admin_group_count=len(_extract_group_ids(row.get("group_admin_memberships"))),
+                last_login=coerce_datetime(row.get("last_login")),
+                group_admin_group_ids=[],
+                group_admin_group_count=row["group_admin_group_count"] or 0,
             )
             for row in rows
         ]
 
-    async def get_user_detail(self, user_account_id: int) -> UserDetail | None:
-        if self.postgrest_client is None:
-            raise RuntimeError("PostgREST-backed user reads are not configured yet.")
-        rows = await self.postgrest_client.select_rows(
-            "user_accounts",
-            select="id,auth_user_id,legacy_user_id,username,email,display_name,role,last_login,created_at,migrated_at,group_admin_memberships(gruppe_id)",
-            filters={"id": f"eq.{user_account_id}"},
-            limit=1,
+    async def _get_user_detail_via_database(self, user_account_id: int) -> UserDetail | None:
+        stmt = (
+            select(
+                user_accounts.c.id,
+                user_accounts.c.auth_user_id,
+                user_accounts.c.legacy_user_id,
+                user_accounts.c.username,
+                user_accounts.c.email,
+                user_accounts.c.display_name,
+                user_accounts.c.role,
+                user_accounts.c.last_login,
+                user_accounts.c.created_at,
+                user_accounts.c.migrated_at,
+            )
+            .where(user_accounts.c.id == user_account_id)
+            .limit(1)
         )
-        if not rows:
+        row = await self.fetch_first_mapping(stmt)
+        if row is None:
             return None
-        row = rows[0]
+        memberships = await self._load_group_admin_ids([row["auth_user_id"]])
         return UserDetail(
             user_account_id=row["id"],
-            auth_user_id=UUID(row["auth_user_id"]),
+            auth_user_id=row["auth_user_id"],
             legacy_user_id=row.get("legacy_user_id"),
             username=row["username"],
             email=row["email"],
             display_name=row.get("display_name"),
             role=UserRole(row["role"]),
-            last_login=_coerce_datetime(row.get("last_login")),
-            created_at=_coerce_datetime(row["created_at"]),
-            migrated_at=_coerce_datetime(row.get("migrated_at")),
-            group_admin_group_ids=_extract_group_ids(row.get("group_admin_memberships")),
+            last_login=coerce_datetime(row.get("last_login")),
+            created_at=coerce_datetime(row["created_at"]),
+            migrated_at=coerce_datetime(row.get("migrated_at")),
+            group_admin_group_ids=memberships.get(row["auth_user_id"], []),
         )
 
-
-def _extract_group_ids(memberships) -> list[int]:
-    if not memberships:
-        return []
-    return [m["gruppe_id"] for m in memberships if m.get("gruppe_id") is not None]
-
-
-def _coerce_datetime(value: datetime | str | None) -> datetime | None:
-    if value is None or isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def _postgrest_ilike_pattern(value: str) -> str:
-    escaped = value.replace(",", "\\,").replace("(", "\\(").replace(")", "\\)")
-    return f"*{escaped}*"
+    async def _load_group_admin_ids(self, auth_user_ids: list[UUID]) -> dict[UUID, list[int]]:
+        if not auth_user_ids:
+            return {}
+        stmt = (
+            select(group_admin_memberships.c.auth_user_id, group_admin_memberships.c.gruppe_id)
+            .where(group_admin_memberships.c.auth_user_id.in_(auth_user_ids))
+            .order_by(group_admin_memberships.c.auth_user_id.asc(), group_admin_memberships.c.gruppe_id.asc())
+        )
+        memberships: dict[UUID, list[int]] = {auth_user_id: [] for auth_user_id in auth_user_ids}
+        for row in await self.fetch_all_mappings(stmt):
+            memberships.setdefault(row["auth_user_id"], []).append(row["gruppe_id"])
+        return memberships
 
 
-@lru_cache(maxsize=1)
-def get_users_service() -> UsersService:
-    try:
-        postgrest_client = get_postgrest_client()
-    except Exception:
-        postgrest_client = None
-    return UsersService(postgrest_client=postgrest_client)
+def _normalize_query(query: str | None) -> str | None:
+    if query is None:
+        return None
+    normalized = query.strip()
+    return normalized or None

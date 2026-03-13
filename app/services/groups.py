@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
-from functools import lru_cache
 from typing import Protocol
 
-from app.postgrest import PostgrestClient, get_postgrest_client
+from app.errors import NotConfiguredError
+from app.postgrest import PostgrestClient
+from app.services.common import build_full_name, coerce_datetime, postgrest_ilike_pattern
 from app.services.semester import format_semester_code
 
 
@@ -65,10 +65,10 @@ class GroupsService:
 
     async def list_groups(self, query: str | None = None, limit: int = 100) -> list[GroupListItem]:
         if self.postgrest_client is None:
-            raise RuntimeError("PostgREST-backed group reads are not configured yet.")
+            raise NotConfiguredError("PostgREST-backed group reads are not configured yet.")
         filters: dict[str, str] = {}
         if query and query.strip():
-            pattern = _postgrest_ilike_pattern(query.strip())
+            pattern = postgrest_ilike_pattern(query.strip())
             filters["or"] = f"(navn.ilike.{pattern},beskrivelse.ilike.{pattern})"
         rows = await self.postgrest_client.select_rows(
             "grupper",
@@ -92,7 +92,7 @@ class GroupsService:
 
     async def get_group_detail(self, group_id: int) -> GroupDetail | None:
         if self.postgrest_client is None:
-            raise RuntimeError("PostgREST-backed group reads are not configured yet.")
+            raise NotConfiguredError("PostgREST-backed group reads are not configured yet.")
         group_rows, position_rows, member_rows = await asyncio.gather(
             self.postgrest_client.select_rows(
                 "grupper",
@@ -126,7 +126,7 @@ class GroupsService:
             active_until_label=format_semester_code(group_row["aktiv_til_og_med"]),
             parent_group_id=group_row["id_overgruppe"],
             discount_step=group_row["rabatt_trinn"],
-            created_at=_coerce_datetime(group_row.get("opprettet")),
+            created_at=coerce_datetime(group_row.get("opprettet")),
             positions=[
                 GroupPositionItem(
                     role_id=row["id"],
@@ -139,7 +139,7 @@ class GroupsService:
                 GroupMemberItem(
                     history_id=row["id"],
                     person_id=row["personal"]["id"],
-                    person_name=_build_full_name(row["personal"].get("fornavn"), row["personal"].get("etternavn")),
+                    person_name=build_full_name(row["personal"].get("fornavn"), row["personal"].get("etternavn")),
                     role_name=(row.get("verv") or {}).get("verv"),
                     semester_code=row["semester"],
                     semester_label=format_semester_code(row["semester"]) or str(row["semester"]),
@@ -148,27 +148,3 @@ class GroupsService:
                 for row in member_rows
             ],
         )
-
-
-@lru_cache(maxsize=1)
-def get_groups_service() -> GroupsService:
-    try:
-        postgrest_client = get_postgrest_client()
-    except Exception:
-        postgrest_client = None
-    return GroupsService(postgrest_client=postgrest_client)
-
-
-def _postgrest_ilike_pattern(value: str) -> str:
-    escaped = value.replace(",", "\\,").replace("(", "\\(").replace(")", "\\)")
-    return f"*{escaped}*"
-
-
-def _build_full_name(first_name: str | None, last_name: str | None) -> str:
-    return " ".join(part for part in [first_name, last_name] if part) or "Unknown person"
-
-
-def _coerce_datetime(value: datetime | str | None) -> datetime | None:
-    if value is None or isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))

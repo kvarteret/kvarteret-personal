@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Protocol
 from uuid import UUID
 
@@ -8,7 +7,8 @@ from supabase import Client, create_client
 from supabase_auth.types import AdminUserAttributes
 
 from app.auth.models import LegacyUser
-from app.config import Settings, get_settings
+from app.config import Settings
+from app.errors import NotConfiguredError
 
 
 class SupabaseAuthGatewayProtocol(Protocol):
@@ -21,7 +21,7 @@ class SupabaseAuthGatewayProtocol(Protocol):
 class SupabaseAuthGateway:
     def __init__(self, settings: Settings) -> None:
         if not settings.supabase_url or not settings.supabase_secret_key:
-            raise RuntimeError("Supabase credentials are required for authentication.")
+            raise NotConfiguredError("Supabase credentials are required for authentication.")
         self.client: Client = create_client(settings.supabase_url, settings.supabase_secret_key)
 
     async def sign_in_with_password(self, email: str, password: str) -> UUID | None:
@@ -59,13 +59,8 @@ class SupabaseAuthGateway:
         )
         user = getattr(response, "user", None)
         if not user or not getattr(user, "id", None):
-            raise RuntimeError("Supabase did not return a user id during auth user creation.")
+            raise NotConfiguredError("Supabase did not return a user id during auth user creation.")
         return UUID(str(user.id))
 
     async def delete_user(self, auth_user_id: UUID) -> None:
         self.client.auth.admin.delete_user(str(auth_user_id))
-
-
-@lru_cache(maxsize=1)
-def get_supabase_auth_gateway() -> SupabaseAuthGateway:
-    return SupabaseAuthGateway(get_settings())

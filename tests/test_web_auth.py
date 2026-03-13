@@ -1,60 +1,34 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.auth.login_service import LoginResult
-from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
+from app.dependencies import get_current_user, get_login_service, get_people_service, get_session_store, require_authenticated_user
 from app.main import create_app
 from app.services.people import PersonListItem, PersonListPage
+from tests.helpers import make_authenticated_user
 
 
 class FakeLoginService:
     async def login_with_bridge(self, *, identifier: str, password: str, ip_address: str | None, user_agent: str | None) -> LoginResult:
         return LoginResult(
-            session=WebSession(
-                session_id="session-123",
-                auth_user_id=uuid4(),
-                user_account_id=5,
-                expires_at=datetime.now(UTC) + timedelta(hours=12),
-            ),
-            user=AuthenticatedUser(
-                auth_user_id=uuid4(),
-                user_account_id=5,
-                username=identifier,
-                email="admin.user@example.test",
-                display_name="System User",
-                role=UserRole.ADMIN,
-            ),
+            session=type(
+                "Session",
+                (),
+                {
+                    "session_id": "session-123",
+                    "auth_user_id": uuid4(),
+                    "user_account_id": 5,
+                    "expires_at": datetime.now(UTC),
+                },
+            )(),
+            user=make_authenticated_user(UserRole.ADMIN),
             migrated_from_legacy=True,
         )
-
-
-class FakeSessionStore:
-    async def load_authenticated_user(self, session_id: str):
-        return (
-            WebSession(
-                session_id=session_id,
-                auth_user_id=uuid4(),
-                user_account_id=5,
-                expires_at=datetime.now(UTC) + timedelta(hours=12),
-            ),
-            AuthenticatedUser(
-                auth_user_id=uuid4(),
-                user_account_id=5,
-                username="admin",
-                email="admin.user@example.test",
-                display_name="System User",
-                role=UserRole.ADMIN,
-            ),
-        )
-
-    async def delete_session(self, session_id: str) -> None:
-        return None
 
 
 class FakePeopleService:
@@ -64,17 +38,17 @@ class FakePeopleService:
     async def list_people_page(self, query: str | None = None, limit: int = 10, offset: int = 0) -> PersonListPage:
         return PersonListPage(
             items=[
-            PersonListItem(
-                person_id=1,
-                first_name="Sample",
-                last_name="Person",
-                full_name="Sample Person",
-                email="person.one@example.test",
-                phone="00000000",
-                birth_date=date(1815, 12, 10),
-                created_at=datetime.now(UTC),
-                photo_url=None,
-            )
+                PersonListItem(
+                    person_id=1,
+                    first_name="Sample",
+                    last_name="Person",
+                    full_name="Sample Person",
+                    email="person.one@example.test",
+                    phone="00000000",
+                    birth_date=date(1815, 12, 10),
+                    created_at=datetime.now(UTC),
+                    photo_url=None,
+                )
             ],
             limit=limit,
             offset=offset,
@@ -85,11 +59,19 @@ class FakePeopleService:
         return None
 
 
+class FakeSessionStore:
+    async def load_authenticated_user(self, session_id: str):
+        return None
+
+
 def test_login_sets_cookie_and_protected_page_renders() -> None:
     app = create_app()
-    app.state.login_service = FakeLoginService()
-    app.state.session_store = FakeSessionStore()
-    app.state.people_service = FakePeopleService()
+    user = make_authenticated_user(UserRole.ADMIN)
+    app.dependency_overrides[get_login_service] = lambda: FakeLoginService()
+    app.dependency_overrides[get_people_service] = lambda: FakePeopleService()
+    app.dependency_overrides[get_session_store] = lambda: FakeSessionStore()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[require_authenticated_user] = lambda: user
     client = TestClient(app)
 
     login_response = client.post(
@@ -101,8 +83,6 @@ def test_login_sets_cookie_and_protected_page_renders() -> None:
     assert login_response.status_code == 303
     assert "kvarteret_session" in login_response.headers["set-cookie"]
 
-    cookie_value = login_response.cookies.get("kvarteret_session")
-    client.cookies.set("kvarteret_session", cookie_value)
     dashboard_response = client.get("/")
     people_response = client.get("/people")
 

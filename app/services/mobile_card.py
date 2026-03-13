@@ -3,17 +3,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from functools import lru_cache
 from secrets import choice
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import func, select, update
 
-from app.config import Settings, get_settings
-from app.db.session import get_session_factory
-from app.db.tables import grupper, historie, personal, personal_bilde, verv
+from app.config import Settings
 from app.media_tokens import build_photo_media_url
+from app.services.mobile_card_repository import MobileCardRepository, MobileCardSnapshot
 from app.services.semester import get_current_semester_code
 
 logger = logging.getLogger(__name__)
@@ -88,8 +85,9 @@ class MobileCardSession:
 
 
 class MobileCardService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, repository: MobileCardRepository) -> None:
         self.settings = settings
+        self.repository = repository
         self.serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="kvarteret-mobile-card")
 
     async def request_access_code(self, email: str) -> None:
@@ -97,7 +95,7 @@ class MobileCardService:
         if self._is_review_request(normalized_email, None):
             return None
 
-        people = await self._get_people_by_email(normalized_email)
+        people = await self.repository.find_people_by_email(normalized_email)
         if len(people) > 1:
             raise MobileCardDuplicatePersonError(
                 "More than one person uses this email address. Contact an administrator."
@@ -117,16 +115,7 @@ class MobileCardService:
             return None
 
         access_code = _generate_access_code()
-        async with get_session_factory()() as session:
-            async with session.begin():
-                await session.execute(
-                    update(personal)
-                    .where(personal.c.id == person_row["id"])
-                    .values(
-                        internkortaccesstoken=access_code,
-                        internkort_access_token_created_at=now,
-                    )
-                )
+        await self.repository.store_access_code(person_id=person_row["id"], access_code=access_code, created_at=now)
         logger.info("Generated mobile-card access code for person %s", person_row["id"])
         return None
 
@@ -137,7 +126,11 @@ class MobileCardService:
             token = self.serializer.dumps({"person_id": 0, "review": True})
             return MobileCardSession(session_token=token, card=card)
 
-        person_row = await self._get_person_by_email_and_code(normalized_email, access_code)
+        person_row = await self.repository.find_person_by_email_and_code(
+            email=normalized_email,
+            access_code=access_code,
+            expires_after=datetime.now(UTC) - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
+        )
         if person_row is None:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         token = self.serializer.dumps({"person_id": person_row["id"]})
@@ -160,97 +153,32 @@ class MobileCardService:
             raise MobileCardInvalidAccessCodeError("Unknown session token.")
         return await self._build_card(person_id)
 
-    async def _get_people_by_email(self, email: str) -> list[dict]:
-        stmt = (
-            select(
-                personal.c.id,
-                personal.c.fornavn,
-                personal.c.etternavn,
-                personal.c.internkortaccesstoken,
-                personal.c.internkort_access_token_created_at,
-            )
-            .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
-            .order_by(personal.c.id.asc())
-        )
-        async with get_session_factory()() as session:
-            return list((await session.execute(stmt)).mappings().all())
-
-    async def _get_person_by_email_and_code(self, email: str, access_code: str) -> dict | None:
-        expires_after = datetime.now(UTC) - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes)
-        stmt = (
-            select(personal.c.id)
-            .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
-            .where(personal.c.internkortaccesstoken == access_code)
-            .where(personal.c.internkort_access_token_created_at.is_not(None))
-            .where(personal.c.internkort_access_token_created_at >= expires_after)
-            .limit(1)
-        )
-        async with get_session_factory()() as session:
-            return (await session.execute(stmt)).mappings().first()
-
     async def _build_card(self, person_id: int) -> MobileCardResponse:
-        person_stmt = (
-            select(
-                personal.c.id,
-                personal.c.fornavn,
-                personal.c.etternavn,
-                personal.c.fodselsdato,
-                personal.c.opprettet,
-                personal_bilde.c.sha1,
-                personal_bilde.c.filetype,
-            )
-            .select_from(personal.outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id))
-            .where(personal.c.id == person_id)
-            .limit(1)
-        )
-        points_stmt = (
-            select(func.coalesce(func.sum(verv.c.pingvinpoeng), 0).label("pingvin_points"))
-            .select_from(historie.outerjoin(verv, verv.c.id == historie.c.id_verv))
-            .where(historie.c.id_personal == person_id)
-        )
         current_semester = get_current_semester_code()
-        active_roles_stmt = (
-            select(
-                verv.c.verv.label("verv_navn"),
-                grupper.c.navn.label("gruppe_navn"),
-                grupper.c.rabatt_trinn,
-                historie.c.signert_kontrakt,
-            )
-            .select_from(
-                historie.join(verv, verv.c.id == historie.c.id_verv).join(grupper, grupper.c.id == historie.c.id_gruppe)
-            )
-            .where(historie.c.id_personal == person_id)
-            .where(historie.c.semester == current_semester)
-            .order_by(grupper.c.navn.asc(), verv.c.verv.asc())
-        )
-        async with get_session_factory()() as session:
-            person_row = (await session.execute(person_stmt)).mappings().first()
-            if person_row is None:
-                raise MobileCardPersonNotFoundError(f"Person {person_id} was not found.")
-            pingvin_points = int((await session.execute(points_stmt)).scalar_one() or 0)
-            active_role_rows = (await session.execute(active_roles_stmt)).mappings().all()
+        snapshot = await self.repository.fetch_card_snapshot(person_id=person_id, semester_code=current_semester)
+        if snapshot is None:
+            raise MobileCardPersonNotFoundError(f"Person {person_id} was not found.")
+        return self._build_card_response(snapshot)
 
-        photo_url = None
-        if person_row["sha1"] and person_row["filetype"]:
-            photo_url = build_photo_media_url(f"{person_row['sha1']}.{person_row['filetype']}")
-
+    def _build_card_response(self, snapshot: MobileCardSnapshot) -> MobileCardResponse:
+        photo_url = build_photo_media_url(snapshot.photo_path) if snapshot.photo_path else None
         return MobileCardResponse(
-            person_id=person_row["id"],
-            first_name=person_row["fornavn"] or "",
-            last_name=person_row["etternavn"],
-            birth_date=person_row["fodselsdato"],
-            created_at=person_row["opprettet"],
+            person_id=snapshot.person_id,
+            first_name=snapshot.first_name,
+            last_name=snapshot.last_name,
+            birth_date=snapshot.birth_date,
+            created_at=snapshot.created_at,
             valid_until=datetime.now(UTC) + timedelta(days=self.settings.mobile_card_session_ttl_days),
             photo_url=photo_url,
-            pingvin_points=pingvin_points,
+            pingvin_points=snapshot.pingvin_points,
             active_roles=[
                 MobileCardRole(
-                    name=row["verv_navn"],
-                    group=row["gruppe_navn"],
-                    discount_level=row["rabatt_trinn"],
-                    signed_contract=row["signert_kontrakt"],
+                    name=role.name,
+                    group=role.group,
+                    discount_level=role.discount_level,
+                    signed_contract=role.signed_contract,
                 )
-                for row in active_role_rows
+                for role in snapshot.active_roles
             ],
             word_of_the_day=_word_of_the_day(),
         )
@@ -302,8 +230,3 @@ def _word_of_the_day() -> str:
         "kvarter",
     ]
     return words[datetime.now(UTC).timetuple().tm_yday % len(words)]
-
-
-@lru_cache(maxsize=1)
-def get_mobile_card_service() -> MobileCardService:
-    return MobileCardService(get_settings())

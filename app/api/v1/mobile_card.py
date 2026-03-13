@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, EmailStr
 
+from app.dependencies import get_mobile_card_service
 from app.services.mobile_card import (
     MobileCardDuplicatePersonError,
     MobileCardInvalidAccessCodeError,
     MobileCardPersonNotFoundError,
     MobileCardResponse,
-    get_mobile_card_service,
+    MobileCardService,
 )
 
 
@@ -35,18 +36,11 @@ class MobileCardSessionResponse(BaseModel):
 router = APIRouter()
 
 
-def _get_mobile_card_service_for_request(request: Request):
-    if getattr(request.app.state, "mobile_card_service", None) is not None:
-        return request.app.state.mobile_card_service
-    return get_mobile_card_service()
-
-
 @router.post("/access-codes", status_code=status.HTTP_202_ACCEPTED)
 async def request_access_code(
-    request: Request,
     payload: AccessCodeRequest,
+    service: MobileCardService = Depends(get_mobile_card_service),
 ) -> dict[str, str]:
-    service = _get_mobile_card_service_for_request(request)
     try:
         await service.request_access_code(str(payload.email))
     except MobileCardPersonNotFoundError as exc:
@@ -58,10 +52,9 @@ async def request_access_code(
 
 @router.post("/sessions", response_model=MobileCardSessionResponse)
 async def create_session(
-    request: Request,
     payload: MobileCardSessionCreateRequest,
+    service: MobileCardService = Depends(get_mobile_card_service),
 ) -> MobileCardSessionResponse:
-    service = _get_mobile_card_service_for_request(request)
     try:
         session = await service.create_session(str(payload.email), payload.access_code)
     except MobileCardInvalidAccessCodeError as exc:
@@ -73,13 +66,12 @@ async def create_session(
 
 @router.get("/me", response_model=MobileCardResponse)
 async def get_current_card(
-    request: Request,
     authorization: str | None = Header(default=None),
+    service: MobileCardService = Depends(get_mobile_card_service),
 ) -> MobileCardResponse:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token.")
     token = authorization.split(" ", 1)[1]
-    service = _get_mobile_card_service_for_request(request)
     try:
         return await service.get_current_card(token)
     except MobileCardInvalidAccessCodeError as exc:

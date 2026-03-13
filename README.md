@@ -32,16 +32,26 @@ That copies `app/static/` into `public/static/` so `/static/...` assets can be
 served by Vercel directly, while all non-static routes are rewritten to the
 FastAPI app.
 
+`api/index.py` is intentionally tiny:
+
+    from app.main import create_app
+    app = create_app()
+
+Vercel's Python runtime expects a module-level ASGI app object at that path.
+Local development does not use this file; locally we run `app.main:create_app`
+as a factory through Uvicorn. If Vercel deployment is ever removed, `api/index.py`
+and `vercel.json` should be deleted together.
+
 `.vercelignore` excludes local-only directories such as `data/` so recovered
 media archives are not uploaded during deployment.
 
 Implemented slices now include:
 
-    /people and /api/v1/people
-    /groups, /groups/{id}/semester-transfer, and /api/v1/groups
-    /courses and /api/v1/courses
-    /users and /api/v1/users
-    /registrations, /register/{token}, and /api/v1/registrations
+    /people
+    /groups and /groups/{id}/semester-transfer
+    /courses
+    /users
+    /registrations and /register/{token}
     /api/v1/mobile-card and /api/DigitalInternkort
     backend media proxy routes for private photos and documents
 

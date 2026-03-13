@@ -2,11 +2,45 @@
 
 @theme {
   --color-kvarteret-red: #c62828;
-  --color-kvarteret-teal: #0f8b8d;
-  --color-kvarteret-cream: #f7f2e9;
+  --color-kvarteret-background: #f3e2cc;
+  --color-kvarteret-surface: #fffaf2;
 }
 
-body {
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+@layer components {
+  .app-panel {
+    @apply border border-stone-300 bg-white/70 p-5 shadow-sm;
+  }
+
+  .app-input {
+    @apply border-0 border-b-2 border-stone-400 bg-transparent px-0 py-2 text-lg text-stone-900 placeholder:text-stone-400 focus:border-kvarteret-red;
+  }
+
+  .app-select {
+    @apply border border-stone-300 bg-white/80 px-3 py-3 text-sm text-stone-900 focus:border-kvarteret-red;
+  }
+
+  .app-button {
+    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-white shadow-md transition hover:bg-red-700;
+  }
+
+  .app-button-secondary {
+    @apply inline-flex min-h-12 items-center justify-center bg-white px-6 font-semibold text-stone-900 shadow-md transition hover:bg-stone-50;
+  }
+
+  .app-badge {
+    @apply inline-flex min-h-8 items-center bg-red-50 px-3 text-sm font-medium text-red-800;
+  }
 }
 
+@layer base {
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}

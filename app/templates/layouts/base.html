@@ -9,38 +9,69 @@
     <script src="https://unpkg.com/idiomorph@0.7.4/dist/idiomorph-ext.min.js"></script>
     <script src="https://unpkg.com/htmx-ext-preload@2.1.0/preload.js"></script>
   </head>
-  <body class="min-h-screen bg-stone-100 text-stone-900" hx-boost="true" hx-ext="morph,preload" hx-swap="morph:innerHTML">
-    <div class="mx-auto flex min-h-screen max-w-7xl flex-col lg:flex-row">
-      <aside class="bg-red-700 px-6 py-8 text-stone-50 lg:w-72">
-        <div class="mb-8">
-          <p class="text-xs uppercase tracking-[0.3em] text-red-100">Kvarteret</p>
-          <h1 class="mt-2 text-3xl font-semibold">Personal</h1>
-        </div>
-        <nav class="space-y-2 text-sm">
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/" preload="mouseover">Dashboard</a>
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/login" preload="mouseover">Login</a>
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/people" preload="mouseover">People</a>
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/groups" preload="mouseover">Groups</a>
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/courses" preload="mouseover">Courses</a>
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/users" preload="mouseover">Users</a>
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/search" preload="mouseover">Search</a>
-          <a class="block rounded px-3 py-2 hover:bg-red-600" href="/registrations" preload="mouseover">Registrations</a>
-        </nav>
-      </aside>
-      <main class="flex-1 px-6 py-8 lg:px-10">
-        {% if current_user %}
-          <div class="mb-6 flex items-center justify-between rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
-            <div>
-              <p class="text-sm text-stone-500">Logged in as</p>
-              <p class="text-base font-medium">{{ current_user.display_name or current_user.username }} · {{ current_user.role }}</p>
-            </div>
-            <form action="/logout" method="post">
-              <button class="rounded-xl bg-stone-900 px-4 py-2 text-sm font-medium text-white" type="submit">Logout</button>
-            </form>
-          </div>
-        {% endif %}
-        {% block content %}{% endblock %}
+  <body class="{% if section == 'login' %}min-h-screen bg-kvarteret-red text-stone-900{% else %}min-h-screen bg-kvarteret-background text-stone-900{% endif %}" hx-boost="true" hx-ext="morph,preload" hx-swap="morph:innerHTML">
+    {% set header_logo = url_for('static', path='images/internbevis-header.png') %}
+    {% set login_logo = url_for('static', path='images/internbevis-logo.png') %}
+    {% set rendered_content %}
+      {% block page_content %}{% endblock %}
+    {% endset %}
+
+    {% if section == "login" %}
+      <main class="grid min-h-screen place-items-center px-4 py-8">
+        {{ rendered_content | safe }}
       </main>
-    </div>
+    {% elif section == "register" %}
+      <div>
+        <header class="bg-kvarteret-red text-white shadow-md">
+          <div class="mx-auto flex min-h-24 max-w-screen-2xl items-center px-4 lg:px-7">
+            <a class="inline-flex items-center gap-4 text-white no-underline" href="/">
+              <img alt="Det Akademiske Kvarter" class="h-12 w-12 object-contain" src="{{ header_logo }}">
+              <span class="text-2xl font-light tracking-tight lg:text-4xl">Det Akademiske Kvarter</span>
+            </a>
+          </div>
+        </header>
+        <main class="mx-auto w-full max-w-6xl px-4 py-8 lg:px-8 lg:py-10">
+          {{ rendered_content | safe }}
+        </main>
+      </div>
+    {% else %}
+      <div class="min-h-screen bg-kvarteret-background">
+        <header class="sticky top-0 z-30 bg-kvarteret-red text-white shadow-md">
+          <div class="mx-auto flex min-h-24 max-w-screen-2xl items-center justify-between gap-4 px-4 lg:px-7">
+            <a class="inline-flex items-center gap-4 text-white no-underline" href="/" preload="mouseover">
+              <img alt="Det Akademiske Kvarter" class="h-12 w-12 object-contain" src="{{ header_logo }}">
+              <span class="text-3xl font-light tracking-tight lg:text-4xl">Det Akademiske Kvarter</span>
+            </a>
+            {% if current_user %}
+              <div class="hidden items-center gap-4 md:flex">
+                <div class="text-right text-sm">
+                  <div class="font-semibold text-white">{{ current_user.display_name or current_user.username }}</div>
+                  <div class="text-white/80">{{ current_user.role }}</div>
+                </div>
+                <form action="/logout" method="post">
+                  <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Logg ut</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+          <nav class="mx-auto flex max-w-screen-2xl gap-2 overflow-x-auto px-4 pb-4 lg:px-7">
+            <a class="inline-flex min-h-10 items-center rounded-full px-4 text-sm font-medium {% if section == 'dashboard' %}bg-white text-kvarteret-red{% else %}bg-white/10 text-white{% endif %}" href="/" preload="mouseover">Oversikt</a>
+            <a class="inline-flex min-h-10 items-center rounded-full px-4 text-sm font-medium {% if section == 'people' %}bg-white text-kvarteret-red{% else %}bg-white/10 text-white{% endif %}" href="/people" preload="mouseover">Personell</a>
+            <a class="inline-flex min-h-10 items-center rounded-full px-4 text-sm font-medium {% if section == 'groups' %}bg-white text-kvarteret-red{% else %}bg-white/10 text-white{% endif %}" href="/groups" preload="mouseover">Grupper</a>
+            <a class="inline-flex min-h-10 items-center rounded-full px-4 text-sm font-medium {% if section == 'courses' %}bg-white text-kvarteret-red{% else %}bg-white/10 text-white{% endif %}" href="/courses" preload="mouseover">Kurs</a>
+            {% if current_user and current_user.role == "Admin" %}
+              <a class="inline-flex min-h-10 items-center rounded-full px-4 text-sm font-medium {% if section == 'users' %}bg-white text-kvarteret-red{% else %}bg-white/10 text-white{% endif %}" href="/users" preload="mouseover">Brukere</a>
+              <a class="inline-flex min-h-10 items-center rounded-full px-4 text-sm font-medium {% if section == 'registrations' %}bg-white text-kvarteret-red{% else %}bg-white/10 text-white{% endif %}" href="/registrations" preload="mouseover">Registreringer</a>
+            {% endif %}
+          </nav>
+        </header>
+
+        <main class="mx-auto min-h-screen w-full max-w-screen-2xl px-4 py-8 lg:px-8 lg:py-10">
+          <div class="mx-auto w-full max-w-6xl">
+            {{ rendered_content | safe }}
+          </div>
+        </main>
+      </div>
+    {% endif %}
   </body>
 </html>

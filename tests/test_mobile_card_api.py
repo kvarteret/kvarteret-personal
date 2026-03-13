@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
+from app.dependencies import get_mobile_card_service
 from app.main import create_app
 from app.services.mobile_card import (
     MobileCardInvalidAccessCodeError,
@@ -45,7 +46,7 @@ class FakeMobileCardService:
 
 def _make_client() -> TestClient:
     app = create_app()
-    app.state.mobile_card_service = FakeMobileCardService()
+    app.dependency_overrides[get_mobile_card_service] = lambda: FakeMobileCardService()
     return TestClient(app)
 
 

@@ -1,40 +1,15 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from app.auth.cookies import sign_session_id
-from app.auth.models import AuthenticatedUser, WebSession
-from app.auth.roles import UserRole
+from app.dependencies import get_courses_service, get_groups_service, get_semester_transfer_service
 from app.main import create_app
 from app.services.courses import CourseCompletionItem, CourseDetail, CourseListItem, RequiredGroupItem
 from app.services.groups import GroupDetail, GroupListItem, GroupMemberItem, GroupPositionItem
 from app.services.semester_transfer import SemesterTransferCandidate, SemesterTransferPreview
-
-
-class FakeSessionStore:
-    async def load_authenticated_user(self, session_id: str):
-        return (
-            WebSession(
-                session_id=session_id,
-                auth_user_id=uuid4(),
-                user_account_id=5,
-                expires_at=datetime.now(UTC) + timedelta(hours=12),
-            ),
-            AuthenticatedUser(
-                auth_user_id=uuid4(),
-                user_account_id=5,
-                username="admin",
-                email="admin.user@example.test",
-                display_name="System User",
-                role=UserRole.ADMIN,
-            ),
-        )
-
-    async def delete_session(self, session_id: str) -> None:
-        return None
+from tests.helpers import make_authenticated_user, override_authenticated_user
 
 
 class FakeGroupsService:
@@ -117,12 +92,11 @@ class FakeSemesterTransferService:
 
 def test_groups_and_courses_pages_render() -> None:
     app = create_app()
-    app.state.session_store = FakeSessionStore()
-    app.state.groups_service = FakeGroupsService()
-    app.state.courses_service = FakeCoursesService()
-    app.state.semester_transfer_service = FakeSemesterTransferService()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
+    app.dependency_overrides[get_semester_transfer_service] = lambda: FakeSemesterTransferService()
     client = TestClient(app)
-    client.cookies.set("kvarteret_session", sign_session_id("session-123"))
 
     groups_response = client.get("/groups")
     group_detail_response = client.get("/groups/7")

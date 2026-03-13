@@ -9,9 +9,9 @@ def format_semester_code(value: int | None) -> str | None:
     year = value // 10
     season = value % 10
     if season == 1:
-        return f"Spring {year}"
+        return f"{year} Vår"
     if season == 2:
-        return f"Fall {year}"
+        return f"{year} Høst"
     return str(value)
 
 

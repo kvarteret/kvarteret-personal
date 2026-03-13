@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
-from uuid import uuid4
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 
-from app.auth.cookies import sign_session_id
-from app.auth.models import AuthenticatedUser, WebSession
-from app.auth.roles import UserRole
+from app.dependencies import get_registrations_service
 from app.main import create_app
 from app.services.registrations import PendingRegistrationDetail, PendingRegistrationItem, RegistrationInvite
+from tests.helpers import make_authenticated_user, override_authenticated_user
 
 
 class FakeRegistrationsService:
@@ -63,30 +61,11 @@ class FakeRegistrationsService:
         return None
 
 
-class FakeSessionStore:
-    async def load_authenticated_user(self, session_id: str):
-        return (
-            WebSession(session_id=session_id, auth_user_id=uuid4(), user_account_id=5, expires_at=datetime.now(UTC) + timedelta(hours=12)),
-            AuthenticatedUser(
-                auth_user_id=uuid4(),
-                user_account_id=5,
-                username="admin",
-                email="admin.user@example.test",
-                display_name="System User",
-                role=UserRole.ADMIN,
-            ),
-        )
-
-    async def delete_session(self, session_id: str) -> None:
-        return None
-
-
 def test_registration_pages_render() -> None:
     app = create_app()
-    app.state.registrations_service = FakeRegistrationsService()
-    app.state.session_store = FakeSessionStore()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_registrations_service] = lambda: FakeRegistrationsService()
     client = TestClient(app)
-    client.cookies.set("kvarteret_session", sign_session_id("session-123"))
 
     admin_response = client.get("/registrations")
     public_response = client.get("/register/token-123")

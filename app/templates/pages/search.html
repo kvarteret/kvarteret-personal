@@ -1,112 +1,111 @@
 {% extends "layouts/base.html" %}
 
-{% block content %}
-  <section class="space-y-6">
-    <header class="space-y-2">
-      <p class="text-sm uppercase tracking-[0.2em] text-teal-700">Advanced search</p>
-      <h2 class="text-4xl font-semibold">Search people</h2>
-      <p class="max-w-3xl text-base text-stone-600">
-        This page ports the legacy advanced personnel search into the rewrite. It currently accepts comma-separated
-        group and course ids so the behavior can be validated before the final HTMX picker UI lands.
-      </p>
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">Avansert søk</p>
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Søk i personell</h1>
+      <p class="max-w-4xl text-base leading-7 text-stone-700">Bruk flere filtre samtidig når du trenger et mer presist utvalg.</p>
     </header>
 
-    <div class="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-      <form action="/search" class="space-y-4 rounded-2xl border border-stone-200 bg-white p-6 shadow-sm" method="get">
-        <div class="grid gap-4 md:grid-cols-2">
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Birth date after</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="birth_date_after" type="date" value="{{ form.birth_date_after }}">
+    <div class="grid gap-6">
+      <form action="/search" class="app-panel" method="get">
+        <div class="grid gap-5 md:grid-cols-2">
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Fødselsdato etter</span>
+            <input class="app-input" name="birth_date_after" type="date" value="{{ form.birth_date_after }}">
           </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Birth date before</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="birth_date_before" type="date" value="{{ form.birth_date_before }}">
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Fødselsdato før</span>
+            <input class="app-input" name="birth_date_before" type="date" value="{{ form.birth_date_before }}">
           </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Pingvin points above</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="pingvin_points_above" type="number" value="{{ form.pingvin_points_above }}">
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Pingvinpoeng over</span>
+            <input class="app-input" name="pingvin_points_above" type="number" value="{{ form.pingvin_points_above }}">
           </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Pingvin points below</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="pingvin_points_below" type="number" value="{{ form.pingvin_points_below }}">
-          </label>
-        </div>
-
-        <div class="grid gap-4">
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Include groups</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="include_groups" placeholder="1,2,3" type="text" value="{{ form.include_groups }}">
-          </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Include current groups</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="include_current_groups" placeholder="1,2,3" type="text" value="{{ form.include_current_groups }}">
-          </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Exclude groups</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="exclude_groups" placeholder="1,2,3" type="text" value="{{ form.exclude_groups }}">
-          </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Exclude current groups</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="exclude_current_groups" placeholder="1,2,3" type="text" value="{{ form.exclude_current_groups }}">
-          </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Include courses</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="include_courses" placeholder="1,2,3" type="text" value="{{ form.include_courses }}">
-          </label>
-          <label class="text-sm text-stone-700">
-            <span class="mb-2 block font-medium">Exclude courses</span>
-            <input class="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3" name="exclude_courses" placeholder="1,2,3" type="text" value="{{ form.exclude_courses }}">
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Pingvinpoeng under</span>
+            <input class="app-input" name="pingvin_points_below" type="number" value="{{ form.pingvin_points_below }}">
           </label>
         </div>
 
-        <button class="rounded-xl bg-teal-700 px-5 py-3 text-sm font-medium text-white" type="submit">Search</button>
+        <div class="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Inkluder grupper</span>
+            <select class="app-select min-h-48" multiple name="include_groups">
+              {% for group in groups %}
+                <option value="{{ group.group_id }}" {% if group.group_id in form.include_groups %}selected{% endif %}>{{ group.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Inkluder aktive grupper</span>
+            <select class="app-select min-h-48" multiple name="include_current_groups">
+              {% for group in groups %}
+                <option value="{{ group.group_id }}" {% if group.group_id in form.include_current_groups %}selected{% endif %}>{{ group.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Ekskluder grupper</span>
+            <select class="app-select min-h-48" multiple name="exclude_groups">
+              {% for group in groups %}
+                <option value="{{ group.group_id }}" {% if group.group_id in form.exclude_groups %}selected{% endif %}>{{ group.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Ekskluder aktive grupper</span>
+            <select class="app-select min-h-48" multiple name="exclude_current_groups">
+              {% for group in groups %}
+                <option value="{{ group.group_id }}" {% if group.group_id in form.exclude_current_groups %}selected{% endif %}>{{ group.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Inkluder kurs</span>
+            <select class="app-select min-h-48" multiple name="include_courses">
+              {% for course in courses %}
+                <option value="{{ course.course_id }}" {% if course.course_id in form.include_courses %}selected{% endif %}>{{ course.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Ekskluder kurs</span>
+            <select class="app-select min-h-48" multiple name="exclude_courses">
+              {% for course in courses %}
+                <option value="{{ course.course_id }}" {% if course.course_id in form.exclude_courses %}selected{% endif %}>{{ course.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+
+        <div class="mt-8 flex flex-wrap gap-3">
+          <button class="app-button" type="submit">Kjør søk</button>
+          <a class="app-button-secondary" href="/search">Nullstill</a>
+        </div>
       </form>
 
-      <div class="space-y-4">
-        <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-          <h3 class="text-lg font-semibold">Available ids</h3>
-          <div class="mt-4 grid gap-6 md:grid-cols-2">
-            <div>
-              <p class="text-sm font-medium text-stone-700">Groups</p>
-              <div class="mt-2 max-h-72 space-y-1 overflow-y-auto text-sm text-stone-600">
-                {% for group in groups %}
-                  <p>{{ group.group_id }} · {{ group.name }}</p>
-                {% endfor %}
+      <section class="app-panel">
+        <div class="mb-5 flex items-center justify-between gap-3">
+          <h2 class="text-2xl font-medium tracking-tight text-stone-900">Resultat</h2>
+          <span class="app-badge">{{ results|length }} treff</span>
+        </div>
+        <div class="grid gap-0">
+          {% for person in results %}
+            <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-3 md:items-center" href="/people/{{ person.person_id }}">
+              <div>
+                <div class="text-lg font-medium tracking-tight">{{ person.full_name }}</div>
+                <div class="text-sm text-stone-500">{{ person.email or "Ingen e-post" }}</div>
               </div>
-            </div>
-            <div>
-              <p class="text-sm font-medium text-stone-700">Courses</p>
-              <div class="mt-2 max-h-72 space-y-1 overflow-y-auto text-sm text-stone-600">
-                {% for course in courses %}
-                  <p>{{ course.course_id }} · {{ course.name }}</p>
-                {% endfor %}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-          <div class="flex items-center justify-between">
-            <h3 class="text-lg font-semibold">Results</h3>
-            <p class="text-sm text-stone-500">{{ results|length }} matches</p>
-          </div>
-          <div class="mt-4 space-y-3">
-            {% for person in results %}
-              <a class="block rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 hover:border-teal-600" href="/people/{{ person.person_id }}">
-                <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p class="font-medium text-stone-900">{{ person.full_name }}</p>
-                    <p class="text-sm text-stone-600">{{ person.email or "No email" }} · {{ person.phone or "No phone" }}</p>
-                  </div>
-                  <p class="text-sm text-stone-600">{{ person.pingvin_points }} points · {{ person.last_semester_label or "No semester" }}</p>
-                </div>
-              </a>
-            {% else %}
-              <p class="text-sm text-stone-600">Run a search to see results.</p>
-            {% endfor %}
-          </div>
-        </section>
-      </div>
+              <div class="text-sm text-stone-700">{{ person.phone or "Ingen telefon" }}</div>
+              <div class="text-sm text-stone-700">{{ person.pingvin_points }} pingvinpoeng · {{ person.last_semester_label or "Ingen historikk" }}</div>
+            </a>
+          {% else %}
+            <div class="py-8 text-sm text-stone-600">Kjør et søk for å se resultatene.</div>
+          {% endfor %}
+        </div>
+      </section>
     </div>
   </section>
 {% endblock %}

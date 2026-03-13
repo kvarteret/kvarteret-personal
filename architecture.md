@@ -11,12 +11,15 @@ The system replaces the old Angular frontend and ASP.NET backend with a server-r
 The application is divided into five main areas.
 
 - `app/main.py` creates the FastAPI app, mounts static assets, and installs the session-loading middleware.
+- `api/index.py` is the Vercel deployment shim. It only imports `create_app()` from `app/main.py` and exposes a module-level `app` because Vercel expects an ASGI object there.
 - `app/web/` contains HTML routes that render Jinja templates for the admin interface.
-- `app/api/` contains JSON routes. `app/api/v1/` is the new English API. `app/api/legacy/` contains temporary compatibility routes.
+- `app/api/` now only contains the Digital Internkort JSON surface: the current mobile-card endpoints and the legacy compatibility adapter.
+- `app/media/` contains the backend media proxy routes for signed photo and document access.
+- `app/system/` contains infrastructure-style routes such as `/health`.
 - `app/auth/` contains the web session model, the ASP.NET Identity bridge, Supabase Auth integration, and role handling.
-- `app/services/` contains domain logic for people, groups, courses, search, users, registrations, semester transfer, mobile card, and storage.
+- `app/services/` contains domain orchestration, while repository-style data access now lives alongside it for the more complex domains.
 
-The code intentionally keeps route handlers thin. Route handlers validate inputs, enforce authentication or admin access, and call services. Services do the database and storage work.
+The code intentionally keeps route handlers thin. Route handlers validate inputs, enforce authentication or admin access, and call services. Services orchestrate workflows; repositories own SQLAlchemy, PostgREST, and storage-facing persistence details.
 
 ## Request Flow
 
@@ -25,7 +28,8 @@ An incoming browser request hits FastAPI in `app/main.py`. The middleware reads 
 After that, the request goes to either:
 
 - an HTML route in `app/web/router.py`, which renders a template in `app/templates/`, or
-- a JSON route in `app/api/router.py`, which dispatches to the v1 or legacy routers.
+- a mobile-card JSON route in `app/api/router.py`, or
+- a media or system route mounted directly from `app/main.py`.
 
 Protected routes use `require_authenticated_user()` from `app/auth/dependencies.py`. Admin-only routes currently use explicit admin checks in the route modules.
 
@@ -36,7 +40,7 @@ The system uses two data access strategies.
 - SQLAlchemy Core is the default for direct database work. Shared table metadata lives in `app/db/tables.py`, and sessions come from `app/db/session.py`.
 - PostgREST is used internally only for simple list reads where it reduces boilerplate. The internal client lives in `app/postgrest.py`.
 
-There is no inline SQL in the repository code. The SQLAlchemy Core layer is used for auth, people detail, search, registrations, semester transfer, and the mobile-card flow. PostgREST is currently used for simple group and course list endpoints.
+There is no inline SQL in the repository code. The SQLAlchemy Core layer is used for auth, people, search, registrations, semester transfer, and the mobile-card flow. PostgREST is currently used for simpler read-heavy list/detail cases.
 
 ## Authentication and Authorization
 
@@ -57,7 +61,7 @@ Supabase Storage is private by default.
 - `personnel-photos` stores profile photos by `{sha1}.{filetype}`.
 - `personnel-documents` stores person documents by `{person_id}/{filename}`.
 
-The backend does not embed Supabase signed URLs in list pages anymore. Instead, it generates short-lived application-signed media URLs through `app/media_tokens.py`, and the actual bytes are served by backend proxy routes in `app/api/media.py`.
+The backend does not embed Supabase signed URLs in list pages anymore. Instead, it generates short-lived application-signed media URLs through `app/media_tokens.py`, and the actual bytes are served by backend proxy routes in `app/media/router.py`.
 
 This reduced the people-list latency dramatically because the server no longer signs one Supabase URL per row during HTML generation.
 
@@ -65,12 +69,14 @@ This reduced the people-list latency dramatically because the server no longer s
 
 ### People
 
-`app/services/people.py` handles:
+`app/services/people.py` handles orchestration for:
 
 - people list and detail reads
 - card, next-of-kin, and document metadata reads
 - photo upload and delete
 - document upload and delete
+
+`app/services/people_repository.py` owns the SQLAlchemy and PostgREST access for that domain.
 
 The person detail page in `app/templates/pages/person_detail.html` is the current operational hub for photos and documents.
 

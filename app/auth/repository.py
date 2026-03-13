@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Protocol
 from uuid import UUID
 
@@ -10,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.auth.models import AuthenticatedUser, LegacyUser, UserAccount, WebSession
 from app.auth.roles import UserRole
-from app.db.session import get_session_factory
+from app.db.repository import SqlAlchemyRepository
 from app.db.tables import (
     aspnetroles,
     aspnetuserroles,
@@ -68,20 +67,31 @@ class AuthRepositoryProtocol(Protocol):
     async def delete_session(self, session_id: str) -> None: ...
 
 
-class DatabaseAuthRepository:
+USER_ACCOUNT_COLUMNS = (
+    user_accounts.c.id,
+    user_accounts.c.auth_user_id,
+    user_accounts.c.legacy_user_id,
+    user_accounts.c.username,
+    user_accounts.c.email,
+    user_accounts.c.display_name,
+    user_accounts.c.role,
+    user_accounts.c.last_login,
+)
+
+LEGACY_USER_COLUMNS = (
+    aspnetusers.c.id,
+    aspnetusers.c.username,
+    aspnetusers.c.email,
+    aspnetusers.c.name,
+    aspnetusers.c.passwordhash,
+)
+
+
+class DatabaseAuthRepository(SqlAlchemyRepository):
     async def get_user_account_by_identifier(self, identifier: str) -> UserAccount | None:
         lowered = identifier.lower()
         stmt = (
-            select(
-                user_accounts.c.id,
-                user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
-                user_accounts.c.username,
-                user_accounts.c.email,
-                user_accounts.c.display_name,
-                user_accounts.c.role,
-                user_accounts.c.last_login,
-            )
+            select(*USER_ACCOUNT_COLUMNS)
             .where(
                 or_(
                     func.lower(user_accounts.c.username) == lowered,
@@ -90,20 +100,13 @@ class DatabaseAuthRepository:
             )
             .limit(1)
         )
-        async with get_session_factory()() as session:
-            row = (await session.execute(stmt)).mappings().first()
+        row = await self.fetch_first_mapping(stmt)
         return _map_user_account(row) if row else None
 
     async def get_legacy_user_by_identifier(self, identifier: str) -> LegacyUser | None:
         lowered = identifier.lower()
         stmt = (
-            select(
-                aspnetusers.c.id,
-                aspnetusers.c.username,
-                aspnetusers.c.email,
-                aspnetusers.c.name,
-                aspnetusers.c.passwordhash,
-            )
+            select(*LEGACY_USER_COLUMNS)
             .where(
                 or_(
                     func.lower(aspnetusers.c.username) == lowered,
@@ -112,8 +115,7 @@ class DatabaseAuthRepository:
             )
             .limit(1)
         )
-        async with get_session_factory()() as session:
-            row = (await session.execute(stmt)).mappings().first()
+        row = await self.fetch_first_mapping(stmt)
         if not row or not row["passwordhash"]:
             return None
         return LegacyUser(
@@ -131,9 +133,7 @@ class DatabaseAuthRepository:
             .where(aspnetuserroles.c.userid == legacy_user_id)
             .order_by(aspnetroles.c.name)
         )
-        async with get_session_factory()() as session:
-            rows = (await session.execute(stmt)).scalars().all()
-        return list(rows)
+        return await self.fetch_scalars_all(stmt)
 
     async def get_legacy_group_ids(self, legacy_user_id: int) -> list[int]:
         stmt = (
@@ -141,9 +141,7 @@ class DatabaseAuthRepository:
             .where(grupper_admin_kobling.c.id_user == legacy_user_id)
             .order_by(grupper_admin_kobling.c.id_gruppe)
         )
-        async with get_session_factory()() as session:
-            rows = (await session.execute(stmt)).scalars().all()
-        return list(rows)
+        return await self.fetch_scalars_all(stmt)
 
     async def create_direct_user_account(
         self,
@@ -164,20 +162,9 @@ class DatabaseAuthRepository:
                 role=role.value,
                 migrated_at=func.current_timestamp(),
             )
-            .returning(
-                user_accounts.c.id,
-                user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
-                user_accounts.c.username,
-                user_accounts.c.email,
-                user_accounts.c.display_name,
-                user_accounts.c.role,
-                user_accounts.c.last_login,
-            )
+            .returning(*USER_ACCOUNT_COLUMNS)
         )
-        async with get_session_factory()() as session:
-            row = (await session.execute(stmt)).mappings().one()
-            await session.commit()
+        row = await self.execute_one_mapping(stmt)
         return _map_user_account(row)
 
     async def upsert_user_account(
@@ -210,30 +197,20 @@ class DatabaseAuthRepository:
                 "migrated_at": insert_stmt.excluded.migrated_at,
                 "updated_at": func.current_timestamp(),
             },
-        ).returning(
-            user_accounts.c.id,
-            user_accounts.c.auth_user_id,
-            user_accounts.c.legacy_user_id,
-            user_accounts.c.username,
-            user_accounts.c.email,
-            user_accounts.c.display_name,
-            user_accounts.c.role,
-            user_accounts.c.last_login,
-        )
-        async with get_session_factory()() as session:
-            row = (await session.execute(stmt)).mappings().one()
-            await session.commit()
+        ).returning(*USER_ACCOUNT_COLUMNS)
+        row = await self.execute_one_mapping(stmt)
         return _map_user_account(row)
 
     async def replace_group_admin_memberships(self, auth_user_id: UUID, group_ids: list[int]) -> None:
-        async with get_session_factory()() as session:
+        async def replace(session):
             await session.execute(delete(group_admin_memberships).where(group_admin_memberships.c.auth_user_id == auth_user_id))
             if group_ids:
                 await session.execute(
                     insert(group_admin_memberships),
                     [{"auth_user_id": auth_user_id, "gruppe_id": group_id} for group_id in group_ids],
                 )
-            await session.commit()
+
+        await self.execute_in_transaction(replace)
 
     async def record_migration_event(
         self,
@@ -251,9 +228,7 @@ class DatabaseAuthRepository:
             outcome=outcome,
             details=details,
         )
-        async with get_session_factory()() as session:
-            await session.execute(stmt)
-            await session.commit()
+        await self.execute(stmt)
 
     async def create_session(
         self,
@@ -273,9 +248,7 @@ class DatabaseAuthRepository:
             ip_address=ip_address,
             user_agent=user_agent,
         )
-        async with get_session_factory()() as session:
-            await session.execute(stmt)
-            await session.commit()
+        await self.execute(stmt)
         return WebSession(
             session_id=session_id,
             auth_user_id=auth_user_id,
@@ -299,8 +272,7 @@ class DatabaseAuthRepository:
             .where(web_sessions.c.session_id == session_id, web_sessions.c.expires_at > func.current_timestamp())
             .limit(1)
         )
-        async with get_session_factory()() as session:
-            row = (await session.execute(stmt)).mappings().first()
+        row = await self.fetch_first_mapping(stmt)
         if not row or row["user_account_id"] is None:
             return None
         web_session = WebSession(
@@ -320,9 +292,7 @@ class DatabaseAuthRepository:
         return web_session, user
 
     async def delete_session(self, session_id: str) -> None:
-        async with get_session_factory()() as session:
-            await session.execute(delete(web_sessions).where(web_sessions.c.session_id == session_id))
-            await session.commit()
+        await self.execute(delete(web_sessions).where(web_sessions.c.session_id == session_id))
 
 
 def _map_user_account(row) -> UserAccount:
@@ -336,8 +306,3 @@ def _map_user_account(row) -> UserAccount:
         role=UserRole(row["role"]),
         last_login=row["last_login"],
     )
-
-
-@lru_cache(maxsize=1)
-def get_auth_repository() -> DatabaseAuthRepository:
-    return DatabaseAuthRepository()

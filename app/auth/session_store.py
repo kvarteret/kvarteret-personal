@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
 from secrets import token_urlsafe
 
 from app.cache import TTLCache
 from app.auth.models import AuthenticatedUser, WebSession
-from app.auth.repository import AuthRepositoryProtocol, get_auth_repository
-from app.config import Settings, get_settings
+from app.auth.repository import AuthRepositoryProtocol
+from app.config import Settings
 
 
 class SessionStore:
@@ -76,8 +75,3 @@ class CachedSession:
     web_session: WebSession
     user: AuthenticatedUser
     cached_until: datetime
-
-
-@lru_cache(maxsize=1)
-def get_session_store() -> SessionStore:
-    return SessionStore(get_auth_repository(), get_settings())
