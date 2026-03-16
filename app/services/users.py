@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import logging
+from time import perf_counter
 from typing import Protocol
 from uuid import UUID
 
@@ -12,7 +14,10 @@ from app.cache import TTLCache
 from app.config import get_settings
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import group_admin_memberships, user_accounts
+from app.observability import log_operation_timing
 from app.services.common import coerce_datetime
+
+logger = logging.getLogger("app.performance")
 
 
 @dataclass(slots=True)
@@ -63,15 +68,19 @@ class UsersService(SqlAlchemyRepository):
         )
 
     async def list_users(self, query: str | None = None, limit: int = 100) -> list[UserListItem]:
+        started_at = perf_counter()
         safe_limit = max(1, min(limit, 200))
         normalized_query = _normalize_query(query)
         cache_key = (normalized_query, safe_limit)
         cached = self._list_cache.get(cache_key)
         if cached is not None:
             return cached
-        users = await self._list_users_via_database(query=normalized_query, limit=safe_limit)
-        self._list_cache.set(cache_key, users)
-        return users
+        try:
+            users = await self._list_users_via_database(query=normalized_query, limit=safe_limit)
+            self._list_cache.set(cache_key, users)
+            return users
+        finally:
+            log_operation_timing(logger, operation="users.list", started_at=started_at, details={"limit": safe_limit})
 
     async def get_user_detail(self, user_account_id: int) -> UserDetail | None:
         cached = self._detail_cache.get(user_account_id)
@@ -85,23 +94,37 @@ class UsersService(SqlAlchemyRepository):
         return user
 
     async def _list_users_via_database(self, query: str | None = None, limit: int = 100) -> list[UserListItem]:
-        group_admin_count = (
-            select(func.count())
-            .select_from(group_admin_memberships)
-            .where(group_admin_memberships.c.auth_user_id == user_accounts.c.auth_user_id)
-            .scalar_subquery()
+        stmt = (
+            select(
+                user_accounts.c.id,
+                user_accounts.c.auth_user_id,
+                user_accounts.c.legacy_user_id,
+                user_accounts.c.username,
+                user_accounts.c.email,
+                user_accounts.c.display_name,
+                user_accounts.c.role,
+                user_accounts.c.last_login,
+                func.count(group_admin_memberships.c.gruppe_id).label("group_admin_group_count"),
+            )
+            .select_from(
+                user_accounts.outerjoin(
+                    group_admin_memberships,
+                    group_admin_memberships.c.auth_user_id == user_accounts.c.auth_user_id,
+                )
+            )
+            .group_by(
+                user_accounts.c.id,
+                user_accounts.c.auth_user_id,
+                user_accounts.c.legacy_user_id,
+                user_accounts.c.username,
+                user_accounts.c.email,
+                user_accounts.c.display_name,
+                user_accounts.c.role,
+                user_accounts.c.last_login,
+            )
+            .order_by(user_accounts.c.role.asc(), user_accounts.c.username.asc())
+            .limit(limit)
         )
-        stmt = select(
-            user_accounts.c.id,
-            user_accounts.c.auth_user_id,
-            user_accounts.c.legacy_user_id,
-            user_accounts.c.username,
-            user_accounts.c.email,
-            user_accounts.c.display_name,
-            user_accounts.c.role,
-            user_accounts.c.last_login,
-            group_admin_count.label("group_admin_group_count"),
-        ).order_by(user_accounts.c.role.asc(), user_accounts.c.username.asc()).limit(limit)
         if query and query.strip():
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(

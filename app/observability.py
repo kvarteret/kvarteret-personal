@@ -142,3 +142,23 @@ def log_admin_activity(
             },
         },
     )
+
+
+def log_operation_timing(
+    logger: logging.Logger,
+    *,
+    operation: str,
+    started_at: float,
+    details: dict[str, Any] | None = None,
+) -> None:
+    logger.info(
+        "operation timing",
+        extra={
+            "event": "app.operation.timing",
+            "event_data": {
+                "operation": operation,
+                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+                **(details or {}),
+            },
+        },
+    )

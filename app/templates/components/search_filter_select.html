@@ -1,0 +1,9 @@
+<label class="grid gap-1">
+  <span class="text-sm text-stone-500">{{ label }}</span>
+  <select class="app-select min-h-48" multiple name="{{ field }}">
+    {% for option in options %}
+      {% set option_id = option|attr(value_attr) %}
+      <option value="{{ option_id }}" {% if option_id in selected_ids %}selected{% endif %}>{{ option|attr(label_attr) }}</option>
+    {% endfor %}
+  </select>
+</label>

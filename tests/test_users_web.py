@@ -62,10 +62,10 @@ def test_users_pages_render_for_admins() -> None:
 
     assert list_response.status_code == 200
     assert "Sample Admin" in list_response.text
-    assert "Search by username, email, or display name" in list_response.text
+    assert "Filtrer på brukernavn, e-post eller navn" in list_response.text
     assert detail_response.status_code == 200
-    assert "Group-admin scope" in detail_response.text
-    assert "Group 2" in detail_response.text
+    assert "Gruppeadmin-omfang" in detail_response.text
+    assert "2 gruppeadministrator-tilganger" in detail_response.text
 
 
 def test_users_pages_forbid_non_admins() -> None:

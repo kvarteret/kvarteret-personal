@@ -48,8 +48,10 @@ def test_search_page_renders_with_fake_services() -> None:
     client = TestClient(app)
 
     response = client.get("/search?include_groups=7")
+    options_response = client.get("/search/options/groups?field=include_groups&selected=7")
 
     assert response.status_code == 200
-    assert "Advanced search" in response.text
+    assert "Avansert søk" in response.text
     assert "Sample Person" in response.text
-    assert "Bar" in response.text
+    assert options_response.status_code == 200
+    assert "Bar" in options_response.text

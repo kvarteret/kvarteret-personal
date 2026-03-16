@@ -25,13 +25,13 @@
   </a>
 {% endfor %}
 
-{% if not people and offset == 0 %}
+{% if not people and not cursor %}
   <div class="py-10 text-center text-sm text-stone-600">
     Ingen personer matchet dette søket.
   </div>
 {% endif %}
 
-{% if next_offset is not none %}
+{% if next_cursor is not none %}
   <div
     class="py-4 text-center text-sm text-stone-500"
     hx-get="/people"
@@ -39,7 +39,7 @@
     hx-swap="outerHTML"
     hx-target="this"
     hx-trigger="revealed"
-    hx-vals='{"offset": {{ next_offset }}}'
+    hx-vals='{"cursor": "{{ next_cursor }}"}'
   >
     Laster flere personer...
   </div>

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -33,9 +33,9 @@ class FakeLoginService:
 
 class FakePeopleService:
     async def list_people(self, query: str | None = None, limit: int = 50) -> list[PersonListItem]:
-        return (await self.list_people_page(query=query, limit=limit, offset=0)).items
+        return (await self.list_people_page(query=query, limit=limit, cursor=None)).items
 
-    async def list_people_page(self, query: str | None = None, limit: int = 10, offset: int = 0) -> PersonListPage:
+    async def list_people_page(self, query: str | None = None, limit: int = 10, cursor: str | None = None) -> PersonListPage:
         return PersonListPage(
             items=[
                 PersonListItem(
@@ -45,17 +45,24 @@ class FakePeopleService:
                     full_name="Sample Person",
                     email="person.one@example.test",
                     phone="00000000",
-                    birth_date=date(1815, 12, 10),
-                    created_at=datetime.now(UTC),
                     photo_url=None,
                 )
             ],
             limit=limit,
-            offset=offset,
-            next_offset=None,
+            cursor=cursor,
+            next_cursor=None,
         )
 
-    async def get_person_detail(self, person_id: int):
+    async def get_person_detail_shell(self, person_id: int):
+        return None
+
+    async def get_person_history(self, person_id: int, limit: int = 12):
+        return []
+
+    async def get_person_documents(self, person_id: int):
+        return []
+
+    async def get_person_relations(self, person_id: int):
         return None
 
 
@@ -87,6 +94,6 @@ def test_login_sets_cookie_and_protected_page_renders() -> None:
     people_response = client.get("/people")
 
     assert dashboard_response.status_code == 200
-    assert "Logged in as" in dashboard_response.text
+    assert "Registreringer" in dashboard_response.text
     assert people_response.status_code == 200
     assert "Sample Person" in people_response.text

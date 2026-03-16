@@ -23,12 +23,12 @@ PEOPLE_PAGE_SIZE = 20
 async def people_index(
     request: Request,
     q: str | None = None,
-    offset: int = 0,
+    cursor: str | None = None,
     current_user=Depends(require_authenticated_user),
     people_service: PeopleService = Depends(get_people_service),
 ):
     try:
-        page = await people_service.list_people_page(query=q, limit=PEOPLE_PAGE_SIZE, offset=offset)
+        page = await people_service.list_people_page(query=q, limit=PEOPLE_PAGE_SIZE, cursor=cursor)
     except NotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -40,8 +40,8 @@ async def people_index(
         "current_user": current_user,
         "people": page.items,
         "query": q or "",
-        "offset": max(0, offset),
-        "next_offset": page.next_offset,
+        "cursor": cursor,
+        "next_cursor": page.next_cursor,
     }
     if request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") is None:
         return templates.TemplateResponse(request, "components/people_results.html", context)
@@ -56,7 +56,7 @@ async def people_detail(
     people_service: PeopleService = Depends(get_people_service),
 ):
     try:
-        person = await people_service.get_person_detail(person_id)
+        person = await people_service.get_person_detail_shell(person_id)
     except NotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -80,6 +80,73 @@ async def people_detail(
             "section": "people",
             "current_user": current_user,
             "person": person,
+        },
+    )
+
+
+@router.get("/people/{person_id}/history")
+async def people_detail_history(
+    request: Request,
+    person_id: int,
+    current_user=Depends(require_authenticated_user),
+    people_service: PeopleService = Depends(get_people_service),
+):
+    person = await people_service.get_person_detail_shell(person_id)
+    if person is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found.")
+    memberships = await people_service.get_person_history(person_id)
+    return templates.TemplateResponse(
+        request,
+        "components/person_history_section.html",
+        {
+            "current_user": current_user,
+            "person": person,
+            "memberships": memberships,
+        },
+    )
+
+
+@router.get("/people/{person_id}/documents")
+async def people_detail_documents(
+    request: Request,
+    person_id: int,
+    current_user=Depends(require_authenticated_user),
+    people_service: PeopleService = Depends(get_people_service),
+):
+    person = await people_service.get_person_detail_shell(person_id)
+    if person is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found.")
+    documents = await people_service.get_person_documents(person_id)
+    return templates.TemplateResponse(
+        request,
+        "components/person_documents_section.html",
+        {
+            "current_user": current_user,
+            "person": person,
+            "documents": documents,
+        },
+    )
+
+
+@router.get("/people/{person_id}/relations")
+async def people_detail_relations(
+    request: Request,
+    person_id: int,
+    current_user=Depends(require_authenticated_user),
+    people_service: PeopleService = Depends(get_people_service),
+):
+    person = await people_service.get_person_detail_shell(person_id)
+    if person is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found.")
+    relations = await people_service.get_person_relations(person_id)
+    return templates.TemplateResponse(
+        request,
+        "components/person_relations_section.html",
+        {
+            "current_user": current_user,
+            "person": person,
+            "cards": relations.cards,
+            "next_of_kin": relations.next_of_kin,
         },
     )
 

@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import logging
+from time import perf_counter
 
 from sqlalchemy import func, select, update
 
 from app.db.session import get_session_factory
 from app.db.tables import grupper, historie, personal, personal_bilde, verv
+from app.observability import log_operation_timing
+
+logger = logging.getLogger("app.performance")
 
 
 @dataclass(slots=True)
@@ -70,7 +75,14 @@ class MobileCardRepository:
             return (await session.execute(stmt)).mappings().first()
 
     async def fetch_card_snapshot(self, *, person_id: int, semester_code: int) -> MobileCardSnapshot | None:
-        person_stmt = (
+        started_at = perf_counter()
+        points_stmt = (
+            select(func.coalesce(func.sum(verv.c.pingvinpoeng), 0))
+            .select_from(historie.outerjoin(verv, verv.c.id == historie.c.id_verv))
+            .where(historie.c.id_personal == person_id)
+            .scalar_subquery()
+        )
+        snapshot_stmt = (
             select(
                 personal.c.id,
                 personal.c.fornavn,
@@ -79,36 +91,35 @@ class MobileCardRepository:
                 personal.c.opprettet,
                 personal_bilde.c.sha1,
                 personal_bilde.c.filetype,
-            )
-            .select_from(personal.outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id))
-            .where(personal.c.id == person_id)
-            .limit(1)
-        )
-        points_stmt = (
-            select(func.coalesce(func.sum(verv.c.pingvinpoeng), 0).label("pingvin_points"))
-            .select_from(historie.outerjoin(verv, verv.c.id == historie.c.id_verv))
-            .where(historie.c.id_personal == person_id)
-        )
-        active_roles_stmt = (
-            select(
+                points_stmt.label("pingvin_points"),
                 verv.c.verv.label("verv_navn"),
                 grupper.c.navn.label("gruppe_navn"),
                 grupper.c.rabatt_trinn,
                 historie.c.signert_kontrakt,
             )
             .select_from(
-                historie.join(verv, verv.c.id == historie.c.id_verv).join(grupper, grupper.c.id == historie.c.id_gruppe)
+                personal.outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id)
+                .outerjoin(
+                    historie,
+                    (historie.c.id_personal == personal.c.id) & (historie.c.semester == semester_code),
+                )
+                .outerjoin(verv, verv.c.id == historie.c.id_verv)
+                .outerjoin(grupper, grupper.c.id == historie.c.id_gruppe)
             )
-            .where(historie.c.id_personal == person_id)
-            .where(historie.c.semester == semester_code)
-            .order_by(grupper.c.navn.asc(), verv.c.verv.asc())
+            .where(personal.c.id == person_id)
+            .order_by(grupper.c.navn.asc().nullslast(), verv.c.verv.asc().nullslast())
         )
         async with get_session_factory()() as session:
-            person_row = (await session.execute(person_stmt)).mappings().first()
-            if person_row is None:
+            rows = list((await session.execute(snapshot_stmt)).mappings().all())
+            log_operation_timing(
+                logger,
+                operation="mobile_card.snapshot",
+                started_at=started_at,
+                details={"person_id": person_id, "semester_code": semester_code},
+            )
+            if not rows:
                 return None
-            pingvin_points = int((await session.execute(points_stmt)).scalar_one() or 0)
-            active_role_rows = (await session.execute(active_roles_stmt)).mappings().all()
+            person_row = rows[0]
 
         photo_path = None
         if person_row["sha1"] and person_row["filetype"]:
@@ -121,7 +132,7 @@ class MobileCardRepository:
             birth_date=person_row["fodselsdato"],
             created_at=person_row["opprettet"],
             photo_path=photo_path,
-            pingvin_points=pingvin_points,
+            pingvin_points=int(person_row["pingvin_points"] or 0),
             active_roles=[
                 MobileCardRoleSnapshot(
                     name=row["verv_navn"],
@@ -129,6 +140,7 @@ class MobileCardRepository:
                     discount_level=row["rabatt_trinn"],
                     signed_contract=row["signert_kontrakt"],
                 )
-                for row in active_role_rows
+                for row in rows
+                if row["verv_navn"] is not None and row["gruppe_navn"] is not None
             ],
         )
