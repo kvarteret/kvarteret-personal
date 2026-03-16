@@ -71,6 +71,6 @@ def test_registration_pages_render() -> None:
     public_response = client.get("/register/token-123")
 
     assert admin_response.status_code == 200
-    assert "Pending registrations" in admin_response.text
+    assert "Ventende registreringer" in admin_response.text
     assert public_response.status_code == 200
-    assert "Complete your details" in public_response.text
+    assert "Fullfør dine detaljer" in public_response.text

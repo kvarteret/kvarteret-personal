@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Protocol
 from uuid import UUID
 
@@ -20,6 +22,9 @@ from app.db.tables import (
     user_accounts,
     web_sessions,
 )
+from app.observability import log_operation_timing
+
+logger = logging.getLogger("app.performance")
 
 
 class AuthRepositoryProtocol(Protocol):
@@ -257,6 +262,7 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
         )
 
     async def load_authenticated_user_for_session(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None:
+        started_at = perf_counter()
         stmt = (
             select(
                 web_sessions.c.session_id,
@@ -272,24 +278,27 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
             .where(web_sessions.c.session_id == session_id, web_sessions.c.expires_at > func.current_timestamp())
             .limit(1)
         )
-        row = await self.fetch_first_mapping(stmt)
-        if not row or row["user_account_id"] is None:
-            return None
-        web_session = WebSession(
-            session_id=row["session_id"],
-            auth_user_id=row["auth_user_id"],
-            user_account_id=row["user_account_id"],
-            expires_at=row["expires_at"],
-        )
-        user = AuthenticatedUser(
-            auth_user_id=row["auth_user_id"],
-            user_account_id=row["user_account_id"],
-            username=row["username"],
-            email=row["email"],
-            display_name=row["display_name"],
-            role=UserRole(row["role"]),
-        )
-        return web_session, user
+        try:
+            row = await self.fetch_first_mapping(stmt)
+            if not row or row["user_account_id"] is None:
+                return None
+            web_session = WebSession(
+                session_id=row["session_id"],
+                auth_user_id=row["auth_user_id"],
+                user_account_id=row["user_account_id"],
+                expires_at=row["expires_at"],
+            )
+            user = AuthenticatedUser(
+                auth_user_id=row["auth_user_id"],
+                user_account_id=row["user_account_id"],
+                username=row["username"],
+                email=row["email"],
+                display_name=row["display_name"],
+                role=UserRole(row["role"]),
+            )
+            return web_session, user
+        finally:
+            log_operation_timing(logger, operation="auth.session.load", started_at=started_at)
 
     async def delete_session(self, session_id: str) -> None:
         await self.execute(delete(web_sessions).where(web_sessions.c.session_id == session_id))

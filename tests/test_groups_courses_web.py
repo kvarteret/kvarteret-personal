@@ -107,10 +107,10 @@ def test_groups_and_courses_pages_render() -> None:
     assert groups_response.status_code == 200
     assert "Bar group" in groups_response.text
     assert group_detail_response.status_code == 200
-    assert "Recent membership history" in group_detail_response.text
+    assert "Siste gruppehistorikk" in group_detail_response.text
     assert semester_transfer_response.status_code == 200
-    assert "Copy members from Spring 2026 into Fall 2026" in semester_transfer_response.text
+    assert "Kopier medlemmer fra Spring 2026 til" in semester_transfer_response.text
     assert courses_response.status_code == 200
     assert "Fire safety" in courses_response.text
     assert course_detail_response.status_code == 200
-    assert "Recent completions" in course_detail_response.text
+    assert "Siste fullføringer" in course_detail_response.text

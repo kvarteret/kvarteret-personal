@@ -1,0 +1,20 @@
+<section class="app-panel">
+  <div class="mb-5 flex items-center justify-between gap-3">
+    <h2 class="text-2xl font-medium tracking-tight text-stone-900">Historikk</h2>
+    <span class="app-badge">{{ memberships|length }} rader</span>
+  </div>
+  <div class="grid gap-0">
+    {% for membership in memberships %}
+      <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-3 md:items-center">
+        <div>
+          <div class="text-lg font-medium tracking-tight text-stone-900">{{ membership.group_name }}</div>
+          <div class="text-sm text-stone-500">{{ membership.role_name or "Ingen rolle" }}</div>
+        </div>
+        <div class="text-sm text-stone-700">{{ membership.semester_label }}</div>
+        <div class="text-sm text-stone-700">{% if membership.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</div>
+      </div>
+    {% else %}
+      <p class="text-sm text-stone-600">Ingen medlemshistorikk funnet.</p>
+    {% endfor %}
+  </div>
+</section>

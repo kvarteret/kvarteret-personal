@@ -33,8 +33,6 @@ class PersonListItem:
     full_name: str
     email: str | None
     phone: str | None
-    birth_date: date | None
-    created_at: datetime
     photo_url: str | None
     pingvin_points: int = 0
     last_semester_code: int | None = None
@@ -45,8 +43,8 @@ class PersonListItem:
 class PersonListPage:
     items: list[PersonListItem]
     limit: int
-    offset: int
-    next_offset: int | None
+    cursor: str | None
+    next_cursor: str | None
 
 
 @dataclass(slots=True)
@@ -86,7 +84,7 @@ class MembershipItem:
 
 
 @dataclass(slots=True)
-class PersonDetail:
+class PersonDetailShell:
     person_id: int
     first_name: str | None
     last_name: str
@@ -100,10 +98,12 @@ class PersonDetail:
     postal_code: str | None
     employment_status: int | None
     photo_url: str | None
-    documents: list[DocumentItem]
+
+
+@dataclass(slots=True)
+class PersonRelations:
     next_of_kin: list[NextOfKinItem]
     cards: list[CardItem]
-    recent_memberships: list[MembershipItem]
 
 
 @dataclass(slots=True)
@@ -126,8 +126,11 @@ class DocumentUploadResult:
 
 class PeopleServiceProtocol(Protocol):
     async def list_people(self, query: str | None = None, limit: int = 50) -> list[PersonListItem]: ...
-    async def list_people_page(self, query: str | None = None, limit: int = 10, offset: int = 0) -> PersonListPage: ...
-    async def get_person_detail(self, person_id: int) -> PersonDetail | None: ...
+    async def list_people_page(self, query: str | None = None, limit: int = 10, cursor: str | None = None) -> PersonListPage: ...
+    async def get_person_detail_shell(self, person_id: int) -> PersonDetailShell | None: ...
+    async def get_person_history(self, person_id: int, limit: int = 12) -> list[MembershipItem]: ...
+    async def get_person_documents(self, person_id: int) -> list[DocumentItem]: ...
+    async def get_person_relations(self, person_id: int) -> PersonRelations: ...
     async def upload_photo(self, person_id: int, filename: str, content: bytes, content_type: str | None) -> PhotoUploadResult: ...
     async def delete_photo(self, person_id: int) -> None: ...
     async def upload_document(

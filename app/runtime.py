@@ -12,7 +12,6 @@ from app.auth.supabase_auth import SupabaseAuthGateway, SupabaseAuthGatewayProto
 from app.config import Settings, get_settings
 from app.db.session import dispose_database_runtime
 from app.errors import NotConfiguredError
-from app.postgrest import PostgrestClient
 from app.services.mobile_card_repository import MobileCardRepository
 from app.services.people_repository import PeopleRepository
 from app.services.registrations_repository import RegistrationsRepository
@@ -46,7 +45,6 @@ class ApplicationContainer:
     settings: Settings
     auth_repository: DatabaseAuthRepository
     session_store: SessionStore
-    postgrest_client: PostgrestClient | None
     storage_service: StorageService | None
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
@@ -60,8 +58,6 @@ class ApplicationContainer:
     semester_transfer_service: SemesterTransferService
 
     async def aclose(self) -> None:
-        if self.postgrest_client is not None:
-            await self.postgrest_client.aclose()
         await dispose_database_runtime()
 
 
@@ -69,7 +65,6 @@ def build_application_container(settings: Settings | None = None) -> Application
     resolved_settings = settings or get_settings()
     auth_repository = DatabaseAuthRepository()
     session_store = SessionStore(auth_repository, resolved_settings)
-    postgrest_client = _build_postgrest_client(resolved_settings)
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
 
@@ -77,7 +72,6 @@ def build_application_container(settings: Settings | None = None) -> Application
         settings=resolved_settings,
         auth_repository=auth_repository,
         session_store=session_store,
-        postgrest_client=postgrest_client,
         storage_service=storage_service,
         supabase_auth_gateway=supabase_auth_gateway,
         login_service=LoginService(
@@ -86,12 +80,12 @@ def build_application_container(settings: Settings | None = None) -> Application
             session_store=session_store,
         ),
         people_service=PeopleService(
-            repository=PeopleRepository(postgrest_client=postgrest_client),
+            repository=PeopleRepository(),
             storage_service=storage_service,
         ),
-        groups_service=GroupsService(postgrest_client=postgrest_client),
-        courses_service=CoursesService(postgrest_client=postgrest_client),
-        search_service=SearchService(DatabaseSearchRepository(postgrest_client=postgrest_client)),
+        groups_service=GroupsService(),
+        courses_service=CoursesService(),
+        search_service=SearchService(DatabaseSearchRepository()),
         users_service=UsersService(),
         mobile_card_service=MobileCardService(
             resolved_settings,
@@ -112,12 +106,6 @@ async def app_lifespan(app: FastAPI):
         yield
     finally:
         await app.state.container.aclose()
-
-
-def _build_postgrest_client(settings: Settings) -> PostgrestClient | None:
-    if not settings.supabase_url or not settings.supabase_secret_key:
-        return None
-    return PostgrestClient(settings)
 
 
 def _build_storage_service(settings: Settings) -> StorageService | None:
