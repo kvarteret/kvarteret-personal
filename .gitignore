@@ -15,4 +15,6 @@ htmlcov/
 *.pyo
 *.pyd
 .vercel
+.vercel_python_packages/
+supabase/.temp/
 .DS_Store

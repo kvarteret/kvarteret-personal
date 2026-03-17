@@ -14,13 +14,13 @@ help:
 
 install:
 	uv sync
-	npm install
+	bun install
 
 css:
-	npm run build:css
+	bun run build:css
 
 css-watch:
-	npm run watch:css
+	bun run watch:css
 
 run: css
 	uv run uvicorn app.main:create_app --factory --reload

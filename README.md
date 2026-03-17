@@ -6,7 +6,7 @@ The living execution plan for the rewrite is in [plans/fastapi-rewrite.md](plans
 
 ### Quick start
 
-Install Python dependencies with `uv sync`, install frontend tooling with `npm install`, then run:
+Install Python dependencies with `uv sync`, install frontend tooling with `bun install`, then run:
 
     make run
 
@@ -25,7 +25,7 @@ Useful targets:
 This repository includes a Vercel entrypoint at `api/index.py` and a checked-in
 `vercel.json`. The Vercel build runs:
 
-    npm run build:css
+    bun run build:css
     python scripts/prepare_vercel_static.py
 
 That copies `app/static/` into `public/static/` so `/static/...` assets can be

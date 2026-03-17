@@ -2,9 +2,10 @@
   "name": "kvarteret-personal",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "bun@1.3.6",
   "scripts": {
-    "build:css": "npx @tailwindcss/cli -i ./app/static/css/input.css -o ./app/static/css/output.css",
-    "watch:css": "npx @tailwindcss/cli -i ./app/static/css/input.css -o ./app/static/css/output.css --watch"
+    "build:css": "bunx @tailwindcss/cli -i ./app/static/css/input.css -o ./app/static/css/output.css",
+    "watch:css": "bunx @tailwindcss/cli -i ./app/static/css/input.css -o ./app/static/css/output.css --watch"
   },
   "repository": {
     "type": "git",
@@ -21,8 +22,5 @@
   "devDependencies": {
     "@tailwindcss/cli": "^4.2.1",
     "tailwindcss": "^4.2.1"
-  },
-  "dependencies": {
-    "vercel": "^50.32.5"
   }
 }
