@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
 
+from app.auth.roles import UserRole
 from app.auth.cookies import sign_session_id, unsign_session_id
 from app.auth.login_service import LoginError, LoginService
 from app.dependencies import get_current_user, get_login_service, get_session_store, get_settings
@@ -113,7 +114,7 @@ async def logout(
             await session_store.delete_session(session_id)
         except Exception:
             pass
-    if current_user is not None and current_user.role.value == "admin":
+    if current_user is not None and current_user.role == UserRole.ADMIN:
         log_admin_activity(
             request=request,
             user=current_user,

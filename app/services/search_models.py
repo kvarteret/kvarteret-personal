@@ -27,7 +27,7 @@ class SearchQuery:
 
 @dataclass(slots=True)
 class SearchResultItem:
-    person_id: int
+    volunteer_id: int
     first_name: str | None
     last_name: str
     full_name: str
@@ -40,4 +40,4 @@ class SearchResultItem:
 
 
 class SearchRepositoryProtocol(Protocol):
-    async def search_people(self, query: SearchQuery) -> list[SearchResultItem]: ...
+    async def search_volunteers(self, query: SearchQuery) -> list[SearchResultItem]: ...

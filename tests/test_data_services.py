@@ -6,22 +6,29 @@ import pytest
 
 from app.services.courses import CoursesService
 from app.services.groups import GroupsService
-from app.services.people import PeopleService
+from app.services.volunteers import VolunteersService
 
 
-class FakePeopleRepository:
+class FakeVolunteersRepository:
     def __init__(self, list_rows: list[dict]) -> None:
         self.list_rows = list_rows
         self.calls: list[dict[str, int | str | None]] = []
 
-    async def list_people_page(self, *, limit: int, after_last_name: str | None = None, after_first_name: str | None = None, after_person_id: int | None = None):
+    async def list_volunteers_page(
+        self,
+        *,
+        limit: int,
+        after_last_name: str | None = None,
+        after_first_name: str | None = None,
+        after_volunteer_id: int | None = None,
+    ):
         self.calls.append(
             {
-                "method": "list_people_page",
+                "method": "list_volunteers_page",
                 "limit": limit,
                 "after_last_name": after_last_name,
                 "after_first_name": after_first_name,
-                "after_person_id": after_person_id,
+                "after_volunteer_id": after_volunteer_id,
             }
         )
         return self.list_rows
@@ -80,8 +87,8 @@ async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_people_service_plain_listing_uses_repository() -> None:
-    repository = FakePeopleRepository(
+async def test_volunteers_service_plain_listing_uses_repository() -> None:
+    repository = FakeVolunteersRepository(
         [
             {
                 "id": 10016,
@@ -98,25 +105,25 @@ async def test_people_service_plain_listing_uses_repository() -> None:
             }
         ]
     )
-    service = PeopleService(repository=repository)
+    service = VolunteersService(repository=repository)
 
-    rows = await service.list_people_page(query=None, limit=10, cursor=None)
+    rows = await service.list_volunteers_page(query=None, limit=10, cursor=None)
 
     assert rows.items[0].full_name == "Martin Kleiven"
     assert repository.calls == [
         {
-            "method": "list_people_page",
+            "method": "list_volunteers_page",
             "limit": 11,
             "after_last_name": None,
             "after_first_name": None,
-            "after_person_id": None,
+            "after_volunteer_id": None,
         }
     ]
 
 
 @pytest.mark.asyncio
-async def test_people_service_search_queries_use_ranked_database_path(monkeypatch) -> None:
-    service = PeopleService()
+async def test_volunteers_service_search_queries_use_ranked_database_path(monkeypatch) -> None:
+    service = VolunteersService()
 
     async def fake_search(normalized_query: str, limit: int, cursor: str | None):
         assert normalized_query == "martin kleiven"
@@ -124,8 +131,8 @@ async def test_people_service_search_queries_use_ranked_database_path(monkeypatc
         assert cursor is None
         return "sentinel"
 
-    monkeypatch.setattr(service, "_search_people_page", fake_search)
+    monkeypatch.setattr(service, "_search_volunteers_page", fake_search)
 
-    result = await service.list_people_page(query="  Martin   Kleiven ", limit=10, cursor=None)
+    result = await service.list_volunteers_page(query="  Martin   Kleiven ", limit=10, cursor=None)
 
     assert result == "sentinel"

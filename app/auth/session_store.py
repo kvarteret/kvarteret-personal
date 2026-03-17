@@ -69,6 +69,9 @@ class SessionStore:
         self._cache.pop(session_id)
         await self.repository.delete_session(session_id)
 
+    def invalidate_session_cache(self, session_id: str) -> None:
+        self._cache.pop(session_id)
+
 
 @dataclass(slots=True)
 class CachedSession:

@@ -7,14 +7,34 @@ from fastapi.testclient import TestClient
 from app.dependencies import get_courses_service, get_groups_service, get_semester_transfer_service
 from app.main import create_app
 from app.services.courses import CourseCompletionItem, CourseDetail, CourseListItem, RequiredGroupItem
-from app.services.groups import GroupDetail, GroupListItem, GroupMemberItem, GroupPositionItem
+from app.services.groups import (
+    GroupDetail,
+    GroupListItem,
+    GroupMemberCount,
+    GroupMemberItem,
+    GroupPositionItem,
+    GroupRoleDeleteBlockedError,
+    OrgSemesterDetailed,
+    GroupBreakdownItem,
+    SemesterGroup,
+    SemesterRetentionStats,
+    SemesterStats,
+)
 from app.services.semester_transfer import SemesterTransferCandidate, SemesterTransferPreview
 from tests.helpers import make_authenticated_user, override_authenticated_user
 
 
 class FakeGroupsService:
+    def __init__(self) -> None:
+        self.created_role = None
+        self.updated_role = None
+        self.deleted_role = None
+
     async def list_groups(self, query: str | None = None, limit: int = 100) -> list[GroupListItem]:
-        return [GroupListItem(7, "Bar", "Bar group", True, 20262, None, 2)]
+        return [
+            GroupListItem(7, "Bar", "Bar group", True, 20262, None, 2),
+            GroupListItem(8, "Arkiv", "Archive group", False, 20242, None, 1),
+        ]
 
     async def get_group_detail(self, group_id: int) -> GroupDetail | None:
         return GroupDetail(
@@ -27,19 +47,103 @@ class FakeGroupsService:
             parent_group_id=None,
             discount_step=2,
             created_at=datetime(2026, 3, 13, tzinfo=UTC),
-            positions=[GroupPositionItem(role_id=3, role_name="Shift lead", pingvin_points=4)],
+            positions=[
+                GroupPositionItem(
+                    role_id=3,
+                    role_name="Shift lead",
+                    pingvin_points=4,
+                    assignment_count=1,
+                    delete_blockers=["Vervet har medlemmer og kan ikke slettes."],
+                )
+            ],
             recent_members=[
                 GroupMemberItem(
                     history_id=9,
-                    person_id=12,
-                    person_name="Sample Person",
+                    volunteer_id=12,
+                    volunteer_name="Sample Person",
                     role_name="Shift lead",
                     semester_code=20262,
                     semester_label="Fall 2026",
                     contract_signed=True,
                 )
             ],
+            delete_blockers=[],
         )
+
+    async def create_group_role(self, group_id: int, *, role_name: str, pingvin_points: int) -> int | None:
+        self.created_role = (group_id, role_name, pingvin_points)
+        return 14
+
+    async def update_group_role(self, group_id: int, role_id: int, *, role_name: str, pingvin_points: int) -> bool:
+        self.updated_role = (group_id, role_id, role_name, pingvin_points)
+        return True
+
+    async def delete_group_role(self, group_id: int, role_id: int) -> bool:
+        self.deleted_role = (group_id, role_id)
+        return True
+
+    async def get_group_history_by_semester(self, group_id: int) -> list[SemesterGroup]:
+        return [
+            SemesterGroup(
+                semester_code=20262,
+                semester_label="Fall 2026",
+                members=[
+                    GroupMemberItem(
+                        history_id=9,
+                        volunteer_id=12,
+                        volunteer_name="Sample Person",
+                        role_name="Shift lead",
+                        semester_code=20262,
+                        semester_label="Fall 2026",
+                        contract_signed=True,
+                    )
+                ],
+            )
+        ]
+
+    async def get_group_semester_stats(self, group_id: int) -> list[SemesterStats]:
+        return [
+            SemesterStats(semester_code=20261, semester_label="Spring 2026", member_count=11),
+            SemesterStats(semester_code=20262, semester_label="Fall 2026", member_count=14),
+        ]
+
+    async def get_group_retention_stats(self, group_id: int) -> list[SemesterRetentionStats]:
+        return [
+            SemesterRetentionStats(
+                semester_code=20261,
+                semester_label="Spring 2026",
+                total_members=11,
+                retained_from_prev=7,
+                new_members=4,
+                retained_to_next=8,
+                churned=3,
+            ),
+            SemesterRetentionStats(
+                semester_code=20262,
+                semester_label="Fall 2026",
+                total_members=14,
+                retained_from_prev=8,
+                new_members=6,
+                retained_to_next=0,
+                churned=14,
+            ),
+        ]
+
+    async def get_org_stats_detailed(self) -> list[OrgSemesterDetailed]:
+        return [
+            OrgSemesterDetailed(
+                semester_code=20262,
+                semester_label="Fall 2026",
+                unique_members=120,
+                groups=[GroupBreakdownItem(group_name="Bar", member_count=14)],
+            )
+        ]
+
+    async def get_current_group_member_counts(self) -> list[GroupMemberCount]:
+        return [GroupMemberCount(group_id=7, group_name="Bar", member_count=14)]
+
+    async def get_org_retention_stats(self) -> list[SemesterRetentionStats]:
+        return await self.get_group_retention_stats(7)
 
 
 class FakeCoursesService:
@@ -56,12 +160,13 @@ class FakeCoursesService:
             recent_completions=[
                 CourseCompletionItem(
                     completion_id=11,
-                    person_id=12,
-                    person_name="Sample Person",
+                    volunteer_id=12,
+                    volunteer_name="Sample Person",
                     completed_semester_code=20262,
                     completed_semester_label="Fall 2026",
                 )
             ],
+            delete_blockers=[],
         )
 
 
@@ -76,8 +181,8 @@ class FakeSemesterTransferService:
             target_semester_label="Fall 2026",
             candidates=[
                 SemesterTransferCandidate(
-                    person_id=12,
-                    person_name="Sample Person",
+                    volunteer_id=12,
+                    volunteer_name="Sample Person",
                     role_id=3,
                     role_name="Shift lead",
                     contract_signed=False,
@@ -99,18 +204,102 @@ def test_groups_and_courses_pages_render() -> None:
     client = TestClient(app)
 
     groups_response = client.get("/groups")
+    group_new_response = client.get("/groups/new")
     group_detail_response = client.get("/groups/7")
+    group_stats_response = client.get("/groups/7/stats")
+    group_history_response = client.get("/groups/7/history")
     semester_transfer_response = client.get("/groups/7/semester-transfer")
     courses_response = client.get("/courses")
+    course_new_response = client.get("/courses/new")
     course_detail_response = client.get("/courses/4")
 
     assert groups_response.status_code == 200
+    assert "Active groups" in groups_response.text
+    assert "Inactive groups" in groups_response.text
+    assert 'href="/groups/new"' in groups_response.text
     assert "Bar group" in groups_response.text
+    assert "Archive group" in groups_response.text
+    assert group_new_response.status_code == 200
+    assert "Opprett gruppe" in group_new_response.text
+    assert "Tilbake til grupper" in group_new_response.text
     assert group_detail_response.status_code == 200
     assert "Siste gruppehistorikk" in group_detail_response.text
+    assert "Lagre gruppe" in group_detail_response.text
+    assert "Lagre verv" in group_detail_response.text
+    assert "Opprett verv" in group_detail_response.text
+    assert "Vervet har medlemmer og kan ikke slettes." in group_detail_response.text
+    assert "disabled" in group_detail_response.text
+    assert 'hx-get="/groups/7/stats"' in group_detail_response.text
+    assert 'hx-get="/groups/7/history"' in group_detail_response.text
+    assert group_stats_response.status_code == 200
+    assert "Medlemsutvikling" in group_stats_response.text
+    assert "Tilbakeholdelsesrate" in group_stats_response.text
+    assert group_history_response.status_code == 200
+    assert "Gruppehistorikk" in group_history_response.text
+    assert 'href="/volunteers/12"' in group_history_response.text
     assert semester_transfer_response.status_code == 200
     assert "Kopier medlemmer fra Spring 2026 til" in semester_transfer_response.text
     assert courses_response.status_code == 200
     assert "Fire safety" in courses_response.text
+    assert "Opprett kurs" in courses_response.text
+    assert 'href="/courses/new"' in courses_response.text
+    assert course_new_response.status_code == 200
+    assert "Opprett kurs" in course_new_response.text
+    assert "Tilbake til kurs" in course_new_response.text
     assert course_detail_response.status_code == 200
     assert "Siste fullføringer" in course_detail_response.text
+    assert "Lagre kurs" in course_detail_response.text
+
+
+def test_group_role_actions_redirect_and_call_service() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    groups_service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: groups_service
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/groups/7/roles",
+        data={"role_name": "Ny rolle", "pingvin_points": "5"},
+        follow_redirects=False,
+    )
+    update_response = client.post(
+        "/groups/7/roles/3?_method=PATCH",
+        data={"role_name": "Oppdatert rolle", "pingvin_points": "8"},
+        follow_redirects=False,
+    )
+    delete_response = client.post(
+        "/groups/7/roles/3?_method=DELETE",
+        follow_redirects=False,
+    )
+
+    assert create_response.status_code == 303
+    assert create_response.headers["location"] == "/groups/7"
+    assert groups_service.created_role == (7, "Ny rolle", 5)
+
+    assert update_response.status_code == 303
+    assert update_response.headers["location"] == "/groups/7"
+    assert groups_service.updated_role == (7, 3, "Oppdatert rolle", 8)
+
+    assert delete_response.status_code == 303
+    assert delete_response.headers["location"] == "/groups/7"
+    assert groups_service.deleted_role == (7, 3)
+
+
+def test_group_role_delete_returns_error_when_role_has_members() -> None:
+    class BlockedGroupsService(FakeGroupsService):
+        async def delete_group_role(self, group_id: int, role_id: int) -> bool:
+            raise GroupRoleDeleteBlockedError(["Vervet har medlemmer og kan ikke slettes."])
+
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_groups_service] = lambda: BlockedGroupsService()
+    client = TestClient(app)
+
+    delete_response = client.post(
+        "/groups/7/roles/3?_method=DELETE",
+        follow_redirects=False,
+    )
+
+    assert delete_response.status_code == 400
+    assert delete_response.json() == {"detail": "Vervet har medlemmer og kan ikke slettes."}

@@ -1,0 +1,46 @@
+{% macro page_header(label, heading, description=None) -%}
+  <header class="grid justify-items-center gap-3 pt-3 text-center">
+    {% if label %}
+      <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">{{ label }}</p>
+    {% endif %}
+    <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ heading }}</h1>
+    {% if description %}
+      <p class="max-w-4xl text-base leading-7 text-stone-700">{{ description }}</p>
+    {% endif %}
+    {% if caller is defined %}
+      <div class="flex flex-wrap justify-center gap-3">{{ caller() }}</div>
+    {% endif %}
+  </header>
+{%- endmacro %}
+
+{% macro history_back_button(fallback_url, label) -%}
+  <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '{{ fallback_url }}'; }" type="button">{{ label }}</button>
+{%- endmacro %}
+
+{% macro form_field(label, classes='') -%}
+  <label class="grid gap-1 {{ classes }}">
+    <span class="text-sm text-stone-500">{{ label }}</span>
+    {{ caller() }}
+  </label>
+{%- endmacro %}
+
+{% macro flash_notice(message, tone='neutral', classes='mb-5') -%}
+  {% if message %}
+    {% if tone == 'error' %}
+      {% set tone_classes = 'bg-red-50 text-red-700' %}
+    {% elif tone == 'success' %}
+      {% set tone_classes = 'bg-emerald-50 text-emerald-700' %}
+    {% else %}
+      {% set tone_classes = 'bg-stone-100 text-stone-700' %}
+    {% endif %}
+    <div class="{{ classes }} rounded-2xl px-4 py-3 text-sm {{ tone_classes }}">{{ message }}</div>
+  {% endif %}
+{%- endmacro %}
+
+{% macro blocker_notice(blockers, classes='mt-4') -%}
+  {% if blockers %}
+    <div class="{{ classes }} rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
+      {{ blockers | join(" ") }}
+    </div>
+  {% endif %}
+{%- endmacro %}

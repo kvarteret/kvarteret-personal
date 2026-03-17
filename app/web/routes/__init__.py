@@ -1,18 +1,34 @@
 from fastapi import APIRouter
 
+from app.web.routes.admin_account_actions import router as admin_account_actions_router
+from app.web.routes.admin_account_pages import router as admin_account_pages_router
 from app.web.routes.auth import router as auth_router
-from app.web.routes.courses import router as courses_router
-from app.web.routes.groups import router as groups_router
-from app.web.routes.people import router as people_router
-from app.web.routes.registrations import router as registrations_router
-from app.web.routes.search import router as search_router
-from app.web.routes.users import router as users_router
+from app.web.routes.courses_actions import router as course_actions_router
+from app.web.routes.courses_pages import router as course_pages_router
+from app.web.routes.feedback import router as feedback_router
+from app.web.routes.groups_actions import router as group_actions_router
+from app.web.routes.groups_pages import router as group_pages_router
+from app.web.routes.volunteer_actions import router as volunteer_actions_router
+from app.web.routes.volunteer_application_actions import router as volunteer_application_actions_router
+from app.web.routes.volunteer_application_pages import router as volunteer_application_pages_router
+from app.web.routes.volunteer_fragments import router as volunteer_fragments_router
+from app.web.routes.volunteer_pages import router as volunteer_pages_router
+from app.web.routes.volunteer_search_fragments import router as volunteer_search_fragments_router
+from app.web.routes.volunteer_search_pages import router as volunteer_search_pages_router
 
 web_router = APIRouter()
 web_router.include_router(auth_router)
-web_router.include_router(people_router)
-web_router.include_router(groups_router)
-web_router.include_router(courses_router)
-web_router.include_router(search_router)
-web_router.include_router(users_router)
-web_router.include_router(registrations_router)
+web_router.include_router(feedback_router)
+web_router.include_router(volunteer_search_fragments_router)
+web_router.include_router(volunteer_search_pages_router)
+web_router.include_router(volunteer_fragments_router)
+web_router.include_router(volunteer_actions_router)
+web_router.include_router(volunteer_pages_router)
+web_router.include_router(group_pages_router)
+web_router.include_router(group_actions_router)
+web_router.include_router(course_pages_router)
+web_router.include_router(course_actions_router)
+web_router.include_router(admin_account_pages_router)
+web_router.include_router(admin_account_actions_router)
+web_router.include_router(volunteer_application_pages_router)
+web_router.include_router(volunteer_application_actions_router)

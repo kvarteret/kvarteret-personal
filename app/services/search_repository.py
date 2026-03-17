@@ -11,8 +11,8 @@ from app.services.search_models import SearchFilterList, SearchQuery, SearchResu
 from app.services.semester import format_semester_code
 
 
-class DatabaseSearchRepository(SqlAlchemyRepository):
-    async def search_people(self, query: SearchQuery) -> list[SearchResultItem]:
+class VolunteerSearchRepository(SqlAlchemyRepository):
+    async def search_volunteers(self, query: SearchQuery) -> list[SearchResultItem]:
         points = _pingvin_points_subquery()
         last_semesters = _last_semester_subquery()
         stmt = (
@@ -38,7 +38,7 @@ class DatabaseSearchRepository(SqlAlchemyRepository):
         rows = await self.fetch_all_mappings(stmt)
         return [
             SearchResultItem(
-                person_id=row["id"],
+                volunteer_id=row["id"],
                 first_name=row.get("fornavn"),
                 last_name=row["etternavn"],
                 full_name=build_full_name(row.get("fornavn"), row["etternavn"]),
@@ -91,7 +91,7 @@ def _membership_filter(
     return _related_filter(
         filter_list,
         include_mode=include_mode,
-        build_exists=lambda filter_id: _membership_exists(filter_id, semester_code),
+        build_exists=lambda filter_id: _role_assignment_exists(filter_id, semester_code),
     )
 
 
@@ -116,7 +116,7 @@ def _related_filter(filter_list: SearchFilterList | None, *, include_mode: bool,
     return match_clause if include_mode else not_(match_clause)
 
 
-def _membership_exists(group_id: int, semester_code: int | None):
+def _role_assignment_exists(group_id: int, semester_code: int | None):
     stmt = (
         select(1)
         .select_from(historie)

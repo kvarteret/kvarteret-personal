@@ -86,6 +86,8 @@ nytt_personal = Table(
     Column("postnummerid", Text),
     Column("telefon", Text),
     Column("internkortaccesstoken", Text),
+    Column("photo_sha1", Text),
+    Column("photo_filetype", Text),
     Column("opprettet", DateTime(timezone=True), nullable=False),
 )
 

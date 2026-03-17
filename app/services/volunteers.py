@@ -1,0 +1,513 @@
+from __future__ import annotations
+
+import base64
+import json
+import logging
+import mimetypes
+from asyncio import to_thread
+from pathlib import Path
+from secrets import token_hex
+from time import perf_counter
+from typing import Any
+
+from app.cache import TTLCache
+from app.config import get_settings
+from app.errors import NotConfiguredError
+from app.media_tokens import build_document_media_url, build_photo_media_url
+from app.observability import log_operation_timing
+from app.services.common import normalize_search_query
+from app.services.volunteer_mappers import (
+    build_document_storage_path,
+    map_document_item,
+    map_group_option,
+    map_role_assignment_item,
+    map_volunteer_detail,
+    map_volunteer_list_item,
+    map_relations,
+    map_role_option,
+)
+from app.services.volunteer_models import (
+    AssignmentRoleOption,
+    DuplicateRoleAssignmentError,
+    DuplicateDocumentError,
+    DocumentItem,
+    DocumentNotFoundError,
+    GroupOption,
+    InvalidRoleAssignmentError,
+    RoleAssignmentItem,
+    RoleAssignmentNotFoundError,
+    UnsupportedUploadError,
+    VolunteerDetail,
+    VolunteerDocumentUploadResult,
+    VolunteerListItem,
+    VolunteerListPage,
+    VolunteerNotFoundError,
+    VolunteerPhotoUploadResult,
+    VolunteerRelations,
+    VolunteersServiceError,
+    VolunteersServiceProtocol,
+)
+from app.services.volunteer_options import normalize_gender_code
+from app.services.volunteers_repository import VolunteersRepository
+from app.services.semester import format_semester_code
+from app.services.storage import StorageService
+
+logger = logging.getLogger("app.performance")
+
+
+class VolunteersService:
+    def __init__(
+        self,
+        repository: VolunteersRepository | None = None,
+        storage_service: StorageService | None = None,
+    ) -> None:
+        self.repository = repository or VolunteersRepository()
+        self.storage_service = storage_service
+        self.detail_cache_ttl_seconds = get_settings().volunteer_detail_cache_ttl_seconds
+        self._shell_cache: TTLCache[int, VolunteerDetail] = TTLCache(
+            ttl_seconds=self.detail_cache_ttl_seconds,
+            max_entries=2048,
+        )
+        self._history_cache: TTLCache[int, list[RoleAssignmentItem]] = TTLCache(
+            ttl_seconds=self.detail_cache_ttl_seconds,
+            max_entries=2048,
+        )
+        self._documents_cache: TTLCache[int, list[DocumentItem]] = TTLCache(
+            ttl_seconds=self.detail_cache_ttl_seconds,
+            max_entries=2048,
+        )
+        self._relations_cache: TTLCache[int, VolunteerRelations] = TTLCache(
+            ttl_seconds=self.detail_cache_ttl_seconds,
+            max_entries=2048,
+        )
+
+    async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
+        return (await self.list_volunteers_page(query=query, limit=limit, cursor=None)).items
+
+    async def list_volunteers_page(
+        self,
+        query: str | None = None,
+        limit: int = 10,
+        cursor: str | None = None,
+    ) -> VolunteerListPage:
+        started_at = perf_counter()
+        safe_limit = max(1, min(limit, 100))
+        normalized_query = normalize_search_query(query)
+        try:
+            if normalized_query:
+                page = await self._search_volunteers_page(normalized_query, safe_limit, cursor)
+            else:
+                decoded = _decode_cursor(cursor)
+                rows = await self.repository.list_volunteers_page(
+                    limit=safe_limit + 1,
+                    after_last_name=decoded.get("last_name") if decoded.get("mode") == "browse" else None,
+                    after_first_name=decoded.get("first_name") if decoded.get("mode") == "browse" else None,
+                    after_volunteer_id=decoded.get("volunteer_id") if decoded.get("mode") == "browse" else None,
+                )
+                has_more = len(rows) > safe_limit
+                visible_rows = rows[:safe_limit]
+                page = VolunteerListPage(
+                    items=[map_volunteer_list_item(row) for row in visible_rows],
+                    limit=safe_limit,
+                    cursor=cursor,
+                    next_cursor=_encode_browse_cursor(visible_rows[-1]) if has_more and visible_rows else None,
+                )
+            return page
+        finally:
+            log_operation_timing(
+                logger,
+                operation="volunteers.search" if normalized_query else "volunteers.list",
+                started_at=started_at,
+                details={"query": normalized_query or "", "limit": safe_limit},
+            )
+
+    async def get_volunteer_detail(self, volunteer_id: int) -> VolunteerDetail | None:
+        started_at = perf_counter()
+        cached = self._shell_cache.get(volunteer_id)
+        if cached is not None:
+            return cached
+        try:
+            row = await self.repository.fetch_volunteer_shell_row(volunteer_id)
+            if row is None:
+                self._shell_cache.pop(volunteer_id)
+                return None
+            volunteer = map_volunteer_detail(row)
+            self._shell_cache.set(volunteer_id, volunteer)
+            return volunteer
+        finally:
+            log_operation_timing(
+                logger,
+                operation="volunteers.detail.shell",
+                started_at=started_at,
+                details={"volunteer_id": volunteer_id},
+            )
+
+    async def list_role_assignments(self, volunteer_id: int, limit: int = 12) -> list[RoleAssignmentItem]:
+        started_at = perf_counter()
+        cached = self._history_cache.get(volunteer_id)
+        if cached is not None:
+            return cached
+        try:
+            rows = await self.repository.fetch_volunteer_role_assignment_rows(volunteer_id, limit=limit)
+            items = [map_role_assignment_item(row) for row in rows]
+            self._history_cache.set(volunteer_id, items)
+            return items
+        finally:
+            log_operation_timing(
+                logger,
+                operation="volunteers.detail.role_assignments",
+                started_at=started_at,
+                details={"volunteer_id": volunteer_id},
+            )
+
+    async def list_volunteer_documents(self, volunteer_id: int) -> list[DocumentItem]:
+        started_at = perf_counter()
+        cached = self._documents_cache.get(volunteer_id)
+        if cached is not None:
+            return cached
+        try:
+            rows = await self.repository.fetch_volunteer_document_rows(volunteer_id)
+            items = [map_document_item(volunteer_id, row) for row in rows]
+            self._documents_cache.set(volunteer_id, items)
+            return items
+        finally:
+            log_operation_timing(
+                logger,
+                operation="volunteers.detail.documents",
+                started_at=started_at,
+                details={"volunteer_id": volunteer_id},
+            )
+
+    async def get_volunteer_relations(self, volunteer_id: int) -> VolunteerRelations:
+        started_at = perf_counter()
+        cached = self._relations_cache.get(volunteer_id)
+        if cached is not None:
+            return cached
+        try:
+            rows = await self.repository.fetch_volunteer_relation_rows(volunteer_id)
+            relations = map_relations(rows)
+            self._relations_cache.set(volunteer_id, relations)
+            return relations
+        finally:
+            log_operation_timing(
+                logger,
+                operation="volunteers.detail.relations",
+                started_at=started_at,
+                details={"volunteer_id": volunteer_id},
+            )
+
+    async def list_assignment_groups(self) -> list[GroupOption]:
+        rows = await self.repository.list_assignment_group_rows()
+        return [map_group_option(row) for row in rows]
+
+    async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
+        rows = await self.repository.list_assignment_role_rows(group_id)
+        return [map_role_option(row) for row in rows]
+
+    async def update_volunteer_profile(
+        self,
+        *,
+        volunteer_id: int,
+        first_name: str | None,
+        last_name: str,
+        email: str | None,
+        phone: str | None,
+        birth_date,
+        gender_code: str,
+        address: str | None,
+        postal_code: str | None,
+        employment_status: int | None,
+    ) -> VolunteerDetail:
+        if not await self.repository.volunteer_exists(volunteer_id):
+            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
+        await self.repository.update_volunteer_profile(
+            volunteer_id=volunteer_id,
+            first_name=first_name,
+            last_name=last_name.strip(),
+            email=_normalize_optional_text(email),
+            phone=_normalize_optional_text(phone),
+            birth_date=birth_date,
+            gender_code=normalize_gender_code(gender_code),
+            address=_normalize_optional_text(address),
+            postal_code=_normalize_optional_text(postal_code),
+            employment_status=employment_status,
+        )
+        self._invalidate_volunteer_cache(volunteer_id)
+        volunteer = await self.get_volunteer_detail(volunteer_id)
+        if volunteer is None:
+            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
+        return volunteer
+
+    async def add_role_assignment(
+        self,
+        *,
+        volunteer_id: int,
+        group_id: int,
+        role_id: int,
+        year: int,
+        term: int,
+        contract_signed: bool,
+    ) -> None:
+        if year < 1900 or year > 3000:
+            raise InvalidRoleAssignmentError("Year must be between 1900 and 3000.")
+        if term not in {1, 2}:
+            raise InvalidRoleAssignmentError("Semester must be Vår or Høst.")
+        if not await self.repository.volunteer_exists(volunteer_id):
+            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
+        if not await self.repository.role_belongs_to_group(group_id=group_id, role_id=role_id):
+            raise InvalidRoleAssignmentError("Selected verv does not belong to the selected group.")
+        semester_code = year * 10 + term
+        if not format_semester_code(semester_code):
+            raise InvalidRoleAssignmentError("Unsupported semester code.")
+        if await self.repository.role_assignment_exists(
+            volunteer_id=volunteer_id,
+            group_id=group_id,
+            role_id=role_id,
+            semester_code=semester_code,
+        ):
+            raise DuplicateRoleAssignmentError("This verv is already registered for the selected semester.")
+        await self.repository.create_role_assignment(
+            volunteer_id=volunteer_id,
+            group_id=group_id,
+            role_id=role_id,
+            semester_code=semester_code,
+            contract_signed=contract_signed,
+        )
+        self._invalidate_volunteer_cache(volunteer_id)
+
+    async def delete_role_assignment_for_volunteer(self, volunteer_id: int, history_id: int) -> None:
+        row = await self.repository.fetch_role_assignment_record(history_id)
+        if not row or row["id_personal"] != volunteer_id:
+            raise RoleAssignmentNotFoundError(f"Role assignment {history_id} was not found.")
+        await self.repository.delete_role_assignment(history_id)
+        self._invalidate_volunteer_cache(volunteer_id)
+
+    async def upload_photo(
+        self,
+        volunteer_id: int,
+        filename: str,
+        content: bytes,
+        content_type: str | None,
+    ) -> VolunteerPhotoUploadResult:
+        safe_filename = _sanitize_filename(filename)
+        extension = _normalize_extension(safe_filename)
+        if extension not in {"jpg", "jpeg", "png", "webp"}:
+            raise UnsupportedUploadError("Photos must be jpg, jpeg, png, or webp.")
+        if not await self.repository.volunteer_exists(volunteer_id):
+            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
+
+        existing = await self.repository.fetch_photo_record(volunteer_id)
+        filename_hash = existing["sha1"] if existing else token_hex(20)
+        storage_path = f"{filename_hash}.{extension}"
+        old_storage_path = (
+            f"{existing['sha1']}.{existing['filetype']}" if existing and existing.get("filetype") else None
+        )
+
+        storage_service = self._require_storage_service()
+        await to_thread(storage_service.upload_photo, storage_path, content, _resolve_content_type(safe_filename, content_type))
+        try:
+            await self.repository.save_photo_record(
+                volunteer_id=volunteer_id,
+                filename_hash=filename_hash,
+                extension=extension,
+                existing=bool(existing),
+            )
+        except Exception:
+            await _best_effort_remove(lambda: storage_service.remove_photo(storage_path))
+            raise
+
+        if old_storage_path and old_storage_path != storage_path:
+            await _best_effort_remove(lambda: storage_service.remove_photo(old_storage_path))
+        self._invalidate_volunteer_cache(volunteer_id)
+
+        return VolunteerPhotoUploadResult(
+            volunteer_id=volunteer_id,
+            photo_url=build_photo_media_url(storage_path),
+            storage_path=storage_path,
+        )
+
+    async def delete_photo(self, volunteer_id: int) -> None:
+        row = await self.repository.fetch_photo_record(volunteer_id)
+        if not row:
+            raise VolunteerNotFoundError(f"Photo for volunteer {volunteer_id} was not found.")
+        await self.repository.delete_photo_record(volunteer_id)
+        storage_service = self._require_storage_service()
+        await _best_effort_remove(lambda: storage_service.remove_photo(f"{row['sha1']}.{row['filetype']}"))
+        self._invalidate_volunteer_cache(volunteer_id)
+
+    async def upload_document(
+        self,
+        volunteer_id: int,
+        filename: str,
+        content: bytes,
+        content_type: str | None,
+        group_id: int | None = None,
+    ) -> VolunteerDocumentUploadResult:
+        safe_filename = _sanitize_filename(filename)
+        extension = _normalize_extension(safe_filename)
+        if extension not in {"pdf", "jpg", "jpeg", "png"}:
+            raise UnsupportedUploadError("Documents must be pdf, jpg, jpeg, or png.")
+        if not await self.repository.volunteer_exists(volunteer_id):
+            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
+        if await self.repository.document_exists(volunteer_id=volunteer_id, filename=safe_filename):
+            raise DuplicateDocumentError(f"Document {safe_filename} already exists for volunteer {volunteer_id}.")
+
+        storage_path = build_document_storage_path(volunteer_id, safe_filename)
+        storage_service = self._require_storage_service()
+        await to_thread(
+            storage_service.upload_document,
+            storage_path,
+            content,
+            _resolve_content_type(safe_filename, content_type),
+        )
+        try:
+            row = await self.repository.create_document_record(
+                volunteer_id=volunteer_id,
+                group_id=group_id,
+                filename=safe_filename,
+                extension=extension,
+            )
+        except Exception:
+            await _best_effort_remove(lambda: storage_service.remove_document(storage_path))
+            raise
+        self._invalidate_volunteer_cache(volunteer_id)
+
+        return VolunteerDocumentUploadResult(
+            document_id=row["id"],
+            volunteer_id=row["id_personal"],
+            filename=row["filename"],
+            filetype=row["filetype"],
+            group_id=row["gruppekobling"],
+            storage_path=storage_path,
+            download_url=build_document_media_url(storage_path),
+        )
+
+    async def delete_document(self, document_id: int) -> None:
+        row = await self.repository.fetch_document_record(document_id)
+        if not row:
+            raise DocumentNotFoundError(f"Document {document_id} was not found.")
+        await self._delete_document_row(row)
+
+    async def delete_document_for_volunteer(self, volunteer_id: int, document_id: int) -> None:
+        row = await self.repository.fetch_document_record(document_id)
+        if not row or row["id_personal"] != volunteer_id:
+            raise DocumentNotFoundError(f"Document {document_id} was not found.")
+        await self._delete_document_row(row)
+
+    def _invalidate_volunteer_cache(self, volunteer_id: int) -> None:
+        self._shell_cache.pop(volunteer_id)
+        self._history_cache.pop(volunteer_id)
+        self._documents_cache.pop(volunteer_id)
+        self._relations_cache.pop(volunteer_id)
+
+    def _require_storage_service(self) -> StorageService:
+        if self.storage_service is None:
+            raise NotConfiguredError("Storage-backed volunteer writes are not configured yet.")
+        return self.storage_service
+
+    async def _search_volunteers_page(self, normalized_query: str, limit: int, cursor: str | None) -> VolunteerListPage:
+        decoded = _decode_cursor(cursor)
+        offset = int(decoded.get("offset", 0)) if decoded.get("mode") == "search" else 0
+        rows = await self.repository.search_volunteers_page(
+            normalized_query=normalized_query,
+            limit=limit + 1,
+            offset=max(0, offset),
+        )
+        has_more = len(rows) > limit
+        visible_rows = rows[:limit]
+        return VolunteerListPage(
+            items=[map_volunteer_list_item(row) for row in visible_rows],
+            limit=limit,
+            cursor=cursor,
+            next_cursor=_encode_cursor({"mode": "search", "offset": offset + limit}) if has_more else None,
+        )
+
+    async def _delete_document_row(self, row) -> None:
+        await self.repository.delete_document_record(row["id"])
+        storage_service = self._require_storage_service()
+        await _best_effort_remove(
+            lambda: storage_service.remove_document(build_document_storage_path(row["id_personal"], row["filename"]))
+        )
+        self._invalidate_volunteer_cache(row["id_personal"])
+
+
+def _sanitize_filename(filename: str) -> str:
+    safe_name = Path(filename).name.strip()
+    if not safe_name:
+        raise UnsupportedUploadError("A filename is required.")
+    return safe_name
+
+
+def _normalize_extension(filename: str) -> str:
+    suffix = Path(filename).suffix.lower().lstrip(".")
+    if not suffix:
+        raise UnsupportedUploadError("Uploaded files must include an extension.")
+    return suffix
+
+
+def _resolve_content_type(filename: str, provided: str | None) -> str:
+    if provided:
+        return provided
+    return mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _encode_browse_cursor(row: dict[str, Any]) -> str:
+    return _encode_cursor(
+        {
+            "mode": "browse",
+            "last_name": row["etternavn"],
+            "first_name": row.get("fornavn") or "",
+            "volunteer_id": row["id"],
+        }
+    )
+
+
+def _encode_cursor(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def _decode_cursor(cursor: str | None) -> dict[str, Any]:
+    if not cursor:
+        return {}
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii"))
+        payload = json.loads(raw.decode("utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+async def _best_effort_remove(remove_action) -> None:
+    try:
+        await to_thread(remove_action)
+    except Exception:
+        return None
+
+
+__all__ = [
+    "CardItem",
+    "DocumentItem",
+    "DocumentNotFoundError",
+    "VolunteerDocumentUploadResult",
+    "DuplicateDocumentError",
+    "RoleAssignmentItem",
+    "NextOfKinItem",
+    "VolunteersService",
+    "VolunteersServiceError",
+    "VolunteersServiceProtocol",
+    "VolunteerDetail",
+    "VolunteerListItem",
+    "VolunteerListPage",
+    "VolunteerNotFoundError",
+    "VolunteerRelations",
+    "VolunteerPhotoUploadResult",
+    "UnsupportedUploadError",
+]

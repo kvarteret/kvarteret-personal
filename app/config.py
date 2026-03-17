@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None)
     photo_bucket: str = Field(default="personnel-photos")
     document_bucket: str = Field(default="personnel-documents")
+    slack_feedback_webhook_url: str | None = Field(default=None)
     review_bypass_enabled: bool = Field(default=False)
     review_bypass_email: str | None = Field(default=None)
     review_bypass_token: str | None = Field(default=None)
@@ -26,8 +27,8 @@ class Settings(BaseSettings):
     session_cookie_name: str = Field(default="kvarteret_session")
     session_ttl_hours: int = Field(default=12)
     session_cache_ttl_seconds: int = Field(default=300)
-    person_detail_cache_ttl_seconds: int = Field(default=300)
-    users_cache_ttl_seconds: int = Field(default=60)
+    volunteer_detail_cache_ttl_seconds: int = Field(default=300)
+    admin_accounts_cache_ttl_seconds: int = Field(default=60)
     mobile_card_access_code_ttl_minutes: int = Field(default=10)
     mobile_card_access_code_cooldown_seconds: int = Field(default=60)
     mobile_card_session_ttl_days: int = Field(default=7)
@@ -41,6 +42,7 @@ class Settings(BaseSettings):
         "database_url",
         "photo_bucket",
         "document_bucket",
+        "slack_feedback_webhook_url",
         "review_bypass_email",
         "review_bypass_token",
         "log_level",

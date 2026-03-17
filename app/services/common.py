@@ -5,7 +5,7 @@ from datetime import date, datetime
 
 def build_full_name(first_name: str | None, last_name: str | None) -> str:
     parts = [part.strip() for part in (first_name or "", last_name or "") if part and part.strip()]
-    return " ".join(parts) or "Unknown person"
+    return " ".join(parts) or "Unknown volunteer"
 
 
 def coerce_datetime(value: datetime | str | None) -> datetime | None:

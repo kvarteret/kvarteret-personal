@@ -1,0 +1,58 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Frivilligsøknader</h1>
+      <p class="max-w-3xl text-base leading-7 text-stone-700">
+        Opprett invitasjoner, se innsendte detaljer og godkjenn nye frivillige inn i databasen.
+      </p>
+    </header>
+
+    <section class="app-panel">
+      <h2 class="text-2xl font-medium tracking-tight text-stone-900">Opprett invitasjon</h2>
+      <form action="/volunteer-applications" class="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end" method="post">
+        <label class="grid flex-1 gap-1">
+          <span class="text-sm text-stone-500">E-postadresse</span>
+          <input class="app-input" name="email" placeholder="bruker@example.no" type="email" required>
+        </label>
+        <button class="app-button" type="submit">Opprett invitasjon</button>
+      </form>
+    </section>
+
+    <section class="app-panel">
+      <div class="grid gap-0">
+        {% for volunteer_application in volunteer_applications %}
+          <article class="border-b border-stone-300 py-5">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div class="grid gap-1">
+                <p class="text-sm font-medium text-stone-500">{{ volunteer_application.email }}</p>
+                <p class="text-xs text-stone-500">Lenke: <a class="underline underline-offset-2" href="/apply/{{ volunteer_application.token }}">/apply/{{ volunteer_application.token }}</a></p>
+                {% if volunteer_application.submitted %}
+                  <p class="text-lg font-medium tracking-tight text-stone-900">{{ volunteer_application.first_name or "" }} {{ volunteer_application.last_name or "" }}</p>
+                  <p class="text-sm text-stone-700">{{ volunteer_application.phone or "Ingen telefon sendt inn" }}</p>
+                {% else %}
+                  <p class="text-sm text-stone-700">Invitasjon sendt. Venter på innsending fra frivillig.</p>
+                {% endif %}
+              </div>
+              <div class="flex flex-wrap gap-3">
+                {% if volunteer_application.submitted %}
+                  <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" method="post">
+                    <button class="inline-flex min-h-11 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" type="submit">Godkjenn</button>
+                  </form>
+                {% endif %}
+                <form action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('{% if volunteer_application.submitted %}Avvise denne søknaden?{% else %}Avbryte denne invitasjonen?{% endif %}');">
+                  <button class="inline-flex min-h-11 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" type="submit">
+                    {% if volunteer_application.submitted %}Avvis{% else %}Avbryt{% endif %}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </article>
+        {% else %}
+          <p class="py-6 text-sm text-stone-600">Ingen åpne frivilligsøknader.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </section>
+{% endblock %}

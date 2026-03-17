@@ -2,12 +2,12 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from app.services.people import PeopleService, PersonDetailShell
+from app.services.volunteers import VolunteersService, VolunteerDetail
 
 
-def _build_person_detail() -> PersonDetailShell:
-    return PersonDetailShell(
-        person_id=1,
+def _build_person_detail() -> VolunteerDetail:
+    return VolunteerDetail(
+        volunteer_id=1,
         first_name="Test",
         last_name="Person",
         full_name="Test Person",
@@ -15,7 +15,8 @@ def _build_person_detail() -> PersonDetailShell:
         phone=None,
         birth_date=date(2000, 1, 1),
         created_at=datetime(2024, 1, 1, tzinfo=UTC),
-        gender="A",
+        gender_code="A",
+        gender_label="Annet",
         address=None,
         postal_code=None,
         employment_status=None,
@@ -25,10 +26,10 @@ def _build_person_detail() -> PersonDetailShell:
 
 @pytest.mark.asyncio
 async def test_person_detail_shell_uses_cache(monkeypatch):
-    service = PeopleService(storage_service=object())  # type: ignore[arg-type]
+    service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
     calls = 0
 
-    async def fake_fetch(person_id: int):
+    async def fake_fetch(volunteer_id: int):
         nonlocal calls
         calls += 1
         return {
@@ -47,10 +48,10 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
             "filetype": None,
         }
 
-    monkeypatch.setattr(service.repository, "fetch_person_shell_row", fake_fetch)
+    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch)
 
-    first = await service.get_person_detail_shell(1)
-    second = await service.get_person_detail_shell(1)
+    first = await service.get_volunteer_detail(1)
+    second = await service.get_volunteer_detail(1)
 
     assert first is second
     assert first.full_name == "Test Person"
@@ -59,23 +60,23 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
-    service = PeopleService(storage_service=object())  # type: ignore[arg-type]
+    service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
     first_value = _build_person_detail()
     second_value = _build_person_detail()
     second_value.first_name = "Reloaded"  # type: ignore[misc]
     values = [first_value, second_value]
 
-    async def fake_fetch_row(person_id: int):
+    async def fake_fetch_row(volunteer_id: int):
         value = values.pop(0)
         return {
-            "id": value.person_id,
+            "id": value.volunteer_id,
             "fornavn": value.first_name,
             "etternavn": value.last_name,
             "epost": value.email,
             "telefon": value.phone,
             "fodselsdato": value.birth_date,
             "opprettet": value.created_at,
-            "kjonn": value.gender,
+            "kjonn": value.gender_code,
             "gateadresse": value.address,
             "postnummerid": value.postal_code,
             "arb_status": value.employment_status,
@@ -83,11 +84,11 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
             "filetype": None,
         }
 
-    monkeypatch.setattr(service.repository, "fetch_person_shell_row", fake_fetch_row)
+    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch_row)
 
-    cached = await service.get_person_detail_shell(1)
+    cached = await service.get_volunteer_detail(1)
     service._shell_cache.force_expire(1)
-    reloaded = await service.get_person_detail_shell(1)
+    reloaded = await service.get_volunteer_detail(1)
 
     assert cached.full_name == "Test Person"
     assert reloaded.full_name == "Reloaded Person"

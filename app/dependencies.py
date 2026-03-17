@@ -8,14 +8,15 @@ from app.auth.login_service import LoginService
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
 from app.runtime import ApplicationContainer
+from app.services.feedback import FeedbackService
 from app.services.courses import CoursesService
 from app.services.groups import GroupsService
 from app.services.mobile_card import MobileCardService
-from app.services.people import PeopleService
-from app.services.registrations import RegistrationsService
-from app.services.search import SearchService
+from app.services.volunteers import VolunteersService
+from app.services.volunteer_applications import VolunteerApplicationsService
+from app.services.search import VolunteerSearchService
 from app.services.semester_transfer import SemesterTransferService
-from app.services.users import UsersService
+from app.services.admin_accounts import AdminAccountsService
 
 
 @dataclass(slots=True)
@@ -78,8 +79,12 @@ def get_login_service(request: Request) -> LoginService:
     return get_container(request).login_service
 
 
-def get_people_service(request: Request) -> PeopleService:
-    return get_container(request).people_service
+def get_supabase_auth_gateway(request: Request):
+    return get_container(request).supabase_auth_gateway
+
+
+def get_volunteers_service(request: Request) -> VolunteersService:
+    return get_container(request).volunteers_service
 
 
 def get_groups_service(request: Request) -> GroupsService:
@@ -90,21 +95,25 @@ def get_courses_service(request: Request) -> CoursesService:
     return get_container(request).courses_service
 
 
-def get_search_service(request: Request) -> SearchService:
-    return get_container(request).search_service
+def get_volunteer_search_service(request: Request) -> VolunteerSearchService:
+    return get_container(request).volunteer_search_service
 
 
-def get_users_service(request: Request) -> UsersService:
-    return get_container(request).users_service
+def get_admin_accounts_service(request: Request) -> AdminAccountsService:
+    return get_container(request).admin_accounts_service
 
 
 def get_mobile_card_service(request: Request) -> MobileCardService:
     return get_container(request).mobile_card_service
 
 
-def get_registrations_service(request: Request) -> RegistrationsService:
-    return get_container(request).registrations_service
+def get_volunteer_applications_service(request: Request) -> VolunteerApplicationsService:
+    return get_container(request).volunteer_applications_service
 
 
 def get_semester_transfer_service(request: Request) -> SemesterTransferService:
     return get_container(request).semester_transfer_service
+
+
+def get_feedback_service(request: Request) -> FeedbackService:
+    return get_container(request).feedback_service

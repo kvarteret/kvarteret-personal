@@ -4,14 +4,14 @@ from app.services.search_models import (
     SearchRepositoryProtocol,
     SearchResultItem,
 )
-from app.services.search_repository import DatabaseSearchRepository
-from app.services.search_service import SearchService
+from app.services.search_repository import VolunteerSearchRepository
+from app.services.search_service import VolunteerSearchService
 
 __all__ = [
-    "DatabaseSearchRepository",
+    "VolunteerSearchRepository",
     "SearchFilterList",
     "SearchQuery",
     "SearchRepositoryProtocol",
     "SearchResultItem",
-    "SearchService",
+    "VolunteerSearchService",
 ]

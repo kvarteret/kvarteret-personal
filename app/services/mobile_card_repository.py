@@ -24,7 +24,7 @@ class MobileCardRoleSnapshot:
 
 @dataclass(slots=True)
 class MobileCardSnapshot:
-    person_id: int
+    volunteer_id: int
     first_name: str
     last_name: str
     birth_date: date | None
@@ -35,7 +35,7 @@ class MobileCardSnapshot:
 
 
 class MobileCardRepository:
-    async def find_people_by_email(self, email: str) -> list[dict]:
+    async def find_volunteers_by_email(self, email: str) -> list[dict]:
         stmt = (
             select(
                 personal.c.id,
@@ -50,19 +50,25 @@ class MobileCardRepository:
         async with get_session_factory()() as session:
             return list((await session.execute(stmt)).mappings().all())
 
-    async def store_access_code(self, *, person_id: int, access_code: str, created_at: datetime) -> None:
+    async def store_access_code(self, *, volunteer_id: int, access_code: str, created_at: datetime) -> None:
         async with get_session_factory()() as session:
             async with session.begin():
                 await session.execute(
                     update(personal)
-                    .where(personal.c.id == person_id)
+                    .where(personal.c.id == volunteer_id)
                     .values(
                         internkortaccesstoken=access_code,
                         internkort_access_token_created_at=created_at,
                     )
                 )
 
-    async def find_person_by_email_and_code(self, *, email: str, access_code: str, expires_after: datetime) -> dict | None:
+    async def find_volunteer_by_email_and_code(
+        self,
+        *,
+        email: str,
+        access_code: str,
+        expires_after: datetime,
+    ) -> dict | None:
         stmt = (
             select(personal.c.id)
             .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
@@ -74,12 +80,12 @@ class MobileCardRepository:
         async with get_session_factory()() as session:
             return (await session.execute(stmt)).mappings().first()
 
-    async def fetch_card_snapshot(self, *, person_id: int, semester_code: int) -> MobileCardSnapshot | None:
+    async def fetch_card_snapshot(self, *, volunteer_id: int, semester_code: int) -> MobileCardSnapshot | None:
         started_at = perf_counter()
         points_stmt = (
             select(func.coalesce(func.sum(verv.c.pingvinpoeng), 0))
             .select_from(historie.outerjoin(verv, verv.c.id == historie.c.id_verv))
-            .where(historie.c.id_personal == person_id)
+            .where(historie.c.id_personal == volunteer_id)
             .scalar_subquery()
         )
         snapshot_stmt = (
@@ -106,7 +112,7 @@ class MobileCardRepository:
                 .outerjoin(verv, verv.c.id == historie.c.id_verv)
                 .outerjoin(grupper, grupper.c.id == historie.c.id_gruppe)
             )
-            .where(personal.c.id == person_id)
+            .where(personal.c.id == volunteer_id)
             .order_by(grupper.c.navn.asc().nullslast(), verv.c.verv.asc().nullslast())
         )
         async with get_session_factory()() as session:
@@ -115,7 +121,7 @@ class MobileCardRepository:
                 logger,
                 operation="mobile_card.snapshot",
                 started_at=started_at,
-                details={"person_id": person_id, "semester_code": semester_code},
+                details={"volunteer_id": volunteer_id, "semester_code": semester_code},
             )
             if not rows:
                 return None
@@ -126,7 +132,7 @@ class MobileCardRepository:
             photo_path = f"{person_row['sha1']}.{person_row['filetype']}"
 
         return MobileCardSnapshot(
-            person_id=person_row["id"],
+            volunteer_id=person_row["id"],
             first_name=person_row["fornavn"] or "",
             last_name=person_row["etternavn"],
             birth_date=person_row["fodselsdato"],

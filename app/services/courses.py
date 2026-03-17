@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import logging
 from time import perf_counter
 from typing import Protocol
 
-from sqlalchemy import BigInteger, Integer, Text, literal, or_, select, union_all
+from sqlalchemy import BigInteger, Integer, Text, delete, func, insert, literal, or_, select, union_all, update
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import grupper, grupper_kurs_kobling, historie_kurs, kurs, personal
@@ -14,6 +15,12 @@ from app.services.common import build_full_name, coerce_datetime
 from app.services.semester import format_semester_code
 
 logger = logging.getLogger("app.performance")
+
+
+class CourseDeleteBlockedError(ValueError):
+    def __init__(self, blockers: list[str]) -> None:
+        super().__init__("Course deletion is blocked.")
+        self.blockers = blockers
 
 
 @dataclass(slots=True)
@@ -33,8 +40,8 @@ class RequiredGroupItem:
 @dataclass(slots=True)
 class CourseCompletionItem:
     completion_id: int
-    person_id: int
-    person_name: str
+    volunteer_id: int
+    volunteer_name: str
     completed_semester_code: int
     completed_semester_label: str
 
@@ -47,11 +54,15 @@ class CourseDetail:
     created_at: datetime | None
     required_groups: list[RequiredGroupItem]
     recent_completions: list[CourseCompletionItem]
+    delete_blockers: list[str]
 
 
 class CoursesServiceProtocol(Protocol):
     async def list_courses(self, query: str | None = None, limit: int = 100) -> list[CourseListItem]: ...
     async def get_course_detail(self, course_id: int) -> CourseDetail | None: ...
+    async def create_course(self, *, name: str, description: str | None) -> int: ...
+    async def update_course(self, course_id: int, *, name: str, description: str | None) -> bool: ...
+    async def delete_course(self, course_id: int) -> bool: ...
 
 
 class CoursesService(SqlAlchemyRepository):
@@ -86,9 +97,9 @@ class CoursesService(SqlAlchemyRepository):
             literal(None, type_=BigInteger()).label("group_id"),
             literal(None, type_=Text()).label("group_name"),
             literal(None, type_=BigInteger()).label("completion_id"),
-            literal(None, type_=BigInteger()).label("person_id"),
-            literal(None, type_=Text()).label("person_first_name"),
-            literal(None, type_=Text()).label("person_last_name"),
+            literal(None, type_=BigInteger()).label("volunteer_id"),
+            literal(None, type_=Text()).label("volunteer_first_name"),
+            literal(None, type_=Text()).label("volunteer_last_name"),
             literal(None, type_=Integer()).label("completed_semester"),
         ).where(kurs.c.id == course_id)
         groups_select = (
@@ -101,9 +112,9 @@ class CoursesService(SqlAlchemyRepository):
                 grupper.c.id.label("group_id"),
                 grupper.c.navn.label("group_name"),
                 literal(None, type_=BigInteger()).label("completion_id"),
-                literal(None, type_=BigInteger()).label("person_id"),
-                literal(None, type_=Text()).label("person_first_name"),
-                literal(None, type_=Text()).label("person_last_name"),
+                literal(None, type_=BigInteger()).label("volunteer_id"),
+                literal(None, type_=Text()).label("volunteer_first_name"),
+                literal(None, type_=Text()).label("volunteer_last_name"),
                 literal(None, type_=Integer()).label("completed_semester"),
             )
             .select_from(grupper_kurs_kobling.join(grupper, grupper.c.id == grupper_kurs_kobling.c.id_gruppe))
@@ -113,7 +124,7 @@ class CoursesService(SqlAlchemyRepository):
             select(
                 historie_kurs.c.id,
                 historie_kurs.c.gjennomfort_dato,
-                personal.c.id.label("person_id"),
+                personal.c.id.label("volunteer_id"),
                 personal.c.fornavn,
                 personal.c.etternavn,
             )
@@ -132,9 +143,9 @@ class CoursesService(SqlAlchemyRepository):
             literal(None, type_=BigInteger()).label("group_id"),
             literal(None, type_=Text()).label("group_name"),
             recent_completions.c.id.label("completion_id"),
-            recent_completions.c.person_id.label("person_id"),
-            recent_completions.c.fornavn.label("person_first_name"),
-            recent_completions.c.etternavn.label("person_last_name"),
+            recent_completions.c.volunteer_id.label("volunteer_id"),
+            recent_completions.c.fornavn.label("volunteer_first_name"),
+            recent_completions.c.etternavn.label("volunteer_last_name"),
             recent_completions.c.gjennomfort_dato.label("completed_semester"),
         )
         rows = await self.fetch_all_mappings(union_all(course_select, groups_select, completions_select))
@@ -142,6 +153,7 @@ class CoursesService(SqlAlchemyRepository):
         course_row = next((row for row in rows if row["row_type"] == "course"), None)
         if course_row is None:
             return None
+        delete_blockers = await self._get_course_delete_blockers(course_id)
         required_groups: list[RequiredGroupItem] = []
         seen_group_ids: set[int] = set()
         recent_completion_items: list[CourseCompletionItem] = []
@@ -159,8 +171,8 @@ class CoursesService(SqlAlchemyRepository):
                 recent_completion_items.append(
                     CourseCompletionItem(
                         completion_id=row["completion_id"],
-                        person_id=row["person_id"],
-                        person_name=build_full_name(row.get("person_first_name"), row.get("person_last_name")),
+                        volunteer_id=row["volunteer_id"],
+                        volunteer_name=build_full_name(row.get("volunteer_first_name"), row.get("volunteer_last_name")),
                         completed_semester_code=row["completed_semester"],
                         completed_semester_label=format_semester_code(row["completed_semester"])
                         or str(row["completed_semester"]),
@@ -177,4 +189,57 @@ class CoursesService(SqlAlchemyRepository):
                 key=lambda item: (item.completed_semester_code, item.completion_id),
                 reverse=True,
             ),
+            delete_blockers=delete_blockers,
         )
+
+    async def create_course(self, *, name: str, description: str | None) -> int:
+        row = await self.execute_one_mapping(
+            insert(kurs)
+            .values(
+                navn=name.strip(),
+                beskrivelse=(description.strip() if description and description.strip() else None),
+                opprettet=datetime.now(UTC),
+            )
+            .returning(kurs.c.id)
+        )
+        return row["id"]
+
+    async def update_course(self, course_id: int, *, name: str, description: str | None) -> bool:
+        async def callback(session):
+            result = await session.execute(
+                update(kurs)
+                .where(kurs.c.id == course_id)
+                .values(
+                    navn=name.strip(),
+                    beskrivelse=(description.strip() if description and description.strip() else None),
+                )
+                .returning(kurs.c.id)
+            )
+            row = result.first()
+            return row[0] if row is not None else None
+
+        updated_course_id = await self.execute_in_transaction(callback)
+        return updated_course_id == course_id
+
+    async def delete_course(self, course_id: int) -> bool:
+        blockers = await self._get_course_delete_blockers(course_id)
+        if blockers:
+            raise CourseDeleteBlockedError(blockers)
+
+        async def callback(session):
+            await session.execute(delete(grupper_kurs_kobling).where(grupper_kurs_kobling.c.id_kurs == course_id))
+            result = await session.execute(delete(kurs).where(kurs.c.id == course_id).returning(kurs.c.id))
+            row = result.first()
+            return row[0] if row is not None else None
+
+        deleted_course_id = await self.execute_in_transaction(callback)
+        return deleted_course_id == course_id
+
+    async def _get_course_delete_blockers(self, course_id: int) -> list[str]:
+        completion_count = await self.fetch_scalar(
+            select(func.count()).select_from(historie_kurs).where(historie_kurs.c.id_kurs == course_id)
+        )
+        blockers: list[str] = []
+        if completion_count:
+            blockers.append("Kurset har fullføringer og kan ikke slettes.")
+        return blockers

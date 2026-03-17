@@ -4,9 +4,6 @@
   <section class="grid gap-7">
     <header class="grid justify-items-center gap-3 pt-3 text-center">
       <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Grupper</h1>
-      <p class="max-w-3xl text-base leading-7 text-stone-700">
-        Søk etter grupper og gå videre til historikk, roller og semesterflyt.
-      </p>
     </header>
 
     <form action="/groups" class="app-panel" method="get">
@@ -15,28 +12,50 @@
           <span class="text-sm text-stone-500">Filtrer grupper</span>
           <input class="app-input" id="q" name="q" placeholder="Søk etter gruppe" type="search" value="{{ query }}">
         </label>
+        {% if current_user.role == "Admin" %}
+          <a class="app-button-secondary" href="/groups/new">Opprett ny gruppe</a>
+        {% endif %}
         <button class="app-button" type="submit">Søk</button>
       </div>
     </form>
 
-    <section class="app-panel">
-      <div class="grid gap-0">
-        {% for group in groups %}
-          <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-3 md:items-center" href="/groups/{{ group.group_id }}" preload="mousedown">
-            <div>
-              <div class="text-lg font-medium tracking-tight">{{ group.name }}</div>
-            </div>
-            <div class="text-sm text-stone-700">{{ group.description or "Ingen beskrivelse" }}</div>
-            <div>
-              <span class="inline-flex min-h-8 items-center px-3 text-sm font-medium {% if group.active %}bg-red-50 text-red-800{% else %}bg-stone-300 text-stone-700{% endif %}">
-                {{ "Aktiv" if group.active else "Inaktiv" }}
-              </span>
-            </div>
-          </a>
-        {% else %}
-          <div class="py-10 text-center text-sm text-stone-600">Ingen grupper matchet dette søket.</div>
-        {% endfor %}
+    {% set active_groups = groups | selectattr("active") | list %}
+    {% set inactive_groups = groups | rejectattr("active") | list %}
+
+    {% if groups %}
+      <div class="grid gap-6 xl:grid-cols-2">
+        <section class="app-panel">
+          <h2 class="border-b border-stone-300 pb-3 text-2xl font-medium tracking-tight text-stone-900">Active groups</h2>
+          <div class="grid gap-0">
+            {% for group in active_groups %}
+              <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)] md:items-center" href="/groups/{{ group.group_id }}" preload="mousedown">
+                <div class="text-lg font-medium tracking-tight">{{ group.name }}</div>
+                <div class="text-sm text-stone-700">{{ group.description or "Ingen beskrivelse" }}</div>
+              </a>
+            {% else %}
+              <div class="py-8 text-sm text-stone-600">Ingen aktive grupper.</div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="app-panel">
+          <h2 class="border-b border-stone-300 pb-3 text-2xl font-medium tracking-tight text-stone-900">Inactive groups</h2>
+          <div class="grid gap-0">
+            {% for group in inactive_groups %}
+              <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)] md:items-center" href="/groups/{{ group.group_id }}" preload="mousedown">
+                <div class="text-lg font-medium tracking-tight">{{ group.name }}</div>
+                <div class="text-sm text-stone-700">{{ group.description or "Ingen beskrivelse" }}</div>
+              </a>
+            {% else %}
+              <div class="py-8 text-sm text-stone-600">Ingen inaktive grupper.</div>
+            {% endfor %}
+          </div>
+        </section>
       </div>
-    </section>
+    {% else %}
+      <section class="app-panel">
+        <div class="py-10 text-center text-sm text-stone-600">Ingen grupper matchet dette søket.</div>
+      </section>
+    {% endif %}
   </section>
 {% endblock %}

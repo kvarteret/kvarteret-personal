@@ -19,8 +19,8 @@ class SemesterTransferGroupNotFoundError(SemesterTransferError):
 
 @dataclass(slots=True)
 class SemesterTransferCandidate:
-    person_id: int
-    person_name: str
+    volunteer_id: int
+    volunteer_name: str
     role_id: int | None
     role_name: str | None
     contract_signed: bool
@@ -40,7 +40,7 @@ class SemesterTransferPreview:
 
 @dataclass(slots=True)
 class SemesterTransferEntry:
-    person_id: int
+    volunteer_id: int
     role_id: int | None
     contract_signed: bool = False
 
@@ -66,7 +66,7 @@ class SemesterTransferService:
                 select(
                     historie.c.id,
                     historie.c.id_personal,
-                    func.concat_ws(" ", personal.c.fornavn, personal.c.etternavn).label("person_name"),
+                    func.concat_ws(" ", personal.c.fornavn, personal.c.etternavn).label("volunteer_name"),
                     historie.c.id_verv,
                     verv.c.verv.label("verv_navn"),
                     historie.c.signert_kontrakt,
@@ -90,8 +90,8 @@ class SemesterTransferService:
             target_semester_label=format_semester_code(resolved_target),
             candidates=[
                 SemesterTransferCandidate(
-                    person_id=row["id_personal"],
-                    person_name=row["person_name"] or f"Person {row['id_personal']}",
+                    volunteer_id=row["id_personal"],
+                    volunteer_name=row["volunteer_name"] or f"Volunteer {row['id_personal']}",
                     role_id=row["id_verv"],
                     role_name=row["verv_navn"],
                     contract_signed=row["signert_kontrakt"],
@@ -108,30 +108,30 @@ class SemesterTransferService:
             raise SemesterTransferGroupNotFoundError(f"Group {group_id} was not found.")
         if not entries:
             return 0
-        person_ids = [entry.person_id for entry in entries]
-        if not person_ids:
+        volunteer_ids = [entry.volunteer_id for entry in entries]
+        if not volunteer_ids:
             return 0
         existing_stmt = (
             select(historie.c.id_personal)
             .where(historie.c.id_gruppe == group_id)
             .where(historie.c.semester == target_semester)
-            .where(historie.c.id_personal.in_(person_ids))
+            .where(historie.c.id_personal.in_(volunteer_ids))
         )
         async with get_session_factory()() as session:
-            existing_people = {
+            existing_volunteers = {
                 row["id_personal"]
                 for row in (await session.execute(existing_stmt)).mappings().all()
             }
         values = [
             {
-                "id_personal": entry.person_id,
+                "id_personal": entry.volunteer_id,
                 "id_gruppe": group_id,
                 "id_verv": entry.role_id,
                 "semester": target_semester,
                 "signert_kontrakt": entry.contract_signed,
             }
             for entry in entries
-            if entry.person_id not in existing_people
+            if entry.volunteer_id not in existing_volunteers
         ]
         if not values:
             return 0

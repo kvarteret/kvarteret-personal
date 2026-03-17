@@ -1,49 +1,122 @@
 {% extends "layouts/base.html" %}
+{% from "components/ui_macros.html" import blocker_notice, form_field, history_back_button, page_header %}
 
 {% block page_content %}
   <section class="grid gap-7">
-    <header class="grid justify-items-center gap-3 pt-3 text-center">
-      <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">Gruppeinformasjon</p>
-      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ group.name }}</h1>
-      <p class="max-w-4xl text-base leading-7 text-stone-700">{{ group.description or "Ingen beskrivelse" }}</p>
-      <div class="flex flex-wrap justify-center gap-3">
-        {% if current_user.role == "Admin" %}
-          <a class="app-button" href="/groups/{{ group.group_id }}/semester-transfer">Semesterflyt</a>
-        {% endif %}
-        <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/groups'; }" type="button">Tilbake til grupper</button>
-      </div>
-    </header>
+    {% call page_header("Gruppeinformasjon", group.name, group.description or "Ingen beskrivelse") %}
+      {% if current_user.role == "Admin" %}
+        <a class="app-button" href="/groups/{{ group.group_id }}/semester-transfer">Semesterflyt</a>
+      {% endif %}
+      {{ history_back_button('/groups', 'Tilbake til grupper') }}
+    {% endcall %}
 
     <div class="grid gap-6 xl:grid-cols-2">
       <section class="app-panel">
         <h2 class="text-2xl font-medium tracking-tight text-stone-900">Metadata</h2>
-        <dl class="mt-5 grid gap-4">
-          <div class="border-b border-stone-300 pb-3">
-            <dt class="text-sm text-stone-500">Status</dt>
-            <dd class="mt-1 text-stone-900">{{ "Aktiv" if group.active else "Inaktiv" }}</dd>
+        {% if current_user.role == "Admin" %}
+          <form action="/groups/{{ group.group_id }}?_method=PATCH" class="mt-5 grid gap-4" method="post">
+            <div class="grid gap-4 md:grid-cols-2">
+              {% call form_field("Navn") %}
+                <input class="app-input" name="name" required type="text" value="{{ group.name }}">
+              {% endcall %}
+              {% call form_field("Aktiv til semester") %}
+                <input class="app-input" name="active_until_semester" required type="number" value="{{ group.active_until_semester }}">
+              {% endcall %}
+              {% call form_field("Beskrivelse", "md:col-span-2") %}
+                <textarea class="app-input min-h-24" name="description">{{ group.description or "" }}</textarea>
+              {% endcall %}
+              {% call form_field("Foreldregruppe") %}
+                <select class="app-input" name="parent_group_id">
+                  <option value="">Ingen</option>
+                  {% for option in group_options %}
+                    <option value="{{ option.group_id }}" {% if option.group_id == group.parent_group_id %}selected{% endif %}>{{ option.name }}</option>
+                  {% endfor %}
+                </select>
+              {% endcall %}
+              {% call form_field("Rabattrinn") %}
+                <input class="app-input" name="discount_step" min="0" step="1" type="number" value="{{ group.discount_step if group.discount_step is not none else '' }}">
+              {% endcall %}
+              <label class="inline-flex items-center gap-3 text-sm text-stone-700 md:col-span-2">
+                <input class="h-4 w-4 accent-kvarteret-red" name="active" type="checkbox" value="true" {% if group.active %}checked{% endif %}>
+                Aktiv gruppe
+              </label>
+            </div>
+            <div>
+              <button class="app-button" type="submit">Lagre gruppe</button>
+            </div>
+          </form>
+          <div class="mt-3 flex flex-wrap gap-3">
+            <form action="/groups/{{ group.group_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne gruppen?');">
+              <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-md hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {% if group.delete_blockers %}disabled{% endif %}>Slett gruppe</button>
+            </form>
           </div>
-          <div class="border-b border-stone-300 pb-3">
-            <dt class="text-sm text-stone-500">Aktiv til</dt>
-            <dd class="mt-1 text-stone-900">{{ group.active_until_label or group.active_until_semester }}</dd>
-          </div>
-          <div class="border-b border-stone-300 pb-3">
-            <dt class="text-sm text-stone-500">Foreldregruppe</dt>
-            <dd class="mt-1 text-stone-900">{{ group.parent_group_id or "Ingen" }}</dd>
-          </div>
-          <div class="border-b border-stone-300 pb-3">
-            <dt class="text-sm text-stone-500">Rabattrinn</dt>
-            <dd class="mt-1 text-stone-900">{{ group.discount_step if group.discount_step is not none else "Ikke satt" }}</dd>
-          </div>
-        </dl>
+          {{ blocker_notice(group.delete_blockers) }}
+        {% else %}
+          <dl class="mt-5 grid gap-4">
+            <div class="border-b border-stone-300 pb-3">
+              <dt class="text-sm text-stone-500">Status</dt>
+              <dd class="mt-1 text-stone-900">{{ "Aktiv" if group.active else "Inaktiv" }}</dd>
+            </div>
+            <div class="border-b border-stone-300 pb-3">
+              <dt class="text-sm text-stone-500">Aktiv til</dt>
+              <dd class="mt-1 text-stone-900">{{ group.active_until_label or group.active_until_semester }}</dd>
+            </div>
+            <div class="border-b border-stone-300 pb-3">
+              <dt class="text-sm text-stone-500">Foreldregruppe</dt>
+              <dd class="mt-1 text-stone-900">{{ group.parent_group_id or "Ingen" }}</dd>
+            </div>
+            <div class="border-b border-stone-300 pb-3">
+              <dt class="text-sm text-stone-500">Rabattrinn</dt>
+              <dd class="mt-1 text-stone-900">{{ group.discount_step if group.discount_step is not none else "Ikke satt" }}</dd>
+            </div>
+          </dl>
+        {% endif %}
 
         <h2 class="mt-8 text-2xl font-medium tracking-tight text-stone-900">Verv</h2>
         <div class="mt-5 grid gap-3">
           {% for position in group.positions %}
-            <div class="border-b border-stone-300 pb-3 text-sm text-stone-800">{{ position.role_name or "Uten navn" }} · {{ position.pingvin_points }} pingvinpoeng</div>
+            {% if current_user.role == "Admin" %}
+              <div class="border-b border-stone-300 pb-4">
+                <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem_auto_auto]">
+                  <form action="/groups/{{ group.group_id }}/roles/{{ position.role_id }}?_method=PATCH" class="contents" method="post">
+                    {% call form_field("Vervnavn", "min-w-0") %}
+                      <input class="app-input" name="role_name" required type="text" value="{{ position.role_name or '' }}">
+                    {% endcall %}
+                    {% call form_field("Pingvinpoeng", "min-w-0") %}
+                      <input class="app-input" min="0" name="pingvin_points" required step="1" type="number" value="{{ position.pingvin_points }}">
+                    {% endcall %}
+                    <div class="flex items-end lg:justify-start">
+                      <button class="app-button" type="submit">Lagre verv</button>
+                    </div>
+                    <div class="flex items-end lg:justify-start">
+                      <button class="app-button-secondary" formaction="/groups/{{ group.group_id }}/roles/{{ position.role_id }}?_method=DELETE" formmethod="post" onclick="return window.confirm('Slette dette vervet?');" type="submit" {% if position.delete_blockers %}disabled title="{{ position.delete_blockers | join(' ') }}"{% endif %}>Slett verv</button>
+                    </div>
+                  </form>
+                </div>
+                {% if position.delete_blockers %}
+                  <p class="mt-2 text-sm text-stone-500">{{ position.delete_blockers | join(" ") }}</p>
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="border-b border-stone-300 pb-3 text-sm text-stone-800">{{ position.role_name or "Uten navn" }} · {{ position.pingvin_points }} pingvinpoeng</div>
+            {% endif %}
           {% else %}
             <p class="text-sm text-stone-600">Ingen verv funnet.</p>
           {% endfor %}
         </div>
+        {% if current_user.role == "Admin" %}
+          <form action="/groups/{{ group.group_id }}/roles" class="mt-5 grid gap-3 rounded-2xl bg-stone-100 p-4 lg:grid-cols-[minmax(0,1fr)_10rem_auto]" method="post">
+            {% call form_field("Nytt verv", "min-w-0") %}
+              <input class="app-input" name="role_name" placeholder="For eksempel PR-ansvarlig" required type="text">
+            {% endcall %}
+            {% call form_field("Pingvinpoeng", "min-w-0") %}
+              <input class="app-input" min="0" name="pingvin_points" required step="1" type="number" value="0">
+            {% endcall %}
+            <div class="flex items-end">
+              <button class="app-button" type="submit">Opprett verv</button>
+            </div>
+          </form>
+        {% endif %}
       </section>
 
       <section class="app-panel">
@@ -55,7 +128,7 @@
           {% for member in group.recent_members %}
             <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-3 md:items-center">
               <div>
-                <div class="text-lg font-medium tracking-tight text-stone-900">{{ member.person_name }}</div>
+                <div class="text-lg font-medium tracking-tight text-stone-900">{{ member.volunteer_name }}</div>
                 <div class="text-sm text-stone-500">{{ member.role_name or "Ingen rolle" }}</div>
               </div>
               <div class="text-sm text-stone-700">{{ member.semester_label }}</div>
@@ -67,5 +140,23 @@
         </div>
       </section>
     </div>
+
+    <section
+      class="app-panel"
+      hx-get="/groups/{{ group.group_id }}/stats"
+      hx-swap="innerHTML"
+      hx-trigger="load"
+    >
+      <p class="text-sm text-stone-500">Laster gruppestatistikk...</p>
+    </section>
+
+    <section
+      class="app-panel"
+      hx-get="/groups/{{ group.group_id }}/history"
+      hx-swap="innerHTML"
+      hx-trigger="load"
+    >
+      <p class="text-sm text-stone-500">Laster full historikk...</p>
+    </section>
   </section>
 {% endblock %}

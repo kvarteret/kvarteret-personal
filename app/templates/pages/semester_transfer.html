@@ -19,12 +19,12 @@
             {% if candidate.role_id %}
               <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-3 md:items-center">
                 <div>
-                  <div class="text-lg font-medium tracking-tight text-stone-900">{{ candidate.person_name }}</div>
+                  <div class="text-lg font-medium tracking-tight text-stone-900">{{ candidate.volunteer_name }}</div>
                   <div class="text-sm text-stone-500">{{ candidate.role_name or "Ingen rolle" }}</div>
                 </div>
                 <div class="text-sm text-stone-700">{{ preview.target_semester_label or preview.target_semester }}</div>
                 <div class="text-sm text-stone-700">{% if candidate.contract_signed %}Signert tidligere{% else %}Usignert tidligere{% endif %}</div>
-                <input name="person_ids" type="hidden" value="{{ candidate.person_id }}">
+                <input name="volunteer_ids" type="hidden" value="{{ candidate.volunteer_id }}">
                 <input name="role_ids" type="hidden" value="{{ candidate.role_id }}">
               </div>
             {% endif %}

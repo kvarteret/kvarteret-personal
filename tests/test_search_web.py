@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_courses_service, get_groups_service, get_search_service
+from app.dependencies import get_courses_service, get_groups_service, get_volunteer_search_service
 from app.main import create_app
 from app.services.courses import CourseListItem
 from app.services.groups import GroupListItem
@@ -22,13 +22,13 @@ class FakeCoursesService:
 
 
 class FakeSearchService:
-    async def search_people(self, query):
+    async def search_volunteers(self, query):
         return [
             type(
                 "Result",
                 (),
                 {
-                    "person_id": 12,
+                    "volunteer_id": 12,
                     "full_name": "Sample Person",
                     "email": "person.one@example.test",
                     "phone": "00000000",
@@ -44,11 +44,11 @@ def test_search_page_renders_with_fake_services() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
     app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
-    app.dependency_overrides[get_search_service] = lambda: FakeSearchService()
+    app.dependency_overrides[get_volunteer_search_service] = lambda: FakeSearchService()
     client = TestClient(app)
 
-    response = client.get("/search?include_groups=7")
-    options_response = client.get("/search/options/groups?field=include_groups&selected=7")
+    response = client.get("/volunteers/search?include_groups=7")
+    options_response = client.get("/volunteers/search/options/groups?field=include_groups&selected=7")
 
     assert response.status_code == 200
     assert "Avansert søk" in response.text

@@ -25,7 +25,25 @@ from app.db.table_defs.public import (
 )
 from app.db.table_defs.storage import storage_metadata, storage_objects
 
+admin_account_group_memberships = group_admin_memberships
+assignment_roles = verv
+course_completions = historie_kurs
+courses = kurs
+group_course_requirements = grupper_kurs_kobling
+group_hierarchy = grupper_admin_kobling
+groups = grupper
+role_assignments = historie
+volunteer_application_invites = registrering
+volunteer_application_submissions = nytt_personal
+volunteer_cards = personal_kort
+volunteer_documents = personal_fil
+volunteer_next_of_kin = paarorende
+volunteer_photos = personal_bilde
+volunteer_records = personal
+
 __all__ = [
+    "admin_account_group_memberships",
+    "assignment_roles",
     "aspnetroles",
     "aspnetuserroles",
     "aspnetusers",
@@ -35,7 +53,12 @@ __all__ = [
     "auth_refresh_tokens",
     "auth_sessions",
     "auth_users",
+    "course_completions",
+    "courses",
     "group_admin_memberships",
+    "group_course_requirements",
+    "group_hierarchy",
+    "groups",
     "grupper",
     "grupper_admin_kobling",
     "grupper_kurs_kobling",
@@ -54,5 +77,13 @@ __all__ = [
     "storage_objects",
     "user_accounts",
     "verv",
+    "role_assignments",
+    "volunteer_application_invites",
+    "volunteer_application_submissions",
+    "volunteer_cards",
+    "volunteer_documents",
+    "volunteer_next_of_kin",
+    "volunteer_photos",
+    "volunteer_records",
     "web_sessions",
 ]

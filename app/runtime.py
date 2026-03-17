@@ -12,18 +12,19 @@ from app.auth.supabase_auth import SupabaseAuthGateway, SupabaseAuthGatewayProto
 from app.config import Settings, get_settings
 from app.db.session import dispose_database_runtime
 from app.errors import NotConfiguredError
+from app.services.feedback import FeedbackService
 from app.services.mobile_card_repository import MobileCardRepository
-from app.services.people_repository import PeopleRepository
-from app.services.registrations_repository import RegistrationsRepository
+from app.services.volunteers_repository import VolunteersRepository
+from app.services.volunteer_applications_repository import VolunteerApplicationsRepository
 from app.services.courses import CoursesService
 from app.services.groups import GroupsService
 from app.services.mobile_card import MobileCardService
-from app.services.people import PeopleService
-from app.services.registrations import RegistrationsService
-from app.services.search import DatabaseSearchRepository, SearchService
+from app.services.volunteers import VolunteersService
+from app.services.volunteer_applications import VolunteerApplicationsService
+from app.services.search import VolunteerSearchRepository, VolunteerSearchService
 from app.services.semester_transfer import SemesterTransferService
 from app.services.storage import StorageService
-from app.services.users import UsersService
+from app.services.admin_accounts import AdminAccountsService
 
 
 class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
@@ -36,8 +37,17 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def create_user(self, *, email: str, password: str, metadata: dict | None = None):
         raise NotConfiguredError("Supabase credentials are required for authentication.")
 
+    async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None):
+        raise NotConfiguredError("Supabase credentials are required for authentication.")
+
+    async def update_user_password(self, auth_user_id, password: str):
+        raise NotConfiguredError("Supabase credentials are required for authentication.")
+
     async def delete_user(self, auth_user_id):
         raise NotConfiguredError("Supabase credentials are required for authentication.")
+
+    def close(self) -> None:
+        return None
 
 
 @dataclass(slots=True)
@@ -48,16 +58,20 @@ class ApplicationContainer:
     storage_service: StorageService | None
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
-    people_service: PeopleService
+    volunteers_service: VolunteersService
     groups_service: GroupsService
     courses_service: CoursesService
-    search_service: SearchService
-    users_service: UsersService
+    volunteer_search_service: VolunteerSearchService
+    admin_accounts_service: AdminAccountsService
     mobile_card_service: MobileCardService
-    registrations_service: RegistrationsService
+    volunteer_applications_service: VolunteerApplicationsService
     semester_transfer_service: SemesterTransferService
+    feedback_service: FeedbackService
 
     async def aclose(self) -> None:
+        if self.storage_service is not None:
+            self.storage_service.close()
+        self.supabase_auth_gateway.close()
         await dispose_database_runtime()
 
 
@@ -79,22 +93,24 @@ def build_application_container(settings: Settings | None = None) -> Application
             supabase_auth=supabase_auth_gateway,
             session_store=session_store,
         ),
-        people_service=PeopleService(
-            repository=PeopleRepository(),
+        volunteers_service=VolunteersService(
+            repository=VolunteersRepository(),
             storage_service=storage_service,
         ),
         groups_service=GroupsService(),
         courses_service=CoursesService(),
-        search_service=SearchService(DatabaseSearchRepository()),
-        users_service=UsersService(),
+        volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository()),
+        admin_accounts_service=AdminAccountsService(),
         mobile_card_service=MobileCardService(
             resolved_settings,
             repository=MobileCardRepository(),
         ),
-        registrations_service=RegistrationsService(
-            repository=RegistrationsRepository(),
+        volunteer_applications_service=VolunteerApplicationsService(
+            repository=VolunteerApplicationsRepository(),
+            storage_service=storage_service,
         ),
         semester_transfer_service=SemesterTransferService(),
+        feedback_service=FeedbackService(resolved_settings),
     )
 
 

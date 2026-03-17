@@ -95,28 +95,28 @@ class MobileCardService:
         if self._is_review_request(normalized_email, None):
             return None
 
-        people = await self.repository.find_people_by_email(normalized_email)
-        if len(people) > 1:
+        volunteers = await self.repository.find_volunteers_by_email(normalized_email)
+        if len(volunteers) > 1:
             raise MobileCardDuplicatePersonError(
                 "More than one person uses this email address. Contact an administrator."
             )
-        if not people:
+        if not volunteers:
             raise MobileCardPersonNotFoundError(
                 "Email not found in the personnel database."
             )
 
-        person_row = people[0]
+        volunteer_row = volunteers[0]
         now = datetime.now(UTC)
-        existing_created_at = person_row["internkort_access_token_created_at"]
+        existing_created_at = volunteer_row["internkort_access_token_created_at"]
         if existing_created_at and now - existing_created_at <= timedelta(
             seconds=self.settings.mobile_card_access_code_cooldown_seconds
         ):
-            logger.info("Reused recent mobile-card access code for person %s", person_row["id"])
+            logger.info("Reused recent mobile-card access code for volunteer %s", volunteer_row["id"])
             return None
 
         access_code = _generate_access_code()
-        await self.repository.store_access_code(person_id=person_row["id"], access_code=access_code, created_at=now)
-        logger.info("Generated mobile-card access code for person %s", person_row["id"])
+        await self.repository.store_access_code(volunteer_id=volunteer_row["id"], access_code=access_code, created_at=now)
+        logger.info("Generated mobile-card access code for volunteer %s", volunteer_row["id"])
         return None
 
     async def create_session(self, email: str, access_code: str) -> MobileCardSession:
@@ -126,15 +126,15 @@ class MobileCardService:
             token = self.serializer.dumps({"person_id": 0, "review": True})
             return MobileCardSession(session_token=token, card=card)
 
-        person_row = await self.repository.find_person_by_email_and_code(
+        volunteer_row = await self.repository.find_volunteer_by_email_and_code(
             email=normalized_email,
             access_code=access_code,
             expires_after=datetime.now(UTC) - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
         )
-        if person_row is None:
+        if volunteer_row is None:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
-        token = self.serializer.dumps({"person_id": person_row["id"]})
-        card = await self._build_card(person_row["id"])
+        token = self.serializer.dumps({"person_id": volunteer_row["id"]})
+        card = await self._build_card(volunteer_row["id"])
         return MobileCardSession(session_token=token, card=card)
 
     async def get_current_card(self, session_token: str) -> MobileCardResponse:
@@ -153,17 +153,17 @@ class MobileCardService:
             raise MobileCardInvalidAccessCodeError("Unknown session token.")
         return await self._build_card(person_id)
 
-    async def _build_card(self, person_id: int) -> MobileCardResponse:
+    async def _build_card(self, volunteer_id: int) -> MobileCardResponse:
         current_semester = get_current_semester_code()
-        snapshot = await self.repository.fetch_card_snapshot(person_id=person_id, semester_code=current_semester)
+        snapshot = await self.repository.fetch_card_snapshot(volunteer_id=volunteer_id, semester_code=current_semester)
         if snapshot is None:
-            raise MobileCardPersonNotFoundError(f"Person {person_id} was not found.")
+            raise MobileCardPersonNotFoundError(f"Volunteer {volunteer_id} was not found.")
         return self._build_card_response(snapshot)
 
     def _build_card_response(self, snapshot: MobileCardSnapshot) -> MobileCardResponse:
         photo_url = build_photo_media_url(snapshot.photo_path) if snapshot.photo_path else None
         return MobileCardResponse(
-            person_id=snapshot.person_id,
+            person_id=snapshot.volunteer_id,
             first_name=snapshot.first_name,
             last_name=snapshot.last_name,
             birth_date=snapshot.birth_date,

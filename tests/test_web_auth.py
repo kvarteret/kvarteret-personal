@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 from app.auth.login_service import LoginResult
 from app.auth.roles import UserRole
-from app.dependencies import get_current_user, get_login_service, get_people_service, get_session_store, require_authenticated_user
+from app.dependencies import get_current_user, get_login_service, get_volunteers_service, get_session_store, require_authenticated_user
 from app.main import create_app
-from app.services.people import PersonListItem, PersonListPage
+from app.services.volunteers import VolunteerListItem, VolunteerListPage
 from tests.helpers import make_authenticated_user
 
 
@@ -31,15 +31,15 @@ class FakeLoginService:
         )
 
 
-class FakePeopleService:
-    async def list_people(self, query: str | None = None, limit: int = 50) -> list[PersonListItem]:
-        return (await self.list_people_page(query=query, limit=limit, cursor=None)).items
+class FakeVolunteersService:
+    async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
+        return (await self.list_volunteers_page(query=query, limit=limit, cursor=None)).items
 
-    async def list_people_page(self, query: str | None = None, limit: int = 10, cursor: str | None = None) -> PersonListPage:
-        return PersonListPage(
+    async def list_volunteers_page(self, query: str | None = None, limit: int = 10, cursor: str | None = None) -> VolunteerListPage:
+        return VolunteerListPage(
             items=[
-                PersonListItem(
-                    person_id=1,
+                VolunteerListItem(
+                    volunteer_id=1,
                     first_name="Sample",
                     last_name="Person",
                     full_name="Sample Person",
@@ -53,16 +53,16 @@ class FakePeopleService:
             next_cursor=None,
         )
 
-    async def get_person_detail_shell(self, person_id: int):
+    async def get_volunteer_detail(self, volunteer_id: int):
         return None
 
-    async def get_person_history(self, person_id: int, limit: int = 12):
+    async def list_role_assignments(self, volunteer_id: int, limit: int = 12):
         return []
 
-    async def get_person_documents(self, person_id: int):
+    async def list_volunteer_documents(self, volunteer_id: int):
         return []
 
-    async def get_person_relations(self, person_id: int):
+    async def get_volunteer_relations(self, volunteer_id: int):
         return None
 
 
@@ -75,7 +75,7 @@ def test_login_sets_cookie_and_protected_page_renders() -> None:
     app = create_app()
     user = make_authenticated_user(UserRole.ADMIN)
     app.dependency_overrides[get_login_service] = lambda: FakeLoginService()
-    app.dependency_overrides[get_people_service] = lambda: FakePeopleService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_session_store] = lambda: FakeSessionStore()
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[require_authenticated_user] = lambda: user
@@ -91,9 +91,29 @@ def test_login_sets_cookie_and_protected_page_renders() -> None:
     assert "kvarteret_session" in login_response.headers["set-cookie"]
 
     dashboard_response = client.get("/")
-    people_response = client.get("/people")
+    people_response = client.get("/volunteers")
 
     assert dashboard_response.status_code == 200
+    assert "Admin-kontoer" in dashboard_response.text
     assert "Registreringer" in dashboard_response.text
     assert people_response.status_code == 200
     assert "Sample Person" in people_response.text
+    assert "Ny frivillig" in people_response.text
+
+
+def test_protected_web_page_redirects_to_login_when_unauthenticated() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/volunteers", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_protected_htmx_fragment_redirects_to_login_when_unauthenticated() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/volunteers/list", headers={"HX-Request": "true"}, follow_redirects=False)
+
+    assert response.status_code == 200
+    assert response.headers["HX-Redirect"] == "/login"

@@ -9,13 +9,13 @@ from app.services.search_models import SearchQuery, SearchRepositoryProtocol, Se
 logger = logging.getLogger("app.performance")
 
 
-class SearchService:
+class VolunteerSearchService:
     def __init__(self, repository: SearchRepositoryProtocol) -> None:
         self.repository = repository
 
-    async def search_people(self, query: SearchQuery) -> list[SearchResultItem]:
+    async def search_volunteers(self, query: SearchQuery) -> list[SearchResultItem]:
         started_at = perf_counter()
         try:
-            return await self.repository.search_people(query)
+            return await self.repository.search_volunteers(query)
         finally:
             log_operation_timing(logger, operation="search.execute", started_at=started_at)

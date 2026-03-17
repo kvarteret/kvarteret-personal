@@ -1,0 +1,44 @@
+<div class="grid gap-4 md:grid-cols-2" id="volunteer-role-assignment-form-fields">
+  <label class="grid gap-1">
+    <span class="text-sm text-stone-500">År</span>
+    <input class="app-input" name="year" type="number" min="1900" max="3000" value="{{ default_year or '' }}" placeholder="YYYY" required>
+  </label>
+  <label class="grid gap-1">
+    <span class="text-sm text-stone-500">Semester</span>
+    <select class="app-input" name="term" required>
+      <option value="" {% if default_term is none %}selected{% endif %} disabled>Velg semester</option>
+      {% for term_value, term_label in semester_term_options %}
+        <option value="{{ term_value }}" {% if term_value|int == default_term %}selected{% endif %}>{{ term_label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="grid gap-1">
+    <span class="text-sm text-stone-500">Gruppe</span>
+    <select
+      class="app-input"
+      name="group_id"
+      hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/role-field"
+      hx-include="this"
+      hx-swap="outerHTML"
+      hx-target="#volunteer-role-assignment-form-fields"
+      hx-trigger="change"
+      required
+    >
+      <option value="" {% if selected_group_id is none %}selected{% endif %} disabled>Velg gruppe</option>
+      {% for group in group_options %}
+        <option value="{{ group.group_id }}" {% if group.group_id == selected_group_id %}selected{% endif %}>
+          {{ group.name }}{% if not group.active %} · inaktiv{% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="grid gap-1">
+    <span class="text-sm text-stone-500">Verv</span>
+    <select class="app-input" name="role_id" required>
+      <option value="" {% if not role_options %}selected{% endif %} disabled>Velg verv</option>
+      {% for role in role_options %}
+        <option value="{{ role.role_id }}">{{ role.role_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</div>

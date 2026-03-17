@@ -1,0 +1,44 @@
+{% extends "layouts/base.html" %}
+{% from "components/ui_macros.html" import form_field, history_back_button, page_header %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    {% call page_header("Ny gruppe", "Opprett gruppe") %}
+      {{ history_back_button('/groups', 'Tilbake til grupper') }}
+    {% endcall %}
+
+    <section class="app-panel">
+      <form action="/groups" class="grid gap-4" method="post">
+        <div class="grid gap-4 md:grid-cols-2">
+          {% call form_field("Navn") %}
+            <input class="app-input" name="name" required type="text">
+          {% endcall %}
+          {% call form_field("Aktiv til semester") %}
+            <input class="app-input" name="active_until_semester" required type="number" value="{{ default_group_active_until }}">
+          {% endcall %}
+          {% call form_field("Beskrivelse", "md:col-span-2") %}
+            <textarea class="app-input min-h-24" name="description"></textarea>
+          {% endcall %}
+          {% call form_field("Foreldregruppe") %}
+            <select class="app-input" name="parent_group_id">
+              <option value="">Ingen</option>
+              {% for group in group_options %}
+                <option value="{{ group.group_id }}">{{ group.name }}</option>
+              {% endfor %}
+            </select>
+          {% endcall %}
+          {% call form_field("Rabattrinn") %}
+            <input class="app-input" name="discount_step" min="0" step="1" type="number">
+          {% endcall %}
+          <label class="inline-flex items-center gap-3 text-sm text-stone-700 md:col-span-2">
+            <input class="h-4 w-4 accent-kvarteret-red" checked name="active" type="checkbox" value="true">
+            Aktiv gruppe
+          </label>
+        </div>
+        <div>
+          <button class="app-button" type="submit">Opprett gruppe</button>
+        </div>
+      </form>
+    </section>
+  </section>
+{% endblock %}

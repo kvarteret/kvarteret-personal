@@ -1,0 +1,73 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">Frivilligregistrering</p>
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Fullfør dine detaljer</h1>
+      <p class="max-w-3xl text-base leading-7 text-stone-700">Invitasjon for {{ volunteer_application.email }}</p>
+    </header>
+
+    <section class="app-panel">
+      {% if submitted %}
+        <div class="mb-6 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          Detaljene dine er sendt inn. En gruppeleder kan nå godkjenne deg i personaldatabasen.
+        </div>
+      {% endif %}
+
+      <form action="/apply/{{ volunteer_application.token }}" class="grid gap-5 md:grid-cols-2" enctype="multipart/form-data" method="post">
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Fornavn</span>
+          <input class="app-input" name="first_name" type="text" value="{{ volunteer_application.first_name or '' }}">
+        </label>
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Etternavn</span>
+          <input class="app-input" name="last_name" type="text" value="{{ volunteer_application.last_name or '' }}" required>
+        </label>
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Telefon</span>
+          <input class="app-input" name="phone" type="text" value="{{ volunteer_application.phone or '' }}">
+        </label>
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Fødselsdato</span>
+          <input class="app-input" name="birth_date" type="date" value="{{ volunteer_application.birth_date.isoformat() if volunteer_application.birth_date else '' }}">
+        </label>
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Kjønn</span>
+          <select class="app-input" name="gender">
+            {% for option in gender_options %}
+              <option value="{{ option.code }}" {% if volunteer_application.gender == option.code %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="grid gap-1 md:col-span-2">
+          <span class="text-sm text-stone-500">Adresse</span>
+          <input class="app-input" name="address" type="text" value="{{ volunteer_application.address or '' }}">
+        </label>
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Postnummer</span>
+          <input class="app-input" name="postal_code" type="text" value="{{ volunteer_application.postal_code or '' }}">
+        </label>
+        <div class="grid gap-3 md:col-span-2">
+          <span class="text-sm text-stone-500">Profilbilde</span>
+          <div class="flex flex-col gap-4 md:flex-row md:items-center">
+            <div class="grid h-28 w-28 shrink-0 place-items-center overflow-hidden rounded-2xl bg-stone-200 shadow-sm">
+              {% if volunteer_application.photo_url %}
+                <img alt="Profilbilde" class="h-full w-full object-cover" src="{{ volunteer_application.photo_url }}">
+              {% else %}
+                <span class="px-3 text-center text-xs text-stone-500">Ingen fil valgt</span>
+              {% endif %}
+            </div>
+            <label class="grid flex-1 gap-1">
+              <span class="text-sm text-stone-700">Last opp bilde (jpg, png eller webp)</span>
+              <input class="app-input px-3 py-3" accept=".jpg,.jpeg,.png,.webp" name="profile_photo" type="file">
+            </label>
+          </div>
+        </div>
+        <div class="md:col-span-2">
+          <button class="app-button" type="submit">Send inn registrering</button>
+        </div>
+      </form>
+    </section>
+  </section>
+{% endblock %}
