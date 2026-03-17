@@ -33,7 +33,7 @@
         <h2 class="mt-8 text-2xl font-medium tracking-tight text-stone-900">Påbudte grupper</h2>
         <div class="mt-5 grid gap-3">
           {% for group in course.required_groups %}
-            <div class="border-b border-stone-300 pb-3 text-stone-800">{{ group.group_name }}</div>
+            <a class="border-b border-stone-300 pb-3 text-stone-800 no-underline transition hover:text-kvarteret-red" href="/groups/{{ group.group_id }}">{{ group.group_name }}</a>
           {% else %}
             <p class="text-sm text-stone-600">Ingen gruppekrav funnet.</p>
           {% endfor %}
@@ -48,7 +48,7 @@
         <div class="grid gap-0">
           {% for completion in course.recent_completions %}
             <div class="grid gap-2 border-b border-stone-300 py-4 md:grid-cols-2 md:items-center">
-              <div class="text-stone-900">{{ completion.volunteer_name }}</div>
+              <a class="text-stone-900 no-underline transition hover:text-kvarteret-red" href="/volunteers/{{ completion.volunteer_id }}">{{ completion.volunteer_name }}</a>
               <div class="text-sm text-stone-600">{{ completion.completed_semester_label }}</div>
             </div>
           {% else %}

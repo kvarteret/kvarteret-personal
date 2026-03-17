@@ -16,6 +16,7 @@
     <span class="text-sm text-stone-500">Gruppe</span>
     <select
       class="app-input"
+      hx-disinherit="hx-select hx-target hx-swap"
       name="group_id"
       hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/role-field"
       hx-include="this"

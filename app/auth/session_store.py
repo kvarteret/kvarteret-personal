@@ -58,9 +58,8 @@ class SessionStore:
         self._cache.set(
             session_id,
             CachedSession(
-            web_session=web_session,
-            user=user,
-            cached_until=now + timedelta(seconds=self.settings.session_cache_ttl_seconds),
+                web_session=web_session,
+                user=user,
             ),
         )
         return auth_context
@@ -77,4 +76,3 @@ class SessionStore:
 class CachedSession:
     web_session: WebSession
     user: AuthenticatedUser
-    cached_until: datetime

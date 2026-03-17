@@ -92,3 +92,21 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
 
     assert cached.full_name == "Test Person"
     assert reloaded.full_name == "Reloaded Person"
+
+
+@pytest.mark.asyncio
+async def test_search_cursor_offset_is_clamped(monkeypatch):
+    service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
+    seen: dict[str, int] = {}
+
+    async def fake_search(*, normalized_query: str, limit: int, offset: int):
+        seen["offset"] = offset
+        return []
+
+    monkeypatch.setattr(service.repository, "search_volunteers_page", fake_search)
+
+    cursor = "eyJtb2RlIjoic2VhcmNoIiwib2Zmc2V0Ijo5OTk5OTl9"
+    page = await service.list_volunteers_page(query="person", limit=10, cursor=cursor)
+
+    assert seen["offset"] == 10_000
+    assert page.items == []

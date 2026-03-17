@@ -5,7 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_volunteer_applications_service, require_web_admin_user
+from app.dependencies import get_volunteer_applications_service, require_admin_user
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.services.volunteer_applications import (
@@ -22,7 +22,7 @@ router = APIRouter()
 async def volunteer_applications_create_invite(
     request: Request,
     email: str = Form(...),
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     await volunteer_applications_service.create_volunteer_application_invitation(email)
@@ -40,7 +40,7 @@ async def volunteer_applications_create_invite(
 async def volunteer_application_approve(
     request: Request,
     application_id: int,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
@@ -62,7 +62,7 @@ async def volunteer_application_approve(
 async def volunteer_application_delete(
     request: Request,
     application_id: int,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:

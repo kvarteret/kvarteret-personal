@@ -12,6 +12,8 @@ from app.web.templates import templates
 router = APIRouter()
 _GROUP_OPTIONS_CACHE: TTLCache[str, list] = TTLCache(ttl_seconds=300, max_entries=4)
 _COURSE_OPTIONS_CACHE: TTLCache[str, list] = TTLCache(ttl_seconds=300, max_entries=4)
+# These module-level caches are not invalidated on group/course edits.
+# That is acceptable for this low-volume admin UI because entries expire quickly.
 
 
 @router.get("/volunteers/search/options/groups")
@@ -85,4 +87,13 @@ async def volunteer_search_course_options(
 def _parse_selected_ids(value: str | None) -> list[int]:
     if not value:
         return []
-    return [int(item) for item in value.split(",") if item.strip()]
+    selected_ids: list[int] = []
+    for item in value.split(","):
+        stripped = item.strip()
+        if not stripped:
+            continue
+        try:
+            selected_ids.append(int(stripped))
+        except ValueError:
+            continue
+    return selected_ids

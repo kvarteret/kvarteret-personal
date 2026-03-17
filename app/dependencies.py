@@ -4,9 +4,11 @@ from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request, status
 
+from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
+from app.media_tokens import MediaTokenService
 from app.runtime import ApplicationContainer
 from app.services.feedback import FeedbackService
 from app.services.courses import CoursesService
@@ -37,6 +39,14 @@ def get_session_store(request: Request):
     return get_container(request).session_store
 
 
+def get_session_cookie_signer(request: Request) -> SessionCookieSigner:
+    return get_container(request).session_cookie_signer
+
+
+def get_media_token_service(request: Request) -> MediaTokenService:
+    return get_container(request).media_token_service
+
+
 def get_request_auth_context(request: Request) -> RequestAuthContext:
     return RequestAuthContext(
         session=getattr(request.state, "session", None),
@@ -59,19 +69,12 @@ def require_authenticated_user(
 def require_admin_user(
     current_user: AuthenticatedUser = Depends(require_authenticated_user),
 ) -> AuthenticatedUser:
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "forbidden", "message": "Admin access is required."},
-        )
-    return current_user
+    return _require_admin_user(current_user, detail="Admin access is required.")
 
 
-def require_web_admin_user(
-    current_user: AuthenticatedUser = Depends(require_authenticated_user),
-) -> AuthenticatedUser:
+def _require_admin_user(current_user: AuthenticatedUser, *, detail) -> AuthenticatedUser:
     if current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
     return current_user
 
 
@@ -117,3 +120,19 @@ def get_semester_transfer_service(request: Request) -> SemesterTransferService:
 
 def get_feedback_service(request: Request) -> FeedbackService:
     return get_container(request).feedback_service
+
+
+async def load_web_navigation_state(
+    request: Request,
+    current_user: AuthenticatedUser | None = Depends(get_current_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+) -> None:
+    request.state.volunteer_application_pending_count = 0
+    if current_user is None or current_user.role != UserRole.ADMIN:
+        return
+    try:
+        request.state.volunteer_application_pending_count = (
+            await volunteer_applications_service.count_pending_volunteer_applications()
+        )
+    except Exception:
+        request.state.volunteer_application_pending_count = 0

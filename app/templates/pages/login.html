@@ -2,37 +2,35 @@
 
 {% block page_content %}
   <section class="mx-auto grid w-full max-w-xl justify-items-center gap-5">
-    <div class="grid h-32 w-32 place-items-center rounded-full border-4 border-white/90 bg-kvarteret-red shadow-xl">
+    <div class="grid h-32 w-32 place-items-center rounded-full border-4 border-kvarteret-surface/90 bg-kvarteret-red shadow-[0_26px_55px_-30px_rgba(239,107,16,0.82)]">
       <img alt="Det Akademiske Kvarter" class="h-16 w-16 object-contain" src="{{ url_for('static', path='images/internbevis-logo.png') }}">
     </div>
 
-    <div class="w-full bg-white/92 p-8 shadow-md md:p-12">
-      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">
-        Kvarteret <span class="ml-2 text-3xl text-stone-500 md:text-4xl">Intern</span>
+    <div class="w-full bg-kvarteret-surface/96 p-8 shadow-[0_28px_70px_-34px_rgba(239,107,16,0.24)] backdrop-blur-sm md:p-12">
+      <h1 class="text-5xl leading-none font-light tracking-tight text-kvarteret-ink md:text-7xl">
+        Kvarteret <span class="ml-2 text-3xl text-kvarteret-red md:text-4xl">Intern</span>
       </h1>
-      <p class="mt-4 max-w-xl text-sm leading-6 text-stone-600 md:text-base">Logg inn med brukernavn eller e-post.</p>
+      <p class="mt-4 max-w-xl text-sm leading-6 text-kvarteret-sky md:text-base">Logg inn med brukernavn eller e-post.</p>
 
       {% if error_message %}
-        <div class="mt-6 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <div class="mt-6 bg-kvarteret-red/10 px-4 py-3 text-sm text-kvarteret-night" role="alert">
           {{ error_message }}
         </div>
       {% endif %}
 
       <form action="/login" class="mt-8 grid gap-6" method="post">
         <label class="grid gap-1">
-          <span class="text-sm text-stone-500">Brukernavn</span>
+          <span class="text-sm text-kvarteret-sky">Brukernavn</span>
           <input class="app-input" type="text" name="identifier" required>
         </label>
         <label class="grid gap-1">
-          <span class="text-sm text-stone-500">Passord</span>
+          <span class="text-sm text-kvarteret-sky">Passord</span>
           <input class="app-input" type="password" name="password" required>
         </label>
         <button class="app-button min-h-14 text-lg" type="submit">
           Logg inn
         </button>
       </form>
-
-      <p class="mt-5 text-sm text-stone-600">Trenger du hjelp med innlogging, ta kontakt med administrator.</p>
     </div>
   </section>
 {% endblock %}

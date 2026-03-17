@@ -1,5 +1,5 @@
 {% for volunteer in volunteers %}
-  <a class="grid gap-4 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.7fr)_minmax(10rem,0.8fr)_minmax(14rem,1fr)_minmax(13rem,1fr)_minmax(10rem,0.8fr)] md:items-center" href="/volunteers/{{ volunteer.volunteer_id }}" preload="mousedown">
+  <a class="grid gap-4 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.7fr)_minmax(10rem,0.8fr)_minmax(14rem,1fr)_minmax(13rem,1fr)_minmax(10rem,0.8fr)] md:items-center" href="/volunteers/{{ volunteer.volunteer_id }}">
     <div class="flex min-w-0 items-center gap-4">
       <div class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600">
         {% if volunteer.photo_url %}
@@ -34,6 +34,7 @@
 {% if next_cursor is not none %}
   <div
     class="py-4 text-center text-sm text-stone-500"
+    hx-disinherit="hx-select hx-target hx-swap"
     hx-get="/volunteers/list"
     hx-include="#volunteer-search"
     hx-swap="outerHTML"

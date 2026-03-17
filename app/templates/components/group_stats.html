@@ -1,130 +1,127 @@
-<h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Medlemsutvikling</h2>
+<section class="app-panel" id="group-stats-panel" {% if swap_oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Medlemsutvikling</h2>
+  <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+    <strong>Medlemmer per semester</strong> viser hvor mange forskjellige frivillige gruppen hadde i hvert semester.
+    <strong>Tilbakeholdelsesrate</strong> viser hvor stor andel av gruppens medlemmer som kom tilbake neste semester.
+  </p>
 
-{% if not stats %}
-  <p class="text-sm text-stone-600">Ingen statistikk tilgjengelig.</p>
-{% else %}
-  <div class="grid gap-8 xl:grid-cols-2">
-    <div>
-      <div id="group-membership-chart" style="width: 100%; height: 320px;"></div>
+  {% if not stats %}
+    <p class="text-sm text-stone-600">Ingen statistikk tilgjengelig.</p>
+  {% else %}
+    <div class="grid gap-8 xl:grid-cols-2">
+      <div>
+        <h3 class="mb-3 text-lg font-medium tracking-tight text-stone-900">Medlemmer per semester</h3>
+        <div id="group-membership-chart" style="width: 100%; height: 320px;"></div>
+      </div>
+      <div>
+        <h3 class="mb-3 text-lg font-medium tracking-tight text-stone-900">Tilbakeholdelsesrate</h3>
+        {% if retention and retention | length > 1 %}
+          <div id="group-retention-chart" style="width: 100%; height: 320px;"></div>
+        {% else %}
+          <div class="grid h-full place-items-center rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
+            Ikke nok data for å beregne tilbakeholdelse.
+          </div>
+        {% endif %}
+      </div>
     </div>
-    <div>
-      {% if retention and retention | length > 1 %}
-        <div id="group-retention-chart" style="width: 100%; height: 320px;"></div>
-      {% else %}
-        <div class="grid h-full place-items-center rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-6 text-sm text-stone-600">
-          Ikke nok data for å beregne tilbakeholdelse.
-        </div>
-      {% endif %}
-    </div>
-  </div>
 
-  <script>
-    (function () {
-      const membershipElement = document.getElementById("group-membership-chart");
-      const retentionElement = document.getElementById("group-retention-chart");
-      const semesters = [{% for s in stats %}"{{ s.semester_label }}"{% if not loop.last %},{% endif %}{% endfor %}];
-      const memberCounts = [{% for s in stats %}{{ s.member_count }}{% if not loop.last %},{% endif %}{% endfor %}];
+    <script>
+      (function () {
+        const membershipElement = document.getElementById("group-membership-chart");
+        const retentionElement = document.getElementById("group-retention-chart");
+        const semesters = [{% for s in stats %}"{{ s.semester_label }}"{% if not loop.last %},{% endif %}{% endfor %}];
+        const memberCounts = [{% for s in stats %}{{ s.member_count }}{% if not loop.last %},{% endif %}{% endfor %}];
 
-      const existingMembershipChart = echarts.getInstanceByDom(membershipElement);
-      if (existingMembershipChart) existingMembershipChart.dispose();
+        const existingMembershipChart = echarts.getInstanceByDom(membershipElement);
+        if (existingMembershipChart) existingMembershipChart.dispose();
 
-      const membershipChart = echarts.init(membershipElement);
-      membershipChart.setOption({
-        tooltip: {
-          trigger: "axis",
-          formatter: (params) => `${params[0].name}<br/>${params[0].value} medlemmer`,
-        },
-        grid: { left: 40, right: 16, top: 16, bottom: 60, containLabel: true },
-        xAxis: {
-          type: "category",
-          data: semesters,
-          axisLabel: { rotate: 45, fontSize: 11, color: "#78716c" },
-          axisLine: { lineStyle: { color: "#d6d3d1" } },
-        },
-        yAxis: {
-          type: "value",
-          minInterval: 1,
-          axisLabel: { color: "#78716c" },
-          splitLine: { lineStyle: { color: "#e7e5e4" } },
-        },
-        series: [{
-          type: "bar",
-          data: memberCounts,
-          itemStyle: { color: "#c0392b", borderRadius: [3, 3, 0, 0] },
-          emphasis: { itemStyle: { color: "#922b21" } },
-        }],
-      });
-
-      if (retentionElement) {
-        const retentionData = [
-          {% for item in retention %}
-          {
-            label: "{{ item.semester_label }}",
-            retained: {{ item.retained_to_next }},
-            churned: {{ item.churned }},
-            retention_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }},
-            churn_pct: {{ item.total_members > 0 and ((item.churned / item.total_members * 100) | round(1)) or 0 }}
-          }{% if not loop.last %},{% endif %}
-          {% endfor %}
-        ];
-        const existingRetentionChart = echarts.getInstanceByDom(retentionElement);
-        if (existingRetentionChart) existingRetentionChart.dispose();
-
-        const retentionChart = echarts.init(retentionElement);
-        retentionChart.setOption({
+        const membershipChart = echarts.init(membershipElement);
+        membershipChart.setOption({
           tooltip: {
             trigger: "axis",
-            formatter: (params) => {
-              const item = retentionData[params[0].dataIndex];
-              return `<b>${item.label}</b><br/>` +
-                `${item.retained} beholdt neste semester (${item.retention_pct}%)<br/>` +
-                `${item.churned} forlot etter dette semesteret (${item.churn_pct}%)`;
-            },
-          },
-          legend: {
-            data: ["Tilbakeholdelsesrate", "Churnrate"],
-            bottom: 0,
-            textStyle: { color: "#78716c", fontSize: 12 },
+            formatter: (params) => `${params[0].name}<br/>${params[0].value} medlemmer`,
           },
           grid: { left: 40, right: 16, top: 16, bottom: 60, containLabel: true },
           xAxis: {
             type: "category",
-            data: retentionData.map((item) => item.label),
+            data: semesters,
             axisLabel: { rotate: 45, fontSize: 11, color: "#78716c" },
             axisLine: { lineStyle: { color: "#d6d3d1" } },
           },
           yAxis: {
             type: "value",
-            min: 0,
-            max: 100,
-            axisLabel: { color: "#78716c", formatter: "{value}%" },
+            minInterval: 1,
+            axisLabel: { color: "#78716c" },
             splitLine: { lineStyle: { color: "#e7e5e4" } },
           },
-          series: [
-            {
-              name: "Tilbakeholdelsesrate",
-              type: "line",
-              data: retentionData.map((item) => item.retention_pct),
-              smooth: true,
-              lineStyle: { color: "#c0392b", width: 2 },
-              itemStyle: { color: "#c0392b" },
-              areaStyle: { color: "rgba(192,57,43,0.06)" },
-            },
-            {
-              name: "Churnrate",
-              type: "line",
-              data: retentionData.map((item) => item.churn_pct),
-              smooth: true,
-              lineStyle: { color: "#78716c", width: 2, type: "dashed" },
-              itemStyle: { color: "#78716c" },
-            },
-          ],
+          series: [{
+            type: "bar",
+            data: memberCounts,
+            itemStyle: { color: "#c0392b", borderRadius: [3, 3, 0, 0] },
+            emphasis: { itemStyle: { color: "#922b21" } },
+          }],
         });
 
-        window.addEventListener("resize", () => retentionChart.resize(), { passive: true });
-      }
+        if (retentionElement) {
+          const retentionData = [
+            {% for item in retention %}
+            {
+              label: "{{ item.semester_label }}",
+              retained: {{ item.retained_to_next }},
+              retention_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+          ];
+          const existingRetentionChart = echarts.getInstanceByDom(retentionElement);
+          if (existingRetentionChart) existingRetentionChart.dispose();
 
-      window.addEventListener("resize", () => membershipChart.resize(), { passive: true });
-    })();
-  </script>
-{% endif %}
+          const retentionChart = echarts.init(retentionElement);
+          retentionChart.setOption({
+            tooltip: {
+              trigger: "axis",
+              formatter: (params) => {
+                const item = retentionData[params[0].dataIndex];
+                return `<b>${item.label}</b><br/>` +
+                  `${item.retained} beholdt neste semester (${item.retention_pct}%)`;
+              },
+            },
+            legend: {
+              data: ["Tilbakeholdelsesrate"],
+              bottom: 0,
+              textStyle: { color: "#78716c", fontSize: 12 },
+            },
+            grid: { left: 40, right: 16, top: 16, bottom: 60, containLabel: true },
+            xAxis: {
+              type: "category",
+              data: retentionData.map((item) => item.label),
+              axisLabel: { rotate: 45, fontSize: 11, color: "#78716c" },
+              axisLine: { lineStyle: { color: "#d6d3d1" } },
+            },
+            yAxis: {
+              type: "value",
+              min: 0,
+              max: 100,
+              axisLabel: { color: "#78716c", formatter: "{value}%" },
+              splitLine: { lineStyle: { color: "#e7e5e4" } },
+            },
+            series: [
+              {
+                name: "Tilbakeholdelsesrate",
+                type: "line",
+                data: retentionData.map((item) => item.retention_pct),
+                smooth: true,
+                lineStyle: { color: "#c0392b", width: 2 },
+                itemStyle: { color: "#c0392b" },
+                areaStyle: { color: "rgba(192,57,43,0.06)" },
+              },
+            ],
+          });
+
+          window.addEventListener("resize", () => retentionChart.resize(), { passive: true });
+        }
+
+        window.addEventListener("resize", () => membershipChart.resize(), { passive: true });
+      })();
+    </script>
+  {% endif %}
+</section>

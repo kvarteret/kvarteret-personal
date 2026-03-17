@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.config import get_settings
+from app.config import Settings
 from app.errors import NotConfiguredError
 
 
@@ -20,9 +19,28 @@ class DatabaseRuntime:
         await self.engine.dispose()
 
 
-@lru_cache(maxsize=1)
-def get_database_runtime() -> DatabaseRuntime:
-    settings = get_settings()
+class DatabaseRuntimeManager:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._runtime: DatabaseRuntime | None = None
+
+    def get_runtime(self) -> DatabaseRuntime:
+        if self._runtime is None:
+            self._runtime = build_database_runtime(self.settings)
+        return self._runtime
+
+    def get_session_factory(self) -> async_sessionmaker[AsyncSession]:
+        return self.get_runtime().session_factory
+
+    async def aclose(self) -> None:
+        if self._runtime is None:
+            return
+        runtime = self._runtime
+        self._runtime = None
+        await runtime.aclose()
+
+
+def build_database_runtime(settings: Settings) -> DatabaseRuntime:
     if not settings.database_url:
         raise NotConfiguredError("DATABASE_URL is required for database-backed features.")
 
@@ -43,15 +61,3 @@ def get_database_runtime() -> DatabaseRuntime:
         engine=engine,
         session_factory=async_sessionmaker(engine, expire_on_commit=False),
     )
-
-
-def get_session_factory() -> async_sessionmaker[AsyncSession]:
-    return get_database_runtime().session_factory
-
-
-async def dispose_database_runtime() -> None:
-    if get_database_runtime.cache_info().currsize == 0:
-        return
-    runtime = get_database_runtime()
-    get_database_runtime.cache_clear()
-    await runtime.aclose()

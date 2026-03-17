@@ -18,13 +18,6 @@ def coerce_date(value: date | str | None) -> date | None:
     if value is None or isinstance(value, date):
         return value
     return date.fromisoformat(value)
-
-
-def postgrest_ilike_pattern(value: str) -> str:
-    escaped = value.replace(",", "\\,").replace("(", "\\(").replace(")", "\\)")
-    return f"*{escaped}*"
-
-
 def normalize_search_query(value: str | None) -> str | None:
     if value is None:
         return None

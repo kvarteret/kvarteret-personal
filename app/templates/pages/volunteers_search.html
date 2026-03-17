@@ -30,37 +30,37 @@
         </div>
 
         <div class="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          <div hx-get="/volunteers/search/options/groups?field=include_groups&selected={{ form.include_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
+          <div hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/search/options/groups?field=include_groups&selected={{ form.include_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
             <label class="grid gap-1">
               <span class="text-sm text-stone-500">Inkluder grupper</span>
               <select class="app-select min-h-48" disabled><option>Laster...</option></select>
             </label>
           </div>
-          <div hx-get="/volunteers/search/options/groups?field=include_current_groups&selected={{ form.include_current_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
+          <div hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/search/options/groups?field=include_current_groups&selected={{ form.include_current_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
             <label class="grid gap-1">
               <span class="text-sm text-stone-500">Inkluder aktive grupper</span>
               <select class="app-select min-h-48" disabled><option>Laster...</option></select>
             </label>
           </div>
-          <div hx-get="/volunteers/search/options/groups?field=exclude_groups&selected={{ form.exclude_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
+          <div hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/search/options/groups?field=exclude_groups&selected={{ form.exclude_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
             <label class="grid gap-1">
               <span class="text-sm text-stone-500">Ekskluder grupper</span>
               <select class="app-select min-h-48" disabled><option>Laster...</option></select>
             </label>
           </div>
-          <div hx-get="/volunteers/search/options/groups?field=exclude_current_groups&selected={{ form.exclude_current_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
+          <div hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/search/options/groups?field=exclude_current_groups&selected={{ form.exclude_current_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
             <label class="grid gap-1">
               <span class="text-sm text-stone-500">Ekskluder aktive grupper</span>
               <select class="app-select min-h-48" disabled><option>Laster...</option></select>
             </label>
           </div>
-          <div hx-get="/volunteers/search/options/courses?field=include_courses&selected={{ form.include_courses|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
+          <div hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/search/options/courses?field=include_courses&selected={{ form.include_courses|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
             <label class="grid gap-1">
               <span class="text-sm text-stone-500">Inkluder kurs</span>
               <select class="app-select min-h-48" disabled><option>Laster...</option></select>
             </label>
           </div>
-          <div hx-get="/volunteers/search/options/courses?field=exclude_courses&selected={{ form.exclude_courses|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
+          <div hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/search/options/courses?field=exclude_courses&selected={{ form.exclude_courses|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
             <label class="grid gap-1">
               <span class="text-sm text-stone-500">Ekskluder kurs</span>
               <select class="app-select min-h-48" disabled><option>Laster...</option></select>

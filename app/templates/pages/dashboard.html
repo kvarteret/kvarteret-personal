@@ -3,23 +3,23 @@
 {% block page_content %}
   <section class="mx-auto grid max-w-5xl gap-5">
     <div class="grid gap-5 md:grid-cols-2">
-      <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-white no-underline shadow-md transition hover:bg-red-700" href="/volunteers" preload="mouseover">
+      <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-kvarteret-surface no-underline shadow-[0_24px_48px_-28px_rgba(239,107,16,0.45)] transition hover:bg-kvarteret-red-dark" href="/volunteers">
         <div>
           <h2 class="text-4xl font-light tracking-tight">Frivillige</h2>
         </div>
       </a>
-      <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-white no-underline shadow-md transition hover:bg-red-700" href="/groups" preload="mouseover">
+      <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-kvarteret-surface no-underline shadow-[0_24px_48px_-28px_rgba(239,107,16,0.45)] transition hover:bg-kvarteret-red-dark" href="/groups">
         <div>
           <h2 class="text-4xl font-light tracking-tight">Grupper</h2>
         </div>
       </a>
-      <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-white no-underline shadow-md transition hover:bg-red-700" href="/courses" preload="mouseover">
+      <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-kvarteret-surface no-underline shadow-[0_24px_48px_-28px_rgba(239,107,16,0.45)] transition hover:bg-kvarteret-red-dark" href="/courses">
         <div>
           <h2 class="text-4xl font-light tracking-tight">Kurs</h2>
         </div>
       </a>
       {% if current_user.role == "Admin" %}
-        <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-white no-underline shadow-md transition hover:bg-red-700" href="/admin-accounts" preload="mouseover">
+        <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-kvarteret-surface no-underline shadow-[0_24px_48px_-28px_rgba(239,107,16,0.45)] transition hover:bg-kvarteret-red-dark" href="/admin-accounts">
           <div>
             <h2 class="text-4xl font-light tracking-tight">Admin-kontoer</h2>
           </div>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.dependencies import get_current_user, get_volunteer_applications_service, require_web_admin_user
+from app.dependencies import get_current_user, get_volunteer_applications_service, require_admin_user
 from app.observability import log_admin_activity
 from app.services.volunteer_applications import VolunteerApplicationsService
 from app.services.volunteer_options import GENDER_OPTIONS
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.get("/volunteer-applications")
 async def volunteer_applications_index(
     request: Request,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     volunteer_applications = await volunteer_applications_service.list_volunteer_applications()

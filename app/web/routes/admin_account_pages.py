@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.roles import UserRole
-from app.dependencies import get_admin_accounts_service, require_authenticated_user, require_web_admin_user
+from app.dependencies import get_admin_accounts_service, require_admin_user, require_authenticated_user
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.services.admin_accounts import AdminAccountsService
@@ -55,7 +55,7 @@ async def my_account_detail(
 async def admin_accounts_index(
     request: Request,
     q: str | None = None,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:
@@ -86,7 +86,7 @@ async def admin_accounts_index(
 async def admin_account_new(
     request: Request,
     error: str | None = None,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
 ):
     return templates.TemplateResponse(
         request,
@@ -104,7 +104,7 @@ async def admin_account_new(
 async def admin_account_detail(
     request: Request,
     account_id: int,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:

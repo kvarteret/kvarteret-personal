@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Callable
 
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
 from app.auth.repository import DatabaseAuthRepository
 from app.auth.session_store import SessionStore
 from app.auth.supabase_auth import SupabaseAuthGateway, SupabaseAuthGatewayProtocol
-from app.config import Settings, get_settings
-from app.db.session import dispose_database_runtime
+from app.config import Settings, get_settings, validate_production_secrets
+from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
+from app.media_tokens import MediaTokenService
 from app.services.feedback import FeedbackService
 from app.services.mobile_card_repository import MobileCardRepository
 from app.services.volunteers_repository import VolunteersRepository
@@ -53,6 +57,10 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
 @dataclass(slots=True)
 class ApplicationContainer:
     settings: Settings
+    database_runtime_manager: DatabaseRuntimeManager
+    session_factory: Callable[[], async_sessionmaker[AsyncSession]]
+    session_cookie_signer: SessionCookieSigner
+    media_token_service: MediaTokenService
     auth_repository: DatabaseAuthRepository
     session_store: SessionStore
     storage_service: StorageService | None
@@ -72,18 +80,26 @@ class ApplicationContainer:
         if self.storage_service is not None:
             self.storage_service.close()
         self.supabase_auth_gateway.close()
-        await dispose_database_runtime()
+        await self.database_runtime_manager.aclose()
 
 
 def build_application_container(settings: Settings | None = None) -> ApplicationContainer:
-    resolved_settings = settings or get_settings()
-    auth_repository = DatabaseAuthRepository()
+    resolved_settings = validate_production_secrets(settings or get_settings())
+    database_runtime_manager = DatabaseRuntimeManager(resolved_settings)
+    session_factory_provider = database_runtime_manager.get_session_factory
+    session_cookie_signer = SessionCookieSigner(resolved_settings)
+    media_token_service = MediaTokenService(resolved_settings)
+    auth_repository = DatabaseAuthRepository(session_factory=session_factory_provider)
     session_store = SessionStore(auth_repository, resolved_settings)
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
 
     return ApplicationContainer(
         settings=resolved_settings,
+        database_runtime_manager=database_runtime_manager,
+        session_factory=session_factory_provider,
+        session_cookie_signer=session_cookie_signer,
+        media_token_service=media_token_service,
         auth_repository=auth_repository,
         session_store=session_store,
         storage_service=storage_service,
@@ -94,22 +110,31 @@ def build_application_container(settings: Settings | None = None) -> Application
             session_store=session_store,
         ),
         volunteers_service=VolunteersService(
-            repository=VolunteersRepository(),
+            repository=VolunteersRepository(session_factory=session_factory_provider),
             storage_service=storage_service,
+            media_token_service=media_token_service,
+            detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
         ),
-        groups_service=GroupsService(),
-        courses_service=CoursesService(),
-        volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository()),
-        admin_accounts_service=AdminAccountsService(),
+        groups_service=GroupsService(session_factory=session_factory_provider),
+        courses_service=CoursesService(session_factory=session_factory_provider),
+        volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository(session_factory=session_factory_provider)),
+        admin_accounts_service=AdminAccountsService(
+            session_factory=session_factory_provider,
+            cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
+        ),
         mobile_card_service=MobileCardService(
             resolved_settings,
-            repository=MobileCardRepository(),
+            repository=MobileCardRepository(session_factory=session_factory_provider),
+            media_token_service=media_token_service,
         ),
         volunteer_applications_service=VolunteerApplicationsService(
-            repository=VolunteerApplicationsRepository(),
+            repository=VolunteerApplicationsRepository(
+                session_factory=session_factory_provider,
+                media_token_service=media_token_service,
+            ),
             storage_service=storage_service,
         ),
-        semester_transfer_service=SemesterTransferService(),
+        semester_transfer_service=SemesterTransferService(session_factory=session_factory_provider),
         feedback_service=FeedbackService(resolved_settings),
     )
 
@@ -125,7 +150,9 @@ async def app_lifespan(app: FastAPI):
 
 
 def _build_storage_service(settings: Settings) -> StorageService | None:
-    if not settings.supabase_url or not settings.supabase_secret_key:
+    has_supabase_documents = bool(settings.supabase_url and settings.supabase_secret_key)
+    has_azure_photos = bool(settings.azure_blob_connection_string)
+    if not has_supabase_documents and not has_azure_photos:
         return None
     return StorageService(settings)
 

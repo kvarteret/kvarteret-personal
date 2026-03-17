@@ -6,9 +6,11 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.auth.login_service import LoginResult
+from app.auth.models import WebSession
 from app.auth.roles import UserRole
 from app.dependencies import get_current_user, get_login_service, get_volunteers_service, get_session_store, require_authenticated_user
 from app.main import create_app
+from app.runtime import build_application_container
 from app.services.volunteers import VolunteerListItem, VolunteerListPage
 from tests.helpers import make_authenticated_user
 
@@ -71,6 +73,27 @@ class FakeSessionStore:
         return None
 
 
+class MiddlewareSessionStore:
+    def __init__(self, user) -> None:
+        self.user = user
+
+    async def load_authenticated_user(self, session_id: str):
+        return (
+            WebSession(
+                session_id=session_id,
+                auth_user_id=self.user.auth_user_id,
+                user_account_id=self.user.user_account_id,
+                expires_at=datetime.now(UTC),
+            ),
+            self.user,
+        )
+
+
+class FakePendingVolunteerApplicationsService:
+    async def count_pending_volunteer_applications(self) -> int:
+        return 3
+
+
 def test_login_sets_cookie_and_protected_page_renders() -> None:
     app = create_app()
     user = make_authenticated_user(UserRole.ADMIN)
@@ -99,6 +122,27 @@ def test_login_sets_cookie_and_protected_page_renders() -> None:
     assert people_response.status_code == 200
     assert "Sample Person" in people_response.text
     assert "Ny frivillig" in people_response.text
+
+
+def test_container_backed_auth_middleware_populates_current_user_and_pending_count() -> None:
+    user = make_authenticated_user(UserRole.ADMIN)
+    container = build_application_container()
+    container.session_store = MiddlewareSessionStore(user)
+    container.volunteer_applications_service = FakePendingVolunteerApplicationsService()  # type: ignore[assignment]
+    app = create_app(container=container)
+    client = TestClient(app)
+
+    response = client.get(
+        "/",
+        cookies={
+            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id("session-123"),
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Admin-kontoer" in response.text
+    assert "Registreringer" in response.text
+    assert ">3<" in response.text
 
 
 def test_protected_web_page_redirects_to_login_when_unauthenticated() -> None:

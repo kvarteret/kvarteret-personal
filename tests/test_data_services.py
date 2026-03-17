@@ -62,6 +62,75 @@ async def test_groups_service_list_uses_database_query(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_group_detail_recent_members_are_scoped_to_current_semester(monkeypatch) -> None:
+    service = GroupsService()
+    captured = {}
+
+    async def fake_fetch_all_mappings(stmt):
+        captured["sql"] = str(stmt)
+        return [
+            {
+                "row_type": "group",
+                "group_id": 7,
+                "group_name": "Bar",
+                "group_description": "Drinks",
+                "group_active": True,
+                "group_active_until": 20262,
+                "group_parent_id": None,
+                "group_discount_step": 1,
+                "group_created_at": "2026-03-13T12:00:00+00:00",
+                "position_id": None,
+                "position_name": None,
+                "position_points": None,
+                "position_assignment_count": None,
+                "history_id": None,
+                "volunteer_id": None,
+                "volunteer_first_name": None,
+                "volunteer_last_name": None,
+                "member_role_name": None,
+                "member_semester": None,
+                "member_contract_signed": None,
+            },
+            {
+                "row_type": "member",
+                "group_id": None,
+                "group_name": None,
+                "group_description": None,
+                "group_active": None,
+                "group_active_until": None,
+                "group_parent_id": None,
+                "group_discount_step": None,
+                "group_created_at": None,
+                "position_id": None,
+                "position_name": None,
+                "position_points": None,
+                "position_assignment_count": None,
+                "history_id": 9,
+                "volunteer_id": 12,
+                "volunteer_first_name": "Ada",
+                "volunteer_last_name": "Lovelace",
+                "member_role_name": "Shift lead",
+                "member_semester": 20262,
+                "member_contract_signed": True,
+            },
+        ]
+
+    async def fake_get_group_delete_blockers(group_id: int) -> list[str]:
+        return []
+
+    monkeypatch.setattr(service, "fetch_all_mappings", fake_fetch_all_mappings)
+    monkeypatch.setattr(service, "_get_group_delete_blockers", fake_get_group_delete_blockers)
+    monkeypatch.setattr("app.services.groups.get_current_semester_code", lambda: 20262)
+
+    detail = await service.get_group_detail(7)
+
+    assert detail is not None
+    assert len(detail.recent_members) == 1
+    assert detail.recent_members[0].semester_code == 20262
+    assert "historie.semester = :semester_1" in captured["sql"]
+
+
+@pytest.mark.asyncio
 async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
     service = CoursesService()
     captured = {}

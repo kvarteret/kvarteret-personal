@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from app.media_tokens import build_document_media_url, build_photo_media_url
 from app.services.common import build_full_name, coerce_date, coerce_datetime
 from app.services.volunteer_models import (
     AssignmentRoleOption,
@@ -22,15 +21,11 @@ def build_document_storage_path(volunteer_id: int, filename: str) -> str:
 
 
 def build_photo_url(sha1: str | None, filetype: str | None) -> str | None:
-    if not sha1 or not filetype:
-        return None
-    return build_photo_media_url(f"{sha1}.{filetype}")
+    return None
 
 
 def build_document_url(volunteer_id: int, filename: str | None) -> str | None:
-    if not filename:
-        return None
-    return build_document_media_url(build_document_storage_path(volunteer_id, filename))
+    return None
 
 
 def map_volunteer_list_item(row: dict) -> VolunteerListItem:

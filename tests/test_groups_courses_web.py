@@ -29,6 +29,7 @@ class FakeGroupsService:
         self.created_role = None
         self.updated_role = None
         self.deleted_role = None
+        self.deleted_history = None
 
     async def list_groups(self, query: str | None = None, limit: int = 100) -> list[GroupListItem]:
         return [
@@ -145,6 +146,9 @@ class FakeGroupsService:
     async def get_org_retention_stats(self) -> list[SemesterRetentionStats]:
         return await self.get_group_retention_stats(7)
 
+    async def delete_group_history_entry(self, group_id: int, history_id: int) -> None:
+        self.deleted_history = (group_id, history_id)
+
 
 class FakeCoursesService:
     async def list_courses(self, query: str | None = None, limit: int = 100) -> list[CourseListItem]:
@@ -223,21 +227,36 @@ def test_groups_and_courses_pages_render() -> None:
     assert "Opprett gruppe" in group_new_response.text
     assert "Tilbake til grupper" in group_new_response.text
     assert group_detail_response.status_code == 200
-    assert "Siste gruppehistorikk" in group_detail_response.text
+    assert "Aktive dette semesteret" in group_detail_response.text
     assert "Lagre gruppe" in group_detail_response.text
     assert "Lagre verv" in group_detail_response.text
     assert "Opprett verv" in group_detail_response.text
+    assert "Flytt til nytt semester" in group_detail_response.text
+    assert "Aktiv til semester" not in group_detail_response.text
     assert "Vervet har medlemmer og kan ikke slettes." in group_detail_response.text
     assert "disabled" in group_detail_response.text
+    assert 'hx-boost="true"' in group_detail_response.text
+    assert 'hx-swap="morph:innerHTML"' in group_detail_response.text
+    assert 'hx-select="#page-shell"' not in group_detail_response.text
+    assert 'hx-target="#page-shell"' not in group_detail_response.text
     assert 'hx-get="/groups/7/stats"' in group_detail_response.text
     assert 'hx-get="/groups/7/history"' in group_detail_response.text
+    assert 'id="group-stats-panel"' in group_detail_response.text
+    assert 'id="group-history-panel"' in group_detail_response.text
+    assert 'hx-disinherit="hx-select hx-target hx-swap"' in group_detail_response.text
+    assert 'href="/volunteers/12"' in group_detail_response.text
+    assert 'hx-delete="/groups/7/history/9"' in group_detail_response.text
+    assert '/groups/7/history/9?_method=DELETE' in group_detail_response.text
     assert group_stats_response.status_code == 200
     assert "Medlemsutvikling" in group_stats_response.text
+    assert "Medlemmer per semester" in group_stats_response.text
     assert "Tilbakeholdelsesrate" in group_stats_response.text
     assert group_history_response.status_code == 200
     assert "Gruppehistorikk" in group_history_response.text
     assert 'href="/volunteers/12"' in group_history_response.text
+    assert '/groups/7/history/9?_method=DELETE' in group_history_response.text
     assert semester_transfer_response.status_code == 200
+    assert "Flytt til nytt semester" in semester_transfer_response.text
     assert "Kopier medlemmer fra Spring 2026 til" in semester_transfer_response.text
     assert courses_response.status_code == 200
     assert "Fire safety" in courses_response.text
@@ -249,6 +268,8 @@ def test_groups_and_courses_pages_render() -> None:
     assert course_detail_response.status_code == 200
     assert "Siste fullføringer" in course_detail_response.text
     assert "Lagre kurs" in course_detail_response.text
+    assert 'href="/groups/7"' in course_detail_response.text
+    assert 'href="/volunteers/12"' in course_detail_response.text
 
 
 def test_group_role_actions_redirect_and_call_service() -> None:
@@ -284,6 +305,43 @@ def test_group_role_actions_redirect_and_call_service() -> None:
     assert delete_response.status_code == 303
     assert delete_response.headers["location"] == "/groups/7"
     assert groups_service.deleted_role == (7, 3)
+
+
+def test_group_history_delete_redirects_and_calls_service() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    groups_service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: groups_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/groups/7/history/9?_method=DELETE",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/groups/7"
+    assert groups_service.deleted_history == (7, 9)
+
+
+def test_group_history_delete_returns_oob_panels_for_htmx() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    groups_service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: groups_service
+    client = TestClient(app)
+
+    response = client.delete(
+        "/groups/7/history/9",
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert 'id="group-recent-history-panel"' in response.text
+    assert 'id="group-history-panel"' in response.text
+    assert 'id="group-stats-panel"' in response.text
+    assert 'hx-swap-oob="outerHTML"' in response.text
+    assert groups_service.deleted_history == (7, 9)
 
 
 def test_group_role_delete_returns_error_when_role_has_members() -> None:

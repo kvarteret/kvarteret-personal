@@ -55,3 +55,17 @@ def test_search_page_renders_with_fake_services() -> None:
     assert "Sample Person" in response.text
     assert options_response.status_code == 200
     assert "Bar" in options_response.text
+
+
+def test_search_filter_options_ignore_invalid_selected_ids() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
+    app.dependency_overrides[get_volunteer_search_service] = lambda: FakeSearchService()
+    client = TestClient(app)
+
+    response = client.get("/volunteers/search/options/groups?field=include_groups&selected=7,not-a-number,9")
+
+    assert response.status_code == 200
+    assert "Bar" in response.text

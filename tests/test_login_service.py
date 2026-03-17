@@ -20,13 +20,17 @@ class FakeRepository:
         self.group_ids: list[int] = []
         self.recorded_events: list[tuple[str, int]] = []
         self.replaced_memberships: list[tuple[UUID, list[int]]] = []
+        self.user_account_identifiers: list[str] = []
+        self.legacy_identifiers: list[str] = []
 
     async def get_user_account_by_identifier(self, identifier: str) -> UserAccount | None:
+        self.user_account_identifiers.append(identifier)
         if self.user_account and identifier.lower() in {self.user_account.username.lower(), self.user_account.email.lower()}:
             return self.user_account
         return None
 
     async def get_legacy_user_by_identifier(self, identifier: str) -> LegacyUser | None:
+        self.legacy_identifiers.append(identifier)
         if self.legacy_user and identifier.lower() in {self.legacy_user.username.lower(), (self.legacy_user.email or "").lower()}:
             return self.legacy_user
         return None
@@ -115,6 +119,7 @@ async def test_login_with_existing_migrated_account_uses_supabase_password_login
     assert result.migrated_from_legacy is False
     assert result.user.username == "admin"
     assert result.session.user_account_id == 9
+    assert repository.user_account_identifiers == ["admin"]
 
 
 @pytest.mark.asyncio
@@ -146,6 +151,33 @@ async def test_login_with_legacy_account_bridges_to_supabase_auth() -> None:
     assert result.user.role == UserRole.ADMIN
     assert repository.recorded_events == [("migrated", 1)]
     assert repository.replaced_memberships == [(supabase_auth.created_user_id, [10, 20])]
+
+
+@pytest.mark.asyncio
+async def test_login_normalizes_identifier_before_repository_lookups() -> None:
+    repository = FakeRepository()
+    repository.legacy_user = LegacyUser(
+        id=1,
+        username="admin",
+        email="migrated.user@example.test",
+        display_name="Migrated User",
+        password_hash=build_aspnet_identity_v3_hash(
+            "Password123",
+            salt=bytes.fromhex("00112233445566778899aabbccddeeff"),
+        ),
+    )
+    repository.legacy_roles = ["Admin"]
+    service = LoginService(repository, FakeSupabaseAuth(), FakeSessionStore())
+
+    await service.login_with_bridge(
+        identifier="  Admin ",
+        password="Password123",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert repository.user_account_identifiers == ["admin"]
+    assert repository.legacy_identifiers == ["admin"]
 
 
 @pytest.mark.asyncio

@@ -44,7 +44,7 @@ class LoginService:
         user_agent: str | None,
     ) -> LoginResult:
         normalized_identifier = identifier.strip().lower()
-        account = await self.repository.get_user_account_by_identifier(identifier)
+        account = await self.repository.get_user_account_by_identifier(normalized_identifier)
         if account:
             auth_user_id = await self.supabase_auth.sign_in_with_password(account.email, password)
             if auth_user_id is None:
@@ -84,7 +84,7 @@ class LoginService:
                 },
             )
             return result
-        legacy_user = await self.repository.get_legacy_user_by_identifier(identifier)
+        legacy_user = await self.repository.get_legacy_user_by_identifier(normalized_identifier)
         if legacy_user is None or not verify_aspnet_identity_hash(legacy_user.password_hash, password):
             logger.warning(
                 "login failed",

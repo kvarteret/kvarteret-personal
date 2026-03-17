@@ -1,19 +1,23 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.session import get_session_factory
-
-
 class SqlAlchemyRepository:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession] | Callable[[], async_sessionmaker[AsyncSession]] | None = None,
+    ) -> None:
         self._session_factory = session_factory
 
     @property
     def session_factory(self) -> async_sessionmaker[AsyncSession]:
-        return self._session_factory or get_session_factory()
+        if self._session_factory is None:
+            raise RuntimeError("A session factory must be configured before using this repository.")
+        if callable(self._session_factory):
+            return self._session_factory()
+        return self._session_factory
 
     async def fetch_all_mappings(self, stmt) -> list[dict[str, Any]]:
         async with self.session_factory() as session:

@@ -14,10 +14,10 @@
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
         {% if current_user.role == "Admin" %}
-          <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PUT" enctype="multipart/form-data" method="post">
+          <form action="/volunteers/{{ volunteer.volunteer_id }}/photo?_method=PUT" enctype="multipart/form-data" hx-disinherit="hx-select hx-target hx-swap" hx-encoding="multipart/form-data" hx-put="/volunteers/{{ volunteer.volunteer_id }}/photo" hx-target="body" method="post">
             <label class="inline-flex min-h-12 cursor-pointer items-center justify-center bg-kvarteret-red px-5 font-semibold text-white shadow-md hover:bg-red-700">
               Endre profilbilde
-              <input class="hidden" name="file" onchange="this.form.submit()" type="file" accept=".jpg,.jpeg,.png,.webp">
+              <input class="hidden" name="file" onchange="htmx.trigger(this.closest('form'), 'submit')" type="file" accept=".jpg,.jpeg,.png,.webp">
             </label>
           </form>
           {% if volunteer.photo_url %}
@@ -108,17 +108,17 @@
           {% endif %}
         </section>
 
-        <section class="app-panel" hx-get="/volunteers/{{ volunteer.volunteer_id }}/relations/panel" hx-swap="outerHTML" hx-trigger="intersect once">
+        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/relations/panel" hx-swap="outerHTML" hx-trigger="intersect once">
           <p class="text-sm text-stone-500">Laster kort og pårørende...</p>
         </section>
       </div>
 
       <div class="grid gap-6">
-        <section class="app-panel" hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/panel" hx-swap="outerHTML" hx-trigger="intersect once">
+        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/panel" hx-swap="outerHTML" hx-trigger="intersect once">
           <p class="text-sm text-stone-500">Laster historikk...</p>
         </section>
 
-        <section class="app-panel" hx-get="/volunteers/{{ volunteer.volunteer_id }}/documents/panel" hx-swap="outerHTML" hx-trigger="intersect once">
+        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/documents/panel" hx-swap="outerHTML" hx-trigger="intersect once">
           <p class="text-sm text-stone-500">Laster filer...</p>
         </section>
       </div>

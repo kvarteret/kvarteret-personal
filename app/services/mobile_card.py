@@ -9,7 +9,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, ConfigDict
 
 from app.config import Settings
-from app.media_tokens import build_photo_media_url
+from app.media_tokens import MediaTokenService
 from app.services.mobile_card_repository import MobileCardRepository, MobileCardSnapshot
 from app.services.semester import get_current_semester_code
 
@@ -85,9 +85,15 @@ class MobileCardSession:
 
 
 class MobileCardService:
-    def __init__(self, settings: Settings, repository: MobileCardRepository) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repository: MobileCardRepository,
+        media_token_service: MediaTokenService | None = None,
+    ) -> None:
         self.settings = settings
         self.repository = repository
+        self.media_token_service = media_token_service
         self.serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="kvarteret-mobile-card")
 
     async def request_access_code(self, email: str) -> None:
@@ -161,7 +167,11 @@ class MobileCardService:
         return self._build_card_response(snapshot)
 
     def _build_card_response(self, snapshot: MobileCardSnapshot) -> MobileCardResponse:
-        photo_url = build_photo_media_url(snapshot.photo_path) if snapshot.photo_path else None
+        photo_url = (
+            self.media_token_service.build_photo_media_url(snapshot.photo_path)
+            if snapshot.photo_path and self.media_token_service is not None
+            else None
+        )
         return MobileCardResponse(
             person_id=snapshot.volunteer_id,
             first_name=snapshot.first_name,

@@ -1,5 +1,3 @@
-from functools import lru_cache
-
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +14,10 @@ class Settings(BaseSettings):
     app_public_base_url: str | None = Field(default=None)
     supabase_url: str | None = Field(default=None)
     supabase_secret_key: str | None = Field(default=None)
+    azure_blob_connection_string: str | None = Field(default=None)
+    azure_blob_account_name: str | None = Field(default=None)
+    azure_blob_account_key: str | None = Field(default=None)
+    azure_photo_container: str = Field(default="images")
     database_url: str | None = Field(default=None)
     photo_bucket: str = Field(default="personnel-photos")
     document_bucket: str = Field(default="personnel-documents")
@@ -39,6 +41,10 @@ class Settings(BaseSettings):
         "app_public_base_url",
         "supabase_url",
         "supabase_secret_key",
+        "azure_blob_connection_string",
+        "azure_blob_account_name",
+        "azure_blob_account_key",
+        "azure_photo_container",
         "database_url",
         "photo_bucket",
         "document_bucket",
@@ -64,6 +70,11 @@ class Settings(BaseSettings):
         return value
 
 
-@lru_cache(maxsize=1)
+def validate_production_secrets(settings: Settings) -> Settings:
+    if settings.app_env == "production" and settings.app_secret_key == "change-me":
+        msg = "APP_SECRET_KEY must be set to a non-default value in production."
+        raise ValueError(msg)
+    return settings
+
 def get_settings() -> Settings:
-    return Settings()
+    return validate_production_secrets(Settings())

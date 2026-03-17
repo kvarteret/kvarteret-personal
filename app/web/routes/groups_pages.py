@@ -4,7 +4,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.dependencies import get_groups_service, get_semester_transfer_service, require_authenticated_user, require_web_admin_user
+from app.dependencies import get_groups_service, get_semester_transfer_service, require_admin_user, require_authenticated_user
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.services.groups import GroupsService
@@ -43,7 +43,7 @@ async def groups_index(
 @router.get("/groups/new")
 async def groups_new(
     request: Request,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
@@ -104,7 +104,7 @@ async def groups_detail_history(
     return templates.TemplateResponse(
         request,
         "components/group_history.html",
-        {"current_user": current_user, "history": history},
+        {"current_user": current_user, "history": history, "group_id": group_id},
     )
 
 
@@ -135,7 +135,7 @@ async def groups_semester_transfer(
     group_id: int,
     source_semester: int | None = None,
     target_semester: int | None = None,
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     transfer_service: SemesterTransferService = Depends(get_semester_transfer_service),
 ):
     preview = await transfer_service.preview_transfer(
@@ -155,7 +155,7 @@ async def groups_semester_transfer(
         request,
         "pages/semester_transfer.html",
         {
-            "title": f"Semester transfer · {preview.group_name}",
+            "title": f"Flytt til nytt semester · {preview.group_name}",
             "section": "groups",
             "current_user": current_user,
             "preview": preview,

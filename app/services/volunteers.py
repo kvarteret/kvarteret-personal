@@ -11,9 +11,8 @@ from time import perf_counter
 from typing import Any
 
 from app.cache import TTLCache
-from app.config import get_settings
 from app.errors import NotConfiguredError
-from app.media_tokens import build_document_media_url, build_photo_media_url
+from app.media_tokens import MediaTokenService
 from app.observability import log_operation_timing
 from app.services.common import normalize_search_query
 from app.services.volunteer_mappers import (
@@ -53,6 +52,7 @@ from app.services.semester import format_semester_code
 from app.services.storage import StorageService
 
 logger = logging.getLogger("app.performance")
+cleanup_logger = logging.getLogger(__name__)
 
 
 class VolunteersService:
@@ -60,10 +60,13 @@ class VolunteersService:
         self,
         repository: VolunteersRepository | None = None,
         storage_service: StorageService | None = None,
+        media_token_service: MediaTokenService | None = None,
+        detail_cache_ttl_seconds: int | None = None,
     ) -> None:
         self.repository = repository or VolunteersRepository()
         self.storage_service = storage_service
-        self.detail_cache_ttl_seconds = get_settings().volunteer_detail_cache_ttl_seconds
+        self.media_token_service = media_token_service
+        self.detail_cache_ttl_seconds = detail_cache_ttl_seconds or 300
         self._shell_cache: TTLCache[int, VolunteerDetail] = TTLCache(
             ttl_seconds=self.detail_cache_ttl_seconds,
             max_entries=2048,
@@ -106,8 +109,11 @@ class VolunteersService:
                 )
                 has_more = len(rows) > safe_limit
                 visible_rows = rows[:safe_limit]
+                items = [map_volunteer_list_item(row) for row in visible_rows]
+                for item, row in zip(items, visible_rows, strict=False):
+                    item.photo_url = _build_photo_url(self.media_token_service, row.get("sha1"), row.get("filetype"))
                 page = VolunteerListPage(
-                    items=[map_volunteer_list_item(row) for row in visible_rows],
+                    items=items,
                     limit=safe_limit,
                     cursor=cursor,
                     next_cursor=_encode_browse_cursor(visible_rows[-1]) if has_more and visible_rows else None,
@@ -132,6 +138,7 @@ class VolunteersService:
                 self._shell_cache.pop(volunteer_id)
                 return None
             volunteer = map_volunteer_detail(row)
+            volunteer.photo_url = _build_photo_url(self.media_token_service, row.get("sha1"), row.get("filetype"))
             self._shell_cache.set(volunteer_id, volunteer)
             return volunteer
         finally:
@@ -168,6 +175,8 @@ class VolunteersService:
         try:
             rows = await self.repository.fetch_volunteer_document_rows(volunteer_id)
             items = [map_document_item(volunteer_id, row) for row in rows]
+            for item in items:
+                item.download_url = _build_document_url(self.media_token_service, volunteer_id, item.filename)
             self._documents_cache.set(volunteer_id, items)
             return items
         finally:
@@ -322,7 +331,7 @@ class VolunteersService:
 
         return VolunteerPhotoUploadResult(
             volunteer_id=volunteer_id,
-            photo_url=build_photo_media_url(storage_path),
+            photo_url=_require_media_token_service(self.media_token_service).build_photo_media_url(storage_path),
             storage_path=storage_path,
         )
 
@@ -379,7 +388,7 @@ class VolunteersService:
             filetype=row["filetype"],
             group_id=row["gruppekobling"],
             storage_path=storage_path,
-            download_url=build_document_media_url(storage_path),
+            download_url=_require_media_token_service(self.media_token_service).build_document_media_url(storage_path),
         )
 
     async def delete_document(self, document_id: int) -> None:
@@ -411,12 +420,20 @@ class VolunteersService:
         rows = await self.repository.search_volunteers_page(
             normalized_query=normalized_query,
             limit=limit + 1,
-            offset=max(0, offset),
+            offset=max(0, min(offset, 10_000)),
         )
         has_more = len(rows) > limit
         visible_rows = rows[:limit]
         return VolunteerListPage(
-            items=[map_volunteer_list_item(row) for row in visible_rows],
+            items=[
+                _with_photo_url(
+                    map_volunteer_list_item(row),
+                    self.media_token_service,
+                    row.get("sha1"),
+                    row.get("filetype"),
+                )
+                for row in visible_rows
+            ],
             limit=limit,
             cursor=cursor,
             next_cursor=_encode_cursor({"mode": "search", "offset": offset + limit}) if has_more else None,
@@ -458,6 +475,36 @@ def _normalize_optional_text(value: str | None) -> str | None:
     return normalized or None
 
 
+def _require_media_token_service(media_token_service: MediaTokenService | None) -> MediaTokenService:
+    if media_token_service is None:
+        raise RuntimeError("A media token service must be configured before building media URLs.")
+    return media_token_service
+
+
+def _build_photo_url(media_token_service: MediaTokenService | None, sha1: str | None, filetype: str | None) -> str | None:
+    if not sha1 or not filetype:
+        return None
+    return _require_media_token_service(media_token_service).build_photo_media_url(f"{sha1}.{filetype}")
+
+
+def _build_document_url(media_token_service: MediaTokenService | None, volunteer_id: int, filename: str | None) -> str | None:
+    if not filename:
+        return None
+    return _require_media_token_service(media_token_service).build_document_media_url(
+        build_document_storage_path(volunteer_id, filename)
+    )
+
+
+def _with_photo_url(
+    item: VolunteerListItem,
+    media_token_service: MediaTokenService | None,
+    sha1: str | None,
+    filetype: str | None,
+) -> VolunteerListItem:
+    item.photo_url = _build_photo_url(media_token_service, sha1, filetype)
+    return item
+
+
 def _encode_browse_cursor(row: dict[str, Any]) -> str:
     return _encode_cursor(
         {
@@ -489,7 +536,7 @@ async def _best_effort_remove(remove_action) -> None:
     try:
         await to_thread(remove_action)
     except Exception:
-        return None
+        cleanup_logger.warning("storage cleanup failed", exc_info=True)
 
 
 __all__ = [

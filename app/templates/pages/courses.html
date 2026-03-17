@@ -24,7 +24,7 @@
     <section class="app-panel">
       <div class="grid gap-0">
         {% for course in courses %}
-          <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-3 md:items-center" href="/courses/{{ course.course_id }}" preload="mousedown">
+          <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-3 md:items-center" href="/courses/{{ course.course_id }}">
             <div>
               <div class="text-lg font-medium tracking-tight">{{ course.name }}</div>
             </div>

@@ -10,6 +10,9 @@
 
     <section class="app-panel">
       <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Frivillige per semester</h2>
+      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+        <strong>Unike frivillige</strong> betyr antall forskjellige personer som var registrert i minst én gruppe i semesteret.
+      </p>
       {% if org_stats %}
         <div id="org-trend-chart" style="width: 100%; height: 340px;"></div>
         <script>
@@ -74,7 +77,10 @@
     </section>
 
     <section class="app-panel">
-      <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Tilbakeholdelse og churn</h2>
+      <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Tilbakeholdelse over tid</h2>
+      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+        <strong>Tilbakeholdelsesrate</strong> viser hvor stor andel av de frivillige i et semester som også var aktive i neste semester.
+      </p>
       {% if org_retention and org_retention | length > 1 %}
         <div id="org-retention-chart" style="width: 100%; height: 320px;"></div>
         <script>
@@ -85,10 +91,8 @@
                 label: "{{ item.semester_label }}",
                 total: {{ item.total_members }},
                 retained: {{ item.retained_to_next }},
-                churned: {{ item.churned }},
                 new_members: {{ item.new_members }},
-                retention_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }},
-                churn_pct: {{ item.total_members > 0 and ((item.churned / item.total_members * 100) | round(1)) or 0 }}
+                retention_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }}
               }{% if not loop.last %},{% endif %}
               {% endfor %}
             ];
@@ -106,12 +110,11 @@
                   return `<b>${item.label}</b><br/>` +
                     `${item.total} frivillige totalt<br/>` +
                     `${item.retained} beholdt neste semester (${item.retention_pct}%)<br/>` +
-                    `${item.churned} forlot etter dette semesteret (${item.churn_pct}%)<br/>` +
                     `${item.new_members} nye dette semesteret`;
                 },
               },
               legend: {
-                data: ["Tilbakeholdelsesrate", "Churnrate"],
+                data: ["Tilbakeholdelsesrate"],
                 bottom: 0,
                 textStyle: { color: "#78716c", fontSize: 12 },
               },
@@ -139,14 +142,6 @@
                   itemStyle: { color: "#c0392b" },
                   areaStyle: { color: "rgba(192,57,43,0.06)" },
                 },
-                {
-                  name: "Churnrate",
-                  type: "line",
-                  data: retentionData.map((item) => item.churn_pct),
-                  smooth: true,
-                  lineStyle: { color: "#78716c", width: 2, type: "dashed" },
-                  itemStyle: { color: "#78716c" },
-                },
               ],
             });
 
@@ -160,6 +155,9 @@
 
     <section class="app-panel">
       <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Nye vs. tilbakevendte frivillige</h2>
+      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+        <strong>Tilbakevendte</strong> er personer som også var aktive forrige semester. <strong>Nye</strong> er personer som ikke var aktive forrige semester.
+      </p>
       {% if org_retention and org_retention | length > 1 %}
         <div id="org-cohort-chart" style="width: 100%; height: 320px;"></div>
         <script>
@@ -235,6 +233,9 @@
 
     <section class="app-panel">
       <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Aktive grupper dette semesteret</h2>
+      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+        Grafen viser gruppene med flest aktive frivillige i inneværende semester.
+      </p>
       {% if group_counts %}
         <div id="group-counts-chart" style="width: 100%; height: {{ [group_counts|length * 36 + 40, 260]|max }}px;"></div>
         <script>

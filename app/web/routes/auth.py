@@ -4,9 +4,15 @@ from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.auth.roles import UserRole
-from app.auth.cookies import sign_session_id, unsign_session_id
+from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginError, LoginService
-from app.dependencies import get_current_user, get_login_service, get_session_store, get_settings
+from app.dependencies import (
+    get_current_user,
+    get_login_service,
+    get_session_cookie_signer,
+    get_session_store,
+    get_settings,
+)
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.web.templates import templates
@@ -56,6 +62,7 @@ async def login_submit(
     identifier: str = Form(...),
     password: str = Form(...),
     login_service: LoginService = Depends(get_login_service),
+    session_cookie_signer: SessionCookieSigner = Depends(get_session_cookie_signer),
     settings=Depends(get_settings),
 ):
     try:
@@ -91,7 +98,7 @@ async def login_submit(
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie(
         key=settings.session_cookie_name,
-        value=sign_session_id(result.session.session_id),
+        value=session_cookie_signer.sign_session_id(result.session.session_id),
         httponly=True,
         secure=request.url.scheme == "https" or settings.app_env == "production",
         samesite="lax",
@@ -104,13 +111,14 @@ async def login_submit(
 async def logout(
     request: Request,
     current_user=Depends(get_current_user),
+    session_cookie_signer: SessionCookieSigner = Depends(get_session_cookie_signer),
     settings=Depends(get_settings),
     session_store=Depends(get_session_store),
 ):
     signed_cookie = request.cookies.get(settings.session_cookie_name)
     if signed_cookie:
         try:
-            session_id = unsign_session_id(signed_cookie)
+            session_id = session_cookie_signer.unsign_session_id(signed_cookie)
             await session_store.delete_session(session_id)
         except Exception:
             pass

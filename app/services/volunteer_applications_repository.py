@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.session import get_session_factory
+from app.db.repository import SqlAlchemyRepository
 from app.db.tables import nytt_personal, personal, personal_bilde, registrering
-from app.media_tokens import build_photo_media_url
+from app.media_tokens import MediaTokenService
 from app.services.volunteer_applications import (
     VolunteerApplicationDetail,
     VolunteerApplicationListItem,
@@ -15,9 +16,17 @@ from app.services.volunteer_applications import (
 )
 
 
-class VolunteerApplicationsRepository:
+class VolunteerApplicationsRepository(SqlAlchemyRepository):
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+        media_token_service: MediaTokenService | None = None,
+    ) -> None:
+        super().__init__(session_factory=session_factory)
+        self.media_token_service = media_token_service
+
     async def create_volunteer_application_invitation(self, *, email: str, token: str) -> VolunteerApplicationInvite:
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             async with session.begin():
                 row = (
                     await session.execute(
@@ -48,7 +57,7 @@ class VolunteerApplicationsRepository:
             .select_from(registrering.outerjoin(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id))
             .order_by(registrering.c.opprettet.desc(), registrering.c.id.desc())
         )
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             rows = (await session.execute(stmt)).mappings().all()
         return [
             VolunteerApplicationListItem(
@@ -66,7 +75,7 @@ class VolunteerApplicationsRepository:
 
     async def count_pending_volunteer_applications(self) -> int:
         stmt = select(func.count()).select_from(registrering.join(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id))
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             count = await session.scalar(stmt)
         return int(count or 0)
 
@@ -98,7 +107,7 @@ class VolunteerApplicationsRepository:
             "photo_sha1": photo_sha1,
             "photo_filetype": photo_filetype,
         }
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             async with session.begin():
                 existing_row = (
                     await session.execute(
@@ -120,7 +129,7 @@ class VolunteerApplicationsRepository:
                     )
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             return await session.scalar(
                 select(personal.c.id)
                 .where(func.lower(func.coalesce(personal.c.epost, "")) == email.lower())
@@ -128,7 +137,7 @@ class VolunteerApplicationsRepository:
             )
 
     async def approve_volunteer_application(self, registration: VolunteerApplicationDetail) -> int:
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             async with session.begin():
                 inserted = (
                     await session.execute(
@@ -160,7 +169,7 @@ class VolunteerApplicationsRepository:
         return inserted["id"]
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             async with session.begin():
                 await session.execute(delete(nytt_personal).where(nytt_personal.c.registrering_id == registration_id))
                 await session.execute(delete(registrering).where(registrering.c.id == registration_id))
@@ -188,7 +197,7 @@ class VolunteerApplicationsRepository:
             .where(registrering.c.id.in_(id_query))
             .limit(1)
         )
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             row = (await session.execute(detail_stmt)).mappings().first()
         if row is None:
             return None
@@ -209,7 +218,9 @@ class VolunteerApplicationsRepository:
             employment_status=row["arb_status"],
             photo_sha1=row["photo_sha1"],
             photo_filetype=row["photo_filetype"],
-            photo_url=build_photo_media_url(f"{row['photo_sha1']}.{row['photo_filetype']}")
-            if row["photo_sha1"] and row["photo_filetype"]
-            else None,
+            photo_url=(
+                self.media_token_service.build_photo_media_url(f"{row['photo_sha1']}.{row['photo_filetype']}")
+                if row["photo_sha1"] and row["photo_filetype"] and self.media_token_service is not None
+                else None
+            ),
         )

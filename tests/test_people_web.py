@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
+from io import BytesIO
 
 from app.dependencies import get_groups_service, get_volunteers_service
 from app.main import create_app
@@ -164,6 +165,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Laster filer" in detail_response.text
     assert "Laster kort og pårørende" in detail_response.text
     assert "name=\"gender\"" in detail_response.text
+    assert f'action="/volunteers/12/photo?_method=PUT"' in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
 
 
@@ -214,6 +216,7 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     assert "Velg gruppe" in history_response.text
     assert "Slett verv" in history_response.text
     assert "kontrakt" in history_response.text
+    assert 'href="/groups/9"' in history_response.text
     assert documents_response.status_code == 200
     assert "certificate.pdf" in documents_response.text
     assert "window.confirm('Slette denne filen?')" in documents_response.text
@@ -233,5 +236,32 @@ def test_volunteer_stats_page_renders_with_fake_group_service() -> None:
     assert response.status_code == 200
     assert "Organisasjonsstatistikk" in response.text
     assert "Frivillige per semester" in response.text
-    assert "Tilbakeholdelse og churn" in response.text
+    assert "Unike frivillige" in response.text
+    assert "Tilbakeholdelse over tid" in response.text
+    assert "Tilbakevendte" in response.text
     assert "Aktive grupper dette semesteret" in response.text
+
+
+def test_volunteer_upload_endpoints_reject_files_over_30mb() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    oversized = BytesIO(b"x" * (30 * 1024 * 1024 + 1))
+
+    photo_response = client.put(
+        "/volunteers/12/photo",
+        files={"file": ("photo.jpg", oversized, "image/jpeg")},
+    )
+
+    document_response = client.post(
+        "/volunteers/12/documents",
+        data={"group_id": ""},
+        files={"file": ("doc.pdf", BytesIO(b"x" * (30 * 1024 * 1024 + 1)), "application/pdf")},
+    )
+
+    assert photo_response.status_code == 400
+    assert photo_response.json() == {"detail": "File exceeds 30 MB limit."}
+    assert document_response.status_code == 400
+    assert document_response.json() == {"detail": "File exceeds 30 MB limit."}

@@ -5,7 +5,7 @@
   <section class="grid gap-7">
     {% call page_header("Gruppeinformasjon", group.name, group.description or "Ingen beskrivelse") %}
       {% if current_user.role == "Admin" %}
-        <a class="app-button" href="/groups/{{ group.group_id }}/semester-transfer">Semesterflyt</a>
+        <a class="app-button" href="/groups/{{ group.group_id }}/semester-transfer">Flytt til nytt semester</a>
       {% endif %}
       {{ history_back_button('/groups', 'Tilbake til grupper') }}
     {% endcall %}
@@ -18,9 +18,6 @@
             <div class="grid gap-4 md:grid-cols-2">
               {% call form_field("Navn") %}
                 <input class="app-input" name="name" required type="text" value="{{ group.name }}">
-              {% endcall %}
-              {% call form_field("Aktiv til semester") %}
-                <input class="app-input" name="active_until_semester" required type="number" value="{{ group.active_until_semester }}">
               {% endcall %}
               {% call form_field("Beskrivelse", "md:col-span-2") %}
                 <textarea class="app-input min-h-24" name="description">{{ group.description or "" }}</textarea>
@@ -58,10 +55,6 @@
               <dd class="mt-1 text-stone-900">{{ "Aktiv" if group.active else "Inaktiv" }}</dd>
             </div>
             <div class="border-b border-stone-300 pb-3">
-              <dt class="text-sm text-stone-500">Aktiv til</dt>
-              <dd class="mt-1 text-stone-900">{{ group.active_until_label or group.active_until_semester }}</dd>
-            </div>
-            <div class="border-b border-stone-300 pb-3">
               <dt class="text-sm text-stone-500">Foreldregruppe</dt>
               <dd class="mt-1 text-stone-900">{{ group.parent_group_id or "Ingen" }}</dd>
             </div>
@@ -77,7 +70,7 @@
           {% for position in group.positions %}
             {% if current_user.role == "Admin" %}
               <div class="border-b border-stone-300 pb-4">
-                <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem_auto_auto]">
+                <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem]">
                   <form action="/groups/{{ group.group_id }}/roles/{{ position.role_id }}?_method=PATCH" class="contents" method="post">
                     {% call form_field("Vervnavn", "min-w-0") %}
                       <input class="app-input" name="role_name" required type="text" value="{{ position.role_name or '' }}">
@@ -85,10 +78,8 @@
                     {% call form_field("Pingvinpoeng", "min-w-0") %}
                       <input class="app-input" min="0" name="pingvin_points" required step="1" type="number" value="{{ position.pingvin_points }}">
                     {% endcall %}
-                    <div class="flex items-end lg:justify-start">
+                    <div class="flex flex-wrap items-end gap-3 lg:col-span-2">
                       <button class="app-button" type="submit">Lagre verv</button>
-                    </div>
-                    <div class="flex items-end lg:justify-start">
                       <button class="app-button-secondary" formaction="/groups/{{ group.group_id }}/roles/{{ position.role_id }}?_method=DELETE" formmethod="post" onclick="return window.confirm('Slette dette vervet?');" type="submit" {% if position.delete_blockers %}disabled title="{{ position.delete_blockers | join(' ') }}"{% endif %}>Slett verv</button>
                     </div>
                   </form>
@@ -105,46 +96,29 @@
           {% endfor %}
         </div>
         {% if current_user.role == "Admin" %}
-          <form action="/groups/{{ group.group_id }}/roles" class="mt-5 grid gap-3 rounded-2xl bg-stone-100 p-4 lg:grid-cols-[minmax(0,1fr)_10rem_auto]" method="post">
+          <form action="/groups/{{ group.group_id }}/roles" class="mt-5 grid gap-3 rounded-2xl bg-stone-100 p-4 lg:grid-cols-[minmax(0,1fr)_10rem]" method="post">
             {% call form_field("Nytt verv", "min-w-0") %}
               <input class="app-input" name="role_name" placeholder="For eksempel PR-ansvarlig" required type="text">
             {% endcall %}
             {% call form_field("Pingvinpoeng", "min-w-0") %}
               <input class="app-input" min="0" name="pingvin_points" required step="1" type="number" value="0">
             {% endcall %}
-            <div class="flex items-end">
+            <div class="flex items-end lg:col-span-2">
               <button class="app-button" type="submit">Opprett verv</button>
             </div>
           </form>
         {% endif %}
       </section>
 
-      <section class="app-panel">
-        <div class="mb-5 flex items-center justify-between gap-3">
-          <h2 class="text-2xl font-medium tracking-tight text-stone-900">Siste gruppehistorikk</h2>
-          <span class="app-badge">{{ group.recent_members|length }} rader</span>
-        </div>
-        <div class="grid gap-0">
-          {% for member in group.recent_members %}
-            <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-3 md:items-center">
-              <div>
-                <div class="text-lg font-medium tracking-tight text-stone-900">{{ member.volunteer_name }}</div>
-                <div class="text-sm text-stone-500">{{ member.role_name or "Ingen rolle" }}</div>
-              </div>
-              <div class="text-sm text-stone-700">{{ member.semester_label }}</div>
-              <div class="text-sm text-stone-700">{% if member.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</div>
-            </div>
-          {% else %}
-            <p class="text-sm text-stone-600">Ingen historikk funnet.</p>
-          {% endfor %}
-        </div>
-      </section>
+      {% include "components/group_recent_history_panel.html" %}
     </div>
 
     <section
       class="app-panel"
+      id="group-stats-panel"
+      hx-disinherit="hx-select hx-target hx-swap"
       hx-get="/groups/{{ group.group_id }}/stats"
-      hx-swap="innerHTML"
+      hx-swap="outerHTML"
       hx-trigger="load"
     >
       <p class="text-sm text-stone-500">Laster gruppestatistikk...</p>
@@ -152,8 +126,10 @@
 
     <section
       class="app-panel"
+      id="group-history-panel"
+      hx-disinherit="hx-select hx-target hx-swap"
       hx-get="/groups/{{ group.group_id }}/history"
-      hx-swap="innerHTML"
+      hx-swap="outerHTML"
       hx-trigger="load"
     >
       <p class="text-sm text-stone-500">Laster full historikk...</p>

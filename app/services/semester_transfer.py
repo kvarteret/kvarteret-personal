@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import func, insert, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.session import get_session_factory
+from app.db.repository import SqlAlchemyRepository
 from app.db.tables import grupper, historie, personal, verv
 from app.services.semester import format_semester_code, get_current_semester_code, get_next_semester_code
 
@@ -45,7 +46,10 @@ class SemesterTransferEntry:
     contract_signed: bool = False
 
 
-class SemesterTransferService:
+class SemesterTransferService(SqlAlchemyRepository):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+        super().__init__(session_factory=session_factory)
+
     async def preview_transfer(
         self,
         group_id: int,
@@ -54,7 +58,7 @@ class SemesterTransferService:
     ) -> SemesterTransferPreview:
         group_stmt = select(grupper.c.id, grupper.c.navn).where(grupper.c.id == group_id).limit(1)
         source_semester_stmt = select(func.max(historie.c.semester)).where(historie.c.id_gruppe == group_id)
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             group_row = (await session.execute(group_stmt)).mappings().first()
             if group_row is None:
                 raise SemesterTransferGroupNotFoundError(f"Group {group_id} was not found.")
@@ -102,7 +106,7 @@ class SemesterTransferService:
         )
 
     async def apply_transfer(self, group_id: int, target_semester: int, entries: list[SemesterTransferEntry]) -> int:
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             group_exists = await session.scalar(select(grupper.c.id).where(grupper.c.id == group_id).limit(1))
         if group_exists is None:
             raise SemesterTransferGroupNotFoundError(f"Group {group_id} was not found.")
@@ -117,7 +121,7 @@ class SemesterTransferService:
             .where(historie.c.semester == target_semester)
             .where(historie.c.id_personal.in_(volunteer_ids))
         )
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             existing_volunteers = {
                 row["id_personal"]
                 for row in (await session.execute(existing_stmt)).mappings().all()
@@ -135,7 +139,7 @@ class SemesterTransferService:
         ]
         if not values:
             return 0
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             async with session.begin():
                 await session.execute(insert(historie), values)
         return len(values)

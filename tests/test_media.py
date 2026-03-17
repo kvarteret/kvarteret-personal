@@ -29,6 +29,9 @@ def test_media_photo_route_returns_backend_bytes(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.content == b"fake-jpeg"
     assert response.headers["content-type"] == "image/jpeg"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def test_media_document_route_returns_backend_bytes(monkeypatch) -> None:
@@ -42,6 +45,9 @@ def test_media_document_route_returns_backend_bytes(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.content == b"%PDF-1.7 fake"
     assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def test_media_route_rejects_invalid_token(monkeypatch) -> None:

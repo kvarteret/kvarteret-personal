@@ -9,8 +9,8 @@ from app.dependencies import (
     get_admin_accounts_service,
     get_session_store,
     get_supabase_auth_gateway,
+    require_admin_user,
     require_authenticated_user,
-    require_web_admin_user,
 )
 from app.observability import log_admin_activity
 from app.services.admin_accounts import AdminAccountsService
@@ -98,7 +98,7 @@ async def admin_account_create(
     email: str = Form(...),
     display_name: str | None = Form(default=None),
     role: str = Form(...),
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
     supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
@@ -152,7 +152,7 @@ async def admin_account_update(
     email: str = Form(...),
     display_name: str | None = Form(default=None),
     role: str = Form(...),
-    current_user=Depends(require_web_admin_user),
+    current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
     session_store=Depends(get_session_store),
 ):

@@ -30,6 +30,10 @@ class GroupRoleDeleteBlockedError(ValueError):
         self.blockers = blockers
 
 
+class GroupHistoryNotFoundError(ValueError):
+    pass
+
+
 @dataclass(slots=True)
 class GroupListItem:
     group_id: int
@@ -157,6 +161,7 @@ class GroupsServiceProtocol(Protocol):
     async def create_group_role(self, group_id: int, *, role_name: str, pingvin_points: int) -> int | None: ...
     async def update_group_role(self, group_id: int, role_id: int, *, role_name: str, pingvin_points: int) -> bool: ...
     async def delete_group_role(self, group_id: int, role_id: int) -> bool: ...
+    async def delete_group_history_entry(self, group_id: int, history_id: int) -> None: ...
 
 
 class GroupsService(SqlAlchemyRepository):
@@ -193,6 +198,7 @@ class GroupsService(SqlAlchemyRepository):
 
     async def get_group_detail(self, group_id: int) -> GroupDetail | None:
         started_at = perf_counter()
+        current_semester = get_current_semester_code()
         role_assignment_counts = (
             select(
                 historie.c.id_verv.label("role_id"),
@@ -261,9 +267,8 @@ class GroupsService(SqlAlchemyRepository):
             .select_from(
                 historie.join(personal, personal.c.id == historie.c.id_personal).outerjoin(verv, verv.c.id == historie.c.id_verv)
             )
-            .where(historie.c.id_gruppe == group_id)
-            .order_by(historie.c.semester.desc(), historie.c.id.desc())
-            .limit(20)
+            .where(historie.c.id_gruppe == group_id, historie.c.semester == current_semester)
+            .order_by(personal.c.etternavn.asc(), personal.c.fornavn.asc(), historie.c.id.asc())
             .subquery()
         )
         members_select = select(
@@ -338,8 +343,7 @@ class GroupsService(SqlAlchemyRepository):
             positions=sorted(positions, key=lambda item: ((item.role_name or "").lower(), item.role_id)),
             recent_members=sorted(
                 members,
-                key=lambda item: (item.semester_code, item.history_id),
-                reverse=True,
+                key=lambda item: ((item.volunteer_name or "").lower(), (item.role_name or "").lower(), item.history_id),
             ),
             delete_blockers=delete_blockers,
         )
@@ -673,6 +677,14 @@ class GroupsService(SqlAlchemyRepository):
 
         deleted_role_id = await self.execute_in_transaction(callback)
         return deleted_role_id == role_id
+
+    async def delete_group_history_entry(self, group_id: int, history_id: int) -> None:
+        row = await self.fetch_one_mapping(
+            select(historie.c.id, historie.c.id_gruppe).where(historie.c.id == history_id)
+        )
+        if row is None or row["id_gruppe"] != group_id:
+            raise GroupHistoryNotFoundError(f"Group history entry {history_id} was not found.")
+        await self.execute(delete(historie).where(historie.c.id == history_id))
 
     async def _get_group_delete_blockers(self, group_id: int) -> list[str]:
         child_group_count = await self.fetch_scalar(

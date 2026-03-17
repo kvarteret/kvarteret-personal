@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.dependencies import load_web_navigation_state
 
 from app.web.routes.admin_account_actions import router as admin_account_actions_router
 from app.web.routes.admin_account_pages import router as admin_account_pages_router
@@ -16,7 +18,7 @@ from app.web.routes.volunteer_pages import router as volunteer_pages_router
 from app.web.routes.volunteer_search_fragments import router as volunteer_search_fragments_router
 from app.web.routes.volunteer_search_pages import router as volunteer_search_pages_router
 
-web_router = APIRouter()
+web_router = APIRouter(dependencies=[Depends(load_web_navigation_state)])
 web_router.include_router(auth_router)
 web_router.include_router(feedback_router)
 web_router.include_router(volunteer_search_fragments_router)

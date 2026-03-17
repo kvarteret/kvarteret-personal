@@ -6,8 +6,9 @@ import logging
 from time import perf_counter
 
 from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.session import get_session_factory
+from app.db.repository import SqlAlchemyRepository
 from app.db.tables import grupper, historie, personal, personal_bilde, verv
 from app.observability import log_operation_timing
 
@@ -34,7 +35,10 @@ class MobileCardSnapshot:
     active_roles: list[MobileCardRoleSnapshot]
 
 
-class MobileCardRepository:
+class MobileCardRepository(SqlAlchemyRepository):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+        super().__init__(session_factory=session_factory)
+
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
         stmt = (
             select(
@@ -47,11 +51,11 @@ class MobileCardRepository:
             .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
             .order_by(personal.c.id.asc())
         )
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             return list((await session.execute(stmt)).mappings().all())
 
     async def store_access_code(self, *, volunteer_id: int, access_code: str, created_at: datetime) -> None:
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             async with session.begin():
                 await session.execute(
                     update(personal)
@@ -77,7 +81,7 @@ class MobileCardRepository:
             .where(personal.c.internkort_access_token_created_at >= expires_after)
             .limit(1)
         )
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             return (await session.execute(stmt)).mappings().first()
 
     async def fetch_card_snapshot(self, *, volunteer_id: int, semester_code: int) -> MobileCardSnapshot | None:
@@ -115,7 +119,7 @@ class MobileCardRepository:
             .where(personal.c.id == volunteer_id)
             .order_by(grupper.c.navn.asc().nullslast(), verv.c.verv.asc().nullslast())
         )
-        async with get_session_factory()() as session:
+        async with self.session_factory() as session:
             rows = list((await session.execute(snapshot_stmt)).mappings().all())
             log_operation_timing(
                 logger,

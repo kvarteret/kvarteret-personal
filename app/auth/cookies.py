@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-from functools import lru_cache
-
 from itsdangerous import URLSafeSerializer
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 
-@lru_cache(maxsize=1)
-def get_session_cookie_serializer() -> URLSafeSerializer:
-    return URLSafeSerializer(get_settings().app_secret_key, salt="kvarteret-session")
+class SessionCookieSigner:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._serializer = URLSafeSerializer(settings.app_secret_key, salt="kvarteret-session")
+
+    def sign_session_id(self, session_id: str) -> str:
+        return self._serializer.dumps(session_id)
+
+    def unsign_session_id(self, value: str) -> str:
+        return self._serializer.loads(value)
 
 
 def sign_session_id(session_id: str) -> str:
-    return get_session_cookie_serializer().dumps(session_id)
+    return SessionCookieSigner(get_settings()).sign_session_id(session_id)
 
 
 def unsign_session_id(value: str) -> str:
-    return get_session_cookie_serializer().loads(value)
-
+    return SessionCookieSigner(get_settings()).unsign_session_id(value)

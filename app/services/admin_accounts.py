@@ -8,10 +8,10 @@ from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import func, insert, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.roles import UserRole
 from app.cache import TTLCache
-from app.config import get_settings
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import group_admin_memberships, user_accounts
 from app.observability import log_operation_timing
@@ -74,9 +74,12 @@ class AdminAccountsServiceProtocol(Protocol):
 
 
 class AdminAccountsService(SqlAlchemyRepository):
-    def __init__(self) -> None:
-        super().__init__()
-        cache_ttl_seconds = get_settings().admin_accounts_cache_ttl_seconds
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+        cache_ttl_seconds: int = 60,
+    ) -> None:
+        super().__init__(session_factory=session_factory)
         self._list_cache: TTLCache[tuple[str | None, int], list[AdminAccountListItem]] = TTLCache(
             ttl_seconds=cache_ttl_seconds,
             max_entries=128,
