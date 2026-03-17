@@ -59,6 +59,26 @@ def test_build_database_runtime_uses_queue_pool_by_default(monkeypatch) -> None:
     }
 
 
+def test_build_database_runtime_uses_null_pool_on_vercel(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_create_async_engine(database_url: str, **kwargs):
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr("app.db.session.create_async_engine", fake_create_async_engine)
+    monkeypatch.setattr("app.db.session.async_sessionmaker", lambda engine, expire_on_commit: ("session-factory", engine, expire_on_commit))
+    monkeypatch.setenv("VERCEL", "1")
+
+    build_database_runtime(Settings(database_url="postgresql+asyncpg://example.test/postgres"))
+
+    assert captured["kwargs"] == {
+        "connect_args": {},
+        "pool_pre_ping": True,
+        "poolclass": NullPool,
+    }
+
+
 def test_build_database_runtime_allows_null_pool_override(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

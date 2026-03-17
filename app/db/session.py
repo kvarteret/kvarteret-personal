@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -50,7 +51,9 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
 
     engine_kwargs: dict[str, object] = {"connect_args": connect_args, "pool_pre_ping": True}
     if not is_sqlite:
-        if settings.database_use_null_pool:
+        # Serverless workers should not retain sticky DB sessions.
+        use_null_pool = settings.database_use_null_pool or bool(os.getenv("VERCEL"))
+        if use_null_pool:
             engine_kwargs["poolclass"] = NullPool
         else:
             engine_kwargs["pool_size"] = settings.database_pool_size
