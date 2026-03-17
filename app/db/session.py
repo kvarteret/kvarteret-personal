@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -49,12 +48,16 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
     if is_sqlite:
         connect_args["check_same_thread"] = False
 
-    engine_kwargs: dict[str, object] = {
-        "connect_args": connect_args,
-        "pool_pre_ping": True,
-    }
-    if not is_sqlite and (settings.app_env == "production" or os.getenv("VERCEL")):
-        engine_kwargs["poolclass"] = NullPool
+    engine_kwargs: dict[str, object] = {"connect_args": connect_args, "pool_pre_ping": True}
+    if not is_sqlite:
+        if settings.database_use_null_pool:
+            engine_kwargs["poolclass"] = NullPool
+        else:
+            engine_kwargs["pool_size"] = settings.database_pool_size
+            engine_kwargs["max_overflow"] = settings.database_max_overflow
+            engine_kwargs["pool_timeout"] = settings.database_pool_timeout_seconds
+            engine_kwargs["pool_recycle"] = settings.database_pool_recycle_seconds
+            engine_kwargs["pool_use_lifo"] = True
 
     engine = create_async_engine(settings.database_url, **engine_kwargs)
     return DatabaseRuntime(

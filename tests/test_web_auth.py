@@ -90,7 +90,11 @@ class MiddlewareSessionStore:
 
 
 class FakePendingVolunteerApplicationsService:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def count_pending_volunteer_applications(self) -> int:
+        self.calls += 1
         return 3
 
 
@@ -128,7 +132,8 @@ def test_container_backed_auth_middleware_populates_current_user_and_pending_cou
     user = make_authenticated_user(UserRole.ADMIN)
     container = build_application_container()
     container.session_store = MiddlewareSessionStore(user)
-    container.volunteer_applications_service = FakePendingVolunteerApplicationsService()  # type: ignore[assignment]
+    pending_service = FakePendingVolunteerApplicationsService()
+    container.volunteer_applications_service = pending_service  # type: ignore[assignment]
     app = create_app(container=container)
     client = TestClient(app)
 
@@ -143,6 +148,30 @@ def test_container_backed_auth_middleware_populates_current_user_and_pending_cou
     assert "Admin-kontoer" in response.text
     assert "Registreringer" in response.text
     assert ">3<" in response.text
+    assert pending_service.calls == 1
+
+
+def test_container_backed_auth_middleware_skips_pending_count_for_htmx_fragments() -> None:
+    user = make_authenticated_user(UserRole.ADMIN)
+    container = build_application_container()
+    container.session_store = MiddlewareSessionStore(user)
+    pending_service = FakePendingVolunteerApplicationsService()
+    container.volunteer_applications_service = pending_service  # type: ignore[assignment]
+    container.volunteers_service = FakeVolunteersService()  # type: ignore[assignment]
+    app = create_app(container=container)
+    client = TestClient(app)
+
+    response = client.get(
+        "/volunteers/list",
+        headers={"HX-Request": "true"},
+        cookies={
+            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id("session-123"),
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Sample Person" in response.text
+    assert pending_service.calls == 0
 
 
 def test_protected_web_page_redirects_to_login_when_unauthenticated() -> None:

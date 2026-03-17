@@ -6,6 +6,7 @@ from datetime import date, datetime
 from secrets import token_hex, token_urlsafe
 from typing import Protocol
 
+from app.cache import TTLCache
 from app.errors import NotConfiguredError
 from app.services.storage import StorageService
 
@@ -115,9 +116,18 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
 
 
 class VolunteerApplicationsService:
-    def __init__(self, repository: VolunteerApplicationsRepositoryProtocol, storage_service: StorageService | None = None) -> None:
+    def __init__(
+        self,
+        repository: VolunteerApplicationsRepositoryProtocol,
+        storage_service: StorageService | None = None,
+        pending_count_cache_ttl_seconds: int = 30,
+    ) -> None:
         self.repository = repository
         self.storage_service = storage_service
+        self._pending_count_cache: TTLCache[str, int] = TTLCache(
+            ttl_seconds=pending_count_cache_ttl_seconds,
+            max_entries=1,
+        )
 
     async def create_volunteer_application_invitation(self, email: str) -> VolunteerApplicationInvite:
         normalized_email = email.strip().lower()
@@ -130,7 +140,12 @@ class VolunteerApplicationsService:
         return await self.repository.list_volunteer_applications()
 
     async def count_pending_volunteer_applications(self) -> int:
-        return await self.repository.count_pending_volunteer_applications()
+        cached_count = self._pending_count_cache.get("pending-count")
+        if cached_count is not None:
+            return cached_count
+        pending_count = await self.repository.count_pending_volunteer_applications()
+        self._pending_count_cache.set("pending-count", pending_count)
+        return pending_count
 
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None:
         return await self.repository.get_volunteer_application_detail(registration_id)
@@ -191,6 +206,7 @@ class VolunteerApplicationsService:
                 except Exception:
                     pass
             raise
+        self._invalidate_pending_count_cache()
         if uploaded_new_photo and old_storage_path and old_storage_path != new_storage_path:
             try:
                 await to_thread(self._require_storage_service().remove_photo, old_storage_path)
@@ -210,13 +226,16 @@ class VolunteerApplicationsService:
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(detail.email)
         if duplicate_volunteer is not None:
             raise VolunteerApplicationConflictError("A volunteer with this email already exists.")
-        return await self.repository.approve_volunteer_application(detail)
+        volunteer_id = await self.repository.approve_volunteer_application(detail)
+        self._invalidate_pending_count_cache()
+        return volunteer_id
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError("Registration was not found.")
         await self.repository.delete_volunteer_application(registration_id)
+        self._invalidate_pending_count_cache()
         storage_path = _build_photo_storage_path(detail.photo_sha1, detail.photo_filetype)
         if storage_path and self.storage_service is not None:
             try:
@@ -228,6 +247,9 @@ class VolunteerApplicationsService:
         if self.storage_service is None:
             raise NotConfiguredError("Supabase credentials are required for storage integration.")
         return self.storage_service
+
+    def _invalidate_pending_count_cache(self) -> None:
+        self._pending_count_cache.pop("pending-count")
 
 
 def _sanitize_filename(filename: str) -> str:

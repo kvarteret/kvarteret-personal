@@ -128,7 +128,7 @@ async def load_web_navigation_state(
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ) -> None:
     request.state.volunteer_application_pending_count = 0
-    if current_user is None or current_user.role != UserRole.ADMIN:
+    if current_user is None or current_user.role != UserRole.ADMIN or _is_fragment_request(request):
         return
     try:
         request.state.volunteer_application_pending_count = (
@@ -136,3 +136,7 @@ async def load_web_navigation_state(
         )
     except Exception:
         request.state.volunteer_application_pending_count = 0
+
+
+def _is_fragment_request(request: Request) -> bool:
+    return request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") != "true"

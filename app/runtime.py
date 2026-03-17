@@ -133,6 +133,7 @@ def build_application_container(settings: Settings | None = None) -> Application
                 media_token_service=media_token_service,
             ),
             storage_service=storage_service,
+            pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),
         semester_transfer_service=SemesterTransferService(session_factory=session_factory_provider),
         feedback_service=FeedbackService(resolved_settings),
