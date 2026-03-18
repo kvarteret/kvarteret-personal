@@ -1,9 +1,11 @@
 <section class="app-panel" id="group-stats-panel" {% if swap_oob %}hx-swap-oob="outerHTML"{% endif %}>
   <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Medlemsutvikling</h2>
-  <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
-    <strong>Medlemmer per semester</strong> viser hvor mange forskjellige frivillige gruppen hadde i hvert semester.
-    <strong>Tilbakeholdelsesrate</strong> viser hvor stor andel av gruppens medlemmer som kom tilbake neste semester.
-  </p>
+  <ul class="mb-5 max-w-3xl list-disc space-y-1 pl-5 text-sm leading-6 text-stone-600">
+    <li><strong>Medlemmer per semester</strong> viser hvor mange forskjellige frivillige gruppen hadde i hvert semester.</li>
+    <li><strong>Samme gruppe</strong> viser hvor stor andel av gruppens medlemmer som også var i samme gruppe neste semester.</li>
+    <li><strong>Annen gruppe</strong> viser hvor stor andel som fortsatt var på Kvarteret neste semester, men i en annen gruppe.</li>
+    <li><strong>Totalt beholdt</strong> viser hvor stor andel som fortsatt var aktive på Kvarteret neste semester, uansett gruppe.</li>
+  </ul>
 
   {% if not stats %}
     <p class="text-sm text-stone-600">Ingen statistikk tilgjengelig.</p>
@@ -14,7 +16,7 @@
         <div id="group-membership-chart" style="width: 100%; height: 320px;"></div>
       </div>
       <div>
-        <h3 class="mb-3 text-lg font-medium tracking-tight text-stone-900">Tilbakeholdelsesrate</h3>
+        <h3 class="mb-3 text-lg font-medium tracking-tight text-stone-900">Beholdt neste semester</h3>
         {% if retention and retention | length > 1 %}
           <div id="group-retention-chart" style="width: 100%; height: 320px;"></div>
         {% else %}
@@ -67,8 +69,13 @@
             {% for item in retention %}
             {
               label: "{{ item.semester_label }}",
-              retained: {{ item.retained_to_next }},
-              retention_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }}
+              total_members: {{ item.total_members }},
+              same_group: {{ item.retained_to_next_same_group }},
+              other_group: {{ item.retained_to_next_other_group }},
+              total_retained: {{ item.retained_to_next }},
+              same_group_pct: {{ item.total_members > 0 and ((item.retained_to_next_same_group / item.total_members * 100) | round(1)) or 0 }},
+              other_group_pct: {{ item.total_members > 0 and ((item.retained_to_next_other_group / item.total_members * 100) | round(1)) or 0 }},
+              total_retained_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }}
             }{% if not loop.last %},{% endif %}
             {% endfor %}
           ];
@@ -82,11 +89,14 @@
               formatter: (params) => {
                 const item = retentionData[params[0].dataIndex];
                 return `<b>${item.label}</b><br/>` +
-                  `${item.retained} beholdt neste semester (${item.retention_pct}%)`;
+                  `${item.total_members} medlemmer totalt<br/>` +
+                  `${item.same_group} i samme gruppe (${item.same_group_pct}%)<br/>` +
+                  `${item.other_group} i annen gruppe (${item.other_group_pct}%)<br/>` +
+                  `${item.total_retained} totalt beholdt (${item.total_retained_pct}%)`;
               },
             },
             legend: {
-              data: ["Tilbakeholdelsesrate"],
+              data: ["Samme gruppe", "Annen og samme"],
               bottom: 0,
               textStyle: { color: "#78716c", fontSize: 12 },
             },
@@ -106,13 +116,24 @@
             },
             series: [
               {
-                name: "Tilbakeholdelsesrate",
+                name: "Samme gruppe",
                 type: "line",
-                data: retentionData.map((item) => item.retention_pct),
+                stack: "retention",
+                data: retentionData.map((item) => item.same_group_pct),
                 smooth: true,
                 lineStyle: { color: "#c0392b", width: 2 },
                 itemStyle: { color: "#c0392b" },
-                areaStyle: { color: "rgba(192,57,43,0.06)" },
+                areaStyle: { color: "rgba(192,57,43,0.14)" },
+              },
+              {
+                name: "Annen og samme",
+                type: "line",
+                stack: "retention",
+                data: retentionData.map((item) => item.other_group_pct),
+                smooth: true,
+                lineStyle: { color: "#d97706", width: 2 },
+                itemStyle: { color: "#d97706" },
+                areaStyle: { color: "rgba(217,119,6,0.14)" },
               },
             ],
           });

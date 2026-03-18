@@ -107,6 +107,8 @@ class SemesterRetentionStats:
     total_members: int
     retained_from_prev: int
     new_members: int
+    retained_to_next_same_group: int
+    retained_to_next_other_group: int
     retained_to_next: int
     churned: int
 
@@ -473,84 +475,136 @@ class GroupsService(SqlAlchemyRepository):
         ]
 
     async def get_org_retention_stats(self) -> list[SemesterRetentionStats]:
-        history_current = historie.alias("history_current")
-        history_prev = historie.alias("history_prev")
-        history_next = historie.alias("history_next")
+        current_members = (
+            select(
+                historie.c.semester.label("semester"),
+                historie.c.id_personal.label("id_personal"),
+            )
+            .distinct()
+            .subquery("current_members")
+        )
+        history_prev_any = historie.alias("history_prev_any")
+        history_next_any = historie.alias("history_next_any")
+        history_same_source = historie.alias("history_same_source")
+        history_next_same = historie.alias("history_next_same")
         previous_semester = case(
-            (history_current.c.semester % 10 == 1, history_current.c.semester - 9),
-            else_=history_current.c.semester - 1,
+            (current_members.c.semester % 10 == 1, current_members.c.semester - 9),
+            else_=current_members.c.semester - 1,
         )
         next_semester = case(
-            (history_current.c.semester % 10 == 1, history_current.c.semester + 1),
-            else_=history_current.c.semester + 9,
+            (current_members.c.semester % 10 == 1, current_members.c.semester + 1),
+            else_=current_members.c.semester + 9,
+        )
+        retained_from_prev_exists = (
+            select(literal(1))
+            .select_from(history_prev_any)
+            .where(
+                history_prev_any.c.id_personal == current_members.c.id_personal,
+                history_prev_any.c.semester == previous_semester,
+            )
+            .exists()
+        )
+        retained_to_next_exists = (
+            select(literal(1))
+            .select_from(history_next_any)
+            .where(
+                history_next_any.c.id_personal == current_members.c.id_personal,
+                history_next_any.c.semester == next_semester,
+            )
+            .exists()
+        )
+        retained_to_next_same_group_exists = (
+            select(literal(1))
+            .select_from(
+                history_same_source.join(
+                    history_next_same,
+                    (history_next_same.c.id_personal == history_same_source.c.id_personal)
+                    & (history_next_same.c.id_gruppe == history_same_source.c.id_gruppe),
+                )
+            )
+            .where(
+                history_same_source.c.id_personal == current_members.c.id_personal,
+                history_same_source.c.semester == current_members.c.semester,
+                history_next_same.c.semester == next_semester,
+            )
+            .exists()
         )
         stmt = (
             select(
-                history_current.c.semester,
-                func.count(distinct(history_current.c.id_personal)).label("total_members"),
-                func.count(
-                    distinct(case((history_prev.c.id_personal.is_not(None), history_current.c.id_personal)))
-                ).label("retained_from_prev"),
-                func.count(
-                    distinct(case((history_next.c.id_personal.is_not(None), history_current.c.id_personal)))
-                ).label("retained_to_next"),
+                current_members.c.semester,
+                func.count().label("total_members"),
+                func.sum(case((retained_from_prev_exists, 1), else_=0)).label("retained_from_prev"),
+                func.sum(case((retained_to_next_same_group_exists, 1), else_=0)).label("retained_to_next_same_group"),
+                func.sum(case((retained_to_next_exists, 1), else_=0)).label("retained_to_next"),
             )
-            .select_from(
-                history_current.outerjoin(
-                    history_prev,
-                    (history_prev.c.id_personal == history_current.c.id_personal)
-                    & (history_prev.c.semester == previous_semester),
-                ).outerjoin(
-                    history_next,
-                    (history_next.c.id_personal == history_current.c.id_personal)
-                    & (history_next.c.semester == next_semester),
-                )
-            )
-            .group_by(history_current.c.semester)
-            .order_by(history_current.c.semester.asc())
+            .select_from(current_members)
+            .group_by(current_members.c.semester)
+            .order_by(current_members.c.semester.asc())
         )
         rows = await self.fetch_all_mappings(stmt)
         return [_map_retention_stat_row(row) for row in rows]
 
     async def get_group_retention_stats(self, group_id: int) -> list[SemesterRetentionStats]:
-        history_current = historie.alias("history_current")
-        history_prev = historie.alias("history_prev")
-        history_next = historie.alias("history_next")
+        current_members = (
+            select(
+                historie.c.semester.label("semester"),
+                historie.c.id_personal.label("id_personal"),
+            )
+            .where(historie.c.id_gruppe == group_id)
+            .distinct()
+            .subquery("current_group_members")
+        )
+        history_prev_same_group = historie.alias("history_prev_same_group")
+        history_next_same_group = historie.alias("history_next_same_group")
+        history_next_any = historie.alias("history_next_any")
         previous_semester = case(
-            (history_current.c.semester % 10 == 1, history_current.c.semester - 9),
-            else_=history_current.c.semester - 1,
+            (current_members.c.semester % 10 == 1, current_members.c.semester - 9),
+            else_=current_members.c.semester - 1,
         )
         next_semester = case(
-            (history_current.c.semester % 10 == 1, history_current.c.semester + 1),
-            else_=history_current.c.semester + 9,
+            (current_members.c.semester % 10 == 1, current_members.c.semester + 1),
+            else_=current_members.c.semester + 9,
+        )
+        retained_from_prev_exists = (
+            select(literal(1))
+            .select_from(history_prev_same_group)
+            .where(
+                history_prev_same_group.c.id_personal == current_members.c.id_personal,
+                history_prev_same_group.c.id_gruppe == group_id,
+                history_prev_same_group.c.semester == previous_semester,
+            )
+            .exists()
+        )
+        retained_to_next_same_group_exists = (
+            select(literal(1))
+            .select_from(history_next_same_group)
+            .where(
+                history_next_same_group.c.id_personal == current_members.c.id_personal,
+                history_next_same_group.c.id_gruppe == group_id,
+                history_next_same_group.c.semester == next_semester,
+            )
+            .exists()
+        )
+        retained_to_next_exists = (
+            select(literal(1))
+            .select_from(history_next_any)
+            .where(
+                history_next_any.c.id_personal == current_members.c.id_personal,
+                history_next_any.c.semester == next_semester,
+            )
+            .exists()
         )
         stmt = (
             select(
-                history_current.c.semester,
-                func.count(distinct(history_current.c.id_personal)).label("total_members"),
-                func.count(
-                    distinct(case((history_prev.c.id_personal.is_not(None), history_current.c.id_personal)))
-                ).label("retained_from_prev"),
-                func.count(
-                    distinct(case((history_next.c.id_personal.is_not(None), history_current.c.id_personal)))
-                ).label("retained_to_next"),
+                current_members.c.semester,
+                func.count().label("total_members"),
+                func.sum(case((retained_from_prev_exists, 1), else_=0)).label("retained_from_prev"),
+                func.sum(case((retained_to_next_same_group_exists, 1), else_=0)).label("retained_to_next_same_group"),
+                func.sum(case((retained_to_next_exists, 1), else_=0)).label("retained_to_next"),
             )
-            .select_from(
-                history_current.outerjoin(
-                    history_prev,
-                    (history_prev.c.id_personal == history_current.c.id_personal)
-                    & (history_prev.c.id_gruppe == history_current.c.id_gruppe)
-                    & (history_prev.c.semester == previous_semester),
-                ).outerjoin(
-                    history_next,
-                    (history_next.c.id_personal == history_current.c.id_personal)
-                    & (history_next.c.id_gruppe == history_current.c.id_gruppe)
-                    & (history_next.c.semester == next_semester),
-                )
-            )
-            .where(history_current.c.id_gruppe == group_id)
-            .group_by(history_current.c.semester)
-            .order_by(history_current.c.semester.asc())
+            .select_from(current_members)
+            .group_by(current_members.c.semester)
+            .order_by(current_members.c.semester.asc())
         )
         rows = await self.fetch_all_mappings(stmt)
         return [_map_retention_stat_row(row) for row in rows]
@@ -716,15 +770,19 @@ class GroupsService(SqlAlchemyRepository):
 
 
 def _map_retention_stat_row(row) -> SemesterRetentionStats:
-    total_members = row["total_members"]
-    retained_from_prev = row["retained_from_prev"]
-    retained_to_next = row["retained_to_next"]
+    total_members = int(row["total_members"] or 0)
+    retained_from_prev = int(row["retained_from_prev"] or 0)
+    retained_to_next_same_group = int(row.get("retained_to_next_same_group") or 0)
+    retained_to_next = int(row["retained_to_next"] or 0)
+    retained_to_next_other_group = max(0, retained_to_next - retained_to_next_same_group)
     return SemesterRetentionStats(
         semester_code=row["semester"],
         semester_label=format_semester_code(row["semester"]) or str(row["semester"]),
         total_members=total_members,
         retained_from_prev=retained_from_prev,
         new_members=total_members - retained_from_prev,
+        retained_to_next_same_group=retained_to_next_same_group,
+        retained_to_next_other_group=retained_to_next_other_group,
         retained_to_next=retained_to_next,
         churned=total_members - retained_to_next,
     )

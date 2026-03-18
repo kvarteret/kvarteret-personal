@@ -116,6 +116,8 @@ class FakeGroupsService:
                 total_members=11,
                 retained_from_prev=7,
                 new_members=4,
+                retained_to_next_same_group=5,
+                retained_to_next_other_group=3,
                 retained_to_next=8,
                 churned=3,
             ),
@@ -125,6 +127,8 @@ class FakeGroupsService:
                 total_members=14,
                 retained_from_prev=8,
                 new_members=6,
+                retained_to_next_same_group=0,
+                retained_to_next_other_group=0,
                 retained_to_next=0,
                 churned=14,
             ),
@@ -250,7 +254,9 @@ def test_groups_and_courses_pages_render() -> None:
     assert group_stats_response.status_code == 200
     assert "Medlemsutvikling" in group_stats_response.text
     assert "Medlemmer per semester" in group_stats_response.text
-    assert "Tilbakeholdelsesrate" in group_stats_response.text
+    assert "Samme gruppe" in group_stats_response.text
+    assert "Annen gruppe" in group_stats_response.text
+    assert "Totalt beholdt" in group_stats_response.text
     assert group_history_response.status_code == 200
     assert "Gruppehistorikk" in group_history_response.text
     assert 'href="/volunteers/12"' in group_history_response.text

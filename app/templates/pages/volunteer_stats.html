@@ -78,9 +78,11 @@
 
     <section class="app-panel">
       <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Tilbakeholdelse over tid</h2>
-      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
-        <strong>Tilbakeholdelsesrate</strong> viser hvor stor andel av de frivillige i et semester som også var aktive i neste semester.
-      </p>
+      <ul class="mb-5 max-w-3xl list-disc space-y-1 pl-5 text-sm leading-6 text-stone-600">
+        <li><strong>Samme gruppe</strong> viser hvor stor andel av de frivillige i et semester som også var aktive i minst én av de samme gruppene neste semester.</li>
+        <li><strong>Annen gruppe</strong> viser hvor stor andel som fortsatt var aktive neste semester, men ikke i noen av de samme gruppene.</li>
+        <li><strong>Totalt beholdt</strong> viser hvor stor andel som fortsatt var aktive neste semester, uansett gruppe.</li>
+      </ul>
       {% if org_retention and org_retention | length > 1 %}
         <div id="org-retention-chart" style="width: 100%; height: 320px;"></div>
         <script>
@@ -90,9 +92,13 @@
               {
                 label: "{{ item.semester_label }}",
                 total: {{ item.total_members }},
-                retained: {{ item.retained_to_next }},
+                same_group: {{ item.retained_to_next_same_group }},
+                other_group: {{ item.retained_to_next_other_group }},
+                total_retained: {{ item.retained_to_next }},
                 new_members: {{ item.new_members }},
-                retention_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }}
+                same_group_pct: {{ item.total_members > 0 and ((item.retained_to_next_same_group / item.total_members * 100) | round(1)) or 0 }},
+                other_group_pct: {{ item.total_members > 0 and ((item.retained_to_next_other_group / item.total_members * 100) | round(1)) or 0 }},
+                total_retained_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }}
               }{% if not loop.last %},{% endif %}
               {% endfor %}
             ];
@@ -109,12 +115,14 @@
                   const item = retentionData[params[0].dataIndex];
                   return `<b>${item.label}</b><br/>` +
                     `${item.total} frivillige totalt<br/>` +
-                    `${item.retained} beholdt neste semester (${item.retention_pct}%)<br/>` +
+                    `${item.same_group} i samme gruppe (${item.same_group_pct}%)<br/>` +
+                    `${item.other_group} i annen gruppe (${item.other_group_pct}%)<br/>` +
+                    `${item.total_retained} totalt beholdt (${item.total_retained_pct}%)<br/>` +
                     `${item.new_members} nye dette semesteret`;
                 },
               },
               legend: {
-                data: ["Tilbakeholdelsesrate"],
+                data: ["Samme gruppe", "Annen og samme"],
                 bottom: 0,
                 textStyle: { color: "#78716c", fontSize: 12 },
               },
@@ -134,13 +142,24 @@
               },
               series: [
                 {
-                  name: "Tilbakeholdelsesrate",
+                  name: "Samme gruppe",
                   type: "line",
-                  data: retentionData.map((item) => item.retention_pct),
+                  stack: "retention",
+                  data: retentionData.map((item) => item.same_group_pct),
                   smooth: true,
                   lineStyle: { color: "#c0392b", width: 2 },
                   itemStyle: { color: "#c0392b" },
-                  areaStyle: { color: "rgba(192,57,43,0.06)" },
+                  areaStyle: { color: "rgba(192,57,43,0.14)" },
+                },
+                {
+                  name: "Annen og samme",
+                  type: "line",
+                  stack: "retention",
+                  data: retentionData.map((item) => item.other_group_pct),
+                  smooth: true,
+                  lineStyle: { color: "#d97706", width: 2 },
+                  itemStyle: { color: "#d97706" },
+                  areaStyle: { color: "rgba(217,119,6,0.14)" },
                 },
               ],
             });
