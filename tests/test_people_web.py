@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
-from io import BytesIO
 
 from app.dependencies import get_groups_service, get_volunteers_service
 from app.main import create_app
@@ -24,6 +23,9 @@ from tests.helpers import make_authenticated_user, override_authenticated_user
 
 
 class FakeVolunteersService:
+    def __init__(self) -> None:
+        self.updated_role_assignment_calls: list[dict[str, int | bool]] = []
+
     async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
         return (await self.list_volunteers_page(query=query, limit=limit, cursor=None)).items
 
@@ -104,6 +106,29 @@ class FakeVolunteersService:
     async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
         return [AssignmentRoleOption(role_id=2, group_id=group_id, role_name="Shift lead", pingvin_points=4)]
 
+    async def update_role_assignment_for_volunteer(
+        self,
+        volunteer_id: int,
+        history_id: int,
+        *,
+        group_id: int,
+        role_id: int,
+        year: int,
+        term: int,
+        contract_signed: bool,
+    ) -> None:
+        self.updated_role_assignment_calls.append(
+            {
+                "volunteer_id": volunteer_id,
+                "history_id": history_id,
+                "group_id": group_id,
+                "role_id": role_id,
+                "year": year,
+                "term": term,
+                "contract_signed": contract_signed,
+            }
+        )
+
 
 class FakeGroupsService:
     async def get_org_stats_detailed(self) -> list[OrgSemesterDetailed]:
@@ -127,6 +152,8 @@ class FakeGroupsService:
                 total_members=11,
                 retained_from_prev=7,
                 new_members=4,
+                retained_to_next_same_group=5,
+                retained_to_next_other_group=3,
                 retained_to_next=8,
                 churned=3,
             ),
@@ -136,6 +163,8 @@ class FakeGroupsService:
                 total_members=14,
                 retained_from_prev=8,
                 new_members=6,
+                retained_to_next_same_group=0,
+                retained_to_next_other_group=0,
                 retained_to_next=0,
                 churned=14,
             ),
@@ -165,7 +194,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Laster filer" in detail_response.text
     assert "Laster kort og pårørende" in detail_response.text
     assert "name=\"gender\"" in detail_response.text
-    assert f'action="/volunteers/12/photo?_method=PUT"' in detail_response.text
+    assert 'type="file"' not in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
 
 
@@ -214,15 +243,69 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     assert "Shift lead" in history_response.text
     assert "Legg til nytt verv" in history_response.text
     assert "Velg gruppe" in history_response.text
+    assert "Rediger verv" in history_response.text
     assert "Slett verv" in history_response.text
     assert "kontrakt" in history_response.text
     assert 'href="/groups/9"' in history_response.text
     assert documents_response.status_code == 200
     assert "certificate.pdf" in documents_response.text
+    assert "Last opp fil" not in documents_response.text
     assert "window.confirm('Slette denne filen?')" in documents_response.text
     assert relations_response.status_code == 200
     assert "CARD-42" in relations_response.text
     assert "Contact Person" in relations_response.text
+
+
+def test_volunteer_role_assignment_panel_renders_edit_state() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteers/12/role-assignments/panel?edit_assignment_id=5")
+
+    assert response.status_code == 200
+    assert "Rediger verv" in response.text
+    assert "Avbryt redigering" in response.text
+    assert 'hx-patch="/volunteers/12/role-assignments/5"' in response.text
+    assert 'value="2026"' in response.text
+    assert 'option value="9" selected' in response.text
+    assert 'option value="2" selected' in response.text
+    assert "Lagre verv" in response.text
+
+
+def test_volunteer_role_assignment_update_route_uses_service_for_htmx() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.post(
+        "/volunteers/12/role-assignments/5?_method=PATCH",
+        headers={"HX-Request": "true"},
+        data={
+            "year": "2026",
+            "term": "2",
+            "group_id": "9",
+            "role_id": "2",
+            "contract_signed": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.updated_role_assignment_calls == [
+        {
+            "volunteer_id": 12,
+            "history_id": 5,
+            "group_id": 9,
+            "role_id": 2,
+            "year": 2026,
+            "term": 2,
+            "contract_signed": True,
+        }
+    ]
+    assert "Legg til nytt verv" in response.text
 
 
 def test_volunteer_stats_page_renders_with_fake_group_service() -> None:
@@ -238,30 +321,18 @@ def test_volunteer_stats_page_renders_with_fake_group_service() -> None:
     assert "Frivillige per semester" in response.text
     assert "Unike frivillige" in response.text
     assert "Tilbakeholdelse over tid" in response.text
+    assert "Samme gruppe" in response.text
+    assert "Annen gruppe" in response.text
+    assert "Totalt beholdt" in response.text
     assert "Tilbakevendte" in response.text
     assert "Aktive grupper dette semesteret" in response.text
 
 
-def test_volunteer_upload_endpoints_reject_files_over_30mb() -> None:
+def test_volunteer_upload_endpoints_are_not_available() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     client = TestClient(app)
 
-    oversized = BytesIO(b"x" * (30 * 1024 * 1024 + 1))
-
-    photo_response = client.put(
-        "/volunteers/12/photo",
-        files={"file": ("photo.jpg", oversized, "image/jpeg")},
-    )
-
-    document_response = client.post(
-        "/volunteers/12/documents",
-        data={"group_id": ""},
-        files={"file": ("doc.pdf", BytesIO(b"x" * (30 * 1024 * 1024 + 1)), "application/pdf")},
-    )
-
-    assert photo_response.status_code == 400
-    assert photo_response.json() == {"detail": "File exceeds 30 MB limit."}
-    assert document_response.status_code == 400
-    assert document_response.json() == {"detail": "File exceeds 30 MB limit."}
+    assert client.put("/volunteers/12/photo").status_code == 405
+    assert client.post("/volunteers/12/documents").status_code == 404

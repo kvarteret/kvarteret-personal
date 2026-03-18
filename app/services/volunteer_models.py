@@ -183,6 +183,17 @@ class VolunteersServiceProtocol(Protocol):
         term: int,
         contract_signed: bool,
     ) -> None: ...
+    async def update_role_assignment_for_volunteer(
+        self,
+        volunteer_id: int,
+        history_id: int,
+        *,
+        group_id: int,
+        role_id: int,
+        year: int,
+        term: int,
+        contract_signed: bool,
+    ) -> None: ...
     async def delete_role_assignment_for_volunteer(self, volunteer_id: int, history_id: int) -> None: ...
     async def upload_document(
         self,

@@ -2,6 +2,15 @@
 
 {% block page_content %}
   <section class="grid gap-7">
+    {% if duplicate_application_id %}
+      <section class="app-panel border-l-4 border-amber-500 bg-amber-50">
+        <p class="text-sm font-semibold text-amber-900">Denne søknaden ble ikke godkjent som ny frivillig.</p>
+        <p class="mt-2 text-sm text-amber-900">
+          Søknad {{ duplicate_application_id }} bruker e-postadressen {{ duplicate_email or "ukjent e-post" }}, som allerede finnes på denne frivilligen.
+          Gå gjennom den eksisterende profilen og avvis eller slett duplikatsøknaden hvis det er riktig person.
+        </p>
+      </section>
+    {% endif %}
     <header class="grid justify-items-center gap-4 pt-3 text-center">
       <div class="grid h-52 w-52 place-items-center overflow-hidden bg-stone-300 shadow-md">
         {% if volunteer.photo_url %}
@@ -14,12 +23,6 @@
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
         {% if current_user.role == "Admin" %}
-          <form action="/volunteers/{{ volunteer.volunteer_id }}/photo?_method=PUT" enctype="multipart/form-data" hx-disinherit="hx-select hx-target hx-swap" hx-encoding="multipart/form-data" hx-put="/volunteers/{{ volunteer.volunteer_id }}/photo" hx-target="body" method="post">
-            <label class="inline-flex min-h-12 cursor-pointer items-center justify-center bg-kvarteret-red px-5 font-semibold text-white shadow-md hover:bg-red-700">
-              Endre profilbilde
-              <input class="hidden" name="file" onchange="htmx.trigger(this.closest('form'), 'submit')" type="file" accept=".jpg,.jpeg,.png,.webp">
-            </label>
-          </form>
           {% if volunteer.photo_url %}
             <form action="/volunteers/{{ volunteer.volunteer_id }}/photo?_method=DELETE" method="post" onsubmit="return window.confirm('Fjern profilbildet?');">
               <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-md hover:bg-stone-50" type="submit">Fjern profilbilde</button>

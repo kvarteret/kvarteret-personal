@@ -1,4 +1,5 @@
 <section class="app-panel">
+  {% set is_editing = editing_assignment is not none %}
   <div class="mb-5 flex items-center justify-between gap-3">
     <div class="flex flex-wrap items-center gap-3">
       <h2 class="text-2xl font-medium tracking-tight text-stone-900">Historikk</h2>
@@ -10,35 +11,73 @@
   </div>
   {% if current_user.role == "Admin" %}
     <form
-      action="/volunteers/{{ volunteer.volunteer_id }}/role-assignments"
+      action="/volunteers/{{ volunteer.volunteer_id }}/role-assignments{% if is_editing %}/{{ editing_assignment.history_id }}?_method=PATCH{% endif %}"
       class="mb-8 grid gap-4 border-b border-stone-300 pb-6"
       hx-disinherit="hx-select hx-target hx-swap"
-      hx-post="/volunteers/{{ volunteer.volunteer_id }}/role-assignments"
+      {% if is_editing %}
+        hx-patch="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/{{ editing_assignment.history_id }}"
+      {% else %}
+        hx-post="/volunteers/{{ volunteer.volunteer_id }}/role-assignments"
+      {% endif %}
       hx-swap="outerHTML"
       hx-target="closest section"
       method="post"
     >
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold text-stone-900">{% if is_editing %}Rediger verv{% else %}Legg til verv{% endif %}</p>
+          <p class="text-sm text-stone-500">
+            {% if is_editing %}
+              Oppdater {{ editing_assignment.role_name or "ukjent verv" }} for {{ editing_assignment.semester_label }}.
+            {% else %}
+              Registrer et nytt verv for denne frivilligen.
+            {% endif %}
+          </p>
+        </div>
+        {% if is_editing %}
+          <button
+            class="app-button-secondary"
+            hx-disinherit="hx-select hx-target hx-swap"
+            hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/panel"
+            hx-swap="outerHTML"
+            hx-target="closest section"
+            type="button"
+          >
+            Avbryt redigering
+          </button>
+        {% endif %}
+      </div>
       {% include "components/volunteer_role_assignment_form_fields.html" %}
       <label class="inline-flex items-center gap-3 text-sm text-stone-700">
-        <input class="h-4 w-4 accent-kvarteret-red" name="contract_signed" type="checkbox" value="true">
+        <input class="h-4 w-4 accent-kvarteret-red" name="contract_signed" type="checkbox" value="true" {% if default_contract_signed %}checked{% endif %}>
         Signert kontrakt
       </label>
       <div>
-        <button class="app-button" type="submit">Legg til nytt verv</button>
+        <button class="app-button" type="submit">{% if is_editing %}Lagre verv{% else %}Legg til nytt verv{% endif %}</button>
       </div>
     </form>
   {% endif %}
   <div class="grid gap-0">
     {% for assignment in assignments %}
-      <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)] md:items-center {% if assignment.semester_code == current_semester_code and assignment.contract_signed %}bg-emerald-50/50{% endif %}">
+      <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-[minmax(0,1.6fr)_minmax(8rem,0.8fr)_minmax(15rem,0.9fr)] md:items-center {% if assignment.semester_code == current_semester_code and assignment.contract_signed %}bg-emerald-50/50{% endif %}{% if is_editing and assignment.history_id == editing_assignment.history_id %} ring-1 ring-inset ring-kvarteret-red/30{% endif %}">
         <div>
           <a class="text-lg font-medium tracking-tight text-stone-900 no-underline hover:text-kvarteret-red" href="/groups/{{ assignment.group_id }}">{{ assignment.group_name }}</a>
           <div class="text-sm text-stone-500">{{ assignment.role_name or "Ingen rolle" }}</div>
         </div>
         <div class="text-sm text-stone-700">{{ assignment.semester_label }}</div>
-        <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center justify-end gap-3">
           <div class="text-sm text-stone-700">{% if assignment.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</div>
           {% if current_user.role == "Admin" %}
+            <button
+              class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100"
+              hx-disinherit="hx-select hx-target hx-swap"
+              hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/panel?edit_assignment_id={{ assignment.history_id }}"
+              hx-swap="outerHTML"
+              hx-target="closest section"
+              type="button"
+            >
+              Rediger verv
+            </button>
             <form
               action="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/{{ assignment.history_id }}?_method=DELETE"
               hx-disinherit="hx-select hx-target hx-swap"

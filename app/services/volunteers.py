@@ -284,6 +284,46 @@ class VolunteersService:
         )
         self._invalidate_volunteer_cache(volunteer_id)
 
+    async def update_role_assignment_for_volunteer(
+        self,
+        volunteer_id: int,
+        history_id: int,
+        *,
+        group_id: int,
+        role_id: int,
+        year: int,
+        term: int,
+        contract_signed: bool,
+    ) -> None:
+        row = await self.repository.fetch_role_assignment_record(history_id)
+        if not row or row["id_personal"] != volunteer_id:
+            raise RoleAssignmentNotFoundError(f"Role assignment {history_id} was not found.")
+        if year < 1900 or year > 3000:
+            raise InvalidRoleAssignmentError("Year must be between 1900 and 3000.")
+        if term not in {1, 2}:
+            raise InvalidRoleAssignmentError("Semester must be Vår or Høst.")
+        if not await self.repository.role_belongs_to_group(group_id=group_id, role_id=role_id):
+            raise InvalidRoleAssignmentError("Selected verv does not belong to the selected group.")
+        semester_code = year * 10 + term
+        if not format_semester_code(semester_code):
+            raise InvalidRoleAssignmentError("Unsupported semester code.")
+        if await self.repository.role_assignment_exists(
+            volunteer_id=volunteer_id,
+            group_id=group_id,
+            role_id=role_id,
+            semester_code=semester_code,
+            exclude_history_id=history_id,
+        ):
+            raise DuplicateRoleAssignmentError("This verv is already registered for the selected semester.")
+        await self.repository.update_role_assignment(
+            history_id,
+            group_id=group_id,
+            role_id=role_id,
+            semester_code=semester_code,
+            contract_signed=contract_signed,
+        )
+        self._invalidate_volunteer_cache(volunteer_id)
+
     async def delete_role_assignment_for_volunteer(self, volunteer_id: int, history_id: int) -> None:
         row = await self.repository.fetch_role_assignment_record(history_id)
         if not row or row["id_personal"] != volunteer_id:

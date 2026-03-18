@@ -1,0 +1,31 @@
+<div class="grid gap-4 md:grid-cols-2" id="volunteer-application-assignment-fields">
+  <label class="grid gap-1">
+    <span class="text-sm text-stone-500">Gruppe</span>
+    <select
+      class="app-input"
+      name="group_id"
+      hx-disinherit="hx-select hx-target hx-swap"
+      hx-get="/volunteer-applications/assignment-fields"
+      hx-include="this"
+      hx-swap="outerHTML"
+      hx-target="#volunteer-application-assignment-fields"
+      hx-trigger="change"
+    >
+      <option value="" {% if selected_group_id is none %}selected{% endif %}>Ingen initial gruppe</option>
+      {% for group in group_options %}
+        <option value="{{ group.group_id }}" {% if group.group_id == selected_group_id %}selected{% endif %}>
+          {{ group.name }}{% if not group.active %} · inaktiv{% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="grid gap-1">
+    <span class="text-sm text-stone-500">Verv</span>
+    <select class="app-input" name="role_id">
+      <option value="" {% if not role_options %}selected{% endif %}>Ingen initialt verv</option>
+      {% for role in role_options %}
+        <option value="{{ role.role_id }}">{{ role.role_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</div>

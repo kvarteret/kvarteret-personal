@@ -313,15 +313,21 @@ class VolunteersRepository(SqlAlchemyRepository):
         group_id: int,
         role_id: int,
         semester_code: int,
+        exclude_history_id: int | None = None,
     ) -> bool:
+        filters = [
+            role_assignments.c.id_personal == volunteer_id,
+            role_assignments.c.id_gruppe == group_id,
+            role_assignments.c.id_verv == role_id,
+            role_assignments.c.semester == semester_code,
+        ]
+        if exclude_history_id is not None:
+            filters.append(role_assignments.c.id != exclude_history_id)
         return bool(
             await self.fetch_scalar(
                 select(
                     exists().where(
-                        role_assignments.c.id_personal == volunteer_id,
-                        role_assignments.c.id_gruppe == group_id,
-                        role_assignments.c.id_verv == role_id,
-                        role_assignments.c.semester == semester_code,
+                        *filters,
                     )
                 )
             )
@@ -348,9 +354,36 @@ class VolunteersRepository(SqlAlchemyRepository):
 
     async def fetch_role_assignment_record(self, history_id: int):
         return await self.fetch_first_mapping(
-            select(role_assignments.c.id, role_assignments.c.id_personal)
+            select(
+                role_assignments.c.id,
+                role_assignments.c.id_personal,
+                role_assignments.c.id_gruppe,
+                role_assignments.c.id_verv,
+                role_assignments.c.semester,
+                role_assignments.c.signert_kontrakt,
+            )
             .where(role_assignments.c.id == history_id)
             .limit(1)
+        )
+
+    async def update_role_assignment(
+        self,
+        history_id: int,
+        *,
+        group_id: int,
+        role_id: int,
+        semester_code: int,
+        contract_signed: bool,
+    ) -> None:
+        await self.execute(
+            update(role_assignments)
+            .where(role_assignments.c.id == history_id)
+            .values(
+                id_gruppe=group_id,
+                id_verv=role_id,
+                semester=semester_code,
+                signert_kontrakt=contract_signed,
+            )
         )
 
     async def delete_role_assignment(self, history_id: int) -> None:

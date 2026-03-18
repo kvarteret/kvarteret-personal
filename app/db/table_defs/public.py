@@ -67,6 +67,8 @@ registrering = Table(
     Column("id", BigInteger, primary_key=True),
     Column("token", Text, nullable=False),
     Column("epost", Text, nullable=False),
+    Column("initial_group_id", BigInteger),
+    Column("initial_role_id", BigInteger),
     Column("opprettet", DateTime(timezone=True), nullable=False),
     UniqueConstraint("token", name="uq_registrering_token"),
 )

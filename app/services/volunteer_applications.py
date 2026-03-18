@@ -23,12 +23,23 @@ class VolunteerApplicationConflictError(VolunteerApplicationsError):
     pass
 
 
+class VolunteerAlreadyExistsError(VolunteerApplicationConflictError):
+    def __init__(self, volunteer_id: int, email: str) -> None:
+        self.volunteer_id = volunteer_id
+        self.email = email
+        super().__init__(f"A volunteer with this email already exists (id={volunteer_id}).")
+
+
 @dataclass(slots=True)
 class VolunteerApplicationInvite:
     registration_id: int
     token: str
     email: str
     created_at: datetime
+    initial_group_id: int | None = None
+    initial_group_name: str | None = None
+    initial_role_id: int | None = None
+    initial_role_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -41,6 +52,10 @@ class VolunteerApplicationListItem:
     first_name: str | None
     last_name: str | None
     phone: str | None
+    initial_group_id: int | None = None
+    initial_group_name: str | None = None
+    initial_role_id: int | None = None
+    initial_role_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -62,6 +77,10 @@ class VolunteerApplicationDetail:
     photo_sha1: str | None
     photo_filetype: str | None
     photo_url: str | None
+    initial_group_id: int | None = None
+    initial_group_name: str | None = None
+    initial_role_id: int | None = None
+    initial_role_name: str | None = None
 
 
 @dataclass(slots=True)
@@ -77,7 +96,13 @@ class VolunteerApplicationSubmissionInput:
 
 
 class VolunteerApplicationsServiceProtocol(Protocol):
-    async def create_volunteer_application_invitation(self, email: str) -> VolunteerApplicationInvite: ...
+    async def create_volunteer_application_invitation(
+        self,
+        email: str,
+        *,
+        initial_group_id: int | None = None,
+        initial_role_id: int | None = None,
+    ) -> VolunteerApplicationInvite: ...
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]: ...
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
@@ -96,7 +121,14 @@ class VolunteerApplicationsServiceProtocol(Protocol):
 
 
 class VolunteerApplicationsRepositoryProtocol(Protocol):
-    async def create_volunteer_application_invitation(self, *, email: str, token: str) -> VolunteerApplicationInvite: ...
+    async def create_volunteer_application_invitation(
+        self,
+        *,
+        email: str,
+        token: str,
+        initial_group_id: int | None = None,
+        initial_role_id: int | None = None,
+    ) -> VolunteerApplicationInvite: ...
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]: ...
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
@@ -129,12 +161,25 @@ class VolunteerApplicationsService:
             max_entries=1,
         )
 
-    async def create_volunteer_application_invitation(self, email: str) -> VolunteerApplicationInvite:
+    async def create_volunteer_application_invitation(
+        self,
+        email: str,
+        *,
+        initial_group_id: int | None = None,
+        initial_role_id: int | None = None,
+    ) -> VolunteerApplicationInvite:
         normalized_email = email.strip().lower()
         if not normalized_email:
             raise VolunteerApplicationConflictError("An email address is required.")
+        if (initial_group_id is None) != (initial_role_id is None):
+            raise VolunteerApplicationConflictError("Choose both group and verv, or leave both empty.")
         token = token_urlsafe(24)
-        return await self.repository.create_volunteer_application_invitation(email=normalized_email, token=token)
+        return await self.repository.create_volunteer_application_invitation(
+            email=normalized_email,
+            token=token,
+            initial_group_id=initial_group_id,
+            initial_role_id=initial_role_id,
+        )
 
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
         return await self.repository.list_volunteer_applications()
@@ -225,7 +270,7 @@ class VolunteerApplicationsService:
             raise VolunteerApplicationConflictError("Registration has not been submitted yet.")
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(detail.email)
         if duplicate_volunteer is not None:
-            raise VolunteerApplicationConflictError("A volunteer with this email already exists.")
+            raise VolunteerAlreadyExistsError(duplicate_volunteer, detail.email)
         volunteer_id = await self.repository.approve_volunteer_application(detail)
         self._invalidate_pending_count_cache()
         return volunteer_id

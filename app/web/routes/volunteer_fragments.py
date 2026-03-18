@@ -38,6 +38,7 @@ async def volunteers_results(
 async def volunteer_role_assignments_panel(
     request: Request,
     volunteer_id: int,
+    edit_assignment_id: int | None = None,
     current_user=Depends(require_authenticated_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
@@ -47,6 +48,7 @@ async def volunteer_role_assignments_panel(
         current_user=current_user,
         volunteers_service=volunteers_service,
         volunteer=volunteer,
+        editing_assignment_id=edit_assignment_id,
     )
 
 
@@ -55,6 +57,9 @@ async def volunteer_role_assignment_role_field(
     request: Request,
     volunteer_id: int,
     group_id: int | None = None,
+    role_id: int | None = None,
+    year: int | None = None,
+    term: int | None = None,
     current_user=Depends(require_admin_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
@@ -62,6 +67,8 @@ async def volunteer_role_assignment_role_field(
     groups = await volunteers_service.list_assignment_groups()
     selected_group_id = group_id if group_id is not None else None
     roles = await volunteers_service.list_assignment_roles(selected_group_id) if selected_group_id is not None else []
+    selected_role_id = next((candidate.role_id for candidate in roles if candidate.role_id == role_id), None)
+    current_semester_code = get_current_semester_code()
     return templates.TemplateResponse(
         request,
         "components/volunteer_role_assignment_form_fields.html",
@@ -70,10 +77,11 @@ async def volunteer_role_assignment_role_field(
             "volunteer": volunteer,
             "group_options": groups,
             "selected_group_id": selected_group_id,
+            "selected_role_id": selected_role_id,
             "role_options": roles,
             "semester_term_options": SEMESTER_TERM_OPTIONS,
-            "default_year": get_current_semester_code() // 10,
-            "default_term": get_current_semester_code() % 10,
+            "default_year": year if year is not None else current_semester_code // 10,
+            "default_term": term if term is not None else current_semester_code % 10,
         },
     )
 

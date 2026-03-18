@@ -47,7 +47,14 @@ class FakeVolunteerApplicationsRepository:
         self.approved_registration_ids: list[int] = []
         self.deleted_registration_ids: list[int] = []
 
-    async def create_volunteer_application_invitation(self, *, email: str, token: str):
+    async def create_volunteer_application_invitation(
+        self,
+        *,
+        email: str,
+        token: str,
+        initial_group_id: int | None = None,
+        initial_role_id: int | None = None,
+    ):
         raise NotImplementedError
 
     async def list_volunteer_applications(self):
@@ -81,6 +88,10 @@ class FakeVolunteerApplicationsRepository:
             photo_sha1=None,
             photo_filetype=None,
             photo_url=None,
+            initial_group_id=None,
+            initial_group_name=None,
+            initial_role_id=None,
+            initial_role_name=None,
         )
 
     async def save_submission(

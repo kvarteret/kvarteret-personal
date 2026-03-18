@@ -2,26 +2,22 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.dependencies import get_volunteers_service, require_admin_user
 from app.observability import log_admin_activity
 from app.services.volunteers import (
-    DuplicateDocumentError,
     DuplicateRoleAssignmentError,
     DocumentNotFoundError,
     InvalidRoleAssignmentError,
     RoleAssignmentNotFoundError,
-    UnsupportedUploadError,
     VolunteersService,
     VolunteerNotFoundError,
 )
 from app.web.routes.volunteer_route_helpers import render_role_assignments_panel, require_existing_volunteer
 
 router = APIRouter()
-MAX_UPLOAD_BYTES = 30 * 1024 * 1024  # 30 MB
-UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 @router.patch("/volunteers/{volunteer_id}")
@@ -109,6 +105,52 @@ async def volunteer_add_role_assignment(
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.patch("/volunteers/{volunteer_id}/role-assignments/{assignment_id}")
+async def volunteer_update_role_assignment(
+    request: Request,
+    volunteer_id: int,
+    assignment_id: int,
+    year: int = Form(...),
+    term: int = Form(...),
+    group_id: int = Form(...),
+    role_id: int = Form(...),
+    contract_signed: bool = Form(default=False),
+    current_user=Depends(require_admin_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    try:
+        await volunteers_service.update_role_assignment_for_volunteer(
+            volunteer_id,
+            assignment_id,
+            group_id=group_id,
+            role_id=role_id,
+            year=year,
+            term=term,
+            contract_signed=contract_signed,
+        )
+    except RoleAssignmentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (DuplicateRoleAssignmentError, InvalidRoleAssignmentError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer.update_role_assignment",
+        subject_type="role_assignment",
+        subject_id=assignment_id,
+        details={"volunteer_id": volunteer_id, "group_id": group_id, "role_id": role_id, "year": year, "term": term},
+    )
+    if request.headers.get("HX-Request") == "true":
+        volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
+        return await render_role_assignments_panel(
+            request,
+            current_user=current_user,
+            volunteers_service=volunteers_service,
+            volunteer=volunteer,
+        )
+    return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.delete("/volunteers/{volunteer_id}/role-assignments/{assignment_id}")
 async def volunteer_delete_role_assignment(
     request: Request,
@@ -140,35 +182,6 @@ async def volunteer_delete_role_assignment(
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.put("/volunteers/{volunteer_id}/photo")
-async def volunteer_upload_photo(
-    request: Request,
-    volunteer_id: int,
-    file: UploadFile = File(...),
-    current_user=Depends(require_admin_user),
-    volunteers_service: VolunteersService = Depends(get_volunteers_service),
-):
-    content = await _read_upload_content(file)
-    try:
-        await volunteers_service.upload_photo(
-            volunteer_id=volunteer_id,
-            filename=file.filename or "photo",
-            content=content,
-            content_type=file.content_type,
-        )
-    except (VolunteerNotFoundError, UnsupportedUploadError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    log_admin_activity(
-        request=request,
-        user=current_user,
-        action="volunteer.upload_photo",
-        subject_type="volunteer",
-        subject_id=volunteer_id,
-        details={"filename": file.filename},
-    )
-    return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
-
-
 @router.delete("/volunteers/{volunteer_id}/photo")
 async def volunteer_delete_photo(
     request: Request,
@@ -188,56 +201,6 @@ async def volunteer_delete_photo(
         subject_id=volunteer_id,
     )
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post("/volunteers/{volunteer_id}/documents")
-async def volunteer_upload_document(
-    request: Request,
-    volunteer_id: int,
-    file: UploadFile = File(...),
-    group_id: str | None = Form(default=None),
-    current_user=Depends(require_admin_user),
-    volunteers_service: VolunteersService = Depends(get_volunteers_service),
-):
-    try:
-        normalized_group_id = int(group_id) if group_id and group_id.strip() else None
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group id must be a number.") from exc
-
-    content = await _read_upload_content(file)
-    try:
-        await volunteers_service.upload_document(
-            volunteer_id=volunteer_id,
-            filename=file.filename or "document",
-            content=content,
-            content_type=file.content_type,
-            group_id=normalized_group_id,
-        )
-    except (VolunteerNotFoundError, DuplicateDocumentError, UnsupportedUploadError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    log_admin_activity(
-        request=request,
-        user=current_user,
-        action="volunteer.upload_document",
-        subject_type="volunteer",
-        subject_id=volunteer_id,
-        details={"filename": file.filename, "group_id": normalized_group_id},
-    )
-    return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
-
-
-async def _read_upload_content(file: UploadFile) -> bytes:
-    chunks: list[bytes] = []
-    total_size = 0
-
-    while True:
-        chunk = await file.read(UPLOAD_CHUNK_SIZE)
-        if not chunk:
-            return b"".join(chunks)
-        total_size += len(chunk)
-        if total_size > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File exceeds 30 MB limit.")
-        chunks.append(chunk)
 
 
 @router.delete("/volunteers/{volunteer_id}/documents/{document_id}")

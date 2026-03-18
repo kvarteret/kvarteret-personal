@@ -1,15 +1,6 @@
 <section class="app-panel">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <h2 class="text-2xl font-medium tracking-tight text-stone-900">Filer</h2>
-    {% if current_user.role == "Admin" %}
-      <form action="/volunteers/{{ volunteer.volunteer_id }}/documents" class="flex flex-wrap items-center gap-3" enctype="multipart/form-data" method="post">
-        <input class="border-0 border-b-2 border-stone-400 bg-transparent px-0 py-2 text-sm focus:border-kvarteret-red" name="group_id" placeholder="Gruppe (valgfritt)" type="number">
-        <label class="inline-flex min-h-11 cursor-pointer items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700">
-          Last opp fil
-          <input class="hidden" name="file" onchange="this.form.submit()" type="file" accept=".pdf,.jpg,.jpeg,.png">
-        </label>
-      </form>
-    {% endif %}
   </div>
   <div class="mt-5 grid gap-4">
     {% for document in documents %}
