@@ -74,16 +74,29 @@ class MobileCardRepository(SqlAlchemyRepository):
         access_code: str,
         expires_after: datetime,
     ) -> dict | None:
-        stmt = (
-            select(personal.c.id)
-            .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
-            .where(personal.c.internkortaccesstoken == access_code)
-            .where(personal.c.internkort_access_token_created_at.is_not(None))
-            .where(personal.c.internkort_access_token_created_at >= expires_after)
-            .limit(1)
-        )
         async with self.session_factory() as session:
-            return (await session.execute(stmt)).mappings().first()
+            async with session.begin():
+                row = (
+                    await session.execute(
+                        select(personal.c.id)
+                        .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
+                        .where(personal.c.internkortaccesstoken == access_code)
+                        .where(personal.c.internkort_access_token_created_at.is_not(None))
+                        .where(personal.c.internkort_access_token_created_at >= expires_after)
+                        .limit(1)
+                    )
+                ).mappings().first()
+                if row is None:
+                    return None
+                await session.execute(
+                    update(personal)
+                    .where(personal.c.id == row["id"])
+                    .values(
+                        internkortaccesstoken=None,
+                        internkort_access_token_created_at=None,
+                    )
+                )
+                return row
 
     async def fetch_card_snapshot(self, *, volunteer_id: int, semester_code: int) -> MobileCardSnapshot | None:
         started_at = perf_counter()

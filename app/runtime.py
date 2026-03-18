@@ -16,6 +16,7 @@ from app.config import Settings, get_settings, validate_production_secrets
 from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
+from app.services.email import SmtpEmailSender
 from app.services.feedback import FeedbackService
 from app.services.mobile_card_repository import MobileCardRepository
 from app.services.volunteers_repository import VolunteersRepository
@@ -93,6 +94,7 @@ def build_application_container(settings: Settings | None = None) -> Application
     session_store = SessionStore(auth_repository, resolved_settings)
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
+    email_sender = SmtpEmailSender(resolved_settings)
 
     return ApplicationContainer(
         settings=resolved_settings,
@@ -125,6 +127,7 @@ def build_application_container(settings: Settings | None = None) -> Application
         mobile_card_service=MobileCardService(
             resolved_settings,
             repository=MobileCardRepository(session_factory=session_factory_provider),
+            email_sender=email_sender,
             media_token_service=media_token_service,
         ),
         volunteer_applications_service=VolunteerApplicationsService(

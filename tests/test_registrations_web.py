@@ -154,7 +154,7 @@ def test_duplicate_volunteer_approval_redirects_to_existing_profile() -> None:
     response = client.post("/volunteer-applications/7/approval", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/volunteers/10017?duplicate_application_id=7&duplicate_email=sebbesgh@gmail.com"
+    assert response.headers["location"] == "/volunteers/10017?duplicate_application_id=7"
 
 
 def test_volunteer_application_submit_redirects_to_pending_status_page() -> None:

@@ -1,4 +1,4 @@
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +27,25 @@ class Settings(BaseSettings):
     photo_bucket: str = Field(default="personnel-photos")
     document_bucket: str = Field(default="personnel-documents")
     slack_feedback_webhook_url: str | None = Field(default=None)
+    smtp_server: str | None = Field(default=None, validation_alias=AliasChoices("SMTP_SERVER", "EMAIL_SERVER", "Email__Server"))
+    smtp_port: int = Field(default=587, validation_alias=AliasChoices("SMTP_PORT", "EMAIL_PORT", "Email__Port"))
+    smtp_sender_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMTP_SENDER_NAME", "EMAIL_SENDER_NAME", "Email__SenderName"),
+    )
+    smtp_sender_email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMTP_SENDER_EMAIL", "EMAIL_SENDER_EMAIL", "Email__SenderEmail"),
+    )
+    smtp_account: str | None = Field(default=None, validation_alias=AliasChoices("SMTP_ACCOUNT", "EMAIL_ACCOUNT", "Email__Account"))
+    smtp_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMTP_PASSWORD", "EMAIL_PASSWORD", "Email__Password"),
+    )
+    smtp_use_starttls: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("SMTP_USE_STARTTLS", "EMAIL_USE_STARTTLS", "Email__UseStartTls"),
+    )
     review_bypass_enabled: bool = Field(default=False)
     review_bypass_email: str | None = Field(default=None)
     review_bypass_token: str | None = Field(default=None)
@@ -39,6 +58,10 @@ class Settings(BaseSettings):
     admin_accounts_cache_ttl_seconds: int = Field(default=60)
     mobile_card_access_code_ttl_minutes: int = Field(default=10)
     mobile_card_access_code_cooldown_seconds: int = Field(default=60)
+    mobile_card_access_code_request_limit: int = Field(default=5)
+    mobile_card_access_code_request_window_seconds: int = Field(default=300)
+    mobile_card_session_attempt_limit: int = Field(default=5)
+    mobile_card_session_attempt_window_seconds: int = Field(default=600)
     mobile_card_session_ttl_days: int = Field(default=7)
 
     @field_validator(
@@ -55,6 +78,11 @@ class Settings(BaseSettings):
         "photo_bucket",
         "document_bucket",
         "slack_feedback_webhook_url",
+        "smtp_server",
+        "smtp_sender_name",
+        "smtp_sender_email",
+        "smtp_account",
+        "smtp_password",
         "review_bypass_email",
         "review_bypass_token",
         "log_level",

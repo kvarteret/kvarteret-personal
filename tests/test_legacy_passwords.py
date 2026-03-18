@@ -5,7 +5,12 @@ from app.auth.legacy_passwords import (
 )
 
 
-REAL_ADMIN_HASH = "AQAAAAIAAYagAAAAEAH9+ZebC7WHu8nji6yV4MgLn5KIEWK7ivRwkdH7ZEyMAN56vmxtIpGcwJAtSf0g2g=="
+SYNTHETIC_ADMIN_HASH = build_aspnet_identity_v3_hash(
+    "SyntheticAdminPassword123!",
+    salt=bytes.fromhex("11223344556677889900aabbccddeeff"),
+    iterations=100_000,
+    prf=2,
+)
 
 
 def test_can_verify_generated_aspnet_identity_v3_hash() -> None:
@@ -20,8 +25,8 @@ def test_can_verify_generated_aspnet_identity_v3_hash() -> None:
     assert verify_aspnet_identity_hash(encoded, "wrong password") is False
 
 
-def test_can_parse_real_copied_admin_hash_format() -> None:
-    parsed = parse_aspnet_identity_hash(REAL_ADMIN_HASH)
+def test_can_parse_synthetic_admin_hash_format() -> None:
+    parsed = parse_aspnet_identity_hash(SYNTHETIC_ADMIN_HASH)
 
     assert parsed.format_marker == 1
     assert parsed.hash_name == "sha512"
@@ -30,6 +35,5 @@ def test_can_parse_real_copied_admin_hash_format() -> None:
     assert len(parsed.subkey) == 32
 
 
-def test_real_copied_admin_hash_rejects_wrong_password() -> None:
-    assert verify_aspnet_identity_hash(REAL_ADMIN_HASH, "definitely-not-the-right-password") is False
-
+def test_synthetic_admin_hash_rejects_wrong_password() -> None:
+    assert verify_aspnet_identity_hash(SYNTHETIC_ADMIN_HASH, "definitely-not-the-right-password") is False

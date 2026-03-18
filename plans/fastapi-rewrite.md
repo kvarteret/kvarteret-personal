@@ -20,7 +20,7 @@ The first implemented slice in this repository is the foundation: planning files
 - [x] (2026-03-13 10:15Z) Created `/PLANS.md` and this plan file in the repository.
 - [x] (2026-03-13 10:15Z) Initialized Python and npm tooling and installed FastAPI, SQLAlchemy, Supabase, pytest, and Tailwind dependencies.
 - [x] (2026-03-13 10:28Z) Scaffolded the FastAPI app, templates, Tailwind entrypoint, health endpoint, placeholder dashboard, login page, and legacy/mobile API placeholders.
-- [x] (2026-03-13 10:28Z) Implemented the ASP.NET Identity password verification prototype and tests, including a parser check against a real copied admin hash.
+- [x] (2026-03-13 10:28Z) Implemented the ASP.NET Identity password verification prototype and tests, including a parser check against a deterministic synthetic admin hash fixture.
 - [x] (2026-03-13 10:28Z) Implemented the signed-photo URL prototype and tests through a dedicated storage service.
 - [x] (2026-03-13 10:35Z) Added prototype coverage for both the new English mobile-card API and the temporary legacy Internkort adapter.
 - [x] (2026-03-13 10:54Z) Applied the additive auth/session tables to the hosted Supabase project and confirmed `user_accounts`, `group_admin_memberships`, `web_sessions`, and `auth_migration_events` exist.

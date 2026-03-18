@@ -4,22 +4,28 @@ from fastapi.testclient import TestClient
 
 from app.dependencies import get_mobile_card_service
 from app.main import create_app
+from app.services.mobile_card import MobileCardPersonNotFoundError
 from app.services.mobile_card import (
     MobileCardInvalidAccessCodeError,
     MobileCardResponse,
     MobileCardRole,
+    MobileCardRateLimitedError,
     MobileCardSession,
 )
 
 
 class FakeMobileCardService:
-    async def request_access_code(self, email: str) -> None:
+    async def request_access_code(self, email: str, *, source_key: str | None = None) -> None:
         if email == "missing@example.com":
-            from app.services.mobile_card import MobileCardPersonNotFoundError
-
             raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
+        if email == "rate-limited@example.com":
+            raise MobileCardRateLimitedError("Too many access-code requests. Try again later.")
 
-    async def create_session(self, email: str, access_code: str) -> MobileCardSession:
+    async def create_session(self, email: str, access_code: str, *, source_key: str | None = None) -> MobileCardSession:
+        if email == "missing@example.com":
+            raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
+        if email == "rate-limited@example.com":
+            raise MobileCardRateLimitedError("Too many access-code attempts. Try again later.")
         if access_code != "123456":
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         card = MobileCardResponse(
@@ -98,6 +104,30 @@ def test_new_mobile_card_me_requires_known_bearer_token() -> None:
     assert response.json()["detail"] == "Unknown session token."
 
 
+def test_mobile_card_access_code_request_does_not_expose_whether_email_exists() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/v1/mobile-card/access-codes",
+        json={"email": "missing@example.com"},
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted"}
+
+
+def test_mobile_card_session_returns_generic_invalid_credentials() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/v1/mobile-card/sessions",
+        json={"email": "missing@example.com", "access_code": "123456"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid email or access code."}
+
+
 def test_legacy_mobile_card_adapter_returns_legacy_contract() -> None:
     client = _make_client()
 
@@ -123,5 +153,29 @@ def test_legacy_mobile_card_errors_return_plain_text_for_mobile_app() -> None:
         json={"email": "missing@example.com"},
     )
 
-    assert response.status_code == 404
-    assert response.text == "Email not found in the personnel database."
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_legacy_mobile_card_session_uses_generic_invalid_credentials() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/DigitalInternkort/GetInternkortInformation",
+        json={"email": "missing@example.com", "accessToken": "123456"},
+    )
+
+    assert response.status_code == 401
+    assert response.text == "Invalid email or access code."
+
+
+def test_mobile_card_access_code_request_returns_429_when_rate_limited() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/v1/mobile-card/access-codes",
+        json={"email": "rate-limited@example.com"},
+    )
+
+    assert response.status_code == 429
+    assert response.json() == {"detail": "Too many access-code requests. Try again later."}

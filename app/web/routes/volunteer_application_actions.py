@@ -75,7 +75,7 @@ async def volunteer_application_approve(
         volunteer_id = await volunteer_applications_service.approve_volunteer_application(application_id)
     except VolunteerAlreadyExistsError as exc:
         return RedirectResponse(
-            url=f"/volunteers/{exc.volunteer_id}?duplicate_application_id={application_id}&duplicate_email={exc.email}",
+            url=f"/volunteers/{exc.volunteer_id}?duplicate_application_id={application_id}",
             status_code=status.HTTP_303_SEE_OTHER,
         )
     except (VolunteerApplicationNotFoundError, VolunteerApplicationConflictError) as exc:

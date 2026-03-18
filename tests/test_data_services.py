@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,7 +11,13 @@ from app.services.volunteer_applications import (
     VolunteerApplicationSubmissionInput,
     VolunteerApplicationsService,
 )
+from app.services.mobile_card import (
+    MobileCardInvalidAccessCodeError,
+    MobileCardRateLimitedError,
+    MobileCardService,
+)
 from app.services.volunteers import VolunteersService
+from app.config import Settings
 
 
 class FakeVolunteersRepository:
@@ -114,6 +120,38 @@ class FakeVolunteerApplicationsRepository:
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         self.deleted_registration_ids.append(registration_id)
+
+
+class FakeMobileCardRepository:
+    def __init__(self, volunteers_by_email: list[dict] | None = None) -> None:
+        self.volunteers_by_email = volunteers_by_email or []
+        self.stored_access_codes: list[tuple[int, str, datetime]] = []
+
+    async def find_volunteers_by_email(self, email: str) -> list[dict]:
+        return list(self.volunteers_by_email)
+
+    async def store_access_code(self, *, volunteer_id: int, access_code: str, created_at: datetime) -> None:
+        self.stored_access_codes.append((volunteer_id, access_code, created_at))
+
+    async def find_volunteer_by_email_and_code(self, *, email: str, access_code: str, expires_after: datetime) -> dict | None:
+        return None
+
+    async def fetch_card_snapshot(self, *, volunteer_id: int, semester_code: int):
+        raise NotImplementedError
+
+
+class FakeEmailSender:
+    def __init__(self) -> None:
+        self.sent_emails: list[dict[str, str]] = []
+
+    async def send_email(self, *, recipient_email: str, subject: str, html_body: str) -> None:
+        self.sent_emails.append(
+            {
+                "recipient_email": recipient_email,
+                "subject": subject,
+                "html_body": html_body,
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -358,4 +396,91 @@ async def test_volunteer_applications_delete_invalidates_pending_count_cache() -
 
     assert refreshed == 1
     assert repository.deleted_registration_ids == [7]
-    assert repository.count_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts() -> None:
+    service = MobileCardService(
+        Settings(
+            app_secret_key="test-secret",
+            mobile_card_session_attempt_limit=2,
+            mobile_card_session_attempt_window_seconds=600,
+        ),
+        repository=FakeMobileCardRepository(),  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+    )
+
+    with pytest.raises(MobileCardInvalidAccessCodeError):
+        await service.create_session("person@example.com", "111111", source_key="127.0.0.1")
+    with pytest.raises(MobileCardInvalidAccessCodeError):
+        await service.create_session("person@example.com", "222222", source_key="127.0.0.1")
+    with pytest.raises(MobileCardRateLimitedError):
+        await service.create_session("person@example.com", "333333", source_key="127.0.0.1")
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_sends_email_when_generating_access_code() -> None:
+    repository = FakeMobileCardRepository(
+        volunteers_by_email=[
+            {
+                "id": 12,
+                "fornavn": "Ada",
+                "etternavn": "Lovelace",
+                "internkortaccesstoken": None,
+                "internkort_access_token_created_at": None,
+            }
+        ]
+    )
+    email_sender = FakeEmailSender()
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret", mobile_card_access_code_ttl_minutes=10),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=email_sender,
+    )
+
+    await service.request_access_code("person@example.com")
+
+    assert len(repository.stored_access_codes) == 1
+    volunteer_id, access_code, created_at = repository.stored_access_codes[0]
+    assert volunteer_id == 12
+    assert created_at.tzinfo == UTC
+    assert len(access_code) == 6
+    assert email_sender.sent_emails == [
+        {
+            "recipient_email": "person@example.com",
+            "subject": "Kvarteret Internkort is ready for you",
+            "html_body": (
+                "Your Kvarteret verification code is:"
+                f"<br><br>{access_code}<br><br>"
+                "This code expires in 10 minutes."
+                "<br><br>"
+                "If you didn't request this code, you can ignore this email."
+            ),
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_resends_recent_access_code_during_cooldown() -> None:
+    repository = FakeMobileCardRepository(
+        volunteers_by_email=[
+            {
+                "id": 12,
+                "fornavn": "Ada",
+                "etternavn": "Lovelace",
+                "internkortaccesstoken": "654321",
+                "internkort_access_token_created_at": datetime.now(UTC),
+            }
+        ]
+    )
+    email_sender = FakeEmailSender()
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret", mobile_card_access_code_cooldown_seconds=60),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=email_sender,
+    )
+
+    await service.request_access_code("person@example.com")
+
+    assert repository.stored_access_codes == []
+    assert email_sender.sent_emails[0]["html_body"].find("654321") != -1

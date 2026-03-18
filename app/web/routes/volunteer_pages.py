@@ -112,7 +112,6 @@ async def volunteer_detail(
             "volunteer": volunteer,
             "gender_options": GENDER_OPTIONS,
             "duplicate_application_id": request.query_params.get("duplicate_application_id"),
-            "duplicate_email": request.query_params.get("duplicate_email"),
         },
     )
     response.headers["Cache-Control"] = "no-store"
