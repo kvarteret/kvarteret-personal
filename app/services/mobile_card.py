@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from hashlib import sha256
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from secrets import choice
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -16,6 +17,61 @@ from app.services.mobile_card_repository import MobileCardRepository, MobileCard
 from app.services.semester import get_current_semester_code
 
 logger = logging.getLogger(__name__)
+
+_LEGACY_PENGUIN_WORD_PREFIXES = [
+    "bug",
+    "mordi",
+    "adelie",
+    "bøyle",
+    "dverg",
+    "galápagos",
+    "gulltop",
+    "guløye",
+    "horn",
+    "humboldt",
+    "hvitkinn",
+    "kap",
+    "keiser",
+    "klippehopper",
+    "konge",
+    "langdusk",
+    "magellan",
+    "ring",
+    "skog",
+    "snares",
+    "kode",
+    "pode",
+    "smart",
+    "humor",
+    "jule",
+    "fjøs",
+    "øl",
+    "vin",
+    "løpe",
+    "party",
+    "intern",
+    "kaffe",
+    "te",
+    "kake",
+    "pizza",
+    "burger",
+    "pasta",
+    "taco",
+    "sushi",
+    "standup",
+    "konsert",
+    "quiz",
+    "mikro",
+    "økonomi",
+    "fysikk",
+    "matte",
+    "kjemi",
+    "biologi",
+    "informatikk",
+    "humaniora",
+    "kor",
+    "mugge",
+]
 
 
 class MobileCardError(RuntimeError):
@@ -318,14 +374,19 @@ def _build_rate_limit_keys(email: str, source_key: str | None) -> tuple[str, ...
     return tuple(keys)
 
 
-def _word_of_the_day() -> str:
-    words = [
-        "pingvin",
-        "vakt",
-        "bar",
-        "scene",
-        "kaffe",
-        "frivillig",
-        "kvarter",
-    ]
-    return words[datetime.now(UTC).timetuple().tm_yday % len(words)]
+def _word_of_the_day(now: datetime | None = None) -> str:
+    current_time = now or datetime.now(UTC)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=UTC)
+    else:
+        current_time = current_time.astimezone(UTC)
+    current_day = current_time.date()
+    if current_time < datetime.combine(current_day, time(hour=4), tzinfo=UTC):
+        current_day -= timedelta(days=1)
+    word_index = _daily_word_index(current_day)
+    return f"{_LEGACY_PENGUIN_WORD_PREFIXES[word_index]}pingvin"
+
+
+def _daily_word_index(current_day: date) -> int:
+    digest = sha256(current_day.isoformat().encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") % len(_LEGACY_PENGUIN_WORD_PREFIXES)

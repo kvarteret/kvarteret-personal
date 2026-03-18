@@ -15,6 +15,7 @@ from app.services.mobile_card import (
     MobileCardInvalidAccessCodeError,
     MobileCardRateLimitedError,
     MobileCardService,
+    _word_of_the_day,
 )
 from app.services.volunteers import VolunteersService
 from app.config import Settings
@@ -484,3 +485,18 @@ async def test_mobile_card_service_resends_recent_access_code_during_cooldown() 
 
     assert repository.stored_access_codes == []
     assert email_sender.sent_emails[0]["html_body"].find("654321") != -1
+
+
+@pytest.mark.parametrize(
+    ("now", "expected_word"),
+    [
+        (datetime(2026, 3, 2, 3, 59, 59, tzinfo=UTC), "korpingvin"),
+        (datetime(2026, 3, 2, 4, 0, 0, tzinfo=UTC), "keiserpingvin"),
+        (datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC), "vinpingvin"),
+        (datetime(2026, 7, 1, 12, 0, 0, tzinfo=UTC), "kaffepingvin"),
+    ],
+)
+def test_mobile_card_word_of_the_day_is_stable_for_the_effective_day(
+    now: datetime, expected_word: str
+) -> None:
+    assert _word_of_the_day(now) == expected_word
