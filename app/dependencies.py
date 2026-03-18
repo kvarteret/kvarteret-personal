@@ -14,6 +14,7 @@ from app.services.feedback import FeedbackService
 from app.services.courses import CoursesService
 from app.services.groups import GroupsService
 from app.services.mobile_card import MobileCardService
+from app.services.now_playing import NowPlayingService
 from app.services.volunteers import VolunteersService
 from app.services.volunteer_applications import VolunteerApplicationsService
 from app.services.search import VolunteerSearchService
@@ -108,6 +109,10 @@ def get_admin_accounts_service(request: Request) -> AdminAccountsService:
 
 def get_mobile_card_service(request: Request) -> MobileCardService:
     return get_container(request).mobile_card_service
+
+
+def get_now_playing_service(request: Request) -> NowPlayingService:
+    return get_container(request).now_playing_service
 
 
 def get_volunteer_applications_service(request: Request) -> VolunteerApplicationsService:

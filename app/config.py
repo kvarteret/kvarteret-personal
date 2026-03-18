@@ -46,6 +46,11 @@ class Settings(BaseSettings):
         default=True,
         validation_alias=AliasChoices("SMTP_USE_STARTTLS", "EMAIL_USE_STARTTLS", "Email__UseStartTls"),
     )
+    spotify_client_id: str | None = Field(default=None)
+    spotify_client_secret: str | None = Field(default=None)
+    spotify_refresh_token: str | None = Field(default=None)
+    now_playing_cache_seconds: float = Field(default=10.0)
+    now_playing_stale_grace_seconds: float = Field(default=30.0)
     review_bypass_enabled: bool = Field(default=False)
     review_bypass_email: str | None = Field(default=None)
     review_bypass_token: str | None = Field(default=None)
@@ -83,6 +88,9 @@ class Settings(BaseSettings):
         "smtp_sender_email",
         "smtp_account",
         "smtp_password",
+        "spotify_client_id",
+        "spotify_client_secret",
+        "spotify_refresh_token",
         "review_bypass_email",
         "review_bypass_token",
         "log_level",

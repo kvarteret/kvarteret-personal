@@ -19,6 +19,7 @@ from app.media_tokens import MediaTokenService
 from app.services.email import SmtpEmailSender
 from app.services.feedback import FeedbackService
 from app.services.mobile_card_repository import MobileCardRepository
+from app.services.now_playing import NowPlayingService
 from app.services.volunteers_repository import VolunteersRepository
 from app.services.volunteer_applications_repository import VolunteerApplicationsRepository
 from app.services.courses import CoursesService
@@ -73,6 +74,7 @@ class ApplicationContainer:
     volunteer_search_service: VolunteerSearchService
     admin_accounts_service: AdminAccountsService
     mobile_card_service: MobileCardService
+    now_playing_service: NowPlayingService
     volunteer_applications_service: VolunteerApplicationsService
     semester_transfer_service: SemesterTransferService
     feedback_service: FeedbackService
@@ -80,6 +82,7 @@ class ApplicationContainer:
     async def aclose(self) -> None:
         if self.storage_service is not None:
             self.storage_service.close()
+        await self.now_playing_service.aclose()
         self.supabase_auth_gateway.close()
         await self.database_runtime_manager.aclose()
 
@@ -130,6 +133,7 @@ def build_application_container(settings: Settings | None = None) -> Application
             email_sender=email_sender,
             media_token_service=media_token_service,
         ),
+        now_playing_service=NowPlayingService(resolved_settings),
         volunteer_applications_service=VolunteerApplicationsService(
             repository=VolunteerApplicationsRepository(
                 session_factory=session_factory_provider,
