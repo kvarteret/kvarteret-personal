@@ -20,6 +20,7 @@ class MobileCardRoleSnapshot:
     name: str
     group: str
     discount_level: int | None
+    pingvin_points: int
     signed_contract: bool
 
 
@@ -105,6 +106,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                 verv.c.verv.label("verv_navn"),
                 grupper.c.navn.label("gruppe_navn"),
                 grupper.c.rabatt_trinn,
+                verv.c.pingvinpoeng.label("pingvin_poeng"),
                 historie.c.signert_kontrakt,
             )
             .select_from(
@@ -148,6 +150,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                     name=row["verv_navn"],
                     group=row["gruppe_navn"],
                     discount_level=row["rabatt_trinn"],
+                    pingvin_points=int(row["pingvin_poeng"] or 0),
                     signed_contract=row["signert_kontrakt"],
                 )
                 for row in rows

@@ -38,6 +38,7 @@ class MobileCardRole(BaseModel):
     name: str
     group: str
     discount_level: int | None = None
+    pingvin_points: int = 0
     signed_contract: bool = False
 
 
@@ -70,6 +71,7 @@ class MobileCardResponse(BaseModel):
                     "navn": role.name,
                     "gruppe": role.group,
                     "rabattTrinn": role.discount_level,
+                    "pingvinPoeng": role.pingvin_points,
                     "signertKontrakt": role.signed_contract,
                 }
                 for role in self.active_roles
@@ -186,6 +188,7 @@ class MobileCardService:
                     name=role.name,
                     group=role.group,
                     discount_level=role.discount_level,
+                    pingvin_points=role.pingvin_points,
                     signed_contract=role.signed_contract,
                 )
                 for role in snapshot.active_roles
@@ -217,6 +220,7 @@ class MobileCardService:
                     name="Guest",
                     group="Kvarteret",
                     discount_level=0,
+                    pingvin_points=0,
                     signed_contract=True,
                 )
             ],

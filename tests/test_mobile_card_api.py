@@ -31,7 +31,15 @@ class FakeMobileCardService:
             valid_until=datetime(2026, 3, 20, tzinfo=UTC),
             photo_url="/media/photos/abc.jpg?token=test",
             pingvin_points=8,
-            active_roles=[MobileCardRole(name="Shift lead", group="Bar", discount_level=2, signed_contract=True)],
+            active_roles=[
+                MobileCardRole(
+                    name="Shift lead",
+                    group="Bar",
+                    discount_level=2,
+                    pingvin_points=4,
+                    signed_contract=True,
+                )
+            ],
             word_of_the_day="pingvin",
         )
         return MobileCardSession(session_token="token-123", card=card)
@@ -70,6 +78,7 @@ def test_new_mobile_card_session_flow_returns_english_contract() -> None:
     assert payload["session_token"] == "token-123"
     assert payload["card"]["first_name"] == "Sample"
     assert payload["card"]["active_roles"][0]["name"] == "Shift lead"
+    assert payload["card"]["active_roles"][0]["pingvin_points"] == 4
 
     me_response = client.get(
         "/api/v1/mobile-card/me",
@@ -102,4 +111,17 @@ def test_legacy_mobile_card_adapter_returns_legacy_contract() -> None:
     assert response.status_code == 200
     assert payload["fornavn"] == "Sample"
     assert payload["aktiveVerv"][0]["navn"] == "Shift lead"
+    assert payload["aktiveVerv"][0]["pingvinPoeng"] == 4
     assert "pingvinPoengSum" in payload
+
+
+def test_legacy_mobile_card_errors_return_plain_text_for_mobile_app() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/DigitalInternkort/RequestAccessTokenOnEmail",
+        json={"email": "missing@example.com"},
+    )
+
+    assert response.status_code == 404
+    assert response.text == "Email not found in the personnel database."
