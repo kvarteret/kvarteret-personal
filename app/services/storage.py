@@ -93,6 +93,24 @@ class StorageService:
             if callable(close):
                 close()
 
+    def list_buckets(self) -> list[dict[str, Any]]:
+        self._require_supabase_documents()
+        response = self._request("GET", "bucket")
+        data = response.json()
+        if not isinstance(data, list):
+            raise NotConfiguredError("Supabase did not return a bucket list.")
+        return data
+
+    def empty_bucket(self, bucket: str) -> str:
+        self._require_supabase_documents()
+        response = self._request("POST", f"bucket/{bucket}/empty")
+        data = response.json()
+        if isinstance(data, dict):
+            message = data.get("message")
+            if isinstance(message, str) and message:
+                return message
+        return "Bucket empty request accepted."
+
     def _create_azure_photo_signed_url(self, path: str, expires_in: int) -> str:
         blob_path = path.lstrip("/")
         account_name = self._azure_account_name
@@ -236,6 +254,8 @@ def _parse_connection_string_value(connection_string: str | None, key: str) -> s
         if item.startswith(prefix):
             return item[len(prefix):] or None
     return None
+
+
 def create_photo_signed_url(path: str, expires_in: int = 60) -> str:
     return StorageService(get_settings()).create_photo_signed_url(path, expires_in)
 

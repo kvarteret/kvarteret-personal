@@ -259,3 +259,57 @@ def test_remove_photo_uses_photo_bucket() -> None:
     assert captured["method"] == "DELETE"
     assert captured["url"] == "https://example.supabase.co/storage/v1/object/personnel-photos"
     assert "abc123.jpg" in str(captured["body"])
+
+
+def test_list_buckets_uses_bucket_endpoint() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json=[{"id": "personnel-photos"}, {"id": "personnel-documents"}])
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = StorageService(
+        Settings(
+            supabase_url="https://example.supabase.co",
+            supabase_secret_key="key",
+            azure_blob_connection_string=None,
+            azure_blob_account_name=None,
+            azure_blob_account_key=None,
+        ),
+        client=client,
+    )
+
+    buckets = service.list_buckets()
+
+    assert captured["method"] == "GET"
+    assert captured["url"] == "https://example.supabase.co/storage/v1/bucket"
+    assert buckets == [{"id": "personnel-photos"}, {"id": "personnel-documents"}]
+
+
+def test_empty_bucket_uses_empty_bucket_endpoint() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"message": "Empty bucket has been queued. Completion may take up to an hour."})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    service = StorageService(
+        Settings(
+            supabase_url="https://example.supabase.co",
+            supabase_secret_key="key",
+            azure_blob_connection_string=None,
+            azure_blob_account_name=None,
+            azure_blob_account_key=None,
+        ),
+        client=client,
+    )
+
+    message = service.empty_bucket("personnel-photos")
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "https://example.supabase.co/storage/v1/bucket/personnel-photos/empty"
+    assert message == "Empty bucket has been queued. Completion may take up to an hour."
