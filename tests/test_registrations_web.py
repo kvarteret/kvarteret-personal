@@ -164,6 +164,18 @@ class DuplicateApprovalVolunteerApplicationsService(FakeVolunteerApplicationsSer
         raise VolunteerAlreadyExistsError(10017, "sebbesgh@gmail.com")
 
 
+class DuplicateInviteVolunteerApplicationsService(FakeVolunteerApplicationsService):
+    async def create_volunteer_application_invitation(
+        self,
+        email: str,
+        *,
+        base_url: str | None = None,
+        initial_group_id: int | None = None,
+        initial_role_id: int | None = None,
+    ) -> VolunteerApplicationInvite:
+        raise VolunteerAlreadyExistsError(10017, email)
+
+
 def test_volunteer_application_pages_render() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
@@ -246,6 +258,23 @@ def test_group_admin_can_create_invite() -> None:
             "initial_role_id": 9,
         }
     ]
+
+
+def test_group_admin_create_invite_redirects_to_existing_volunteer_on_duplicate_email() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: DuplicateInviteVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/volunteer-applications",
+        data={"email": "existing@example.test", "group_id": "3", "role_id": "9"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/volunteers/10017"
 
 
 def test_group_admin_can_create_invite_without_group() -> None:
@@ -358,6 +387,25 @@ def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
     assert volunteer_applications_service.deleted_registration_ids == [7]
     assert "registrant@example.com" not in response.text
     assert "Ingen åpne frivilligsøknader." in response.text
+
+
+def test_volunteer_application_delete_redirects_from_boosted_detail_page() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.delete(
+        "/volunteer-applications/7",
+        headers={"HX-Request": "true", "HX-Boosted": "true"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/volunteer-applications"
+    assert volunteer_applications_service.deleted_registration_ids == [7]
 
 
 def test_volunteer_application_resend_redirects_and_calls_service() -> None:

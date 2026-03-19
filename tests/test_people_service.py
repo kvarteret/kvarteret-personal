@@ -19,6 +19,7 @@ def _build_person_detail() -> VolunteerDetail:
         gender_label="Annet",
         address=None,
         postal_code=None,
+        pingvin_points=0,
         photo_url=None,
     )
 
@@ -42,6 +43,7 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
             "kjonn": "A",
             "gateadresse": None,
             "postnummerid": None,
+            "pingvin_points": 0,
             "sha1": None,
             "filetype": None,
         }
@@ -52,6 +54,7 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
     second = await service.get_volunteer_detail(1)
 
     assert first is second
+    assert first is not None
     assert first.full_name == "Test Person"
     assert calls == 1
 
@@ -61,7 +64,7 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
     service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
     first_value = _build_person_detail()
     second_value = _build_person_detail()
-    second_value.first_name = "Reloaded"  # type: ignore[misc]
+    second_value.first_name = "Reloaded"
     values = [first_value, second_value]
 
     async def fake_fetch_row(volunteer_id: int):
@@ -77,6 +80,7 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
             "kjonn": value.gender_code,
             "gateadresse": value.address,
             "postnummerid": value.postal_code,
+            "pingvin_points": value.pingvin_points,
             "sha1": None,
             "filetype": None,
         }
@@ -87,6 +91,8 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
     service._shell_cache.force_expire(1)
     reloaded = await service.get_volunteer_detail(1)
 
+    assert cached is not None
+    assert reloaded is not None
     assert cached.full_name == "Test Person"
     assert reloaded.full_name == "Reloaded Person"
 

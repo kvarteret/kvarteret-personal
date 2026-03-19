@@ -109,6 +109,7 @@ class VolunteersRepository(SqlAlchemyRepository):
         return await self.fetch_all_mappings(stmt)
 
     async def fetch_volunteer_shell_row(self, volunteer_id: int) -> dict[str, Any] | None:
+        points = _pingvin_points_subquery()
         stmt = (
             select(
                 volunteer_records.c.id,
@@ -121,6 +122,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_records.c.kjonn,
                 volunteer_records.c.gateadresse,
                 volunteer_records.c.postnummerid,
+                func.coalesce(points.c.pingvin_points, 0).label("pingvin_points"),
                 volunteer_photos.c.sha1,
                 volunteer_photos.c.filetype,
             )
@@ -128,6 +130,9 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_records.outerjoin(
                     volunteer_photos,
                     volunteer_photos.c.id_personal == volunteer_records.c.id,
+                ).outerjoin(
+                    points,
+                    points.c.id_personal == volunteer_records.c.id,
                 )
             )
             .where(volunteer_records.c.id == volunteer_id)
@@ -150,6 +155,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                 role_assignments.c.signert_kontrakt,
                 groups.c.navn.label("group_name"),
                 assignment_roles.c.verv.label("role_name"),
+                assignment_roles.c.pingvinpoeng,
             )
             .select_from(
                 role_assignments.join(groups, groups.c.id == role_assignments.c.id_gruppe).outerjoin(

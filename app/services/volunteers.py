@@ -27,12 +27,14 @@ from app.services.volunteer_mappers import (
 )
 from app.services.volunteer_models import (
     AssignmentRoleOption,
+    CardItem,
     DuplicateRoleAssignmentError,
     DuplicateDocumentError,
     DocumentItem,
     DocumentNotFoundError,
     GroupOption,
     InvalidRoleAssignmentError,
+    NextOfKinItem,
     RoleAssignmentItem,
     RoleAssignmentNotFoundError,
     UnsupportedUploadError,

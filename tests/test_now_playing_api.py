@@ -139,6 +139,7 @@ async def test_now_playing_service_prefers_database_refresh_token_over_env_fallb
     await service.aclose()
 
     assert requests[0][0:2] == ("POST", "https://accounts.spotify.com/api/token")
+    assert requests[0][2] is not None
     assert "refresh_token=database-refresh-token" in requests[0][2]
     assert result.state == {
         "authorized": True,

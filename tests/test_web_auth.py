@@ -24,16 +24,12 @@ from tests.helpers import make_authenticated_user
 class FakeLoginService:
     async def login_with_bridge(self, *, identifier: str, password: str, ip_address: str | None, user_agent: str | None) -> LoginResult:
         return LoginResult(
-            session=type(
-                "Session",
-                (),
-                {
-                    "session_id": "session-123",
-                    "auth_user_id": uuid4(),
-                    "user_account_id": 5,
-                    "expires_at": datetime.now(UTC),
-                },
-            )(),
+            session=WebSession(
+                session_id="session-123",
+                auth_user_id=uuid4(),
+                user_account_id=5,
+                expires_at=datetime.now(UTC),
+            ),
             user=make_authenticated_user(UserRole.ADMIN),
             migrated_from_legacy=True,
         )
@@ -78,6 +74,15 @@ class FakeSessionStore:
     async def load_authenticated_user(self, session_id: str):
         return None
 
+    async def create_session(self, **kwargs):
+        raise NotImplementedError
+
+    async def delete_session(self, session_id: str) -> None:
+        return None
+
+    def invalidate_session_cache(self, session_id: str) -> None:
+        return None
+
 
 class MiddlewareSessionStore:
     def __init__(self, user) -> None:
@@ -93,6 +98,15 @@ class MiddlewareSessionStore:
             ),
             self.user,
         )
+
+    async def create_session(self, **kwargs):
+        raise NotImplementedError
+
+    async def delete_session(self, session_id: str) -> None:
+        return None
+
+    def invalidate_session_cache(self, session_id: str) -> None:
+        return None
 
 
 class ImpersonatedSessionStore:
@@ -141,6 +155,9 @@ class ImpersonatedSessionStore:
 
     async def delete_session(self, session_id: str) -> None:
         self.deleted_sessions.append(session_id)
+
+    def invalidate_session_cache(self, session_id: str) -> None:
+        return None
 
 
 class FakePendingVolunteerApplicationsService:

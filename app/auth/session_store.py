@@ -3,15 +3,49 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
+from typing import Protocol
+from uuid import UUID
 
 from app.cache import TTLCache
 from app.auth.models import AuthenticatedUser, WebSession
-from app.auth.repository import AuthRepositoryProtocol
 from app.config import Settings
 
 
+class SessionRepositoryProtocol(Protocol):
+    async def create_session(
+        self,
+        *,
+        session_id: str,
+        auth_user_id: UUID,
+        user_account_id: int | None,
+        impersonator_auth_user_id: UUID | None = None,
+        impersonator_user_account_id: int | None = None,
+        expires_at: datetime,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> WebSession: ...
+    async def load_authenticated_user_for_session(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None: ...
+    async def delete_session(self, session_id: str) -> None: ...
+
+
+class SessionStoreProtocol(Protocol):
+    async def create_session(
+        self,
+        *,
+        auth_user_id: UUID,
+        user_account_id: int | None,
+        impersonator_auth_user_id: UUID | None = None,
+        impersonator_user_account_id: int | None = None,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> WebSession: ...
+    async def load_authenticated_user(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None: ...
+    async def delete_session(self, session_id: str) -> None: ...
+    def invalidate_session_cache(self, session_id: str) -> None: ...
+
+
 class SessionStore:
-    def __init__(self, repository: AuthRepositoryProtocol, settings: Settings) -> None:
+    def __init__(self, repository: SessionRepositoryProtocol, settings: Settings) -> None:
         self.repository = repository
         self.settings = settings
         self._cache: TTLCache[str, CachedSession] = TTLCache(

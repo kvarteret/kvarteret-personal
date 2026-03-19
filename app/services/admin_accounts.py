@@ -15,7 +15,7 @@ from app.cache import TTLCache
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import group_admin_memberships, user_accounts
 from app.observability import log_operation_timing
-from app.services.common import coerce_datetime
+from app.services.common import coerce_datetime, require_datetime
 
 logger = logging.getLogger("app.performance")
 
@@ -276,7 +276,7 @@ class AdminAccountsService(SqlAlchemyRepository):
             display_name=row.get("display_name"),
             role=UserRole(row["role"]),
             last_login=coerce_datetime(row.get("last_login")),
-            created_at=coerce_datetime(row["created_at"]),
+            created_at=require_datetime(row["created_at"]),
             migrated_at=coerce_datetime(row.get("migrated_at")),
             group_admin_group_ids=memberships.get(row["auth_user_id"], []),
         )

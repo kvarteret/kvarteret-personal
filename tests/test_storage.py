@@ -229,6 +229,7 @@ def test_upload_document_uses_document_bucket() -> None:
     assert captured["url"] == "https://example.supabase.co/storage/v1/object/personnel-documents/12/certificate.pdf"
     assert captured["upsert"] == "true"
     assert "multipart/form-data" in str(captured["content_type"])
+    assert isinstance(captured["body"], bytes)
     assert b"pdf-bytes" in captured["body"]
 
 

@@ -67,6 +67,7 @@ class FakeVolunteersService:
             gender_label="Kvinne",
             address="Example address",
             postal_code="0000",
+            pingvin_points=8,
             photo_url=None,
         )
 
@@ -78,6 +79,7 @@ class FakeVolunteersService:
                 group_name="Bar",
                 role_id=2,
                 role_name="Shift lead",
+                pingvin_points=4,
                 semester_code=20262,
                 semester_label="Fall 2026",
                 contract_signed=True,
@@ -426,8 +428,8 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     assert "Shift lead" in history_response.text
     assert "Legg til nytt verv" in history_response.text
     assert "Velg gruppe" in history_response.text
-    assert "Rediger verv" in history_response.text
-    assert "Slett verv" in history_response.text
+    assert "Rediger" in history_response.text
+    assert "Slett" in history_response.text
     assert "kontrakt" in history_response.text
     assert 'href="/groups/9"' in history_response.text
     assert documents_response.status_code == 200

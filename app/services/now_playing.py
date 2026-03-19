@@ -25,9 +25,6 @@ _SPOTIFY_CURRENTLY_PLAYING_URL = "https://api.spotify.com/v1/me/player/currently
 _SPOTIFY_PROVIDER = "spotify"
 _SPOTIFY_SCOPES = "user-read-currently-playing user-read-playback-state"
 _STATE_MAX_AGE_SECONDS = 600
-_UNSET = object()
-
-
 class SpotifyOAuthError(RuntimeError):
     """Raised when the shared Spotify OAuth flow cannot be completed."""
 
@@ -65,7 +62,8 @@ class NowPlayingService:
         self._now_fn = now_fn or monotonic
         self._cache_lock = asyncio.Lock()
         self._cache_entry: _CacheEntry | None = None
-        self._refresh_token_cache: str | None | object = _UNSET
+        self._refresh_token_cache: str | None = None
+        self._refresh_token_cache_loaded = False
         self._state_serializer = URLSafeTimedSerializer(settings.app_secret_key, salt="kvarteret-spotify-oauth")
 
     async def aclose(self) -> None:
@@ -269,7 +267,7 @@ class NowPlayingService:
         }
 
     async def _get_refresh_token(self) -> str | None:
-        if self._refresh_token_cache is not _UNSET:
+        if self._refresh_token_cache_loaded:
             return self._refresh_token_cache
 
         try:
@@ -279,10 +277,12 @@ class NowPlayingService:
             stored_token = None
         if stored_token is not None:
             self._refresh_token_cache = stored_token.refresh_token
+            self._refresh_token_cache_loaded = True
             return stored_token.refresh_token
 
         fallback_token = (self.settings.spotify_refresh_token or "").strip() or None
         self._refresh_token_cache = fallback_token
+        self._refresh_token_cache_loaded = True
         return fallback_token
 
     async def _save_refresh_token(self, refresh_token: str, *, updated_by_user_account_id: int | None) -> None:

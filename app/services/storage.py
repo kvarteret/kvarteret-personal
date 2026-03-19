@@ -17,25 +17,50 @@ class StorageHttpClientProtocol(Protocol):
     def close(self) -> None: ...
 
 
+class BlobDownloadStreamProtocol(Protocol):
+    def readall(self) -> bytes: ...
+
+
+class BlobClientProtocol(Protocol):
+    url: str
+
+    def download_blob(self) -> BlobDownloadStreamProtocol: ...
+    def upload_blob(self, content: bytes, *, overwrite: bool, content_settings: ContentSettings) -> None: ...
+    def delete_blob(self) -> None: ...
+
+
+class BlobContainerClientProtocol(Protocol):
+    def create_container(self) -> None: ...
+    def get_blob_client(self, blob_name: str) -> BlobClientProtocol: ...
+
+
+class BlobServiceClientProtocol(Protocol):
+    def get_container_client(self, container_name: str) -> BlobContainerClientProtocol: ...
+
+
 class StorageService:
     def __init__(
         self,
         settings: Settings,
-        client: StorageHttpClientProtocol | None = None,
-        blob_service_client: BlobServiceClient | None = None,
+        client: httpx.Client | StorageHttpClientProtocol | None = None,
+        blob_service_client: BlobServiceClient | BlobServiceClientProtocol | None = None,
     ) -> None:
         self.settings = settings
-        self._base_url = f"{settings.supabase_url.rstrip('/')}/storage/v1" if _has_supabase_documents(settings) else None
-        self._headers = (
-            {
+        if _has_supabase_documents(settings):
+            assert settings.supabase_url is not None
+            assert settings.supabase_secret_key is not None
+            self._base_url = f"{settings.supabase_url.rstrip('/')}/storage/v1"
+            self._headers: dict[str, str] = {
                 "apikey": settings.supabase_secret_key,
                 "Authorization": f"Bearer {settings.supabase_secret_key}",
             }
-            if _has_supabase_documents(settings)
-            else {}
-        )
+        else:
+            self._base_url = None
+            self._headers = {}
         self._client = client or (httpx.Client(timeout=20.0, follow_redirects=True) if _has_supabase_documents(settings) else None)
-        self._blob_service_client = blob_service_client or _build_blob_service_client(settings)
+        self._blob_service_client: BlobServiceClient | BlobServiceClientProtocol | None = (
+            blob_service_client or _build_blob_service_client(settings)
+        )
         self._azure_account_name = settings.azure_blob_account_name or _parse_connection_string_value(
             settings.azure_blob_connection_string,
             "AccountName",
@@ -176,7 +201,7 @@ class StorageService:
 
     def _upload(self, bucket: str, path: str, content: bytes, content_type: str | None) -> None:
         filename = Path(path).name
-        headers = {**self._headers, "x-upsert": "true"}
+        headers: dict[str, str] = {**self._headers, "x-upsert": "true"}
         files = {
             "file": (
                 filename,

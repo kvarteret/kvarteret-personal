@@ -50,9 +50,9 @@ async def get_internkort_information(
             payload.accessToken or "",
             source_key=client_ip_from_request(request),
         )
-    except MobileCardInvalidAccessCodeError as exc:
+    except MobileCardInvalidAccessCodeError:
         return PlainTextResponse("Invalid email or access code.", status_code=status.HTTP_401_UNAUTHORIZED)
-    except MobileCardPersonNotFoundError as exc:
+    except MobileCardPersonNotFoundError:
         return PlainTextResponse("Invalid email or access code.", status_code=status.HTTP_401_UNAUTHORIZED)
     except MobileCardRateLimitedError as exc:
         return PlainTextResponse(str(exc), status_code=status.HTTP_429_TOO_MANY_REQUESTS)

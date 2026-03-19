@@ -7,10 +7,7 @@ import string
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 
-from app.auth.repository import get_auth_repository
 from app.auth.roles import UserRole
-from app.auth.supabase_auth import get_supabase_auth_gateway
-from app.db.session import get_session_factory
 from app.db.tables import (
     auth_identities,
     auth_refresh_tokens,
@@ -20,6 +17,7 @@ from app.db.tables import (
     web_sessions,
 )
 from app.main import create_app
+from app.runtime import build_application_container
 
 
 def _random_string(length: int = 12) -> str:
@@ -32,16 +30,14 @@ async def main() -> None:
     password = f"Pw-{_random_string(18)}!"
     username = f"codex_{_random_string(8)}"
 
-    gateway = get_supabase_auth_gateway()
-    repository = get_auth_repository()
-    auth_user_id = await gateway.create_user(
-        email=email,
-        password=password,
-        metadata={"smoke_test": True, "username": username},
-    )
-
+    container = build_application_container()
     try:
-        account = await repository.create_direct_user_account(
+        auth_user_id = await container.supabase_auth_gateway.create_user(
+            email=email,
+            password=password,
+            metadata={"smoke_test": True, "username": username},
+        )
+        account = await container.auth_repository.create_direct_user_account(
             auth_user_id=auth_user_id,
             username=username,
             email=email,
@@ -70,7 +66,7 @@ async def main() -> None:
             payload = auth_response.json()
             print("LOGIN_OK", payload["email"], payload["role"], account.id)
     finally:
-        async with get_session_factory()() as session:
+        async with container.session_factory() as session:
             await session.execute(delete(web_sessions).where(web_sessions.c.auth_user_id == auth_user_id))
             await session.execute(delete(user_accounts).where(user_accounts.c.auth_user_id == auth_user_id))
             await session.execute(delete(auth_refresh_tokens).where(auth_refresh_tokens.c.user_id == str(auth_user_id)))
@@ -78,6 +74,7 @@ async def main() -> None:
             await session.execute(delete(auth_identities).where(auth_identities.c.user_id == auth_user_id))
             await session.execute(delete(auth_users).where(auth_users.c.id == auth_user_id))
             await session.commit()
+        await container.aclose()
 
 
 if __name__ == "__main__":

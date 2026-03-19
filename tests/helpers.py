@@ -20,6 +20,6 @@ def make_authenticated_user(role: UserRole = UserRole.ADMIN) -> AuthenticatedUse
     )
 
 
-def override_authenticated_user(app: FastAPI, user: AuthenticatedUser) -> None:
+def override_authenticated_user(app: FastAPI, user: AuthenticatedUser | None) -> None:
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[require_authenticated_user] = lambda: user

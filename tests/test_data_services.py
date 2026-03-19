@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
@@ -8,6 +9,7 @@ from app.config import Settings
 from app.services.courses import CoursesService
 from app.services.groups import GroupsService
 from app.services.volunteer_applications import (
+    VolunteerAlreadyExistsError,
     VolunteerApplicationDetail,
     VolunteerApplicationSubmissionInput,
     VolunteerApplicationsService,
@@ -19,7 +21,7 @@ from app.services.mobile_card import (
     _word_of_the_day,
 )
 from app.services.volunteers import VolunteersService
-from app.config import Settings
+from app.services.volunteers_repository import VolunteersRepository
 
 
 class FakeVolunteersRepository:
@@ -56,6 +58,7 @@ class FakeVolunteerApplicationsRepository:
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, object | None]] = []
         self.group_admin_email_recipients: dict[int, list[str]] = {}
+        self.existing_volunteer_ids_by_email: dict[str, int] = {}
 
     async def create_volunteer_application_invitation(
         self,
@@ -136,7 +139,7 @@ class FakeVolunteerApplicationsRepository:
         self.saved_registration_ids.append(registration_id)
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
-        return None
+        return self.existing_volunteer_ids_by_email.get(email.lower())
 
     async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
         return list(self.group_admin_email_recipients.get(group_id, []))
@@ -321,7 +324,7 @@ async def test_volunteers_service_plain_listing_uses_repository() -> None:
             }
         ]
     )
-    service = VolunteersService(repository=repository)
+    service = VolunteersService(repository=cast(VolunteersRepository, repository))
 
     rows = await service.list_volunteers_page(query=None, limit=10, cursor=None)
 
@@ -522,7 +525,7 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
     assert email_sender.sent_emails == [
         {
             "recipient_email": "new@example.test",
-            "subject": "Invitasjon til registrering i Det Akademiske Kvarter",
+            "subject": "Velkommen som ny frivillig på Kvarteret!",
             "html_body": (
                 "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
                 "<br><br>"
@@ -551,7 +554,7 @@ async def test_volunteer_applications_service_can_resend_invitation_email() -> N
     assert email_sender.sent_emails == [
         {
             "recipient_email": "registrant@example.com",
-            "subject": "Invitasjon til registrering i Det Akademiske Kvarter",
+            "subject": "Velkommen som ny frivillig på Kvarteret!",
             "html_body": (
                 "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
                 "<br><br>"
@@ -580,6 +583,26 @@ async def test_volunteer_applications_service_can_use_explicit_base_url_without_
     )
 
     assert email_sender.sent_emails[0]["html_body"].find(f"http://localhost:8000/apply/{invite.token}") != -1
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_service_rejects_duplicate_email_before_creating_invitation() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.existing_volunteer_ids_by_email = {"existing@example.test": 42}
+    email_sender = FakeEmailSender()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret", app_public_base_url="https://personal.kvarteret.no"),
+        repository=repository,
+        email_sender=email_sender,
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    with pytest.raises(VolunteerAlreadyExistsError) as exc_info:
+        await service.create_volunteer_application_invitation("existing@example.test")
+
+    assert exc_info.value.volunteer_id == 42
+    assert repository.created_invites == []
+    assert email_sender.sent_emails == []
 
 
 @pytest.mark.asyncio

@@ -4,10 +4,10 @@ import logging
 from dataclasses import dataclass
 
 from app.auth.legacy_passwords import verify_aspnet_identity_hash
-from app.auth.models import AuthenticatedUser, UserAccount, WebSession
+from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.repository import AuthRepositoryProtocol
 from app.auth.roles import highest_role
-from app.auth.session_store import SessionStore
+from app.auth.session_store import SessionStoreProtocol
 from app.auth.supabase_auth import SupabaseAuthGatewayProtocol
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class LoginService:
         self,
         repository: AuthRepositoryProtocol,
         supabase_auth: SupabaseAuthGatewayProtocol,
-        session_store: SessionStore,
+        session_store: SessionStoreProtocol,
     ) -> None:
         self.repository = repository
         self.supabase_auth = supabase_auth

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.common import build_full_name, coerce_date, coerce_datetime
+from app.services.common import build_full_name, coerce_date, require_datetime
 from app.services.volunteer_models import (
     AssignmentRoleOption,
     CardItem,
@@ -54,11 +54,12 @@ def map_volunteer_detail(row: dict) -> VolunteerDetail:
         email=row["epost"],
         phone=row["telefon"],
         birth_date=coerce_date(row.get("fodselsdato")),
-        created_at=coerce_datetime(row["opprettet"]),
+        created_at=require_datetime(row["opprettet"]),
         gender_code=gender_code,
         gender_label=gender_label(gender_code),
         address=row["gateadresse"],
         postal_code=row["postnummerid"],
+        pingvin_points=int(row.get("pingvin_points") or 0),
         photo_url=build_photo_url(row.get("sha1"), row.get("filetype")),
     )
 
@@ -69,7 +70,7 @@ def map_document_item(volunteer_id: int, row: dict) -> DocumentItem:
         filename=row["filename"],
         filetype=row.get("filetype"),
         group_id=row.get("gruppekobling"),
-        created_at=coerce_datetime(row["opprettet"]),
+        created_at=require_datetime(row["opprettet"]),
         storage_path=build_document_storage_path(volunteer_id, row["filename"]),
         download_url=build_document_url(volunteer_id, row["filename"]),
     )
@@ -83,6 +84,7 @@ def map_role_assignment_item(row: dict) -> RoleAssignmentItem:
         group_name=row.get("group_name") or f"Group {row['id_gruppe']}",
         role_id=row.get("id_verv"),
         role_name=row.get("role_name"),
+        pingvin_points=int(row.get("pingvinpoeng") or 0),
         semester_code=semester_code,
         semester_label=format_semester_code(semester_code) or str(semester_code),
         contract_signed=bool(row["signert_kontrakt"]),

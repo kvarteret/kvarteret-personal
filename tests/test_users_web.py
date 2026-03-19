@@ -215,6 +215,8 @@ def test_admin_account_create_redirects_and_calls_services() -> None:
 
     assert response.status_code == 303
     assert response.headers["location"] == "/admin-accounts/11"
+    assert supabase_auth_gateway.invited_user is not None
+    assert admin_accounts_service.created_account is not None
     assert supabase_auth_gateway.invited_user[1] == "new.admin@example.test"
     assert admin_accounts_service.created_account[1:] == (
         "new.admin",

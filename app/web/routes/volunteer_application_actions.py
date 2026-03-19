@@ -49,12 +49,15 @@ async def volunteer_applications_create_invite(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Selected verv does not belong to the chosen group.",
             )
-    invite = await volunteer_applications_service.create_volunteer_application_invitation(
-        email,
-        base_url=str(request.base_url).rstrip("/"),
-        initial_group_id=parsed_group_id,
-        initial_role_id=parsed_role_id,
-    )
+    try:
+        invite = await volunteer_applications_service.create_volunteer_application_invitation(
+            email,
+            base_url=str(request.base_url).rstrip("/"),
+            initial_group_id=parsed_group_id,
+            initial_role_id=parsed_role_id,
+        )
+    except VolunteerAlreadyExistsError as exc:
+        return RedirectResponse(url=f"/volunteers/{exc.volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
     log_admin_activity(
         request=request,
         user=current_user,
@@ -114,7 +117,7 @@ async def volunteer_application_delete(
         subject_type="volunteer_application",
         subject_id=application_id,
     )
-    if request.headers.get("HX-Request") == "true":
+    if request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") != "true":
         volunteer_applications = await volunteer_applications_service.list_volunteer_applications()
         return templates.TemplateResponse(
             request,

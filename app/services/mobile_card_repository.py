@@ -52,8 +52,7 @@ class MobileCardRepository(SqlAlchemyRepository):
             .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
             .order_by(personal.c.id.asc())
         )
-        async with self.session_factory() as session:
-            return list((await session.execute(stmt)).mappings().all())
+        return await self.fetch_all_mappings(stmt)
 
     async def store_access_code(self, *, volunteer_id: int, access_code: str, created_at: datetime) -> None:
         async with self.session_factory() as session:
@@ -96,7 +95,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                         internkort_access_token_created_at=None,
                     )
                 )
-                return row
+                return dict(row)
 
     async def fetch_card_snapshot(self, *, volunteer_id: int, semester_code: int) -> MobileCardSnapshot | None:
         started_at = perf_counter()

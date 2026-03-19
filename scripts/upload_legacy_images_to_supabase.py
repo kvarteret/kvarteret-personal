@@ -9,9 +9,9 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from app.config import get_settings
-from app.db.session import get_session_factory
+from app.db.session import DatabaseRuntimeManager
 from app.db.tables import personal_bilde, storage_objects
-from app.services.storage import StorageService, create_supabase_client
+from app.services.storage import StorageService
 
 
 DEFAULT_SOURCE_DIR = Path("data/legacy-images/images")
@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def fetch_existing_storage_names(bucket_id: str) -> set[str]:
-    async_session_maker = get_session_factory()
+    async_session_maker = DatabaseRuntimeManager(get_settings()).get_session_factory()
     async with async_session_maker() as session:
         result = await session.execute(
             select(storage_objects.c.name).where(storage_objects.c.bucket_id == bucket_id)
@@ -64,7 +64,7 @@ async def fetch_existing_storage_names(bucket_id: str) -> set[str]:
 
 
 async def fetch_expected_photo_names() -> set[str]:
-    async_session_maker = get_session_factory()
+    async_session_maker = DatabaseRuntimeManager(get_settings()).get_session_factory()
     async with async_session_maker() as session:
         result = await session.execute(
             select(func.concat(personal_bilde.c.sha1, ".", personal_bilde.c.filetype))
@@ -86,7 +86,7 @@ def collect_local_files(source_dir: Path) -> dict[str, Path]:
 
 def _upload_one(source_path: Path, object_name: str) -> str:
     settings = get_settings()
-    service = StorageService(settings, create_supabase_client(settings))
+    service = StorageService(settings)
     content = source_path.read_bytes()
     content_type = mimetypes.guess_type(source_path.name)[0] or "application/octet-stream"
     service.upload_photo(object_name, content, content_type)

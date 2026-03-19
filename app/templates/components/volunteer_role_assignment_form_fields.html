@@ -1,4 +1,4 @@
-<div class="grid gap-4 md:grid-cols-2" id="volunteer-role-assignment-form-fields">
+<div class="grid gap-4 md:grid-cols-2" id="{{ form_fields_id or 'volunteer-role-assignment-form-fields' }}">
   <label class="grid gap-1">
     <span class="text-sm text-stone-500">År</span>
     <input class="app-input" name="year" type="number" min="1900" max="3000" value="{{ default_year or '' }}" placeholder="YYYY" required>
@@ -21,7 +21,7 @@
       hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/role-field"
       hx-include="closest form"
       hx-swap="outerHTML"
-      hx-target="#volunteer-role-assignment-form-fields"
+      hx-target="#{{ form_fields_id or 'volunteer-role-assignment-form-fields' }}"
       hx-trigger="change"
       required
     >

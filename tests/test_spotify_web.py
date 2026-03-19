@@ -27,6 +27,15 @@ class MiddlewareSessionStore:
             self.user,
         )
 
+    async def create_session(self, **kwargs):
+        raise NotImplementedError
+
+    async def delete_session(self, session_id: str) -> None:
+        return None
+
+    def invalidate_session_cache(self, session_id: str) -> None:
+        return None
+
 
 class FakeSpotifyNowPlayingService:
     def __init__(self) -> None:

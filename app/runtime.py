@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Callable
-
+from typing import cast
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
 from app.auth.repository import DatabaseAuthRepository
-from app.auth.session_store import SessionStore
+from app.auth.session_store import SessionRepositoryProtocol, SessionStore, SessionStoreProtocol
 from app.auth.supabase_auth import SupabaseAuthGateway, SupabaseAuthGatewayProtocol
 from app.config import Settings, get_settings, validate_production_secrets
 from app.db.session import DatabaseRuntimeManager
@@ -61,11 +60,11 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
 class ApplicationContainer:
     settings: Settings
     database_runtime_manager: DatabaseRuntimeManager
-    session_factory: Callable[[], async_sessionmaker[AsyncSession]]
+    session_factory: async_sessionmaker[AsyncSession]
     session_cookie_signer: SessionCookieSigner
     media_token_service: MediaTokenService
     auth_repository: DatabaseAuthRepository
-    session_store: SessionStore
+    session_store: SessionStoreProtocol
     storage_service: StorageService | None
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
@@ -91,11 +90,11 @@ class ApplicationContainer:
 def build_application_container(settings: Settings | None = None) -> ApplicationContainer:
     resolved_settings = validate_production_secrets(settings or get_settings())
     database_runtime_manager = DatabaseRuntimeManager(resolved_settings)
-    session_factory_provider = database_runtime_manager.get_session_factory
+    session_factory = database_runtime_manager.get_session_factory()
     session_cookie_signer = SessionCookieSigner(resolved_settings)
     media_token_service = MediaTokenService(resolved_settings)
-    auth_repository = DatabaseAuthRepository(session_factory=session_factory_provider)
-    session_store = SessionStore(auth_repository, resolved_settings)
+    auth_repository = DatabaseAuthRepository(session_factory=session_factory)
+    session_store = SessionStore(cast(SessionRepositoryProtocol, auth_repository), resolved_settings)
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
     email_sender = SmtpEmailSender(resolved_settings)
@@ -103,7 +102,7 @@ def build_application_container(settings: Settings | None = None) -> Application
     return ApplicationContainer(
         settings=resolved_settings,
         database_runtime_manager=database_runtime_manager,
-        session_factory=session_factory_provider,
+        session_factory=session_factory,
         session_cookie_signer=session_cookie_signer,
         media_token_service=media_token_service,
         auth_repository=auth_repository,
@@ -116,39 +115,39 @@ def build_application_container(settings: Settings | None = None) -> Application
             session_store=session_store,
         ),
         volunteers_service=VolunteersService(
-            repository=VolunteersRepository(session_factory=session_factory_provider),
+            repository=VolunteersRepository(session_factory=session_factory),
             storage_service=storage_service,
             media_token_service=media_token_service,
             detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
         ),
-        groups_service=GroupsService(session_factory=session_factory_provider),
-        courses_service=CoursesService(session_factory=session_factory_provider),
-        volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository(session_factory=session_factory_provider)),
+        groups_service=GroupsService(session_factory=session_factory),
+        courses_service=CoursesService(session_factory=session_factory),
+        volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository(session_factory=session_factory)),
         admin_accounts_service=AdminAccountsService(
-            session_factory=session_factory_provider,
+            session_factory=session_factory,
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
         ),
         mobile_card_service=MobileCardService(
             resolved_settings,
-            repository=MobileCardRepository(session_factory=session_factory_provider),
+            repository=MobileCardRepository(session_factory=session_factory),
             email_sender=email_sender,
             media_token_service=media_token_service,
         ),
         now_playing_service=NowPlayingService(
             resolved_settings,
-            repository=IntegrationTokensRepository(session_factory=session_factory_provider),
+            repository=IntegrationTokensRepository(session_factory=session_factory),
         ),
         volunteer_applications_service=VolunteerApplicationsService(
             settings=resolved_settings,
             repository=VolunteerApplicationsRepository(
-                session_factory=session_factory_provider,
+                session_factory=session_factory,
                 media_token_service=media_token_service,
             ),
             email_sender=email_sender,
             storage_service=storage_service,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),
-        semester_transfer_service=SemesterTransferService(session_factory=session_factory_provider),
+        semester_transfer_service=SemesterTransferService(session_factory=session_factory),
         feedback_service=FeedbackService(resolved_settings),
     )
 

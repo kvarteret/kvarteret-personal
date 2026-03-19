@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 
 from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker

@@ -190,6 +190,9 @@ class VolunteerApplicationsService:
             raise VolunteerApplicationConflictError("An email address is required.")
         if (initial_group_id is None) != (initial_role_id is None):
             raise VolunteerApplicationConflictError("Choose both group and verv, or leave both empty.")
+        duplicate_volunteer = await self.repository.find_volunteer_id_by_email(normalized_email)
+        if duplicate_volunteer is not None:
+            raise VolunteerAlreadyExistsError(duplicate_volunteer, normalized_email)
         token = token_urlsafe(24)
         invite = await self.repository.create_volunteer_application_invitation(
             email=normalized_email,
@@ -340,7 +343,7 @@ class VolunteerApplicationsService:
         invitation_url = f"{resolved_base_url}/apply/{token}"
         await self.email_sender.send_email(
             recipient_email=email,
-            subject="Invitasjon til registrering i Det Akademiske Kvarter",
+            subject="Velkommen som ny frivillig på Kvarteret!",
             html_body=(
                 "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
                 "<br><br>"

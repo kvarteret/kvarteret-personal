@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -54,13 +53,44 @@ class FakeRepository:
         )
         return self.user_account
 
+    async def create_direct_user_account(
+        self,
+        *,
+        auth_user_id: UUID,
+        username: str,
+        email: str,
+        display_name: str | None,
+        role: UserRole,
+    ) -> UserAccount:
+        return UserAccount(
+            id=8,
+            auth_user_id=auth_user_id,
+            legacy_user_id=None,
+            username=username,
+            email=email,
+            display_name=display_name,
+            role=role,
+            last_login=datetime.now(UTC),
+        )
+
     async def replace_group_admin_memberships(self, auth_user_id: UUID, group_ids: list[int]) -> None:
         self.replaced_memberships.append((auth_user_id, group_ids))
 
     async def record_migration_event(self, *, legacy_user_id: int, auth_user_id: UUID | None, email: str | None, outcome: str, details: str | None = None) -> None:
         self.recorded_events.append((outcome, legacy_user_id))
 
-    async def create_session(self, *, session_id: str, auth_user_id: UUID, user_account_id: int | None, expires_at: datetime, ip_address: str | None, user_agent: str | None) -> WebSession:
+    async def create_session(
+        self,
+        *,
+        session_id: str,
+        auth_user_id: UUID,
+        user_account_id: int | None,
+        impersonator_auth_user_id: UUID | None = None,
+        impersonator_user_account_id: int | None = None,
+        expires_at: datetime,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> WebSession:
         return WebSession(session_id=session_id, auth_user_id=auth_user_id, user_account_id=user_account_id, expires_at=expires_at)
 
     async def load_authenticated_user_for_session(self, session_id: str):
@@ -81,15 +111,48 @@ class FakeSupabaseAuth:
     async def create_user_from_legacy(self, legacy_user: LegacyUser, password: str) -> UUID:
         return self.created_user_id
 
+    async def create_user(self, *, email: str, password: str, metadata: dict | None = None) -> UUID:
+        return self.created_user_id
+
+    async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None) -> UUID:
+        return self.created_user_id
+
+    async def update_user_password(self, auth_user_id: UUID, password: str) -> None:
+        return None
+
+    async def delete_user(self, auth_user_id: UUID) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
 
 class FakeSessionStore:
-    async def create_session(self, *, auth_user_id: UUID, user_account_id: int | None, ip_address: str | None, user_agent: str | None) -> WebSession:
+    async def create_session(
+        self,
+        *,
+        auth_user_id: UUID,
+        user_account_id: int | None,
+        impersonator_auth_user_id: UUID | None = None,
+        impersonator_user_account_id: int | None = None,
+        ip_address: str | None,
+        user_agent: str | None,
+    ) -> WebSession:
         return WebSession(
             session_id="session-123",
             auth_user_id=auth_user_id,
             user_account_id=user_account_id,
             expires_at=datetime.now(UTC) + timedelta(hours=12),
         )
+
+    async def load_authenticated_user(self, session_id: str):
+        return None
+
+    async def delete_session(self, session_id: str) -> None:
+        return None
+
+    def invalidate_session_cache(self, session_id: str) -> None:
+        return None
 
 
 @pytest.mark.asyncio

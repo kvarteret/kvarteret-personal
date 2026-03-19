@@ -89,6 +89,7 @@ class RoleAssignmentItem:
     group_name: str
     role_id: int | None
     role_name: str | None
+    pingvin_points: int
     semester_code: int
     semester_label: str
     contract_signed: bool
@@ -123,6 +124,7 @@ class VolunteerDetail:
     gender_label: str
     address: str | None
     postal_code: str | None
+    pingvin_points: int
     photo_url: str | None
 
 @dataclass(slots=True)

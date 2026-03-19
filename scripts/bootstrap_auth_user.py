@@ -3,9 +3,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 
-from app.auth.repository import get_auth_repository
 from app.auth.roles import UserRole
-from app.auth.supabase_auth import get_supabase_auth_gateway
+from app.runtime import build_application_container
 
 
 async def main() -> None:
@@ -28,21 +27,23 @@ async def main() -> None:
         "viewer": UserRole.VIEWER,
     }
 
-    gateway = get_supabase_auth_gateway()
-    repository = get_auth_repository()
-    auth_user_id = await gateway.create_user(
-        email=args.email,
-        password=args.password,
-        metadata={"bootstrap": True, "username": args.username},
-    )
-    account = await repository.create_direct_user_account(
-        auth_user_id=auth_user_id,
-        username=args.username,
-        email=args.email,
-        display_name=args.display_name,
-        role=role_map[args.role],
-    )
-    print(f"Created auth user {auth_user_id} with user_accounts.id={account.id}")
+    container = build_application_container()
+    try:
+        auth_user_id = await container.supabase_auth_gateway.create_user(
+            email=args.email,
+            password=args.password,
+            metadata={"bootstrap": True, "username": args.username},
+        )
+        account = await container.auth_repository.create_direct_user_account(
+            auth_user_id=auth_user_id,
+            username=args.username,
+            email=args.email,
+            display_name=args.display_name,
+            role=role_map[args.role],
+        )
+        print(f"Created auth user {auth_user_id} with user_accounts.id={account.id}")
+    finally:
+        await container.aclose()
 
 
 if __name__ == "__main__":
