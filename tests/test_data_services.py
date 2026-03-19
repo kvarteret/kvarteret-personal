@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.config import Settings
 from app.services.courses import CoursesService
 from app.services.groups import GroupsService
 from app.services.volunteer_applications import (
@@ -53,6 +54,8 @@ class FakeVolunteerApplicationsRepository:
         self.saved_registration_ids: list[int] = []
         self.approved_registration_ids: list[int] = []
         self.deleted_registration_ids: list[int] = []
+        self.created_invites: list[dict[str, object | None]] = []
+        self.group_admin_email_recipients: dict[int, list[str]] = {}
 
     async def create_volunteer_application_invitation(
         self,
@@ -62,7 +65,28 @@ class FakeVolunteerApplicationsRepository:
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ):
-        raise NotImplementedError
+        self.created_invites.append(
+            {
+                "email": email,
+                "token": token,
+                "initial_group_id": initial_group_id,
+                "initial_role_id": initial_role_id,
+            }
+        )
+        return type(
+            "Invite",
+            (),
+            {
+                "registration_id": 7,
+                "token": token,
+                "email": email,
+                "created_at": datetime.fromisoformat("2026-03-13T12:00:00+00:00"),
+                "initial_group_id": initial_group_id,
+                "initial_group_name": None,
+                "initial_role_id": initial_role_id,
+                "initial_role_name": None,
+            },
+        )()
 
     async def list_volunteer_applications(self):
         raise NotImplementedError
@@ -91,14 +115,13 @@ class FakeVolunteerApplicationsRepository:
             gender="K",
             address=None,
             postal_code=None,
-            employment_status=1,
             photo_sha1=None,
             photo_filetype=None,
             photo_url=None,
-            initial_group_id=None,
-            initial_group_name=None,
-            initial_role_id=None,
-            initial_role_name=None,
+            initial_group_id=3,
+            initial_group_name="Bar",
+            initial_role_id=9,
+            initial_role_name="Skiftleder",
         )
 
     async def save_submission(
@@ -114,6 +137,9 @@ class FakeVolunteerApplicationsRepository:
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return None
+
+    async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
+        return list(self.group_admin_email_recipients.get(group_id, []))
 
     async def approve_volunteer_application(self, registration: VolunteerApplicationDetail) -> int:
         self.approved_registration_ids.append(registration.registration_id)
@@ -331,7 +357,12 @@ async def test_volunteers_service_search_queries_use_ranked_database_path(monkey
 @pytest.mark.asyncio
 async def test_volunteer_applications_pending_count_is_cached() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    service = VolunteerApplicationsService(repository=repository, pending_count_cache_ttl_seconds=60)
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
 
     first = await service.count_pending_volunteer_applications()
     second = await service.count_pending_volunteer_applications()
@@ -344,7 +375,12 @@ async def test_volunteer_applications_pending_count_is_cached() -> None:
 @pytest.mark.asyncio
 async def test_volunteer_applications_submit_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    service = VolunteerApplicationsService(repository=repository, pending_count_cache_ttl_seconds=60)
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
 
     await service.count_pending_volunteer_applications()
     repository.pending_count = 4
@@ -358,7 +394,6 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
             gender="K",
             address=None,
             postal_code=None,
-            employment_status=1,
         ),
     )
     refreshed = await service.count_pending_volunteer_applications()
@@ -370,9 +405,70 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
 
 
 @pytest.mark.asyncio
+async def test_volunteer_applications_submit_notifies_group_admins_with_review_link() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.group_admin_email_recipients = {3: ["leader@example.test", "second@example.test"]}
+    email_sender = FakeEmailSender()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret", app_public_base_url="https://personal.kvarteret.no"),
+        repository=repository,
+        email_sender=email_sender,
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    await service.submit_volunteer_application(
+        "token-123",
+        VolunteerApplicationSubmissionInput(
+            first_name="Ada",
+            last_name="Lovelace",
+            phone="99999999",
+            birth_date=None,
+            gender="K",
+            address="Adresse 1",
+            postal_code="5000",
+        ),
+        base_url="https://personal.kvarteret.no",
+    )
+
+    assert email_sender.sent_emails == [
+        {
+            "recipient_email": "leader@example.test",
+            "subject": "Ny frivilligregistrering for Bar",
+            "html_body": (
+                "En ny frivilligregistrering er sendt inn for Bar."
+                "<br><br>"
+                "Søker: Sample Registrant<br>"
+                "E-post: registrant@example.com"
+                "<br><br>"
+                "Åpne søknaden for å gå gjennom hele profilen før du godkjenner eller avviser den:<br>"
+                "<a href=\"https://personal.kvarteret.no/volunteer-applications/7\">https://personal.kvarteret.no/volunteer-applications/7</a>"
+            ),
+        },
+        {
+            "recipient_email": "second@example.test",
+            "subject": "Ny frivilligregistrering for Bar",
+            "html_body": (
+                "En ny frivilligregistrering er sendt inn for Bar."
+                "<br><br>"
+                "Søker: Sample Registrant<br>"
+                "E-post: registrant@example.com"
+                "<br><br>"
+                "Åpne søknaden for å gå gjennom hele profilen før du godkjenner eller avviser den:<br>"
+                "<a href=\"https://personal.kvarteret.no/volunteer-applications/7\">https://personal.kvarteret.no/volunteer-applications/7</a>"
+            ),
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_volunteer_applications_approve_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    service = VolunteerApplicationsService(repository=repository, pending_count_cache_ttl_seconds=60)
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
 
     await service.count_pending_volunteer_applications()
     repository.pending_count = 2
@@ -388,7 +484,12 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
 @pytest.mark.asyncio
 async def test_volunteer_applications_delete_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    service = VolunteerApplicationsService(repository=repository, pending_count_cache_ttl_seconds=60)
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
 
     await service.count_pending_volunteer_applications()
     repository.pending_count = 1
@@ -397,6 +498,88 @@ async def test_volunteer_applications_delete_invalidates_pending_count_cache() -
 
     assert refreshed == 1
     assert repository.deleted_registration_ids == [7]
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_service_sends_email_when_creating_invitation() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    email_sender = FakeEmailSender()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret", app_public_base_url="https://personal.kvarteret.no"),
+        repository=repository,
+        email_sender=email_sender,
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    invite = await service.create_volunteer_application_invitation(
+        "new@example.test",
+        initial_group_id=3,
+        initial_role_id=9,
+    )
+
+    assert invite.email == "new@example.test"
+    assert repository.created_invites[0]["email"] == "new@example.test"
+    assert email_sender.sent_emails == [
+        {
+            "recipient_email": "new@example.test",
+            "subject": "Invitasjon til registrering i Det Akademiske Kvarter",
+            "html_body": (
+                "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
+                "<br><br>"
+                f"Åpne denne lenken for å fylle inn detaljene dine:<br><a href=\"https://personal.kvarteret.no/apply/{invite.token}\">https://personal.kvarteret.no/apply/{invite.token}</a>"
+                "<br><br>"
+                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
+            ),
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_service_can_resend_invitation_email() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    email_sender = FakeEmailSender()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret", app_public_base_url="https://personal.kvarteret.no"),
+        repository=repository,
+        email_sender=email_sender,
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    detail = await service.resend_volunteer_application_invitation(7)
+
+    assert detail.registration_id == 7
+    assert email_sender.sent_emails == [
+        {
+            "recipient_email": "registrant@example.com",
+            "subject": "Invitasjon til registrering i Det Akademiske Kvarter",
+            "html_body": (
+                "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
+                "<br><br>"
+                "Åpne denne lenken for å fylle inn detaljene dine:<br><a href=\"https://personal.kvarteret.no/apply/token-123\">https://personal.kvarteret.no/apply/token-123</a>"
+                "<br><br>"
+                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
+            ),
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_service_can_use_explicit_base_url_without_settings_value() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    email_sender = FakeEmailSender()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=email_sender,
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    invite = await service.create_volunteer_application_invitation(
+        "new@example.test",
+        base_url="http://localhost:8000",
+    )
+
+    assert email_sender.sent_emails[0]["html_body"].find(f"http://localhost:8000/apply/{invite.token}") != -1
 
 
 @pytest.mark.asyncio

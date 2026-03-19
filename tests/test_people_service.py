@@ -19,7 +19,6 @@ def _build_person_detail() -> VolunteerDetail:
         gender_label="Annet",
         address=None,
         postal_code=None,
-        employment_status=None,
         photo_url=None,
     )
 
@@ -43,7 +42,6 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
             "kjonn": "A",
             "gateadresse": None,
             "postnummerid": None,
-            "arb_status": None,
             "sha1": None,
             "filetype": None,
         }
@@ -79,7 +77,6 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
             "kjonn": value.gender_code,
             "gateadresse": value.address,
             "postnummerid": value.postal_code,
-            "arb_status": value.employment_status,
             "sha1": None,
             "filetype": None,
         }

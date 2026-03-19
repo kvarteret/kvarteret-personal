@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
 from app.dependencies import (
@@ -51,6 +51,7 @@ async def volunteer_applications_create_invite(
             )
     invite = await volunteer_applications_service.create_volunteer_application_invitation(
         email,
+        base_url=str(request.base_url).rstrip("/"),
         initial_group_id=parsed_group_id,
         initial_role_id=parsed_role_id,
     )
@@ -122,12 +123,40 @@ async def volunteer_application_delete(
                 "current_user": current_user,
                 "volunteer_applications": volunteer_applications,
             },
+    )
+    return RedirectResponse(url="/volunteer-applications", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/volunteer-applications/{application_id}/resend")
+async def volunteer_application_resend(
+    request: Request,
+    application_id: int,
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+):
+    try:
+        detail = await volunteer_applications_service.resend_volunteer_application_invitation(
+            application_id,
+            base_url=str(request.base_url).rstrip("/"),
         )
+    except VolunteerApplicationNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except NotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer_application.resend_invite",
+        subject_type="volunteer_application",
+        subject_id=application_id,
+        details={"email": detail.email},
+    )
     return RedirectResponse(url="/volunteer-applications", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/apply/{token}")
 async def volunteer_application_submit(
+    request: Request,
     token: str,
     first_name: str | None = Form(default=None),
     last_name: str = Form(...),
@@ -136,10 +165,11 @@ async def volunteer_application_submit(
     gender: str = Form(default="A"),
     address: str | None = Form(default=None),
     postal_code: str | None = Form(default=None),
-    employment_status: str | None = Form(default=None),
+    profile_photo: UploadFile | None = File(default=None),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
+        photo_content = await profile_photo.read() if profile_photo is not None else None
         await volunteer_applications_service.submit_volunteer_application(
             token,
             VolunteerApplicationSubmissionInput(
@@ -150,8 +180,11 @@ async def volunteer_application_submit(
                 gender=gender,
                 address=address,
                 postal_code=postal_code,
-                employment_status=int(employment_status) if employment_status and employment_status.strip() else None,
             ),
+            base_url=str(request.base_url).rstrip("/"),
+            photo_filename=profile_photo.filename if profile_photo is not None else None,
+            photo_content=photo_content,
+            photo_content_type=profile_photo.content_type if profile_photo is not None else None,
         )
     except VolunteerApplicationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -160,4 +193,3 @@ async def volunteer_application_submit(
     except NotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     return RedirectResponse(url=f"/apply/{token}/submitted", status_code=status.HTTP_303_SEE_OTHER)
-

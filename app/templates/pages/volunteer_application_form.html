@@ -15,7 +15,7 @@
         </div>
       {% endif %}
 
-      <form action="/apply/{{ volunteer_application.token }}" class="grid gap-5 md:grid-cols-2" method="post">
+      <form action="/apply/{{ volunteer_application.token }}" class="grid gap-5 md:grid-cols-2" enctype="multipart/form-data" method="post">
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Fornavn</span>
           <input class="app-input" name="first_name" type="text" value="{{ volunteer_application.first_name or '' }}">
@@ -47,6 +47,10 @@
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Postnummer</span>
           <input class="app-input" name="postal_code" type="text" value="{{ volunteer_application.postal_code or '' }}">
+        </label>
+        <label class="grid gap-1 md:col-span-2">
+          <span class="text-sm text-stone-500">Profilbilde</span>
+          <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="app-input file:px-0 file:text-sm" name="profile_photo" type="file">
         </label>
         <div class="md:col-span-2">
           <button class="app-button" type="submit">Send inn registrering</button>

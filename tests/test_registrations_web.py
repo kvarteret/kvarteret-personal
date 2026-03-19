@@ -21,6 +21,8 @@ class FakeVolunteerApplicationsService:
     def __init__(self) -> None:
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, int | str | None]] = []
+        self.resent_registration_ids: list[int] = []
+        self.submission_calls: list[dict[str, object | None]] = []
         self.volunteer_applications = [
             VolunteerApplicationListItem(
                 registration_id=7,
@@ -42,12 +44,14 @@ class FakeVolunteerApplicationsService:
         self,
         email: str,
         *,
+        base_url: str | None = None,
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite:
         self.created_invites.append(
             {
                 "email": email,
+                "base_url": base_url,
                 "initial_group_id": initial_group_id,
                 "initial_role_id": initial_role_id,
             }
@@ -89,7 +93,6 @@ class FakeVolunteerApplicationsService:
             gender="K",
             address="Example address",
             postal_code="0000",
-            employment_status=1,
             photo_sha1="abc123",
             photo_filetype="jpg",
             photo_url="/media/photos/abc123.jpg?token=test",
@@ -99,11 +102,40 @@ class FakeVolunteerApplicationsService:
             initial_role_name="Skiftleder",
         )
 
-    async def submit_volunteer_application(self, token, submission):
+    async def submit_volunteer_application(
+        self,
+        token,
+        submission,
+        *,
+        base_url: str | None = None,
+        photo_filename: str | None = None,
+        photo_content: bytes | None = None,
+        photo_content_type: str | None = None,
+    ):
+        self.submission_calls.append(
+            {
+                "token": token,
+                "base_url": base_url,
+                "photo_filename": photo_filename,
+                "photo_content": photo_content,
+                "photo_content_type": photo_content_type,
+            }
+        )
         return await self.get_volunteer_application_by_token(token)
 
     async def approve_volunteer_application(self, registration_id: int) -> int:
         return 12
+
+    async def resend_volunteer_application_invitation(
+        self,
+        registration_id: int,
+        *,
+        base_url: str | None = None,
+    ) -> VolunteerApplicationDetail:
+        self.resent_registration_ids.append(registration_id)
+        detail = await self.get_volunteer_application_detail(registration_id)
+        assert detail is not None
+        return detail
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         self.deleted_registration_ids.append(registration_id)
@@ -150,10 +182,28 @@ def test_volunteer_application_pages_render() -> None:
     assert public_response.status_code == 200
     assert "Fullfør dine detaljer" in public_response.text
     assert submitted_response.status_code == 200
-    assert "Status OK" in submitted_response.text
-    assert "Venter på godkjenning" in submitted_response.text
-    assert 'enctype="multipart/form-data"' not in public_response.text
-    assert 'name="profile_photo"' not in public_response.text
+    assert "Søknaden din er mottatt" in submitted_response.text
+    assert "Du trenger ikke sende inn på nytt." in submitted_response.text
+    assert 'enctype="multipart/form-data"' in public_response.text
+    assert 'name="profile_photo"' in public_response.text
+
+
+def test_volunteer_application_detail_page_renders_full_preview() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications/7")
+
+    assert response.status_code == 200
+    assert "Søkerprofil" in response.text
+    assert "Invitasjon" in response.text
+    assert "registrant@example.com" in response.text
+    assert "Godkjenn søknad" in response.text
+    assert "Avvis søknad" in response.text
+    assert "Lenke" not in response.text
 
 
 def test_group_admin_can_open_new_volunteer_page_with_all_groups() -> None:
@@ -189,7 +239,12 @@ def test_group_admin_can_create_invite() -> None:
     assert response.status_code == 303
     assert response.headers["location"] == "/volunteer-applications"
     assert volunteer_applications_service.created_invites == [
-        {"email": "new@example.test", "initial_group_id": 3, "initial_role_id": 9}
+        {
+            "email": "new@example.test",
+            "base_url": "http://testserver",
+            "initial_group_id": 3,
+            "initial_role_id": 9,
+        }
     ]
 
 
@@ -209,7 +264,12 @@ def test_group_admin_can_create_invite_without_group() -> None:
 
     assert response.status_code == 303
     assert volunteer_applications_service.created_invites == [
-        {"email": "new@example.test", "initial_group_id": None, "initial_role_id": None}
+        {
+            "email": "new@example.test",
+            "base_url": "http://testserver",
+            "initial_group_id": None,
+            "initial_role_id": None,
+        }
     ]
 
 
@@ -250,6 +310,40 @@ def test_volunteer_application_submit_redirects_to_pending_status_page() -> None
     assert response.headers["location"] == "/apply/token-123/submitted"
 
 
+def test_volunteer_application_submit_accepts_profile_photo_upload() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/apply/token-123",
+        data={
+            "first_name": "Sample",
+            "last_name": "Registrant",
+            "phone": "00000000",
+            "birth_date": "1815-12-10",
+            "gender": "K",
+            "address": "Example address",
+            "postal_code": "0000",
+        },
+        files={"profile_photo": ("avatar.png", b"fake-image", "image/png")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert volunteer_applications_service.submission_calls == [
+        {
+            "token": "token-123",
+            "base_url": "http://testserver",
+            "photo_filename": "avatar.png",
+            "photo_content": b"fake-image",
+            "photo_content_type": "image/png",
+        }
+    ]
+
+
 def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
@@ -264,6 +358,40 @@ def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
     assert volunteer_applications_service.deleted_registration_ids == [7]
     assert "registrant@example.com" not in response.text
     assert "Ingen åpne frivilligsøknader." in response.text
+
+
+def test_volunteer_application_resend_redirects_and_calls_service() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    volunteer_applications_service.volunteer_applications = [
+        VolunteerApplicationListItem(
+            registration_id=7,
+            token="token-123",
+            email="registrant@example.com",
+            created_at=datetime(2026, 3, 13, tzinfo=UTC),
+            submitted=False,
+            first_name=None,
+            last_name=None,
+            phone=None,
+            initial_group_id=3,
+            initial_group_name="Bar",
+            initial_role_id=9,
+            initial_role_name="Skiftleder",
+        )
+    ]
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    page_response = client.get("/volunteer-applications")
+    resend_response = client.post("/volunteer-applications/7/resend", follow_redirects=False)
+
+    assert page_response.status_code == 200
+    assert "Send e-post på nytt" in page_response.text
+    assert resend_response.status_code == 303
+    assert resend_response.headers["location"] == "/volunteer-applications"
+    assert volunteer_applications_service.resent_registration_ids == [7]
 
 
 def test_group_admin_can_manage_any_registration() -> None:
@@ -285,7 +413,6 @@ def test_group_admin_can_manage_any_registration() -> None:
                 gender=None,
                 address=None,
                 postal_code=None,
-                employment_status=None,
                 photo_sha1=None,
                 photo_filetype=None,
                 photo_url=None,

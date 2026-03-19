@@ -18,7 +18,6 @@ personal = Table(
     Column("kjonn", Text, nullable=False),
     Column("gateadresse", Text),
     Column("postnummerid", Text),
-    Column("arb_status", Integer),
     Column("internkortaccesstoken", Text),
     Column("internkort_access_token_created_at", DateTime(timezone=True)),
 )
@@ -81,7 +80,6 @@ nytt_personal = Table(
     Column("fornavn", Text),
     Column("etternavn", Text, nullable=False),
     Column("epost", Text, nullable=False),
-    Column("arb_status", Integer),
     Column("kjonn", Text, nullable=False),
     Column("fodselsdato", Date),
     Column("gateadresse", Text),

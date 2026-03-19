@@ -139,10 +139,12 @@ def build_application_container(settings: Settings | None = None) -> Application
             repository=IntegrationTokensRepository(session_factory=session_factory_provider),
         ),
         volunteer_applications_service=VolunteerApplicationsService(
+            settings=resolved_settings,
             repository=VolunteerApplicationsRepository(
                 session_factory=session_factory_provider,
                 media_token_service=media_token_service,
             ),
+            email_sender=email_sender,
             storage_service=storage_service,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),

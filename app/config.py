@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     smtp_server: str | None = Field(default=None, validation_alias=AliasChoices("SMTP_SERVER", "EMAIL_SERVER", "Email__Server"))
     smtp_port: int = Field(default=587, validation_alias=AliasChoices("SMTP_PORT", "EMAIL_PORT", "Email__Port"))
     smtp_sender_name: str | None = Field(
-        default=None,
+        default="Det Akademiske Kvarter",
         validation_alias=AliasChoices("SMTP_SENDER_NAME", "EMAIL_SENDER_NAME", "Email__SenderName"),
     )
     smtp_sender_email: str | None = Field(

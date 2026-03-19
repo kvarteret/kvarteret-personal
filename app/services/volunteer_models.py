@@ -123,7 +123,6 @@ class VolunteerDetail:
     gender_label: str
     address: str | None
     postal_code: str | None
-    employment_status: int | None
     photo_url: str | None
 
 @dataclass(slots=True)
@@ -171,7 +170,6 @@ class VolunteersServiceProtocol(Protocol):
         gender_code: str,
         address: str | None,
         postal_code: str | None,
-        employment_status: int | None,
     ) -> VolunteerDetail: ...
     async def add_role_assignment(
         self,

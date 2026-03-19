@@ -67,7 +67,6 @@ class FakeVolunteersService:
             gender_label="Kvinne",
             address="Example address",
             postal_code="0000",
-            employment_status=1,
             photo_url=None,
         )
 
@@ -122,7 +121,6 @@ class FakeVolunteersService:
         gender_code: str,
         address: str | None,
         postal_code: str | None,
-        employment_status: int | None,
     ) -> VolunteerDetail:
         self.updated_profile_calls.append(
             {
@@ -135,7 +133,6 @@ class FakeVolunteersService:
                 "gender_code": gender_code,
                 "address": address,
                 "postal_code": postal_code,
-                "employment_status": employment_status,
             }
         )
         detail = await self.get_volunteer_detail(volunteer_id)
@@ -298,7 +295,6 @@ def test_group_admin_can_update_profile_for_any_volunteer() -> None:
             "gender": "K",
             "address": "Updated address",
             "postal_code": "5000",
-            "employment_status": "2",
         },
         follow_redirects=False,
     )
@@ -318,7 +314,6 @@ def test_group_admin_can_update_profile_for_any_volunteer() -> None:
             "gender_code": "K",
             "address": "Updated address",
             "postal_code": "5000",
-            "employment_status": 2,
         }
     ]
 
@@ -382,7 +377,6 @@ def test_group_admin_can_update_profile_for_any_volunteer_even_without_shared_gr
             "gender_code": "K",
             "address": None,
             "postal_code": None,
-            "employment_status": None,
         }
     ]
 

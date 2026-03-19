@@ -33,7 +33,6 @@ async def volunteer_update_profile(
     gender: str = Form(default="A"),
     address: str | None = Form(default=None),
     postal_code: str | None = Form(default=None),
-    employment_status: str | None = Form(default=None),
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
@@ -48,7 +47,6 @@ async def volunteer_update_profile(
             gender_code=gender,
             address=address,
             postal_code=postal_code,
-            employment_status=int(employment_status) if employment_status and employment_status.strip() else None,
         )
     except VolunteerNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

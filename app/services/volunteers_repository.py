@@ -121,7 +121,6 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_records.c.kjonn,
                 volunteer_records.c.gateadresse,
                 volunteer_records.c.postnummerid,
-                volunteer_records.c.arb_status,
                 volunteer_photos.c.sha1,
                 volunteer_photos.c.filetype,
             )
@@ -276,7 +275,6 @@ class VolunteersRepository(SqlAlchemyRepository):
         gender_code: str,
         address: str | None,
         postal_code: str | None,
-        employment_status: int | None,
     ) -> None:
         await self.execute(
             update(volunteer_records)
@@ -290,7 +288,6 @@ class VolunteersRepository(SqlAlchemyRepository):
                 kjonn=gender_code,
                 gateadresse=address,
                 postnummerid=postal_code,
-                arb_status=employment_status,
             )
         )
 

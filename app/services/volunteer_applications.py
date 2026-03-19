@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from asyncio import to_thread
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -7,8 +8,12 @@ from secrets import token_hex, token_urlsafe
 from typing import Protocol
 
 from app.cache import TTLCache
+from app.config import Settings
 from app.errors import NotConfiguredError
+from app.services.email import EmailSenderProtocol
 from app.services.storage import StorageService
+
+logger = logging.getLogger(__name__)
 
 
 class VolunteerApplicationsError(RuntimeError):
@@ -73,7 +78,6 @@ class VolunteerApplicationDetail:
     gender: str | None
     address: str | None
     postal_code: str | None
-    employment_status: int | None
     photo_sha1: str | None
     photo_filetype: str | None
     photo_url: str | None
@@ -92,7 +96,6 @@ class VolunteerApplicationSubmissionInput:
     gender: str
     address: str | None
     postal_code: str | None
-    employment_status: int | None
 
 
 class VolunteerApplicationsServiceProtocol(Protocol):
@@ -100,6 +103,7 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         self,
         email: str,
         *,
+        base_url: str | None = None,
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite: ...
@@ -112,12 +116,19 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         token: str,
         submission: VolunteerApplicationSubmissionInput,
         *,
+        base_url: str | None = None,
         photo_filename: str | None = None,
         photo_content: bytes | None = None,
         photo_content_type: str | None = None,
     ) -> VolunteerApplicationDetail: ...
     async def approve_volunteer_application(self, registration_id: int) -> int: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...
+    async def resend_volunteer_application_invitation(
+        self,
+        registration_id: int,
+        *,
+        base_url: str | None = None,
+    ) -> VolunteerApplicationDetail: ...
 
 
 class VolunteerApplicationsRepositoryProtocol(Protocol):
@@ -142,6 +153,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         photo_sha1: str | None,
         photo_filetype: str | None,
     ) -> None: ...
+    async def list_group_admin_email_recipients(self, group_id: int) -> list[str]: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
     async def approve_volunteer_application(self, registration: VolunteerApplicationDetail) -> int: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...
@@ -150,11 +162,15 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
 class VolunteerApplicationsService:
     def __init__(
         self,
+        settings: Settings,
         repository: VolunteerApplicationsRepositoryProtocol,
+        email_sender: EmailSenderProtocol,
         storage_service: StorageService | None = None,
         pending_count_cache_ttl_seconds: int = 30,
     ) -> None:
+        self.settings = settings
         self.repository = repository
+        self.email_sender = email_sender
         self.storage_service = storage_service
         self._pending_count_cache: TTLCache[str, int] = TTLCache(
             ttl_seconds=pending_count_cache_ttl_seconds,
@@ -165,6 +181,7 @@ class VolunteerApplicationsService:
         self,
         email: str,
         *,
+        base_url: str | None = None,
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite:
@@ -174,12 +191,18 @@ class VolunteerApplicationsService:
         if (initial_group_id is None) != (initial_role_id is None):
             raise VolunteerApplicationConflictError("Choose both group and verv, or leave both empty.")
         token = token_urlsafe(24)
-        return await self.repository.create_volunteer_application_invitation(
+        invite = await self.repository.create_volunteer_application_invitation(
             email=normalized_email,
             token=token,
             initial_group_id=initial_group_id,
             initial_role_id=initial_role_id,
         )
+        try:
+            await self._send_invitation_email(email=invite.email, token=invite.token, base_url=base_url)
+        except Exception:
+            await self.repository.delete_volunteer_application(invite.registration_id)
+            raise
+        return invite
 
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
         return await self.repository.list_volunteer_applications()
@@ -203,6 +226,7 @@ class VolunteerApplicationsService:
         token: str,
         submission: VolunteerApplicationSubmissionInput,
         *,
+        base_url: str | None = None,
         photo_filename: str | None = None,
         photo_content: bytes | None = None,
         photo_content_type: str | None = None,
@@ -260,6 +284,7 @@ class VolunteerApplicationsService:
         detail = await self.get_volunteer_application_by_token(token)
         if detail is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
+        await self._notify_group_admins_of_submission(detail, base_url=base_url)
         return detail
 
     async def approve_volunteer_application(self, registration_id: int) -> int:
@@ -288,6 +313,18 @@ class VolunteerApplicationsService:
             except Exception:
                 pass
 
+    async def resend_volunteer_application_invitation(
+        self,
+        registration_id: int,
+        *,
+        base_url: str | None = None,
+    ) -> VolunteerApplicationDetail:
+        detail = await self.get_volunteer_application_detail(registration_id)
+        if detail is None:
+            raise VolunteerApplicationNotFoundError("Registration was not found.")
+        await self._send_invitation_email(email=detail.email, token=detail.token, base_url=base_url)
+        return detail
+
     def _require_storage_service(self) -> StorageService:
         if self.storage_service is None:
             raise NotConfiguredError("Supabase credentials are required for storage integration.")
@@ -295,6 +332,70 @@ class VolunteerApplicationsService:
 
     def _invalidate_pending_count_cache(self) -> None:
         self._pending_count_cache.pop("pending-count")
+
+    async def _send_invitation_email(self, *, email: str, token: str, base_url: str | None = None) -> None:
+        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
+        if not resolved_base_url:
+            raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send registration invitation emails.")
+        invitation_url = f"{resolved_base_url}/apply/{token}"
+        await self.email_sender.send_email(
+            recipient_email=email,
+            subject="Invitasjon til registrering i Det Akademiske Kvarter",
+            html_body=(
+                "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
+                "<br><br>"
+                f"Åpne denne lenken for å fylle inn detaljene dine:<br><a href=\"{invitation_url}\">{invitation_url}</a>"
+                "<br><br>"
+                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
+            ),
+        )
+
+    async def _notify_group_admins_of_submission(
+        self,
+        registration: VolunteerApplicationDetail,
+        *,
+        base_url: str | None = None,
+    ) -> None:
+        if registration.initial_group_id is None:
+            return
+        recipients = await self.repository.list_group_admin_email_recipients(registration.initial_group_id)
+        if not recipients:
+            return
+        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
+        if not resolved_base_url:
+            logger.warning(
+                "Skipped group-admin notification for registration %s because no base URL was configured.",
+                registration.registration_id,
+            )
+            return
+        review_url = f"{resolved_base_url}/volunteer-applications/{registration.registration_id}"
+        group_name = registration.initial_group_name or f"gruppe {registration.initial_group_id}"
+        applicant_name = " ".join(
+            part for part in [registration.first_name or "", registration.last_name or ""] if part.strip()
+        ).strip() or registration.email
+        subject = f"Ny frivilligregistrering for {group_name}"
+        html_body = (
+            f"En ny frivilligregistrering er sendt inn for {group_name}."
+            "<br><br>"
+            f"Søker: {applicant_name}<br>"
+            f"E-post: {registration.email}"
+            "<br><br>"
+            f"Åpne søknaden for å gå gjennom hele profilen før du godkjenner eller avviser den:<br>"
+            f"<a href=\"{review_url}\">{review_url}</a>"
+        )
+        for recipient in recipients:
+            try:
+                await self.email_sender.send_email(
+                    recipient_email=recipient,
+                    subject=subject,
+                    html_body=html_body,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to send volunteer application notification for registration %s to %s",
+                    registration.registration_id,
+                    recipient,
+                )
 
 
 def _sanitize_filename(filename: str) -> str:

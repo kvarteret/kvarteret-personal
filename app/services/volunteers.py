@@ -225,7 +225,6 @@ class VolunteersService:
         gender_code: str,
         address: str | None,
         postal_code: str | None,
-        employment_status: int | None,
     ) -> VolunteerDetail:
         if not await self.repository.volunteer_exists(volunteer_id):
             raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
@@ -239,7 +238,6 @@ class VolunteersService:
             gender_code=normalize_gender_code(gender_code),
             address=_normalize_optional_text(address),
             postal_code=_normalize_optional_text(postal_code),
-            employment_status=employment_status,
         )
         self._invalidate_volunteer_cache(volunteer_id)
         volunteer = await self.get_volunteer_detail(volunteer_id)

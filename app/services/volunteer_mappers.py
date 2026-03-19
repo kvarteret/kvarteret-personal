@@ -59,7 +59,6 @@ def map_volunteer_detail(row: dict) -> VolunteerDetail:
         gender_label=gender_label(gender_code),
         address=row["gateadresse"],
         postal_code=row["postnummerid"],
-        employment_status=row["arb_status"],
         photo_url=build_photo_url(row.get("sha1"), row.get("filetype")),
     )
 

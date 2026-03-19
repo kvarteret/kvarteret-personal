@@ -6,7 +6,7 @@ from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import grupper, historie, nytt_personal, personal, personal_bilde, registrering, verv
+from app.db.tables import group_admin_memberships, grupper, historie, nytt_personal, personal, personal_bilde, registrering, user_accounts, verv
 from app.media_tokens import MediaTokenService
 from app.services.semester import get_current_semester_code
 from app.services.volunteer_applications import (
@@ -140,7 +140,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             "fornavn": submission.first_name,
             "etternavn": submission.last_name,
             "epost": email,
-            "arb_status": submission.employment_status,
             "kjonn": submission.gender,
             "fodselsdato": submission.birth_date,
             "gateadresse": submission.address,
@@ -178,6 +177,26 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 .limit(1)
             )
 
+    async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
+        stmt = (
+            select(func.lower(user_accounts.c.email).label("email"))
+            .select_from(
+                group_admin_memberships.join(
+                    user_accounts,
+                    user_accounts.c.auth_user_id == group_admin_memberships.c.auth_user_id,
+                )
+            )
+            .where(
+                group_admin_memberships.c.gruppe_id == group_id,
+                user_accounts.c.email.is_not(None),
+                user_accounts.c.email != "",
+            )
+            .distinct()
+            .order_by(func.lower(user_accounts.c.email))
+        )
+        async with self.session_factory() as session:
+            return [row for row in await session.scalars(stmt)]
+
     async def approve_volunteer_application(self, registration: VolunteerApplicationDetail) -> int:
         async with self.session_factory() as session:
             async with session.begin():
@@ -201,7 +220,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             fornavn=registration.first_name,
                             etternavn=registration.last_name or "",
                             epost=registration.email,
-                            arb_status=registration.employment_status,
                             kjonn=registration.gender or "A",
                             fodselsdato=registration.birth_date,
                             gateadresse=registration.address,
@@ -256,7 +274,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 nytt_personal.c.kjonn,
                 nytt_personal.c.gateadresse,
                 nytt_personal.c.postnummerid,
-                nytt_personal.c.arb_status,
                 nytt_personal.c.photo_sha1,
                 nytt_personal.c.photo_filetype,
                 grupper.c.navn.label("initial_group_name"),
@@ -288,7 +305,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             gender=row["kjonn"],
             address=row["gateadresse"],
             postal_code=row["postnummerid"],
-            employment_status=row["arb_status"],
             photo_sha1=row["photo_sha1"],
             photo_filetype=row["photo_filetype"],
             photo_url=(

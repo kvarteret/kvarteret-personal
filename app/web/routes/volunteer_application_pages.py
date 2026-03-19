@@ -10,7 +10,7 @@ from app.dependencies import (
 )
 from app.observability import log_admin_activity
 from app.services.volunteer_applications import VolunteerApplicationsService
-from app.services.volunteer_options import GENDER_OPTIONS
+from app.services.volunteer_options import GENDER_OPTIONS, gender_label
 from app.services.volunteers import VolunteersService
 from app.web.templates import templates
 
@@ -122,5 +122,36 @@ async def volunteer_application_submitted(
             "section": "apply",
             "current_user": current_user,
             "volunteer_application": volunteer_application,
+        },
+    )
+
+
+@router.get("/volunteer-applications/{application_id}")
+async def volunteer_application_detail(
+    request: Request,
+    application_id: int,
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+):
+    volunteer_application = await volunteer_applications_service.get_volunteer_application_detail(application_id)
+    if volunteer_application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer application not found.")
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer_application.view",
+        subject_type="volunteer_application",
+        subject_id=application_id,
+        details={"submitted": volunteer_application.submitted},
+    )
+    return templates.TemplateResponse(
+        request,
+        "pages/volunteer_application_detail.html",
+        {
+            "title": "Volunteer application",
+            "section": "volunteer-applications",
+            "current_user": current_user,
+            "volunteer_application": volunteer_application,
+            "gender_label": gender_label,
         },
     )
