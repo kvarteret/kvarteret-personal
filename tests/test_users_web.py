@@ -5,8 +5,9 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.auth.models import WebSession
 from app.auth.roles import UserRole
-from app.dependencies import get_admin_accounts_service, get_supabase_auth_gateway
+from app.dependencies import get_admin_accounts_service, get_session_store, get_supabase_auth_gateway
 from app.main import create_app
 from app.services.admin_accounts import AdminAccountDetail, AdminAccountListItem
 from tests.helpers import make_authenticated_user, override_authenticated_user
@@ -76,7 +77,6 @@ class FakeAdminAccountsService:
             group_admin_group_ids=[],
         )
 
-
 class FakeSupabaseAuthGateway:
     def __init__(self) -> None:
         self.created_user = None
@@ -109,6 +109,42 @@ class FakeSupabaseAuthGateway:
         self.deleted_user = auth_user_id
 
 
+class FakeSessionStore:
+    def __init__(self) -> None:
+        self.created_sessions = []
+        self.deleted_sessions = []
+
+    async def create_session(
+        self,
+        *,
+        auth_user_id,
+        user_account_id,
+        impersonator_auth_user_id=None,
+        impersonator_user_account_id=None,
+        ip_address,
+        user_agent,
+    ):
+        self.created_sessions.append(
+            {
+                "auth_user_id": auth_user_id,
+                "user_account_id": user_account_id,
+                "impersonator_auth_user_id": impersonator_auth_user_id,
+                "impersonator_user_account_id": impersonator_user_account_id,
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+            }
+        )
+        return WebSession(
+            session_id="impersonated-session",
+            auth_user_id=auth_user_id,
+            user_account_id=user_account_id,
+            expires_at=datetime(2026, 3, 19, 12, 0, tzinfo=UTC),
+        )
+
+    async def delete_session(self, session_id: str) -> None:
+        self.deleted_sessions.append(session_id)
+
+
 def _make_client(role: UserRole = UserRole.ADMIN) -> TestClient:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user(role))
@@ -134,6 +170,7 @@ def test_admin_account_pages_render_for_admins() -> None:
     assert "sette sitt eget passord" in new_response.text
     assert detail_response.status_code == 200
     assert "Lagre endringer" in detail_response.text
+    assert "Logg inn som denne brukeren" in detail_response.text
     assert "2 gruppeadministrator-tilganger" in detail_response.text
     assert profile_response.status_code == 200
     assert "Min konto" in profile_response.text
@@ -202,3 +239,21 @@ def test_my_account_password_change_updates_password() -> None:
     assert response.status_code == 303
     assert response.headers["location"] == "/my-account?password_message=Passordet+ble+oppdatert."
     assert supabase_auth_gateway.updated_password == (current_user.auth_user_id, "UpdatedPassword123")
+
+
+def test_admin_can_start_impersonation_from_admin_account() -> None:
+    app = create_app()
+    current_user = make_authenticated_user()
+    override_authenticated_user(app, current_user)
+    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
+    session_store = FakeSessionStore()
+    app.dependency_overrides[get_session_store] = lambda: session_store
+    client = TestClient(app)
+
+    response = client.post("/admin-accounts/7/impersonate", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert "kvarteret_session" in response.headers["set-cookie"]
+    assert session_store.created_sessions[0]["user_account_id"] == 7
+    assert session_store.created_sessions[0]["impersonator_user_account_id"] == current_user.user_account_id

@@ -212,11 +212,22 @@ web_sessions = Table(
     Column("session_id", String(128), primary_key=True),
     Column("auth_user_id", UUID(as_uuid=True), nullable=False),
     Column("user_account_id", BigInteger, ForeignKey("public.user_accounts.id")),
+    Column("impersonator_auth_user_id", UUID(as_uuid=True)),
+    Column("impersonator_user_account_id", BigInteger, ForeignKey("public.user_accounts.id")),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("last_seen_at", DateTime(timezone=True), nullable=False),
     Column("expires_at", DateTime(timezone=True), nullable=False),
     Column("ip_address", String(64)),
     Column("user_agent", Text),
+)
+
+integration_tokens = Table(
+    "integration_tokens",
+    public_metadata,
+    Column("provider", String(64), primary_key=True),
+    Column("refresh_token", Text, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("updated_by_user_account_id", BigInteger, ForeignKey("public.user_accounts.id")),
 )
 
 auth_migration_events = Table(

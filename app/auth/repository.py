@@ -8,7 +8,6 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-
 from app.auth.models import AuthenticatedUser, LegacyUser, UserAccount, WebSession
 from app.auth.roles import UserRole
 from app.db.repository import SqlAlchemyRepository
@@ -64,6 +63,8 @@ class AuthRepositoryProtocol(Protocol):
         session_id: str,
         auth_user_id: UUID,
         user_account_id: int | None,
+        impersonator_auth_user_id: UUID | None,
+        impersonator_user_account_id: int | None,
         expires_at: datetime,
         ip_address: str | None,
         user_agent: str | None,
@@ -241,6 +242,8 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
         session_id: str,
         auth_user_id: UUID,
         user_account_id: int | None,
+        impersonator_auth_user_id: UUID | None,
+        impersonator_user_account_id: int | None,
         expires_at: datetime,
         ip_address: str | None,
         user_agent: str | None,
@@ -249,6 +252,8 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
             session_id=session_id,
             auth_user_id=auth_user_id,
             user_account_id=user_account_id,
+            impersonator_auth_user_id=impersonator_auth_user_id,
+            impersonator_user_account_id=impersonator_user_account_id,
             expires_at=expires_at,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -259,34 +264,34 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
             auth_user_id=auth_user_id,
             user_account_id=user_account_id,
             expires_at=expires_at,
+            impersonator_user=None,
         )
 
     async def load_authenticated_user_for_session(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None:
         started_at = perf_counter()
-        stmt = (
-            select(
-                web_sessions.c.session_id,
-                web_sessions.c.auth_user_id,
-                web_sessions.c.user_account_id,
-                web_sessions.c.expires_at,
-                user_accounts.c.username,
-                user_accounts.c.email,
-                user_accounts.c.display_name,
-                user_accounts.c.role,
-            )
-            .select_from(web_sessions.outerjoin(user_accounts, user_accounts.c.id == web_sessions.c.user_account_id))
-            .where(web_sessions.c.session_id == session_id, web_sessions.c.expires_at > func.current_timestamp())
-            .limit(1)
-        )
+        row = await self.fetch_first_mapping(_build_session_load_stmt(session_id=session_id))
         try:
-            row = await self.fetch_first_mapping(stmt)
             if not row or row["user_account_id"] is None:
                 return None
+            impersonator_user = None
+            if row["impersonator_user_account_id"] is not None and row["impersonator_role"] is not None:
+                impersonator_auth_user_id = row["impersonator_auth_user_id"]
+                if impersonator_auth_user_id is None:
+                    return None
+                impersonator_user = AuthenticatedUser(
+                    auth_user_id=impersonator_auth_user_id,
+                    user_account_id=row["impersonator_user_account_id"],
+                    username=row["impersonator_username"],
+                    email=row["impersonator_email"],
+                    display_name=row["impersonator_display_name"],
+                    role=UserRole(row["impersonator_role"]),
+                )
             web_session = WebSession(
                 session_id=row["session_id"],
                 auth_user_id=row["auth_user_id"],
                 user_account_id=row["user_account_id"],
                 expires_at=row["expires_at"],
+                impersonator_user=impersonator_user,
             )
             user = AuthenticatedUser(
                 auth_user_id=row["auth_user_id"],
@@ -295,6 +300,7 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
                 email=row["email"],
                 display_name=row["display_name"],
                 role=UserRole(row["role"]),
+                is_impersonated=impersonator_user is not None,
             )
             return web_session, user
         finally:
@@ -314,4 +320,34 @@ def _map_user_account(row) -> UserAccount:
         display_name=row["display_name"],
         role=UserRole(row["role"]),
         last_login=row["last_login"],
+    )
+
+
+def _build_session_load_stmt(*, session_id: str):
+    impersonator_accounts = user_accounts.alias("impersonator_accounts")
+    return (
+        select(
+            web_sessions.c.session_id,
+            web_sessions.c.auth_user_id,
+            web_sessions.c.user_account_id,
+            web_sessions.c.impersonator_auth_user_id,
+            web_sessions.c.impersonator_user_account_id,
+            web_sessions.c.expires_at,
+            user_accounts.c.username,
+            user_accounts.c.email,
+            user_accounts.c.display_name,
+            user_accounts.c.role,
+            impersonator_accounts.c.username.label("impersonator_username"),
+            impersonator_accounts.c.email.label("impersonator_email"),
+            impersonator_accounts.c.display_name.label("impersonator_display_name"),
+            impersonator_accounts.c.role.label("impersonator_role"),
+        )
+        .select_from(
+            web_sessions.outerjoin(user_accounts, user_accounts.c.id == web_sessions.c.user_account_id).outerjoin(
+                impersonator_accounts,
+                impersonator_accounts.c.id == web_sessions.c.impersonator_user_account_id,
+            )
+        )
+        .where(web_sessions.c.session_id == session_id, web_sessions.c.expires_at > func.current_timestamp())
+        .limit(1)
     )

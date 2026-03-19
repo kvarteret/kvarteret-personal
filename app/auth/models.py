@@ -36,6 +36,7 @@ class AuthenticatedUser:
     email: str
     display_name: str | None
     role: UserRole
+    is_impersonated: bool = False
 
 
 @dataclass(slots=True)
@@ -44,4 +45,4 @@ class WebSession:
     auth_user_id: UUID
     user_account_id: int | None
     expires_at: datetime
-
+    impersonator_user: AuthenticatedUser | None = None

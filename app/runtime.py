@@ -19,6 +19,7 @@ from app.media_tokens import MediaTokenService
 from app.services.email import SmtpEmailSender
 from app.services.feedback import FeedbackService
 from app.services.mobile_card_repository import MobileCardRepository
+from app.services.integration_tokens_repository import IntegrationTokensRepository
 from app.services.now_playing import NowPlayingService
 from app.services.volunteers_repository import VolunteersRepository
 from app.services.volunteer_applications_repository import VolunteerApplicationsRepository
@@ -133,7 +134,10 @@ def build_application_container(settings: Settings | None = None) -> Application
             email_sender=email_sender,
             media_token_service=media_token_service,
         ),
-        now_playing_service=NowPlayingService(resolved_settings),
+        now_playing_service=NowPlayingService(
+            resolved_settings,
+            repository=IntegrationTokensRepository(session_factory=session_factory_provider),
+        ),
         volunteer_applications_service=VolunteerApplicationsService(
             repository=VolunteerApplicationsRepository(
                 session_factory=session_factory_provider,

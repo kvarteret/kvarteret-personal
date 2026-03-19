@@ -67,8 +67,18 @@
         </div>
 
         {% if can_edit_profile %}
-          <div>
+          <div class="flex flex-wrap gap-3">
             <button class="app-button" type="submit">Lagre endringer</button>
+            {% if section == "admin-accounts" and current_user.role == "Admin" and current_user.user_account_id != admin_account.user_account_id %}
+              <button
+                class="app-button-secondary"
+                formaction="/admin-accounts/{{ admin_account.user_account_id }}/impersonate"
+                formmethod="post"
+                type="submit"
+              >
+                Logg inn som denne brukeren
+              </button>
+            {% endif %}
           </div>
         {% endif %}
       </form>

@@ -24,6 +24,8 @@ class SessionStore:
         *,
         auth_user_id,
         user_account_id: int | None,
+        impersonator_auth_user_id=None,
+        impersonator_user_account_id: int | None = None,
         ip_address: str | None,
         user_agent: str | None,
         ) -> WebSession:
@@ -33,6 +35,8 @@ class SessionStore:
             session_id=session_id,
             auth_user_id=auth_user_id,
             user_account_id=user_account_id,
+            impersonator_auth_user_id=impersonator_auth_user_id,
+            impersonator_user_account_id=impersonator_user_account_id,
             expires_at=expires_at,
             ip_address=ip_address,
             user_agent=user_agent,

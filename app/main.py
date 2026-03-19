@@ -45,6 +45,7 @@ def create_app(container=None) -> FastAPI:
     async def auth_context_middleware(request: Request, call_next):
         request.state.current_user = None
         request.state.session = None
+        request.state.impersonator_user = None
         request.state.volunteer_application_pending_count = 0
         signed_cookie = request.cookies.get(request.app.state.container.settings.session_cookie_name)
         if signed_cookie:
@@ -53,10 +54,12 @@ def create_app(container=None) -> FastAPI:
                 auth_context = await request.app.state.container.session_store.load_authenticated_user(session_id)
                 if auth_context:
                     request.state.session, request.state.current_user = auth_context
+                    request.state.impersonator_user = request.state.session.impersonator_user
                     bind_request_context(**request_context_for_user(request.state.current_user))
             except Exception:
                 request.state.current_user = None
                 request.state.session = None
+                request.state.impersonator_user = None
         return await call_next(request)
 
     @app.middleware("http")

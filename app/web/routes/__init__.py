@@ -10,6 +10,7 @@ from app.web.routes.courses_pages import router as course_pages_router
 from app.web.routes.feedback import router as feedback_router
 from app.web.routes.groups_actions import router as group_actions_router
 from app.web.routes.groups_pages import router as group_pages_router
+from app.web.routes.spotify_pages import router as spotify_pages_router
 from app.web.routes.volunteer_actions import router as volunteer_actions_router
 from app.web.routes.volunteer_application_actions import router as volunteer_application_actions_router
 from app.web.routes.volunteer_application_pages import router as volunteer_application_pages_router
@@ -30,6 +31,7 @@ web_router.include_router(group_pages_router)
 web_router.include_router(group_actions_router)
 web_router.include_router(course_pages_router)
 web_router.include_router(course_actions_router)
+web_router.include_router(spotify_pages_router)
 web_router.include_router(admin_account_pages_router)
 web_router.include_router(admin_account_actions_router)
 web_router.include_router(volunteer_application_pages_router)

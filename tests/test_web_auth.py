@@ -8,7 +8,13 @@ from fastapi.testclient import TestClient
 from app.auth.login_service import LoginResult
 from app.auth.models import WebSession
 from app.auth.roles import UserRole
-from app.dependencies import get_current_user, get_login_service, get_volunteers_service, get_session_store, require_authenticated_user
+from app.dependencies import (
+    get_current_user,
+    get_login_service,
+    get_session_store,
+    get_volunteers_service,
+    require_authenticated_user,
+)
 from app.main import create_app
 from app.runtime import build_application_container
 from app.services.volunteers import VolunteerListItem, VolunteerListPage
@@ -87,6 +93,54 @@ class MiddlewareSessionStore:
             ),
             self.user,
         )
+
+
+class ImpersonatedSessionStore:
+    def __init__(self, user, impersonator_user) -> None:
+        self.user = user
+        self.impersonator_user = impersonator_user
+        self.created_sessions = []
+        self.deleted_sessions = []
+
+    async def load_authenticated_user(self, session_id: str):
+        return (
+            WebSession(
+                session_id=session_id,
+                auth_user_id=self.user.auth_user_id,
+                user_account_id=self.user.user_account_id,
+                expires_at=datetime.now(UTC),
+                impersonator_user=self.impersonator_user,
+            ),
+            self.user,
+        )
+
+    async def create_session(
+        self,
+        *,
+        auth_user_id,
+        user_account_id,
+        impersonator_auth_user_id=None,
+        impersonator_user_account_id=None,
+        ip_address,
+        user_agent,
+    ):
+        self.created_sessions.append(
+            {
+                "auth_user_id": auth_user_id,
+                "user_account_id": user_account_id,
+                "impersonator_auth_user_id": impersonator_auth_user_id,
+                "impersonator_user_account_id": impersonator_user_account_id,
+            }
+        )
+        return WebSession(
+            session_id="restored-admin-session",
+            auth_user_id=auth_user_id,
+            user_account_id=user_account_id,
+            expires_at=datetime.now(UTC),
+        )
+
+    async def delete_session(self, session_id: str) -> None:
+        self.deleted_sessions.append(session_id)
 
 
 class FakePendingVolunteerApplicationsService:
@@ -172,6 +226,57 @@ def test_container_backed_auth_middleware_skips_pending_count_for_htmx_fragments
     assert response.status_code == 200
     assert "Sample Person" in response.text
     assert pending_service.calls == 0
+
+
+def test_container_backed_auth_middleware_renders_impersonation_banner() -> None:
+    impersonated_user = make_authenticated_user(UserRole.VOLUNTEER)
+    admin_user = make_authenticated_user(UserRole.ADMIN)
+    container = build_application_container()
+    container.session_store = ImpersonatedSessionStore(impersonated_user, admin_user)
+    app = create_app(container=container)
+    client = TestClient(app)
+
+    response = client.get(
+        "/",
+        cookies={
+            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id("session-123"),
+        },
+    )
+
+    assert response.status_code == 200
+    assert "Impersonering aktiv" in response.text
+    assert "Avslutt impersonering" in response.text
+
+
+def test_stop_impersonation_restores_admin_session() -> None:
+    impersonated_user = make_authenticated_user(UserRole.VOLUNTEER)
+    admin_user = make_authenticated_user(UserRole.ADMIN)
+    container = build_application_container()
+    session_store = ImpersonatedSessionStore(impersonated_user, admin_user)
+    container.session_store = session_store
+    app = create_app(container=container)
+    client = TestClient(app)
+
+    response = client.post(
+        "/impersonation/stop",
+        cookies={
+            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id("session-123"),
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert "kvarteret_session" in response.headers["set-cookie"]
+    assert session_store.created_sessions == [
+        {
+            "auth_user_id": admin_user.auth_user_id,
+            "user_account_id": admin_user.user_account_id,
+            "impersonator_auth_user_id": None,
+            "impersonator_user_account_id": None,
+        }
+    ]
+    assert session_store.deleted_sessions == ["session-123"]
 
 
 def test_protected_web_page_redirects_to_login_when_unauthenticated() -> None:

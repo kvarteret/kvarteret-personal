@@ -5,9 +5,12 @@ from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 
 from app.auth.roles import UserRole
+from app.auth.cookies import SessionCookieSigner
 from app.dependencies import (
     get_admin_accounts_service,
+    get_session_cookie_signer,
     get_session_store,
+    get_settings,
     get_supabase_auth_gateway,
     require_admin_user,
     require_authenticated_user,
@@ -26,6 +29,17 @@ def _redirect_with_error(path: str, message: str):
 
 def _redirect_with_password_error(message: str):
     return redirect_to(f"/my-account?password_error={quote_plus(message)}")
+
+
+def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=session_cookie_signer.sign_session_id(session_id),
+        httponly=True,
+        secure=request.url.scheme == "https" or settings.app_env == "production",
+        samesite="lax",
+        max_age=settings.session_ttl_hours * 3600,
+    )
 
 
 @router.patch("/my-account")
@@ -173,3 +187,53 @@ async def admin_account_update(
     if session is not None and current_user.user_account_id == account_id:
         session_store.invalidate_session_cache(session.session_id)
     return redirect_to(f"/admin-accounts/{account_id}")
+
+
+@router.post("/admin-accounts/{account_id}/impersonate")
+async def admin_account_impersonate(
+    request: Request,
+    account_id: int,
+    current_user=Depends(require_admin_user),
+    admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
+    session_cookie_signer: SessionCookieSigner = Depends(get_session_cookie_signer),
+    settings=Depends(get_settings),
+    session_store=Depends(get_session_store),
+):
+    if current_user.user_account_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+    if current_user.user_account_id == account_id:
+        return redirect_to(f"/admin-accounts/{account_id}")
+    admin_account = await admin_accounts_service.get_admin_account_detail(account_id)
+    if admin_account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+
+    new_session = await session_store.create_session(
+        auth_user_id=admin_account.auth_user_id,
+        user_account_id=admin_account.user_account_id,
+        impersonator_auth_user_id=current_user.auth_user_id,
+        impersonator_user_account_id=current_user.user_account_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+
+    previous_session = getattr(request.state, "session", None)
+    if previous_session is not None:
+        await session_store.delete_session(previous_session.session_id)
+
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="admin_account.start_impersonation",
+        subject_type="admin_account",
+        subject_id=account_id,
+        details={"impersonated_user_account_id": account_id},
+    )
+    response = redirect_to("/")
+    _set_session_cookie(
+        response,
+        request=request,
+        settings=settings,
+        session_cookie_signer=session_cookie_signer,
+        session_id=new_session.session_id,
+    )
+    return response

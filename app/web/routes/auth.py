@@ -12,12 +12,24 @@ from app.dependencies import (
     get_session_cookie_signer,
     get_session_store,
     get_settings,
+    require_authenticated_user,
 )
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.web.templates import templates
 
 router = APIRouter()
+
+
+def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=session_cookie_signer.sign_session_id(session_id),
+        httponly=True,
+        secure=request.url.scheme == "https" or settings.app_env == "production",
+        samesite="lax",
+        max_age=settings.session_ttl_hours * 3600,
+    )
 
 
 @router.get("/")
@@ -96,13 +108,12 @@ async def login_submit(
         )
 
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-    response.set_cookie(
-        key=settings.session_cookie_name,
-        value=session_cookie_signer.sign_session_id(result.session.session_id),
-        httponly=True,
-        secure=request.url.scheme == "https" or settings.app_env == "production",
-        samesite="lax",
-        max_age=settings.session_ttl_hours * 3600,
+    _set_session_cookie(
+        response,
+        request=request,
+        settings=settings,
+        session_cookie_signer=session_cookie_signer,
+        session_id=result.session.session_id,
     )
     return response
 
@@ -132,4 +143,43 @@ async def logout(
         )
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(settings.session_cookie_name)
+    return response
+
+
+@router.post("/impersonation/stop")
+async def stop_impersonation(
+    request: Request,
+    current_user=Depends(require_authenticated_user),
+    session_cookie_signer: SessionCookieSigner = Depends(get_session_cookie_signer),
+    settings=Depends(get_settings),
+    session_store=Depends(get_session_store),
+):
+    session = getattr(request.state, "session", None)
+    impersonator_user = getattr(session, "impersonator_user", None)
+    if session is None or impersonator_user is None:
+        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+
+    new_session = await session_store.create_session(
+        auth_user_id=impersonator_user.auth_user_id,
+        user_account_id=impersonator_user.user_account_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    await session_store.delete_session(session.session_id)
+    log_admin_activity(
+        request=request,
+        user=impersonator_user,
+        action="admin_account.stop_impersonation",
+        subject_type="admin_account",
+        subject_id=current_user.user_account_id,
+        details={"impersonated_user_account_id": current_user.user_account_id},
+    )
+    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    _set_session_cookie(
+        response,
+        request=request,
+        settings=settings,
+        session_cookie_signer=session_cookie_signer,
+        session_id=new_session.session_id,
+    )
     return response
