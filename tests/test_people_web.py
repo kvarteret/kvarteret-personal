@@ -29,6 +29,7 @@ class FakeVolunteersService:
         self.updated_role_assignment_calls: list[dict[str, int | bool]] = []
         self.uploaded_photo_calls: list[dict[str, str | int | None]] = []
         self.deleted_photo_calls: list[int] = []
+        self.deleted_volunteer_calls: list[int] = []
 
     async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
         return (await self.list_volunteers_page(query=query, limit=limit, cursor=None)).items
@@ -177,6 +178,9 @@ class FakeVolunteersService:
     async def delete_photo(self, volunteer_id: int) -> None:
         self.deleted_photo_calls.append(volunteer_id)
 
+    async def delete_volunteer(self, volunteer_id: int) -> None:
+        self.deleted_volunteer_calls.append(volunteer_id)
+
 
 class FakeGroupsService:
     async def get_org_stats_detailed(self) -> list[OrgSemesterDetailed]:
@@ -247,6 +251,21 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert 'id="volunteer-photo-input"' in detail_response.text
     assert 'onchange="this.form.submit()"' in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
+    assert "Slett frivillig" in detail_response.text
+
+
+def test_management_user_can_delete_volunteer() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.post("/volunteers/12?_method=DELETE", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/volunteers"
+    assert volunteers_service.deleted_volunteer_calls == [12]
 
 
 def test_group_admin_can_upload_photo_for_volunteer_in_their_group() -> None:

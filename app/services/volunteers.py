@@ -247,6 +247,32 @@ class VolunteersService:
             raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
         return volunteer
 
+    async def delete_volunteer(self, volunteer_id: int) -> None:
+        if not await self.repository.volunteer_exists(volunteer_id):
+            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
+
+        photo_row = await self.repository.fetch_photo_record(volunteer_id)
+        document_rows = await self.repository.fetch_volunteer_document_rows(volunteer_id)
+
+        await self.repository.delete_volunteer(volunteer_id)
+        self._invalidate_volunteer_cache(volunteer_id)
+
+        if self.storage_service is None:
+            return
+
+        if photo_row and photo_row.get("sha1") and photo_row.get("filetype"):
+            await _best_effort_remove(
+                lambda: self.storage_service.remove_photo(f"{photo_row['sha1']}.{photo_row['filetype']}")
+            )
+
+        for row in document_rows:
+            if row.get("filename"):
+                await _best_effort_remove(
+                    lambda filename=row["filename"]: self.storage_service.remove_document(
+                        build_document_storage_path(volunteer_id, filename)
+                    )
+                )
+
     async def add_role_assignment(
         self,
         *,

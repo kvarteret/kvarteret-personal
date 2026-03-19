@@ -60,6 +60,27 @@ async def volunteer_update_profile(
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.delete("/volunteers/{volunteer_id}")
+async def volunteer_delete(
+    request: Request,
+    volunteer_id: int,
+    current_user=Depends(require_management_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    try:
+        await volunteers_service.delete_volunteer(volunteer_id)
+    except VolunteerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer.delete",
+        subject_type="volunteer",
+        subject_id=volunteer_id,
+    )
+    return RedirectResponse(url="/volunteers", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/volunteers/{volunteer_id}/role-assignments")
 async def volunteer_add_role_assignment(
     request: Request,

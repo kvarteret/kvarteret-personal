@@ -173,6 +173,7 @@ class VolunteersServiceProtocol(Protocol):
         address: str | None,
         postal_code: str | None,
     ) -> VolunteerDetail: ...
+    async def delete_volunteer(self, volunteer_id: int) -> None: ...
     async def add_role_assignment(
         self,
         *,

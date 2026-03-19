@@ -7,6 +7,7 @@ from sqlalchemy import Float, Text, and_, case, delete, exists, func, insert, li
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import (
     assignment_roles,
+    course_completions,
     groups,
     role_assignments,
     volunteer_cards,
@@ -442,6 +443,18 @@ class VolunteersRepository(SqlAlchemyRepository):
 
     async def delete_document_record(self, document_id: int) -> None:
         await self.execute(delete(volunteer_documents).where(volunteer_documents.c.id == document_id))
+
+    async def delete_volunteer(self, volunteer_id: int) -> None:
+        async def remove(session) -> None:
+            await session.execute(delete(role_assignments).where(role_assignments.c.id_personal == volunteer_id))
+            await session.execute(delete(course_completions).where(course_completions.c.id_personal == volunteer_id))
+            await session.execute(delete(volunteer_documents).where(volunteer_documents.c.id_personal == volunteer_id))
+            await session.execute(delete(volunteer_cards).where(volunteer_cards.c.id_personal == volunteer_id))
+            await session.execute(delete(volunteer_next_of_kin).where(volunteer_next_of_kin.c.id_personal == volunteer_id))
+            await session.execute(delete(volunteer_photos).where(volunteer_photos.c.id_personal == volunteer_id))
+            await session.execute(delete(volunteer_records).where(volunteer_records.c.id == volunteer_id))
+
+        await self.execute_in_transaction(remove)
 
 
 class _SearchColumns:

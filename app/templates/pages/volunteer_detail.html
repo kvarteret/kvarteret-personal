@@ -52,6 +52,11 @@
       </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
+        {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+          <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne frivilligen? Dette fjerner historikk, filer, kort og profilbilde.');">
+            <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit">Slett frivillig</button>
+          </form>
+        {% endif %}
       </div>
     </header>
 
