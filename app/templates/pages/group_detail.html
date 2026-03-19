@@ -4,7 +4,7 @@
 {% block page_content %}
   <section class="grid gap-7">
     {% call page_header("Gruppeinformasjon", group.name, group.description or "Ingen beskrivelse") %}
-      {% if current_user.role == "Admin" %}
+      {% if can_manage_group %}
         <a class="app-button" href="/groups/{{ group.group_id }}/semester-transfer">Flytt til nytt semester</a>
       {% endif %}
       {{ history_back_button('/groups', 'Tilbake til grupper') }}
@@ -12,8 +12,8 @@
 
     <div class="grid gap-6 xl:grid-cols-2">
       <section class="app-panel">
-        <h2 class="text-2xl font-medium tracking-tight text-stone-900">Metadata</h2>
-        {% if current_user.role == "Admin" %}
+        <h2 class="text-2xl font-medium tracking-tight text-stone-900">Om gruppen</h2>
+        {% if can_manage_group %}
           <form action="/groups/{{ group.group_id }}?_method=PATCH" class="mt-5 grid gap-4" method="post">
             <div class="grid gap-4 md:grid-cols-2">
               {% call form_field("Navn") %}
@@ -42,12 +42,14 @@
               <button class="app-button" type="submit">Lagre gruppe</button>
             </div>
           </form>
-          <div class="mt-3 flex flex-wrap gap-3">
-            <form action="/groups/{{ group.group_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne gruppen?');">
-              <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-md hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {% if group.delete_blockers %}disabled{% endif %}>Slett gruppe</button>
-            </form>
-          </div>
-          {{ blocker_notice(group.delete_blockers) }}
+          {% if current_user.role == "Admin" %}
+            <div class="mt-3 flex flex-wrap gap-3">
+              <form action="/groups/{{ group.group_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne gruppen?');">
+                <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-md hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {% if group.delete_blockers %}disabled{% endif %}>Slett gruppe</button>
+              </form>
+            </div>
+            {{ blocker_notice(group.delete_blockers) }}
+          {% endif %}
         {% else %}
           <dl class="mt-5 grid gap-4">
             <div class="border-b border-stone-300 pb-3">
@@ -68,7 +70,7 @@
         <h2 class="mt-8 text-2xl font-medium tracking-tight text-stone-900">Verv</h2>
         <div class="mt-5 grid gap-3">
           {% for position in group.positions %}
-            {% if current_user.role == "Admin" %}
+            {% if can_manage_group %}
               <div class="border-b border-stone-300 pb-4">
                 <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem]">
                   <form action="/groups/{{ group.group_id }}/roles/{{ position.role_id }}?_method=PATCH" class="contents" method="post">
@@ -95,7 +97,7 @@
             <p class="text-sm text-stone-600">Ingen verv funnet.</p>
           {% endfor %}
         </div>
-        {% if current_user.role == "Admin" %}
+        {% if can_manage_group %}
           <form action="/groups/{{ group.group_id }}/roles" class="mt-5 grid gap-3 rounded-2xl bg-stone-100 p-4 lg:grid-cols-[minmax(0,1fr)_10rem]" method="post">
             {% call form_field("Nytt verv", "min-w-0") %}
               <input class="app-input" name="role_name" placeholder="For eksempel PR-ansvarlig" required type="text">

@@ -4,9 +4,15 @@ import asyncio
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 
-from app.dependencies import get_groups_service, get_semester_transfer_service, require_admin_user
+from app.dependencies import get_groups_service, get_semester_transfer_service, get_volunteers_service, require_admin_user, require_group_manager
 from app.services.groups import GroupDeleteBlockedError, GroupHistoryNotFoundError, GroupRoleDeleteBlockedError, GroupsService
 from app.services.semester_transfer import SemesterTransferEntry, SemesterTransferService
+from app.services.volunteers import (
+    DuplicateRoleAssignmentError,
+    InvalidRoleAssignmentError,
+    VolunteerNotFoundError,
+    VolunteersService,
+)
 from app.web.route_helpers import blocked_http_exception, log_and_redirect
 from app.web.templates import templates
 
@@ -53,7 +59,7 @@ async def groups_update(
     parent_group_id: str | None = Form(default=None),
     discount_step: str | None = Form(default=None),
     active: str | None = Form(default=None),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_group_manager),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     updated = await groups_service.update_group(
@@ -108,7 +114,7 @@ async def group_roles_create(
     group_id: int,
     role_name: str = Form(...),
     pingvin_points: int = Form(...),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_group_manager),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     role_id = await groups_service.create_group_role(
@@ -129,6 +135,42 @@ async def group_roles_create(
     )
 
 
+@router.post("/groups/{group_id}/role-assignments")
+async def group_role_assignments_create(
+    request: Request,
+    group_id: int,
+    volunteer_id: int = Form(...),
+    role_id: int = Form(...),
+    year: int = Form(...),
+    term: int = Form(...),
+    contract_signed: bool = Form(default=False),
+    current_user=Depends(require_group_manager),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    try:
+        await volunteers_service.add_role_assignment(
+            volunteer_id=volunteer_id,
+            group_id=group_id,
+            role_id=role_id,
+            year=year,
+            term=term,
+            contract_signed=contract_signed,
+        )
+    except VolunteerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (DuplicateRoleAssignmentError, InvalidRoleAssignmentError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return log_and_redirect(
+        request=request,
+        user=current_user,
+        action="group_role_assignment.create",
+        subject_type="group",
+        subject_id=group_id,
+        details={"volunteer_id": volunteer_id, "role_id": role_id, "year": year, "term": term},
+        redirect_path=f"/groups/{group_id}",
+    )
+
+
 @router.patch("/groups/{group_id}/roles/{role_id}")
 async def group_roles_update(
     request: Request,
@@ -136,7 +178,7 @@ async def group_roles_update(
     role_id: int,
     role_name: str = Form(...),
     pingvin_points: int = Form(...),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_group_manager),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     updated = await groups_service.update_group_role(
@@ -163,7 +205,7 @@ async def group_roles_delete(
     request: Request,
     group_id: int,
     role_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_group_manager),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
@@ -188,7 +230,7 @@ async def group_history_delete(
     request: Request,
     group_id: int,
     history_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_group_manager),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
@@ -214,6 +256,7 @@ async def group_history_delete(
                 "history": history,
                 "stats": stats,
                 "retention": retention,
+                "can_manage_group": True,
                 "swap_oob": True,
             },
         )
@@ -235,7 +278,7 @@ async def groups_apply_semester_transfer(
     target_semester: int = Form(...),
     volunteer_ids: list[int] = Form(default=[]),
     role_ids: list[str] = Form(default=[]),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_group_manager),
     transfer_service: SemesterTransferService = Depends(get_semester_transfer_service),
 ):
     entries = [

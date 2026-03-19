@@ -20,7 +20,7 @@
                 <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/volunteers/{{ member.volunteer_id }}">{{ member.volunteer_name }}</a>
                 <span class="text-sm text-stone-500">{{ member.role_name or "Ingen rolle" }}</span>
                 <span class="text-sm text-stone-500">{% if member.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</span>
-                {% if current_user.role == "Admin" %}
+                {% if can_manage_group %}
                   <div class="flex md:justify-end">
                     <form
                       action="/groups/{{ group_id }}/history/{{ member.history_id }}?_method=DELETE"

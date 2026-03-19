@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_volunteers_service, require_admin_user
+from app.dependencies import get_volunteers_service, require_admin_user, require_volunteer_photo_manager
 from app.observability import log_admin_activity
 from app.services.volunteers import (
     DuplicateRoleAssignmentError,
     DocumentNotFoundError,
     InvalidRoleAssignmentError,
     RoleAssignmentNotFoundError,
+    UnsupportedUploadError,
     VolunteersService,
     VolunteerNotFoundError,
 )
@@ -183,10 +184,44 @@ async def volunteer_delete_role_assignment(
 
 
 @router.delete("/volunteers/{volunteer_id}/photo")
+@router.post("/volunteers/{volunteer_id}/photo")
+async def volunteer_upload_photo(
+    request: Request,
+    volunteer_id: int,
+    photo: UploadFile = File(...),
+    current_user=Depends(require_volunteer_photo_manager),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    try:
+        if not photo.filename:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a photo to upload.")
+        await volunteers_service.upload_photo(
+            volunteer_id=volunteer_id,
+            filename=photo.filename,
+            content=await photo.read(),
+            content_type=photo.content_type,
+        )
+    except VolunteerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except UnsupportedUploadError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    finally:
+        await photo.close()
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer.upload_photo",
+        subject_type="volunteer",
+        subject_id=volunteer_id,
+    )
+    return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.delete("/volunteers/{volunteer_id}/photo")
 async def volunteer_delete_photo(
     request: Request,
     volunteer_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_volunteer_photo_manager),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:

@@ -4,8 +4,10 @@ from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_groups_service, get_volunteers_service
+from app.auth.roles import UserRole
+from app.dependencies import get_admin_accounts_service, get_groups_service, get_volunteers_service
 from app.main import create_app
+from app.services.admin_accounts import AdminAccountDetail
 from app.services.groups import GroupBreakdownItem, GroupMemberCount, OrgSemesterDetailed, SemesterRetentionStats
 from app.services.volunteer_models import (
     CardItem,
@@ -25,6 +27,8 @@ from tests.helpers import make_authenticated_user, override_authenticated_user
 class FakeVolunteersService:
     def __init__(self) -> None:
         self.updated_role_assignment_calls: list[dict[str, int | bool]] = []
+        self.uploaded_photo_calls: list[dict[str, str | int | None]] = []
+        self.deleted_photo_calls: list[int] = []
 
     async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
         return (await self.list_volunteers_page(query=query, limit=limit, cursor=None)).items
@@ -129,6 +133,39 @@ class FakeVolunteersService:
             }
         )
 
+    async def upload_photo(self, volunteer_id: int, filename: str, content: bytes, content_type: str | None) -> None:
+        self.uploaded_photo_calls.append(
+            {
+                "volunteer_id": volunteer_id,
+                "filename": filename,
+                "content_type": content_type,
+                "content_length": len(content),
+            }
+        )
+
+    async def delete_photo(self, volunteer_id: int) -> None:
+        self.deleted_photo_calls.append(volunteer_id)
+
+
+class FakeAdminAccountsService:
+    def __init__(self, managed_group_ids: list[int]) -> None:
+        self.managed_group_ids = managed_group_ids
+
+    async def get_admin_account_detail_for_auth_user(self, auth_user_id):
+        return AdminAccountDetail(
+            user_account_id=5,
+            auth_user_id=auth_user_id,
+            legacy_user_id=None,
+            username="groupadmin",
+            email="group.admin@example.test",
+            display_name="Group Admin",
+            role=UserRole.GROUP_ADMIN,
+            last_login=None,
+            created_at=datetime(2026, 3, 13, tzinfo=UTC),
+            migrated_at=None,
+            group_admin_group_ids=self.managed_group_ids,
+        )
+
 
 class FakeGroupsService:
     async def get_org_stats_detailed(self) -> list[OrgSemesterDetailed]:
@@ -194,8 +231,62 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Laster filer" in detail_response.text
     assert "Laster kort og pårørende" in detail_response.text
     assert "name=\"gender\"" in detail_response.text
-    assert 'type="file"' not in detail_response.text
+    assert 'type="file"' in detail_response.text
+    assert 'enctype="multipart/form-data"' in detail_response.text
+    assert 'id="volunteer-photo-input"' in detail_response.text
+    assert 'onchange="this.form.submit()"' in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
+
+
+def test_group_admin_can_upload_photo_for_volunteer_in_their_group() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService([9])
+    client = TestClient(app)
+
+    detail_response = client.get("/volunteers/12")
+    upload_response = client.post(
+        "/volunteers/12/photo",
+        files={"photo": ("avatar.png", b"fake-image", "image/png")},
+        follow_redirects=False,
+    )
+
+    assert detail_response.status_code == 200
+    assert 'type="file"' in detail_response.text
+    assert 'title="Klikk for å endre profilbilde"' in detail_response.text
+    assert upload_response.status_code == 303
+    assert upload_response.headers["location"] == "/volunteers/12"
+    assert volunteers_service.uploaded_photo_calls == [
+        {
+            "volunteer_id": 12,
+            "filename": "avatar.png",
+            "content_type": "image/png",
+            "content_length": 10,
+        }
+    ]
+
+
+def test_group_admin_cannot_upload_photo_for_other_groups() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService([7])
+    client = TestClient(app)
+
+    detail_response = client.get("/volunteers/12")
+    upload_response = client.post(
+        "/volunteers/12/photo",
+        files={"photo": ("avatar.png", b"fake-image", "image/png")},
+        follow_redirects=False,
+    )
+
+    assert detail_response.status_code == 200
+    assert 'type="file"' not in detail_response.text
+    assert upload_response.status_code == 403
+    assert volunteers_service.uploaded_photo_calls == []
 
 
 def test_volunteer_list_fragment_renders_with_fake_service() -> None:

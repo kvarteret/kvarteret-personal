@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --color-kvarteret-red: #ef6b10;
-  --color-kvarteret-red-dark: #d95c08;
-  --color-kvarteret-background: #f1e7d1;
+  --color-kvarteret-red: #f54b4b;
+  --color-kvarteret-red-dark: #e03f3f;
+  --color-kvarteret-background: #fff7e4;
   --color-kvarteret-surface: #fbf2df;
   --color-kvarteret-sand: #e8d4b2;
   --color-kvarteret-sand-dark: #d9bf95;
@@ -15,7 +15,7 @@
 
 @layer components {
   .app-panel {
-    @apply bg-kvarteret-surface/94 p-5 text-kvarteret-ink shadow-[0_22px_55px_-30px_rgba(239,107,16,0.2)] backdrop-blur-sm;
+    @apply bg-kvarteret-surface/94 p-5 text-kvarteret-ink shadow-[0_22px_55px_-30px_rgba(245,75,75,0.2)] backdrop-blur-sm;
   }
 
   .app-input {
@@ -27,7 +27,7 @@
   }
 
   .app-button {
-    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-kvarteret-surface shadow-[0_18px_36px_-18px_rgba(239,107,16,0.55)] transition hover:bg-kvarteret-red-dark;
+    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-kvarteret-surface shadow-[0_18px_36px_-18px_rgba(245,75,75,0.55)] transition hover:bg-kvarteret-red-dark;
   }
 
   .app-button-secondary {

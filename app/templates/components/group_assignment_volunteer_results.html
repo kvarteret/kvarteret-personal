@@ -1,0 +1,37 @@
+{% if query %}
+  {% if volunteers %}
+    <fieldset class="grid gap-3">
+      <legend class="text-sm font-medium text-stone-900">Velg frivillig</legend>
+      {% for volunteer in volunteers %}
+        <div class="flex items-start gap-3 rounded-2xl bg-kvarteret-surface/95 p-3 shadow-md transition hover:shadow-lg">
+          <label class="block min-w-0 flex-1 cursor-pointer">
+            <input class="peer sr-only" name="volunteer_id" required type="radio" value="{{ volunteer.volunteer_id }}">
+            <div class="rounded-2xl border border-stone-200 bg-kvarteret-surface px-4 py-3 text-sm text-stone-800 transition hover:border-kvarteret-red peer-checked:border-kvarteret-red peer-checked:bg-kvarteret-red">
+              <div class="flex items-start gap-3">
+                <div class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600">
+                  {% if volunteer.photo_url %}
+                    <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ volunteer.photo_url }}">
+                  {% else %}
+                    {{ volunteer.last_name[:1] }}
+                  {% endif %}
+                </div>
+                <div class="min-w-0 flex-1 grid gap-1">
+                  <span class="font-medium text-stone-900">{{ volunteer.full_name }}</span>
+                  <span>{{ volunteer.email or "Ingen e-post" }}{% if volunteer.phone %} · {{ volunteer.phone }}{% endif %}</span>
+                  {% if volunteer.last_semester_label %}
+                    <span class="text-stone-500">Sist registrert {{ volunteer.last_semester_label }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          </label>
+          <a class="app-button-secondary min-h-9 px-3 py-2 text-xs no-underline" href="/volunteers/{{ volunteer.volunteer_id }}">Se profil</a>
+        </div>
+      {% endfor %}
+    </fieldset>
+  {% else %}
+    <p class="text-sm text-stone-600">Ingen frivillige matchet "{{ query }}".</p>
+  {% endif %}
+{% else %}
+  <p class="text-sm text-stone-600">Søk etter en frivillig for å velge hvem som skal legges inn i gruppen.</p>
+{% endif %}

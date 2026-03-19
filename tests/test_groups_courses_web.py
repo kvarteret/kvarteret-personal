@@ -4,9 +4,17 @@ from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_courses_service, get_groups_service, get_semester_transfer_service
+from app.auth.roles import UserRole
+from app.dependencies import (
+    get_admin_accounts_service,
+    get_courses_service,
+    get_groups_service,
+    get_semester_transfer_service,
+    get_volunteers_service,
+)
 from app.main import create_app
 from app.services.courses import CourseCompletionItem, CourseDetail, CourseListItem, RequiredGroupItem
+from app.services.admin_accounts import AdminAccountDetail
 from app.services.groups import (
     GroupDetail,
     GroupListItem,
@@ -21,6 +29,7 @@ from app.services.groups import (
     SemesterStats,
 )
 from app.services.semester_transfer import SemesterTransferCandidate, SemesterTransferPreview
+from app.services.volunteer_models import VolunteerListItem
 from tests.helpers import make_authenticated_user, override_authenticated_user
 
 
@@ -203,12 +212,70 @@ class FakeSemesterTransferService:
         return 1
 
 
+class FakeVolunteersService:
+    def __init__(self) -> None:
+        self.created_assignment = None
+        self.last_list_limit = None
+
+    async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
+        self.last_list_limit = limit
+        if not query or "sample" not in query.lower():
+            return []
+        return [
+            VolunteerListItem(
+                volunteer_id=12,
+                first_name="Sample",
+                last_name="Person",
+                full_name="Sample Person",
+                email="sample.person@example.test",
+                phone="12345678",
+                photo_url=None,
+                pingvin_points=4,
+                last_semester_code=20262,
+                last_semester_label="Fall 2026",
+            )
+        ]
+
+    async def add_role_assignment(
+        self,
+        *,
+        volunteer_id: int,
+        group_id: int,
+        role_id: int,
+        year: int,
+        term: int,
+        contract_signed: bool,
+    ) -> None:
+        self.created_assignment = (volunteer_id, group_id, role_id, year, term, contract_signed)
+
+
+class FakeAdminAccountsService:
+    def __init__(self, managed_group_ids: list[int]) -> None:
+        self.managed_group_ids = managed_group_ids
+
+    async def get_admin_account_detail_for_auth_user(self, auth_user_id):
+        return AdminAccountDetail(
+            user_account_id=5,
+            auth_user_id=auth_user_id,
+            legacy_user_id=None,
+            username="groupadmin",
+            email="group.admin@example.test",
+            display_name="Group Admin",
+            role=UserRole.GROUP_ADMIN,
+            last_login=None,
+            created_at=datetime(2026, 3, 13, tzinfo=UTC),
+            migrated_at=None,
+            group_admin_group_ids=self.managed_group_ids,
+        )
+
+
 def test_groups_and_courses_pages_render() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
     app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     app.dependency_overrides[get_semester_transfer_service] = lambda: FakeSemesterTransferService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     client = TestClient(app)
 
     groups_response = client.get("/groups")
@@ -235,6 +302,9 @@ def test_groups_and_courses_pages_render() -> None:
     assert "Lagre gruppe" in group_detail_response.text
     assert "Lagre verv" in group_detail_response.text
     assert "Opprett verv" in group_detail_response.text
+    assert "Legg til frivillig" in group_detail_response.text
+    assert 'hx-get="/groups/7/assignment-volunteers"' in group_detail_response.text
+    assert 'action="/groups/7/role-assignments"' in group_detail_response.text
     assert "Flytt til nytt semester" in group_detail_response.text
     assert "Aktiv til semester" not in group_detail_response.text
     assert "Vervet har medlemmer og kan ikke slettes." in group_detail_response.text
@@ -311,6 +381,91 @@ def test_group_role_actions_redirect_and_call_service() -> None:
     assert delete_response.status_code == 303
     assert delete_response.headers["location"] == "/groups/7"
     assert groups_service.deleted_role == (7, 3)
+
+
+def test_group_assignment_volunteer_search_returns_matches() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.get("/groups/7/assignment-volunteers?q=sample")
+
+    assert response.status_code == 200
+    assert "Sample Person" in response.text
+    assert 'name="volunteer_id"' in response.text
+    assert "sample.person@example.test" in response.text
+    assert "Se profil" in response.text
+    assert 'href="/volunteers/12"' in response.text
+    assert volunteers_service.last_list_limit == 3
+
+
+def test_group_role_assignment_create_redirects_and_calls_service() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/groups/7/role-assignments",
+        data={
+            "volunteer_id": "12",
+            "role_id": "3",
+            "year": "2026",
+            "term": "2",
+            "contract_signed": "true",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/groups/7"
+    assert volunteers_service.created_assignment == (12, 7, 3, 2026, 2, True)
+
+
+def test_group_admin_can_manage_their_group() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    groups_service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: groups_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService([7])
+    client = TestClient(app)
+
+    group_detail_response = client.get("/groups/7")
+    create_response = client.post(
+        "/groups/7/roles",
+        data={"role_name": "Ny rolle", "pingvin_points": "5"},
+        follow_redirects=False,
+    )
+
+    assert group_detail_response.status_code == 200
+    assert "Opprett verv" in group_detail_response.text
+    assert "Legg til frivillig" in group_detail_response.text
+    assert create_response.status_code == 303
+    assert create_response.headers["location"] == "/groups/7"
+    assert groups_service.created_role == (7, "Ny rolle", 5)
+
+
+def test_group_admin_cannot_manage_other_groups() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    groups_service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: groups_service
+    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService([7])
+    client = TestClient(app)
+
+    response = client.post(
+        "/groups/8/roles",
+        data={"role_name": "Ny rolle", "pingvin_points": "5"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert groups_service.created_role is None
 
 
 def test_group_history_delete_redirects_and_calls_service() -> None:
