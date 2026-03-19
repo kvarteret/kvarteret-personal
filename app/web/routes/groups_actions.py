@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_groups_service, get_semester_transfer_service, get_volunteers_service, require_admin_user, require_group_manager
+from app.dependencies import get_groups_service, get_semester_transfer_service, get_volunteers_service, require_management_user
 from app.services.groups import GroupDeleteBlockedError, GroupHistoryNotFoundError, GroupRoleDeleteBlockedError, GroupsService
 from app.services.semester_transfer import SemesterTransferEntry, SemesterTransferService
 from app.services.volunteers import (
@@ -28,7 +29,7 @@ async def groups_create(
     parent_group_id: str | None = Form(default=None),
     discount_step: str | None = Form(default=None),
     active: str | None = Form(default=None),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     group_id = await groups_service.create_group(
@@ -59,7 +60,7 @@ async def groups_update(
     parent_group_id: str | None = Form(default=None),
     discount_step: str | None = Form(default=None),
     active: str | None = Form(default=None),
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     updated = await groups_service.update_group(
@@ -89,7 +90,7 @@ async def groups_update(
 async def groups_delete(
     request: Request,
     group_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
@@ -114,7 +115,7 @@ async def group_roles_create(
     group_id: int,
     role_name: str = Form(...),
     pingvin_points: int = Form(...),
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     role_id = await groups_service.create_group_role(
@@ -139,17 +140,29 @@ async def group_roles_create(
 async def group_role_assignments_create(
     request: Request,
     group_id: int,
-    volunteer_id: int = Form(...),
+    volunteer_id: str | None = Form(default=None),
     role_id: int = Form(...),
     year: int = Form(...),
     term: int = Form(...),
     contract_signed: bool = Form(default=False),
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
+    if volunteer_id is None or not volunteer_id.strip():
+        return RedirectResponse(
+            url=f"/groups/{group_id}?assignment_error=Velg%20en%20frivillig%20for%20du%20legger%20til%20i%20gruppen.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    try:
+        parsed_volunteer_id = int(volunteer_id)
+    except ValueError:
+        return RedirectResponse(
+            url=f"/groups/{group_id}?assignment_error=Ugyldig%20frivilligvalg.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
     try:
         await volunteers_service.add_role_assignment(
-            volunteer_id=volunteer_id,
+            volunteer_id=parsed_volunteer_id,
             group_id=group_id,
             role_id=role_id,
             year=year,
@@ -166,7 +179,7 @@ async def group_role_assignments_create(
         action="group_role_assignment.create",
         subject_type="group",
         subject_id=group_id,
-        details={"volunteer_id": volunteer_id, "role_id": role_id, "year": year, "term": term},
+        details={"volunteer_id": parsed_volunteer_id, "role_id": role_id, "year": year, "term": term},
         redirect_path=f"/groups/{group_id}",
     )
 
@@ -178,7 +191,7 @@ async def group_roles_update(
     role_id: int,
     role_name: str = Form(...),
     pingvin_points: int = Form(...),
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     updated = await groups_service.update_group_role(
@@ -205,7 +218,7 @@ async def group_roles_delete(
     request: Request,
     group_id: int,
     role_id: int,
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
@@ -230,7 +243,7 @@ async def group_history_delete(
     request: Request,
     group_id: int,
     history_id: int,
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
@@ -278,7 +291,7 @@ async def groups_apply_semester_transfer(
     target_semester: int = Form(...),
     volunteer_ids: list[int] = Form(default=[]),
     role_ids: list[str] = Form(default=[]),
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     transfer_service: SemesterTransferService = Depends(get_semester_transfer_service),
 ):
     entries = [

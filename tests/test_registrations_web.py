@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 
+from app.auth.roles import UserRole
 from app.dependencies import get_volunteer_applications_service, get_volunteers_service
 from app.main import create_app
 from app.services.volunteer_applications import (
@@ -19,6 +20,7 @@ from tests.helpers import make_authenticated_user, override_authenticated_user
 class FakeVolunteerApplicationsService:
     def __init__(self) -> None:
         self.deleted_registration_ids: list[int] = []
+        self.created_invites: list[dict[str, int | str | None]] = []
         self.volunteer_applications = [
             VolunteerApplicationListItem(
                 registration_id=7,
@@ -43,6 +45,13 @@ class FakeVolunteerApplicationsService:
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite:
+        self.created_invites.append(
+            {
+                "email": email,
+                "initial_group_id": initial_group_id,
+                "initial_role_id": initial_role_id,
+            }
+        )
         return VolunteerApplicationInvite(
             7,
             "token-123",
@@ -107,7 +116,10 @@ class FakeVolunteerApplicationsService:
 
 class FakeVolunteersService:
     async def list_assignment_groups(self) -> list[GroupOption]:
-        return [GroupOption(group_id=3, name="Bar", active=True)]
+        return [
+            GroupOption(group_id=3, name="Bar", active=True),
+            GroupOption(group_id=8, name="Ukjent", active=True),
+        ]
 
     async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
         if group_id != 3:
@@ -142,6 +154,63 @@ def test_volunteer_application_pages_render() -> None:
     assert "Venter på godkjenning" in submitted_response.text
     assert 'enctype="multipart/form-data"' not in public_response.text
     assert 'name="profile_photo"' not in public_response.text
+
+
+def test_group_admin_can_open_new_volunteer_page_with_all_groups() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications")
+
+    assert response.status_code == 200
+    assert "Opprett invitasjon" in response.text
+    assert "registrant@example.com" in response.text
+    assert 'option value="3"' in response.text
+    assert 'option value="8"' in response.text
+
+
+def test_group_admin_can_create_invite() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/volunteer-applications",
+        data={"email": "new@example.test", "group_id": "3", "role_id": "9"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/volunteer-applications"
+    assert volunteer_applications_service.created_invites == [
+        {"email": "new@example.test", "initial_group_id": 3, "initial_role_id": 9}
+    ]
+
+
+def test_group_admin_can_create_invite_without_group() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/volunteer-applications",
+        data={"email": "new@example.test"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert volunteer_applications_service.created_invites == [
+        {"email": "new@example.test", "initial_group_id": None, "initial_role_id": None}
+    ]
 
 
 def test_duplicate_volunteer_approval_redirects_to_existing_profile() -> None:
@@ -195,3 +264,64 @@ def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
     assert volunteer_applications_service.deleted_registration_ids == [7]
     assert "registrant@example.com" not in response.text
     assert "Ingen åpne frivilligsøknader." in response.text
+
+
+def test_group_admin_can_manage_any_registration() -> None:
+    class OtherGroupVolunteerApplicationsService(FakeVolunteerApplicationsService):
+        async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None:
+            if registration_id != 8:
+                return None
+            return VolunteerApplicationDetail(
+                registration_id=8,
+                token="token-456",
+                email="other@example.com",
+                created_at=datetime(2026, 3, 14, tzinfo=UTC),
+                submitted=True,
+                pending_volunteer_id=9,
+                first_name="Other",
+                last_name="Person",
+                phone="11111111",
+                birth_date=None,
+                gender=None,
+                address=None,
+                postal_code=None,
+                employment_status=None,
+                photo_sha1=None,
+                photo_filetype=None,
+                photo_url=None,
+                initial_group_id=8,
+                initial_group_name="Ukjent",
+                initial_role_id=None,
+                initial_role_name=None,
+            )
+
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteer_applications_service = OtherGroupVolunteerApplicationsService()
+    volunteer_applications_service.volunteer_applications = [
+        VolunteerApplicationListItem(
+            registration_id=8,
+            token="token-456",
+            email="other@example.com",
+            created_at=datetime(2026, 3, 14, tzinfo=UTC),
+            submitted=True,
+            first_name="Other",
+            last_name="Person",
+            phone="11111111",
+            initial_group_id=8,
+            initial_group_name="Ukjent",
+            initial_role_id=None,
+            initial_role_name=None,
+        )
+    ]
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    list_response = client.get("/volunteer-applications")
+    delete_response = client.delete("/volunteer-applications/8", headers={"HX-Request": "true"})
+
+    assert list_response.status_code == 200
+    assert "other@example.com" in list_response.text
+    assert delete_response.status_code == 200
+    assert volunteer_applications_service.deleted_registration_ids == [8]

@@ -26,6 +26,50 @@
     @apply bg-kvarteret-surface/95 px-3 py-3 text-sm text-kvarteret-ink shadow-[0_10px_30px_-24px_rgba(35,43,72,0.35)] focus:outline-none focus:ring-2 focus:ring-kvarteret-red/30;
   }
 
+  select.app-input:not([multiple]),
+  select.app-select:not([multiple]) {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-color: var(--color-kvarteret-surface);
+    color: var(--color-kvarteret-ink) !important;
+    color-scheme: light;
+    -webkit-text-fill-color: var(--color-kvarteret-ink);
+    border: 1px solid color-mix(in srgb, var(--color-kvarteret-red) 45%, white);
+    border-radius: 0.75rem;
+    min-height: 3.5rem;
+    padding: 0.75rem 3rem 0.75rem 1rem;
+    line-height: 1.5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23171c30' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-position: right 0.9rem center;
+    background-repeat: no-repeat;
+    background-size: 1rem;
+    box-shadow: 0 10px 30px -24px rgba(35, 43, 72, 0.35);
+  }
+
+  select.app-input option,
+  select.app-input optgroup,
+  select.app-select option,
+  select.app-select optgroup {
+    background-color: var(--color-kvarteret-surface);
+    color: var(--color-kvarteret-ink) !important;
+    -webkit-text-fill-color: var(--color-kvarteret-ink);
+  }
+
+  select.app-input:not([multiple]):focus,
+  select.app-select:not([multiple]):focus {
+    outline: none;
+    border-color: var(--color-kvarteret-red);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--color-kvarteret-red) 25%, transparent),
+      0 10px 30px -24px rgba(35, 43, 72, 0.35);
+  }
+
+  select.app-input::-ms-expand,
+  select.app-select::-ms-expand {
+    display: none;
+  }
+
   .app-button {
     @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-kvarteret-surface shadow-[0_18px_36px_-18px_rgba(245,75,75,0.55)] transition hover:bg-kvarteret-red-dark;
   }

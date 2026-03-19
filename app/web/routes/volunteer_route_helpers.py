@@ -18,7 +18,11 @@ async def render_role_assignments_panel(
     editing_assignment_id: int | None = None,
 ):
     assignments = await volunteers_service.list_role_assignments(volunteer.volunteer_id)
-    groups = await volunteers_service.list_assignment_groups() if current_user.role == UserRole.ADMIN else []
+    groups = (
+        await volunteers_service.list_assignment_groups()
+        if current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
+        else []
+    )
     editing_assignment = next(
         (assignment for assignment in assignments if assignment.history_id == editing_assignment_id),
         None,
@@ -26,7 +30,7 @@ async def render_role_assignments_panel(
     selected_group_id = editing_assignment.group_id if editing_assignment is not None else None
     role_options = (
         await volunteers_service.list_assignment_roles(selected_group_id)
-        if current_user.role == UserRole.ADMIN and selected_group_id is not None
+        if current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN} and selected_group_id is not None
         else []
     )
     current_semester_code = get_current_semester_code()

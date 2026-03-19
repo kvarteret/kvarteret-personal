@@ -5,7 +5,11 @@ from datetime import date
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_volunteer_applications_service, get_volunteers_service, require_admin_user
+from app.dependencies import (
+    get_volunteer_applications_service,
+    get_volunteers_service,
+    require_management_user,
+)
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.services.volunteer_applications import (
@@ -27,7 +31,7 @@ async def volunteer_applications_create_invite(
     email: str = Form(...),
     group_id: str | None = Form(default=None),
     role_id: str | None = Form(default=None),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
@@ -68,7 +72,7 @@ async def volunteer_applications_create_invite(
 async def volunteer_application_approve(
     request: Request,
     application_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
@@ -95,7 +99,7 @@ async def volunteer_application_approve(
 async def volunteer_application_delete(
     request: Request,
     application_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
@@ -156,3 +160,4 @@ async def volunteer_application_submit(
     except NotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     return RedirectResponse(url=f"/apply/{token}/submitted", status_code=status.HTTP_303_SEE_OTHER)
+

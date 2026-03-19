@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 
-from app.dependencies import get_courses_service, require_admin_user
+from app.dependencies import get_courses_service, require_management_user
 from app.services.courses import CourseDeleteBlockedError, CoursesService
 from app.web.route_helpers import blocked_http_exception, log_and_redirect
 
@@ -14,7 +14,7 @@ async def courses_create(
     request: Request,
     name: str = Form(...),
     description: str | None = Form(default=None),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     courses_service: CoursesService = Depends(get_courses_service),
 ):
     course_id = await courses_service.create_course(name=name, description=description)
@@ -34,7 +34,7 @@ async def courses_update(
     course_id: int,
     name: str = Form(...),
     description: str | None = Form(default=None),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     courses_service: CoursesService = Depends(get_courses_service),
 ):
     updated = await courses_service.update_course(course_id, name=name, description=description)
@@ -54,7 +54,7 @@ async def courses_update(
 async def courses_delete(
     request: Request,
     course_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     courses_service: CoursesService = Depends(get_courses_service),
 ):
     try:

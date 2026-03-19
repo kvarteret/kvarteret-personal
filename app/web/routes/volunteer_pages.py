@@ -6,15 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.roles import UserRole
 from app.dependencies import (
-    can_manage_volunteer_photo,
-    get_admin_accounts_service,
     get_groups_service,
     get_volunteers_service,
     require_authenticated_user,
 )
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
-from app.services.admin_accounts import AdminAccountsService
 from app.services.groups import GroupsService
 from app.services.volunteer_options import GENDER_OPTIONS
 from app.services.volunteers import VolunteersService
@@ -91,7 +88,6 @@ async def volunteer_detail(
     volunteer_id: int,
     current_user=Depends(require_authenticated_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
-    admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:
         volunteer = await volunteers_service.get_volunteer_detail(volunteer_id)
@@ -102,14 +98,8 @@ async def volunteer_detail(
         )
     if volunteer is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer not found.")
-    can_manage_photo = False
-    if current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}:
-        can_manage_photo = await can_manage_volunteer_photo(
-            current_user,
-            volunteer_id,
-            admin_accounts_service,
-            volunteers_service,
-        )
+    can_manage_profile = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
+    can_manage_photo = can_manage_profile
     if current_user.role == UserRole.ADMIN:
         log_admin_activity(
             request=request,
@@ -126,6 +116,7 @@ async def volunteer_detail(
             "section": "volunteers",
             "current_user": current_user,
             "volunteer": volunteer,
+            "can_manage_volunteer_profile": can_manage_profile,
             "can_manage_volunteer_photo": can_manage_photo,
             "gender_options": GENDER_OPTIONS,
             "duplicate_application_id": request.query_params.get("duplicate_application_id"),

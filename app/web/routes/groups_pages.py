@@ -5,13 +5,10 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import (
-    can_manage_group,
-    get_admin_accounts_service,
     get_groups_service,
     get_semester_transfer_service,
     get_volunteers_service,
-    require_admin_user,
-    require_group_manager,
+    require_management_user,
     require_authenticated_user,
 )
 from app.errors import NotConfiguredError
@@ -19,7 +16,6 @@ from app.observability import log_admin_activity
 from app.services.groups import GroupsService
 from app.services.semester import get_current_semester_code
 from app.services.semester_transfer import SemesterTransferService
-from app.services.admin_accounts import AdminAccountsService
 from app.services.volunteer_options import SEMESTER_TERM_OPTIONS
 from app.services.volunteers import VolunteersService
 from app.web.route_helpers import not_configured_http_exception
@@ -55,7 +51,7 @@ async def groups_index(
 @router.get("/groups/new")
 async def groups_new(
     request: Request,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
@@ -81,7 +77,6 @@ async def groups_detail(
     group_id: int,
     current_user=Depends(require_authenticated_user),
     groups_service: GroupsService = Depends(get_groups_service),
-    admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:
         group = await groups_service.get_group_detail(group_id)
@@ -90,7 +85,7 @@ async def groups_detail(
         raise not_configured_http_exception("Database-backed group views are not configured yet.")
     if group is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
-    can_manage = await can_manage_group(current_user, group_id, admin_accounts_service)
+    can_manage = current_user.role in {"Admin", "Gruppeadmin"}
     return templates.TemplateResponse(
         request,
         "pages/group_detail.html",
@@ -104,6 +99,7 @@ async def groups_detail(
             "default_assignment_year": get_current_semester_code() // 10,
             "default_assignment_term": get_current_semester_code() % 10,
             "semester_term_options": SEMESTER_TERM_OPTIONS,
+            "assignment_error": request.query_params.get("assignment_error"),
         },
     )
 
@@ -113,7 +109,7 @@ async def groups_assignment_volunteers(
     request: Request,
     group_id: int,
     q: str | None = None,
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
@@ -142,13 +138,12 @@ async def groups_detail_history(
     group_id: int,
     current_user=Depends(require_authenticated_user),
     groups_service: GroupsService = Depends(get_groups_service),
-    admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:
         history = await groups_service.get_group_history_by_semester(group_id)
     except NotConfiguredError:
         raise not_configured_http_exception("Database-backed group views are not configured yet.")
-    can_manage = await can_manage_group(current_user, group_id, admin_accounts_service)
+    can_manage = current_user.role in {"Admin", "Gruppeadmin"}
     return templates.TemplateResponse(
         request,
         "components/group_history.html",
@@ -183,7 +178,7 @@ async def groups_semester_transfer(
     group_id: int,
     source_semester: int | None = None,
     target_semester: int | None = None,
-    current_user=Depends(require_group_manager),
+    current_user=Depends(require_management_user),
     transfer_service: SemesterTransferService = Depends(get_semester_transfer_service),
 ):
     preview = await transfer_service.preview_transfer(

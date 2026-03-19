@@ -474,9 +474,6 @@
   .max-w-6xl {
     max-width: var(--container-6xl);
   }
-  .max-w-72 {
-    max-width: calc(var(--spacing) * 72);
-  }
   .max-w-screen-2xl {
     max-width: var(--breakpoint-2xl);
   }
@@ -1250,6 +1247,13 @@
       }
     }
   }
+  .hover\:underline {
+    &:hover {
+      @media (hover: hover) {
+        text-decoration-line: underline;
+      }
+    }
+  }
   .hover\:shadow-lg {
     &:hover {
       @media (hover: hover) {
@@ -1554,6 +1558,44 @@
       --tw-outline-style: none;
       outline-style: none;
     }
+  }
+  select.app-input:not([multiple]), select.app-select:not([multiple]) {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-color: var(--color-kvarteret-surface);
+    color: var(--color-kvarteret-ink) !important;
+    color-scheme: light;
+    -webkit-text-fill-color: var(--color-kvarteret-ink);
+    border: 1px solid color-mix(in srgb, #f54b4b 45%, white);
+    @supports (color: color-mix(in lab, red, red)) {
+      border: 1px solid color-mix(in srgb, var(--color-kvarteret-red) 45%, white);
+    }
+    border-radius: 0.75rem;
+    min-height: 3.5rem;
+    padding: 0.75rem 3rem 0.75rem 1rem;
+    line-height: 1.5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23171c30' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-position: right 0.9rem center;
+    background-repeat: no-repeat;
+    background-size: 1rem;
+    box-shadow: 0 10px 30px -24px rgba(35, 43, 72, 0.35);
+  }
+  select.app-input option, select.app-input optgroup, select.app-select option, select.app-select optgroup {
+    background-color: var(--color-kvarteret-surface);
+    color: var(--color-kvarteret-ink) !important;
+    -webkit-text-fill-color: var(--color-kvarteret-ink);
+  }
+  select.app-input:not([multiple]):focus, select.app-select:not([multiple]):focus {
+    outline: none;
+    border-color: var(--color-kvarteret-red);
+    box-shadow: 0 0 0 2px color-mix(in srgb, #f54b4b 25%, transparent), 0 10px 30px -24px rgba(35, 43, 72, 0.35);
+    @supports (color: color-mix(in lab, red, red)) {
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-kvarteret-red) 25%, transparent), 0 10px 30px -24px rgba(35, 43, 72, 0.35);
+    }
+  }
+  select.app-input::-ms-expand, select.app-select::-ms-expand {
+    display: none;
   }
   .app-button {
     display: inline-flex;

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.dependencies import get_volunteers_service, require_admin_user, require_authenticated_user
+from app.dependencies import get_volunteers_service, require_authenticated_user, require_management_user
 from app.services.semester import get_current_semester_code
 from app.services.volunteer_options import SEMESTER_TERM_OPTIONS
 from app.services.volunteers import VolunteersService
@@ -60,7 +60,7 @@ async def volunteer_role_assignment_role_field(
     role_id: int | None = None,
     year: int | None = None,
     term: int | None = None,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)

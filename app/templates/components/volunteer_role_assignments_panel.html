@@ -9,7 +9,7 @@
     </div>
     <span class="app-badge">{{ assignments|length }} rader</span>
   </div>
-  {% if current_user.role == "Admin" %}
+  {% if current_user.role in ["Admin", "Gruppeadmin"] %}
     <form
       action="/volunteers/{{ volunteer.volunteer_id }}/role-assignments{% if is_editing %}/{{ editing_assignment.history_id }}?_method=PATCH{% endif %}"
       class="mb-8 grid gap-4 border-b border-stone-300 pb-6"
@@ -67,7 +67,7 @@
         <div class="text-sm text-stone-700">{{ assignment.semester_label }}</div>
         <div class="flex flex-wrap items-center justify-end gap-3">
           <div class="text-sm text-stone-700">{% if assignment.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</div>
-          {% if current_user.role == "Admin" %}
+          {% if current_user.role in ["Admin", "Gruppeadmin"] %}
             <button
               class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100"
               hx-disinherit="hx-select hx-target hx-swap"

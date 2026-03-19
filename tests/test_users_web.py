@@ -185,6 +185,14 @@ def test_admin_account_pages_forbid_non_admins() -> None:
     assert response.status_code == 403
 
 
+def test_admin_account_pages_forbid_group_admins() -> None:
+    client = _make_client(role=UserRole.GROUP_ADMIN)
+
+    response = client.get("/admin-accounts")
+
+    assert response.status_code == 403
+
+
 def test_admin_account_create_redirects_and_calls_services() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())

@@ -12,7 +12,7 @@
           <span class="text-sm text-stone-500">Filtrer grupper</span>
           <input class="app-input" id="q" name="q" placeholder="Søk etter gruppe" type="search" value="{{ query }}">
         </label>
-        {% if current_user.role == "Admin" %}
+        {% if current_user.role in ["Admin", "Gruppeadmin"] %}
           <a class="app-button-secondary" href="/groups/new">Opprett ny gruppe</a>
         {% endif %}
         <button class="app-button" type="submit">Søk</button>

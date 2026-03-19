@@ -42,7 +42,7 @@
               <button class="app-button" type="submit">Lagre gruppe</button>
             </div>
           </form>
-          {% if current_user.role == "Admin" %}
+          {% if can_manage_group %}
             <div class="mt-3 flex flex-wrap gap-3">
               <form action="/groups/{{ group.group_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne gruppen?');">
                 <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-md hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {% if group.delete_blockers %}disabled{% endif %}>Slett gruppe</button>

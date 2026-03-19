@@ -120,6 +120,17 @@ def test_spotify_now_playing_rejects_non_admin_users() -> None:
     assert response.status_code == 403
 
 
+def test_spotify_now_playing_rejects_group_admin_users() -> None:
+    client, session_cookie = _build_authed_client(UserRole.GROUP_ADMIN)
+
+    response = client.get(
+        "/spotify/now-playing",
+        cookies={"kvarteret_session": session_cookie},
+    )
+
+    assert response.status_code == 403
+
+
 def test_spotify_now_playing_page_renders_track_and_admin_actions() -> None:
     client, session_cookie = _build_authed_client(UserRole.ADMIN)
 

@@ -59,7 +59,7 @@
             <h2 class="text-2xl font-medium tracking-tight text-stone-900">Frivilligprofil</h2>
             <span class="text-sm text-stone-500">Opprettet {{ volunteer.created_at.strftime("%Y-%m-%d") }}</span>
           </div>
-          {% if current_user.role == "Admin" %}
+          {% if can_manage_volunteer_profile %}
             <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post">
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fornavn</span>

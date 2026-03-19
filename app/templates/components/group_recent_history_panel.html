@@ -8,6 +8,11 @@
     <div class="mb-5 rounded-2xl bg-kvarteret-background p-4">
       <h3 class="text-xl font-medium tracking-tight text-stone-900">Legg til frivillig</h3>
       {% if group.positions %}
+        {% if assignment_error %}
+          <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {{ assignment_error }}
+          </div>
+        {% endif %}
         <form action="/groups/{{ group.group_id }}/role-assignments" class="mt-4 grid gap-4" method="post">
           <label class="grid gap-1">
             <span class="text-sm text-stone-500">Finn frivillig</span>

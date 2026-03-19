@@ -14,7 +14,7 @@
         </label>
         <div class="flex flex-wrap gap-3">
           <button class="app-button" type="submit">Søk</button>
-          {% if current_user.role == "Admin" %}
+          {% if current_user.role in ["Admin", "Gruppeadmin"] %}
             <a class="app-button-secondary" href="/courses/new">Opprett kurs</a>
           {% endif %}
         </div>

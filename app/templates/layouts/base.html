@@ -110,7 +110,7 @@
                   <a class="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-medium text-kvarteret-night no-underline {% if section == 'my-account' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)] hover:bg-kvarteret-red-dark{% else %}bg-kvarteret-red/10 hover:bg-[#e2d0b3]{% endif %}" href="/my-account">
                     {{ current_user.display_name or current_user.username }}
                   </a>
-                  {% if request.state.show_admin_tools %}
+                  {% if request.state.show_management_tools %}
                     <a class="inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-medium no-underline {% if section == 'volunteer-applications' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)] hover:bg-kvarteret-red-dark{% else %}bg-kvarteret-red/10 text-kvarteret-night hover:bg-[#e2d0b3]{% endif %}" href="/volunteer-applications">
                       <span>Registreringer</span>
                       {% if request.state.volunteer_application_pending_count %}

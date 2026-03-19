@@ -5,7 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_volunteers_service, require_admin_user, require_volunteer_photo_manager
+from app.dependencies import get_volunteers_service, require_management_user
 from app.observability import log_admin_activity
 from app.services.volunteers import (
     DuplicateRoleAssignmentError,
@@ -34,7 +34,7 @@ async def volunteer_update_profile(
     address: str | None = Form(default=None),
     postal_code: str | None = Form(default=None),
     employment_status: str | None = Form(default=None),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
@@ -71,7 +71,7 @@ async def volunteer_add_role_assignment(
     group_id: int = Form(...),
     role_id: int = Form(...),
     contract_signed: bool = Form(default=False),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
@@ -116,7 +116,7 @@ async def volunteer_update_role_assignment(
     group_id: int = Form(...),
     role_id: int = Form(...),
     contract_signed: bool = Form(default=False),
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
@@ -157,7 +157,7 @@ async def volunteer_delete_role_assignment(
     request: Request,
     volunteer_id: int,
     assignment_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
@@ -189,7 +189,7 @@ async def volunteer_upload_photo(
     request: Request,
     volunteer_id: int,
     photo: UploadFile = File(...),
-    current_user=Depends(require_volunteer_photo_manager),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
@@ -221,7 +221,7 @@ async def volunteer_upload_photo(
 async def volunteer_delete_photo(
     request: Request,
     volunteer_id: int,
-    current_user=Depends(require_volunteer_photo_manager),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
@@ -243,7 +243,7 @@ async def volunteer_delete_document(
     request: Request,
     volunteer_id: int,
     document_id: int,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:

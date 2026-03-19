@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.dependencies import get_courses_service, require_admin_user, require_authenticated_user
+from app.dependencies import get_courses_service, require_authenticated_user, require_management_user
 from app.errors import NotConfiguredError
 from app.services.courses import CoursesService
 from app.web.route_helpers import not_configured_http_exception
@@ -38,7 +38,7 @@ async def courses_index(
 @router.get("/courses/new")
 async def courses_new(
     request: Request,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
 ):
     return templates.TemplateResponse(
         request,

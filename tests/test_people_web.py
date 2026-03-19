@@ -5,9 +5,8 @@ from datetime import UTC, date, datetime
 from fastapi.testclient import TestClient
 
 from app.auth.roles import UserRole
-from app.dependencies import get_admin_accounts_service, get_groups_service, get_volunteers_service
+from app.dependencies import get_groups_service, get_volunteers_service
 from app.main import create_app
-from app.services.admin_accounts import AdminAccountDetail
 from app.services.groups import GroupBreakdownItem, GroupMemberCount, OrgSemesterDetailed, SemesterRetentionStats
 from app.services.volunteer_models import (
     CardItem,
@@ -26,6 +25,7 @@ from tests.helpers import make_authenticated_user, override_authenticated_user
 
 class FakeVolunteersService:
     def __init__(self) -> None:
+        self.updated_profile_calls: list[dict[str, object | None]] = []
         self.updated_role_assignment_calls: list[dict[str, int | bool]] = []
         self.uploaded_photo_calls: list[dict[str, str | int | None]] = []
         self.deleted_photo_calls: list[int] = []
@@ -110,6 +110,38 @@ class FakeVolunteersService:
     async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
         return [AssignmentRoleOption(role_id=2, group_id=group_id, role_name="Shift lead", pingvin_points=4)]
 
+    async def update_volunteer_profile(
+        self,
+        *,
+        volunteer_id: int,
+        first_name: str | None,
+        last_name: str,
+        email: str | None,
+        phone: str | None,
+        birth_date,
+        gender_code: str,
+        address: str | None,
+        postal_code: str | None,
+        employment_status: int | None,
+    ) -> VolunteerDetail:
+        self.updated_profile_calls.append(
+            {
+                "volunteer_id": volunteer_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "email": email,
+                "phone": phone,
+                "birth_date": birth_date,
+                "gender_code": gender_code,
+                "address": address,
+                "postal_code": postal_code,
+                "employment_status": employment_status,
+            }
+        )
+        detail = await self.get_volunteer_detail(volunteer_id)
+        assert detail is not None
+        return detail
+
     async def update_role_assignment_for_volunteer(
         self,
         volunteer_id: int,
@@ -145,26 +177,6 @@ class FakeVolunteersService:
 
     async def delete_photo(self, volunteer_id: int) -> None:
         self.deleted_photo_calls.append(volunteer_id)
-
-
-class FakeAdminAccountsService:
-    def __init__(self, managed_group_ids: list[int]) -> None:
-        self.managed_group_ids = managed_group_ids
-
-    async def get_admin_account_detail_for_auth_user(self, auth_user_id):
-        return AdminAccountDetail(
-            user_account_id=5,
-            auth_user_id=auth_user_id,
-            legacy_user_id=None,
-            username="groupadmin",
-            email="group.admin@example.test",
-            display_name="Group Admin",
-            role=UserRole.GROUP_ADMIN,
-            last_login=None,
-            created_at=datetime(2026, 3, 13, tzinfo=UTC),
-            migrated_at=None,
-            group_admin_group_ids=self.managed_group_ids,
-        )
 
 
 class FakeGroupsService:
@@ -243,7 +255,6 @@ def test_group_admin_can_upload_photo_for_volunteer_in_their_group() -> None:
     override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
-    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService([9])
     client = TestClient(app)
 
     detail_response = client.get("/volunteers/12")
@@ -268,12 +279,55 @@ def test_group_admin_can_upload_photo_for_volunteer_in_their_group() -> None:
     ]
 
 
-def test_group_admin_cannot_upload_photo_for_other_groups() -> None:
+def test_group_admin_can_update_profile_for_any_volunteer() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
-    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService([7])
+    client = TestClient(app)
+
+    detail_response = client.get("/volunteers/12")
+    update_response = client.post(
+        "/volunteers/12?_method=PATCH",
+        data={
+            "first_name": "Updated",
+            "last_name": "Person",
+            "email": "updated@example.test",
+            "phone": "12345678",
+            "birth_date": "1815-12-10",
+            "gender": "K",
+            "address": "Updated address",
+            "postal_code": "5000",
+            "employment_status": "2",
+        },
+        follow_redirects=False,
+    )
+
+    assert detail_response.status_code == 200
+    assert 'name="gender"' in detail_response.text
+    assert update_response.status_code == 303
+    assert update_response.headers["location"] == "/volunteers/12"
+    assert volunteers_service.updated_profile_calls == [
+        {
+            "volunteer_id": 12,
+            "first_name": "Updated",
+            "last_name": "Person",
+            "email": "updated@example.test",
+            "phone": "12345678",
+            "birth_date": date(1815, 12, 10),
+            "gender_code": "K",
+            "address": "Updated address",
+            "postal_code": "5000",
+            "employment_status": 2,
+        }
+    ]
+
+
+def test_group_admin_can_upload_photo_for_any_volunteer() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     client = TestClient(app)
 
     detail_response = client.get("/volunteers/12")
@@ -284,9 +338,53 @@ def test_group_admin_cannot_upload_photo_for_other_groups() -> None:
     )
 
     assert detail_response.status_code == 200
-    assert 'type="file"' not in detail_response.text
-    assert upload_response.status_code == 403
-    assert volunteers_service.uploaded_photo_calls == []
+    assert 'type="file"' in detail_response.text
+    assert upload_response.status_code == 303
+    assert volunteers_service.uploaded_photo_calls == [
+        {
+            "volunteer_id": 12,
+            "filename": "avatar.png",
+            "content_type": "image/png",
+            "content_length": 10,
+        }
+    ]
+
+
+def test_group_admin_can_update_profile_for_any_volunteer_even_without_shared_group() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    detail_response = client.get("/volunteers/12")
+    update_response = client.post(
+        "/volunteers/12?_method=PATCH",
+        data={
+            "first_name": "Updated",
+            "last_name": "Person",
+            "gender": "K",
+        },
+        follow_redirects=False,
+    )
+
+    assert detail_response.status_code == 200
+    assert 'name="gender"' in detail_response.text
+    assert update_response.status_code == 303
+    assert volunteers_service.updated_profile_calls == [
+        {
+            "volunteer_id": 12,
+            "first_name": "Updated",
+            "last_name": "Person",
+            "email": None,
+            "phone": None,
+            "birth_date": None,
+            "gender_code": "K",
+            "address": None,
+            "postal_code": None,
+            "employment_status": None,
+        }
+    ]
 
 
 def test_volunteer_list_fragment_renders_with_fake_service() -> None:

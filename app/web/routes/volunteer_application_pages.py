@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.dependencies import get_current_user, get_volunteer_applications_service, get_volunteers_service, require_admin_user
+from app.dependencies import (
+    get_current_user,
+    get_volunteer_applications_service,
+    get_volunteers_service,
+    require_management_user,
+)
 from app.observability import log_admin_activity
 from app.services.volunteer_applications import VolunteerApplicationsService
 from app.services.volunteer_options import GENDER_OPTIONS
@@ -15,7 +20,7 @@ router = APIRouter()
 @router.get("/volunteer-applications")
 async def volunteer_applications_index(
     request: Request,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
@@ -47,7 +52,7 @@ async def volunteer_applications_index(
 async def volunteer_application_assignment_fields(
     request: Request,
     group_id: int | None = None,
-    current_user=Depends(require_admin_user),
+    current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     group_options = await volunteers_service.list_assignment_groups()
@@ -63,7 +68,6 @@ async def volunteer_application_assignment_fields(
             "role_options": role_options,
         },
     )
-
 
 @router.get("/apply/{token}")
 async def volunteer_application_form(
