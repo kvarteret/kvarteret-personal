@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import group_admin_memberships, grupper, historie, nytt_personal, personal, personal_bilde, registrering, user_accounts, verv
 from app.media_tokens import MediaTokenService
+from app.services.phone_numbers import normalize_phone_number
 from app.services.semester import get_current_semester_code
 from app.services.volunteer_applications import (
     VolunteerApplicationConflictError,
@@ -143,7 +144,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             "fodselsdato": submission.birth_date,
             "gateadresse": submission.address,
             "postnummerid": submission.postal_code,
-            "telefon": submission.phone,
+            "telefon": normalize_phone_number(submission.phone),
             "photo_sha1": photo_sha1,
             "photo_filetype": photo_filetype,
         }
@@ -223,7 +224,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             fodselsdato=registration.birth_date,
                             gateadresse=registration.address,
                             postnummerid=registration.postal_code,
-                            telefon=registration.phone,
+                            telefon=normalize_phone_number(registration.phone),
                         )
                         .returning(personal.c.id)
                     )

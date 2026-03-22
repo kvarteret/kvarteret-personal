@@ -176,6 +176,22 @@ class DuplicateInviteVolunteerApplicationsService(FakeVolunteerApplicationsServi
         raise VolunteerAlreadyExistsError(10017, email)
 
 
+class InvalidPhoneVolunteerApplicationsService(FakeVolunteerApplicationsService):
+    async def submit_volunteer_application(
+        self,
+        token,
+        submission,
+        *,
+        base_url: str | None = None,
+        photo_filename: str | None = None,
+        photo_content: bytes | None = None,
+        photo_content_type: str | None = None,
+    ):
+        from app.services.volunteer_applications import VolunteerApplicationValidationError
+
+        raise VolunteerApplicationValidationError("Phone number must be entered in E.164 format, for example +4791234567.")
+
+
 def test_volunteer_application_pages_render() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
@@ -202,6 +218,8 @@ def test_volunteer_application_pages_render() -> None:
     assert 'data-photo-preview' in public_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in public_response.text
     assert "URL.createObjectURL(file)" in public_response.text
+    assert 'pattern="\\+[1-9][0-9]{7,14}"' in public_response.text
+    assert 'placeholder="+4791234567"' in public_response.text
 
 
 def test_volunteer_application_detail_page_renders_full_preview() -> None:
@@ -330,7 +348,7 @@ def test_volunteer_application_submit_redirects_to_pending_status_page() -> None
         data={
             "first_name": "Sample",
             "last_name": "Registrant",
-            "phone": "00000000",
+            "phone": "+4791234567",
             "birth_date": "1815-12-10",
             "gender": "K",
             "address": "Example address",
@@ -355,7 +373,7 @@ def test_volunteer_application_submit_accepts_profile_photo_upload() -> None:
         data={
             "first_name": "Sample",
             "last_name": "Registrant",
-            "phone": "00000000",
+            "phone": "+4791234567",
             "birth_date": "1815-12-10",
             "gender": "K",
             "address": "Example address",
@@ -377,6 +395,7 @@ def test_volunteer_application_submit_accepts_profile_photo_upload() -> None:
     ]
 
 
+<<<<<<< HEAD
 def test_volunteer_application_submit_rejects_profile_photo_over_3mb() -> None:
     app = create_app()
     override_authenticated_user(app, None)
@@ -402,6 +421,30 @@ def test_volunteer_application_submit_rejects_profile_photo_over_3mb() -> None:
     assert response.status_code == 413
     assert response.json() == {"detail": "Photos must be 3 MB or smaller."}
     assert volunteer_applications_service.submission_calls == []
+
+
+def test_volunteer_application_submit_rejects_non_e164_phone() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: InvalidPhoneVolunteerApplicationsService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/apply/token-123",
+        data={
+            "first_name": "Sample",
+            "last_name": "Registrant",
+            "phone": "00000000",
+            "birth_date": "1815-12-10",
+            "gender": "K",
+            "address": "Example address",
+            "postal_code": "0000",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "E.164" in response.text
 
 
 def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:

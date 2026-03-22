@@ -26,7 +26,8 @@
         </label>
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Telefon</span>
-          <input class="app-input" name="phone" type="text" value="{{ volunteer_application.phone or '' }}">
+          <input class="app-input" name="phone" type="tel" inputmode="tel" pattern="\+[1-9][0-9]{7,14}" placeholder="+4791234567" required value="{{ volunteer_application.phone or '' }}">
+          <span class="text-xs text-stone-500">Må være i E.164-format, for eksempel <code>+4791234567</code>.</span>
         </label>
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Fødselsdato</span>

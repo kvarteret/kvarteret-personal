@@ -16,6 +16,7 @@ from app.media_tokens import MediaTokenService
 from app.observability import log_operation_timing
 from app.services.common import normalize_search_query
 from app.services.photo_processing import process_uploaded_photo
+from app.services.phone_numbers import normalize_phone_number
 from app.services.volunteer_mappers import (
     build_document_storage_path,
     map_document_item,
@@ -240,7 +241,7 @@ class VolunteersService:
             first_name=first_name,
             last_name=last_name.strip(),
             email=_normalize_optional_text(email),
-            phone=_normalize_optional_text(phone),
+            phone=normalize_phone_number(_normalize_optional_text(phone)),
             birth_date=birth_date,
             gender_code=normalize_gender_code(gender_code),
             address=_normalize_optional_text(address),

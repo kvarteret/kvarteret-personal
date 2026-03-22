@@ -12,6 +12,7 @@ from app.services.volunteer_applications import (
     VolunteerAlreadyExistsError,
     VolunteerApplicationDetail,
     VolunteerApplicationSubmissionInput,
+    VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
 from app.services.mobile_card import (
@@ -54,6 +55,7 @@ class FakeVolunteerApplicationsRepository:
         self.pending_count = 3
         self.count_calls = 0
         self.saved_registration_ids: list[int] = []
+        self.saved_submission_phones: list[str | None] = []
         self.approved_registration_ids: list[int] = []
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, object | None]] = []
@@ -137,6 +139,7 @@ class FakeVolunteerApplicationsRepository:
         photo_filetype: str | None,
     ) -> None:
         self.saved_registration_ids.append(registration_id)
+        self.saved_submission_phones.append(submission.phone)
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return self.existing_volunteer_ids_by_email.get(email.lower())
@@ -392,7 +395,7 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
         VolunteerApplicationSubmissionInput(
             first_name="Ada",
             last_name="Lovelace",
-            phone=None,
+            phone="+4799999998",
             birth_date=None,
             gender="K",
             address=None,
@@ -404,6 +407,7 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
     assert detail.registration_id == 7
     assert refreshed == 4
     assert repository.saved_registration_ids == [7]
+    assert repository.saved_submission_phones == ["+4799999998"]
     assert repository.count_calls == 2
 
 
@@ -424,7 +428,7 @@ async def test_volunteer_applications_submit_notifies_group_admins_with_review_l
         VolunteerApplicationSubmissionInput(
             first_name="Ada",
             last_name="Lovelace",
-            phone="99999999",
+            phone="+4799999998",
             birth_date=None,
             gender="K",
             address="Adresse 1",
@@ -461,6 +465,57 @@ async def test_volunteer_applications_submit_notifies_group_admins_with_review_l
             ),
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_submit_preserves_valid_e164_phone_number() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    await service.submit_volunteer_application(
+        "token-123",
+        VolunteerApplicationSubmissionInput(
+            first_name="Ada",
+            last_name="Lovelace",
+            phone="+4799999998",
+            birth_date=None,
+            gender="K",
+            address=None,
+            postal_code=None,
+        ),
+    )
+
+    assert repository.saved_submission_phones == ["+4799999998"]
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_submit_requires_e164_phone_number() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    with pytest.raises(VolunteerApplicationValidationError):
+        await service.submit_volunteer_application(
+            "token-123",
+            VolunteerApplicationSubmissionInput(
+                first_name="Ada",
+                last_name="Lovelace",
+                phone="99999999",
+                birth_date=None,
+                gender="K",
+                address=None,
+                postal_code=None,
+            ),
+        )
 
 
 @pytest.mark.asyncio

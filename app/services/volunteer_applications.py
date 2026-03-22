@@ -12,6 +12,7 @@ from app.config import Settings
 from app.errors import NotConfiguredError
 from app.services.email import EmailSenderProtocol
 from app.services.photo_processing import process_uploaded_photo
+from app.services.phone_numbers import require_e164_phone_number
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,10 @@ class VolunteerApplicationNotFoundError(VolunteerApplicationsError):
 
 
 class VolunteerApplicationConflictError(VolunteerApplicationsError):
+    pass
+
+
+class VolunteerApplicationValidationError(VolunteerApplicationsError):
     pass
 
 
@@ -238,6 +243,10 @@ class VolunteerApplicationsService:
         existing = await self.get_volunteer_application_by_token(token)
         if existing is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
+        try:
+            submission.phone = require_e164_phone_number(submission.phone)
+        except ValueError as exc:
+            raise VolunteerApplicationValidationError(str(exc)) from exc
 
         photo_sha1 = existing.photo_sha1
         photo_filetype = existing.photo_filetype

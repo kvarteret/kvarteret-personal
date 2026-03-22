@@ -19,6 +19,7 @@ from app.services.volunteer_applications import (
     VolunteerAlreadyExistsError,
     VolunteerApplicationNotFoundError,
     VolunteerApplicationSubmissionInput,
+    VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
 from app.services.volunteers import VolunteersService
@@ -166,7 +167,7 @@ async def volunteer_application_submit(
     token: str,
     first_name: str | None = Form(default=None),
     last_name: str = Form(...),
-    phone: str | None = Form(default=None),
+    phone: str = Form(...),
     birth_date: str | None = Form(default=None),
     gender: str = Form(default="A"),
     address: str | None = Form(default=None),
@@ -199,6 +200,8 @@ async def volunteer_application_submit(
         )
     except VolunteerApplicationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except VolunteerApplicationConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except PhotoUploadTooLargeError as exc:
