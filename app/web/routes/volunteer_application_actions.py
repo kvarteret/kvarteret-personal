@@ -6,12 +6,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import RedirectResponse
 
 from app.dependencies import (
+    get_settings,
     get_volunteer_applications_service,
     get_volunteers_service,
     require_management_user,
 )
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
+from app.services.photo_processing import InvalidPhotoError, PhotoUploadTooLargeError
 from app.services.volunteer_applications import (
     VolunteerApplicationConflictError,
     VolunteerAlreadyExistsError,
@@ -20,6 +22,7 @@ from app.services.volunteer_applications import (
     VolunteerApplicationsService,
 )
 from app.services.volunteers import VolunteersService
+from app.web.upload_helpers import read_upload_file_limited
 from app.web.templates import templates
 
 router = APIRouter()
@@ -169,10 +172,15 @@ async def volunteer_application_submit(
     address: str | None = Form(default=None),
     postal_code: str | None = Form(default=None),
     profile_photo: UploadFile | None = File(default=None),
+    settings=Depends(get_settings),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
-        photo_content = await profile_photo.read() if profile_photo is not None else None
+        photo_content = (
+            await read_upload_file_limited(profile_photo, max_bytes=settings.photo_upload_max_bytes)
+            if profile_photo is not None and profile_photo.filename
+            else None
+        )
         await volunteer_applications_service.submit_volunteer_application(
             token,
             VolunteerApplicationSubmissionInput(
@@ -193,6 +201,13 @@ async def volunteer_application_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except VolunteerApplicationConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PhotoUploadTooLargeError as exc:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
+    except InvalidPhotoError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except NotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    finally:
+        if profile_photo is not None:
+            await profile_photo.close()
     return RedirectResponse(url=f"/apply/{token}/submitted", status_code=status.HTTP_303_SEE_OTHER)

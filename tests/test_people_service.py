@@ -1,8 +1,21 @@
 from datetime import UTC, date, datetime
+from io import BytesIO
 
 import pytest
+from PIL import Image
 
 from app.services.volunteers import VolunteersService, VolunteerDetail
+
+
+def _build_png_bytes() -> bytes:
+    image = Image.new("RGBA", (8, 8), (12, 34, 56, 255))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    image.close()
+    return buffer.getvalue()
+
+
+PNG_BYTES = _build_png_bytes()
 
 
 def _build_person_detail() -> VolunteerDetail:
@@ -113,3 +126,64 @@ async def test_search_cursor_offset_is_clamped(monkeypatch):
 
     assert seen["offset"] == 10_000
     assert page.items == []
+
+
+@pytest.mark.asyncio
+async def test_upload_photo_normalizes_to_jpeg_before_storage() -> None:
+    uploaded: dict[str, object] = {}
+    saved_record: dict[str, object] = {}
+
+    class FakeRepository:
+        async def volunteer_exists(self, volunteer_id: int) -> bool:
+            return volunteer_id == 1
+
+        async def fetch_photo_record(self, volunteer_id: int):
+            return None
+
+        async def save_photo_record(self, *, volunteer_id: int, filename_hash: str, extension: str, existing: bool) -> None:
+            saved_record.update(
+                {
+                    "volunteer_id": volunteer_id,
+                    "filename_hash": filename_hash,
+                    "extension": extension,
+                    "existing": existing,
+                }
+            )
+
+    class FakeStorage:
+        def upload_photo(self, path: str, content: bytes, content_type: str | None = None) -> None:
+            uploaded.update(
+                {
+                    "path": path,
+                    "content": content,
+                    "content_type": content_type,
+                }
+            )
+
+        def remove_photo(self, path: str) -> None:
+            raise AssertionError("remove_photo should not be called")
+
+    class FakeMediaTokenService:
+        def build_photo_media_url(self, path: str) -> str:
+            return f"/media/photos/{path}?token=test"
+
+    service = VolunteersService(
+        repository=FakeRepository(),  # type: ignore[arg-type]
+        storage_service=FakeStorage(),  # type: ignore[arg-type]
+        media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
+    )
+
+    result = await service.upload_photo(
+        volunteer_id=1,
+        filename="avatar.png",
+        content=PNG_BYTES,
+        content_type="image/png",
+    )
+
+    assert uploaded["path"].endswith(".jpg")
+    assert uploaded["content_type"] == "image/jpeg"
+    assert isinstance(uploaded["content"], bytes)
+    assert len(uploaded["content"]) > 0
+    assert saved_record["extension"] == "jpg"
+    assert result.storage_path.endswith(".jpg")
+    assert result.photo_url.endswith(".jpg?token=test")

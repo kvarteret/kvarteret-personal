@@ -119,6 +119,8 @@ def build_application_container(settings: Settings | None = None) -> Application
             storage_service=storage_service,
             media_token_service=media_token_service,
             detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
+            photo_upload_max_bytes=resolved_settings.photo_upload_max_bytes,
+            photo_max_dimension=resolved_settings.photo_max_dimension,
         ),
         groups_service=GroupsService(session_factory=session_factory),
         courses_service=CoursesService(session_factory=session_factory),

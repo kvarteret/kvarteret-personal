@@ -5,8 +5,9 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_volunteers_service, require_management_user
+from app.dependencies import get_settings, get_volunteers_service, require_management_user
 from app.observability import log_admin_activity
+from app.services.photo_processing import InvalidPhotoError, PhotoUploadTooLargeError
 from app.services.volunteers import (
     DuplicateRoleAssignmentError,
     DocumentNotFoundError,
@@ -16,6 +17,7 @@ from app.services.volunteers import (
     VolunteersService,
     VolunteerNotFoundError,
 )
+from app.web.upload_helpers import read_upload_file_limited
 from app.web.routes.volunteer_route_helpers import render_role_assignments_panel, require_existing_volunteer
 
 router = APIRouter()
@@ -208,20 +210,26 @@ async def volunteer_upload_photo(
     request: Request,
     volunteer_id: int,
     photo: UploadFile = File(...),
+    settings=Depends(get_settings),
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
         if not photo.filename:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a photo to upload.")
+        photo_content = await read_upload_file_limited(photo, max_bytes=settings.photo_upload_max_bytes)
         await volunteers_service.upload_photo(
             volunteer_id=volunteer_id,
             filename=photo.filename,
-            content=await photo.read(),
+            content=photo_content,
             content_type=photo.content_type,
         )
     except VolunteerNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PhotoUploadTooLargeError as exc:
+        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
+    except InvalidPhotoError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except UnsupportedUploadError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     finally:
