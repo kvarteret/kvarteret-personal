@@ -48,14 +48,76 @@
           <span class="text-sm text-stone-500">Postnummer</span>
           <input class="app-input" name="postal_code" type="text" value="{{ volunteer_application.postal_code or '' }}">
         </label>
-        <label class="grid gap-1 md:col-span-2">
-          <span class="text-sm text-stone-500">Profilbilde</span>
-          <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="app-input file:px-0 file:text-sm" name="profile_photo" type="file">
-        </label>
+        <section class="grid gap-4 rounded-3xl border border-stone-200 bg-stone-50/80 p-4 md:col-span-2 md:grid-cols-[9rem_minmax(0,1fr)] md:items-start">
+          <div class="flex justify-center md:justify-start">
+            <div class="flex h-36 w-36 items-center justify-center overflow-hidden rounded-3xl border border-dashed border-stone-300 bg-white shadow-sm">
+              <img
+                alt="Forhåndsvisning av profilbilde"
+                class="h-full w-full object-cover {% if not volunteer_application.photo_url %}hidden{% endif %}"
+                data-photo-preview
+                decoding="async"
+                {% if volunteer_application.photo_url %}src="{{ volunteer_application.photo_url }}"{% endif %}
+              >
+              <div class="px-4 text-center text-sm leading-6 text-stone-500 {% if volunteer_application.photo_url %}hidden{% endif %}" data-photo-placeholder>
+                Velg et bilde for å se forhåndsvisning her.
+              </div>
+            </div>
+          </div>
+          <label class="grid gap-2">
+            <span class="text-sm text-stone-500">Profilbilde</span>
+            <input
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              class="app-input file:px-0 file:text-sm"
+              data-photo-input
+              name="profile_photo"
+              type="file"
+            >
+            <p class="text-sm leading-6 text-stone-500">
+              Du kan laste opp og kontrollere bildet før du sender inn. Maks størrelse er 3 MB.
+            </p>
+          </label>
+        </section>
         <div class="md:col-span-2">
           <button class="app-button" type="submit">Send inn registrering</button>
         </div>
       </form>
     </section>
   </section>
+  <script>
+    (() => {
+      const input = document.querySelector("[data-photo-input]");
+      const preview = document.querySelector("[data-photo-preview]");
+      const placeholder = document.querySelector("[data-photo-placeholder]");
+      if (!(input instanceof HTMLInputElement) || !(preview instanceof HTMLImageElement) || placeholder === null) {
+        return;
+      }
+
+      let objectUrl = null;
+      input.addEventListener("change", () => {
+        const [file] = input.files || [];
+        if (!file) {
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = null;
+          }
+          if (preview.getAttribute("src")) {
+            preview.classList.remove("hidden");
+            placeholder.classList.add("hidden");
+          } else {
+            preview.classList.add("hidden");
+            placeholder.classList.remove("hidden");
+          }
+          return;
+        }
+
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+        }
+        objectUrl = URL.createObjectURL(file);
+        preview.src = objectUrl;
+        preview.classList.remove("hidden");
+        placeholder.classList.add("hidden");
+      });
+    })();
+  </script>
 {% endblock %}

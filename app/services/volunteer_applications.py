@@ -11,6 +11,7 @@ from app.cache import TTLCache
 from app.config import Settings
 from app.errors import NotConfiguredError
 from app.services.email import EmailSenderProtocol
+from app.services.photo_processing import process_uploaded_photo
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -251,15 +252,20 @@ class VolunteerApplicationsService:
             if extension not in {"jpg", "jpeg", "png", "webp"}:
                 raise VolunteerApplicationConflictError("Photos must be jpg, jpeg, png, or webp.")
             storage_service = self._require_storage_service()
-            photo_sha1 = existing.photo_sha1 or token_hex(20)
-            photo_filetype = extension
+            photo_sha1 = token_hex(20)
+            processed_photo = process_uploaded_photo(
+                photo_content,
+                max_upload_bytes=self.settings.photo_upload_max_bytes,
+                max_dimension=self.settings.photo_max_dimension,
+            )
+            photo_filetype = processed_photo.extension
             new_storage_path = _build_photo_storage_path(photo_sha1, photo_filetype)
             assert new_storage_path is not None
             await to_thread(
                 storage_service.upload_photo,
                 new_storage_path,
-                photo_content,
-                _resolve_content_type(safe_filename, photo_content_type),
+                processed_photo.content,
+                processed_photo.content_type,
             )
             uploaded_new_photo = True
 

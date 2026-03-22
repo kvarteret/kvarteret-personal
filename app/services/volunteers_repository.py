@@ -241,6 +241,13 @@ class VolunteersRepository(SqlAlchemyRepository):
     async def volunteer_exists(self, volunteer_id: int) -> bool:
         return bool(await self.fetch_scalar(select(exists().where(volunteer_records.c.id == volunteer_id))))
 
+    async def find_volunteer_id_by_email(self, email: str) -> int | None:
+        return await self.fetch_scalar(
+            select(volunteer_records.c.id)
+            .where(func.lower(func.coalesce(volunteer_records.c.epost, "")) == email.lower())
+            .limit(1)
+        )
+
     async def fetch_photo_record(self, volunteer_id: int):
         return await self.fetch_first_mapping(
             select(volunteer_photos.c.sha1, volunteer_photos.c.filetype)

@@ -198,6 +198,10 @@ def test_volunteer_application_pages_render() -> None:
     assert "Du trenger ikke sende inn på nytt." in submitted_response.text
     assert 'enctype="multipart/form-data"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
+    assert 'data-photo-input' in public_response.text
+    assert 'data-photo-preview' in public_response.text
+    assert 'src="/media/photos/abc123.jpg?token=test"' in public_response.text
+    assert "URL.createObjectURL(file)" in public_response.text
 
 
 def test_volunteer_application_detail_page_renders_full_preview() -> None:
@@ -371,6 +375,33 @@ def test_volunteer_application_submit_accepts_profile_photo_upload() -> None:
             "photo_content_type": "image/png",
         }
     ]
+
+
+def test_volunteer_application_submit_rejects_profile_photo_over_3mb() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/apply/token-123",
+        data={
+            "first_name": "Sample",
+            "last_name": "Registrant",
+            "phone": "00000000",
+            "birth_date": "1815-12-10",
+            "gender": "K",
+            "address": "Example address",
+            "postal_code": "0000",
+        },
+        files={"profile_photo": ("avatar.png", b"x" * (3 * 1024 * 1024 + 1), "image/png")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Photos must be 3 MB or smaller."}
+    assert volunteer_applications_service.submission_calls == []
 
 
 def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:

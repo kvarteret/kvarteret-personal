@@ -15,6 +15,7 @@ from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
 from app.observability import log_operation_timing
 from app.services.common import normalize_search_query
+from app.services.photo_processing import process_uploaded_photo
 from app.services.volunteer_mappers import (
     build_document_storage_path,
     map_document_item,
@@ -64,11 +65,15 @@ class VolunteersService:
         storage_service: StorageService | None = None,
         media_token_service: MediaTokenService | None = None,
         detail_cache_ttl_seconds: int | None = None,
+        photo_upload_max_bytes: int = 3 * 1024 * 1024,
+        photo_max_dimension: int = 2048,
     ) -> None:
         self.repository = repository or VolunteersRepository()
         self.storage_service = storage_service
         self.media_token_service = media_token_service
         self.detail_cache_ttl_seconds = detail_cache_ttl_seconds or 300
+        self.photo_upload_max_bytes = photo_upload_max_bytes
+        self.photo_max_dimension = photo_max_dimension
         self._shell_cache: TTLCache[int, VolunteerDetail] = TTLCache(
             ttl_seconds=self.detail_cache_ttl_seconds,
             max_entries=2048,
@@ -371,20 +376,30 @@ class VolunteersService:
         if not await self.repository.volunteer_exists(volunteer_id):
             raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
 
+        processed_photo = process_uploaded_photo(
+            content,
+            max_upload_bytes=self.photo_upload_max_bytes,
+            max_dimension=self.photo_max_dimension,
+        )
         existing = await self.repository.fetch_photo_record(volunteer_id)
-        filename_hash = existing["sha1"] if existing else token_hex(20)
-        storage_path = f"{filename_hash}.{extension}"
+        filename_hash = token_hex(20)
+        storage_path = f"{filename_hash}.{processed_photo.extension}"
         old_storage_path = (
             f"{existing['sha1']}.{existing['filetype']}" if existing and existing.get("filetype") else None
         )
 
         storage_service = self._require_storage_service()
-        await to_thread(storage_service.upload_photo, storage_path, content, _resolve_content_type(safe_filename, content_type))
+        await to_thread(
+            storage_service.upload_photo,
+            storage_path,
+            processed_photo.content,
+            processed_photo.content_type,
+        )
         try:
             await self.repository.save_photo_record(
                 volunteer_id=volunteer_id,
                 filename_hash=filename_hash,
-                extension=extension,
+                extension=processed_photo.extension,
                 existing=bool(existing),
             )
         except Exception:
@@ -400,6 +415,18 @@ class VolunteersService:
             photo_url=_require_media_token_service(self.media_token_service).build_photo_media_url(storage_path),
             storage_path=storage_path,
         )
+
+    async def get_photo_storage_path(self, volunteer_id: int) -> str | None:
+        row = await self.repository.fetch_photo_record(volunteer_id)
+        if not row or not row.get("sha1") or not row.get("filetype"):
+            return None
+        return f"{row['sha1']}.{row['filetype']}"
+
+    async def find_volunteer_id_by_email(self, email: str) -> int | None:
+        normalized = email.strip().lower()
+        if not normalized:
+            return None
+        return await self.repository.find_volunteer_id_by_email(normalized)
 
     async def delete_photo(self, volunteer_id: int) -> None:
         row = await self.repository.fetch_photo_record(volunteer_id)

@@ -366,6 +366,24 @@ def test_group_admin_can_upload_photo_for_any_volunteer() -> None:
     ]
 
 
+def test_group_admin_photo_upload_rejects_files_over_3mb() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/volunteers/12/photo",
+        files={"photo": ("avatar.png", b"x" * (3 * 1024 * 1024 + 1), "image/png")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Photos must be 3 MB or smaller."}
+    assert volunteers_service.uploaded_photo_calls == []
+
+
 def test_group_admin_can_update_profile_for_any_volunteer_even_without_shared_group() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
