@@ -395,7 +395,6 @@ def test_volunteer_application_submit_accepts_profile_photo_upload() -> None:
     ]
 
 
-<<<<<<< HEAD
 def test_volunteer_application_submit_rejects_profile_photo_over_3mb() -> None:
     app = create_app()
     override_authenticated_user(app, None)
