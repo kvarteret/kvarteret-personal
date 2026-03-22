@@ -3,13 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-try:
-    import phonenumbers
-    from phonenumbers import NumberParseException, PhoneNumberFormat
-except ModuleNotFoundError:  # pragma: no cover
-    phonenumbers = None
-    NumberParseException = ValueError
-    PhoneNumberFormat = None
+import phonenumbers
+from phonenumbers import NumberParseException, PhoneNumberFormat
 
 DEFAULT_PHONE_REGION = "NO"
 
@@ -69,9 +64,6 @@ def analyze_phone_number(value: str | None, *, default_region: str = DEFAULT_PHO
             reason="contains_letters",
         )
 
-    if phonenumbers is None:
-        return _analyze_phone_number_without_library(original=value, cleaned=cleaned, default_region=default_region)
-
     parsed = _parse_phone_number(cleaned, default_region=default_region)
     if parsed is None:
         return PhoneNormalizationResult(
@@ -110,30 +102,6 @@ def analyze_phone_number(value: str | None, *, default_region: str = DEFAULT_PHO
     )
 
 
-def _analyze_phone_number_without_library(
-    *,
-    original: str | None,
-    cleaned: str,
-    default_region: str,
-) -> PhoneNormalizationResult:
-    normalized = _normalize_without_library(cleaned, default_region=default_region)
-    if normalized is None:
-        return PhoneNormalizationResult(
-            original=original,
-            cleaned=cleaned,
-            normalized=None,
-            status="invalid",
-            reason="unparseable",
-        )
-    return PhoneNormalizationResult(
-        original=original,
-        cleaned=cleaned,
-        normalized=normalized,
-        status="normalized",
-        reason="ok",
-    )
-
-
 def is_obviously_false_phone_number(value: str | None) -> bool:
     cleaned = _clean_phone_input(value)
     if cleaned is None:
@@ -164,7 +132,7 @@ def _clean_phone_input(value: str | None) -> str | None:
     return cleaned or None
 
 
-def _parse_phone_number(cleaned: str, *, default_region: str):
+def _parse_phone_number(cleaned: str, *, default_region: str) -> phonenumbers.PhoneNumber | None:
     candidates = _build_parse_candidates(cleaned, default_region=default_region)
     for raw_value, region in candidates:
         try:
@@ -200,40 +168,3 @@ def _build_parse_candidates(cleaned: str, *, default_region: str) -> list[tuple[
         return candidates
 
     return candidates
-
-
-def _normalize_without_library(cleaned: str, *, default_region: str) -> str | None:
-    digits = _DIGITS_RE.sub("", cleaned)
-
-    if cleaned.startswith("+"):
-        normalized = f"+{digits}"
-        return normalized if _looks_like_e164(normalized) else None
-
-    if cleaned.startswith("00") and len(digits) > 2:
-        normalized = f"+{digits[2:]}"
-        return normalized if _looks_like_e164(normalized) else None
-
-    if digits.startswith("47") and len(digits) == 10:
-        normalized = f"+{digits}"
-        return normalized if _looks_like_e164(normalized) else None
-
-    if default_region == "NO" and len(digits) == 8 and _looks_like_plausible_norwegian_number(digits):
-        return f"+47{digits}"
-
-    return None
-
-
-def _looks_like_e164(value: str) -> bool:
-    return bool(re.fullmatch(r"\+[1-9]\d{7,14}", value))
-
-
-def _looks_like_plausible_norwegian_number(digits: str) -> bool:
-    if not re.fullmatch(r"\d{8}", digits):
-        return False
-    if digits[0] not in {"2", "3", "4", "5", "6", "7", "9"}:
-        return False
-    if len(set(digits)) <= 2:
-        return False
-    if digits[:2] in {"10", "11", "12", "13", "87", "88", "89"}:
-        return False
-    return True

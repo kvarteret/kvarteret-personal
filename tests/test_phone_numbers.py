@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-import app.services.phone_numbers as phone_numbers
 from app.services.phone_numbers import (
     analyze_phone_number,
     is_obviously_false_phone_number,
@@ -46,15 +45,3 @@ def test_require_e164_phone_number_accepts_canonical_e164() -> None:
 def test_require_e164_phone_number_rejects_non_e164_input() -> None:
     with pytest.raises(ValueError):
         require_e164_phone_number("95230903")
-
-
-def test_require_e164_phone_number_works_without_phonenumbers_library(monkeypatch) -> None:
-    monkeypatch.setattr(phone_numbers, "phonenumbers", None)
-
-    assert require_e164_phone_number("+4795230903") == "+4795230903"
-
-
-def test_normalize_phone_number_fallback_handles_explicit_international_prefix(monkeypatch) -> None:
-    monkeypatch.setattr(phone_numbers, "phonenumbers", None)
-
-    assert normalize_phone_number("00491756516398") == "+491756516398"
