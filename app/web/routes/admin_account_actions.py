@@ -237,3 +237,37 @@ async def admin_account_impersonate(
         session_id=new_session.session_id,
     )
     return response
+
+
+@router.delete("/admin-accounts/{account_id}")
+async def admin_account_delete(
+    request: Request,
+    account_id: int,
+    current_user=Depends(require_admin_user),
+    admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
+    supabase_auth_gateway=Depends(get_supabase_auth_gateway),
+):
+    if current_user.user_account_id == account_id:
+        return _redirect_with_error(f"/admin-accounts/{account_id}", "Du kan ikke slette din egen admin-konto.")
+
+    admin_account = await admin_accounts_service.get_admin_account_detail(account_id)
+    if admin_account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+
+    try:
+        await supabase_auth_gateway.delete_user(admin_account.auth_user_id)
+        await admin_accounts_service.delete_admin_account(
+            user_account_id=admin_account.user_account_id,
+            auth_user_id=admin_account.auth_user_id,
+        )
+    except Exception as exc:
+        return _redirect_with_error(f"/admin-accounts/{account_id}", str(exc))
+
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="admin_account.delete",
+        subject_type="admin_account",
+        subject_id=account_id,
+    )
+    return redirect_to("/admin-accounts")

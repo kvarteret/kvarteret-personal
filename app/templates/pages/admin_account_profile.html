@@ -6,6 +6,7 @@
     {{ page_header(page_label, page_heading) }}
 
     <section class="app-panel">
+      {{ flash_notice(error_message, 'error') }}
       {{ flash_notice(password_error_message, 'error') }}
       {{ flash_notice(password_success_message, 'success') }}
       <form action="{{ save_action }}" class="grid gap-6" method="post">
@@ -82,6 +83,14 @@
           </div>
         {% endif %}
       </form>
+
+      {% if section == "admin-accounts" and current_user.role == "Admin" and current_user.user_account_id != admin_account.user_account_id %}
+        <form action="/admin-accounts/{{ admin_account.user_account_id }}?_method=DELETE" class="mt-6 border-t border-stone-300 pt-6" method="post" onsubmit="return window.confirm('Slette denne admin-kontoen?');">
+          <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit">
+            Slett admin-konto
+          </button>
+        </form>
+      {% endif %}
 
       {% if show_password_form %}
         <form action="/my-account/password" class="mt-8 grid gap-6 border-t border-stone-300 pt-6" method="post">

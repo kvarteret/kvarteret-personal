@@ -7,13 +7,13 @@ from time import perf_counter
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import func, insert, or_, select, update
+from sqlalchemy import delete, func, or_, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.roles import UserRole
 from app.cache import TTLCache
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import group_admin_memberships, user_accounts
+from app.db.tables import group_admin_memberships, integration_tokens, user_accounts, web_sessions
 from app.observability import log_operation_timing
 from app.services.common import coerce_datetime, require_datetime
 
@@ -71,6 +71,7 @@ class AdminAccountsServiceProtocol(Protocol):
         display_name: str | None,
         role: UserRole,
     ) -> AdminAccountDetail | None: ...
+    async def delete_admin_account(self, *, user_account_id: int, auth_user_id: UUID) -> None: ...
 
 
 class AdminAccountsService(SqlAlchemyRepository):
@@ -187,6 +188,30 @@ class AdminAccountsService(SqlAlchemyRepository):
         if admin_account is None:
             raise ValueError("Klarte ikke å opprette admin-kontoen.")
         return admin_account
+
+    async def delete_admin_account(self, *, user_account_id: int, auth_user_id: UUID) -> None:
+        async def delete_account(session: AsyncSession) -> None:
+            await session.execute(
+                update(integration_tokens)
+                .where(integration_tokens.c.updated_by_user_account_id == user_account_id)
+                .values(updated_by_user_account_id=None)
+            )
+            await session.execute(
+                delete(web_sessions).where(
+                    or_(
+                        web_sessions.c.user_account_id == user_account_id,
+                        web_sessions.c.impersonator_user_account_id == user_account_id,
+                        web_sessions.c.auth_user_id == auth_user_id,
+                        web_sessions.c.impersonator_auth_user_id == auth_user_id,
+                    )
+                )
+            )
+            await session.execute(delete(group_admin_memberships).where(group_admin_memberships.c.auth_user_id == auth_user_id))
+            await session.execute(delete(user_accounts).where(user_accounts.c.id == user_account_id))
+
+        await self.execute_in_transaction(delete_account)
+        self._detail_cache.pop(user_account_id)
+        self._list_cache.clear()
 
     async def _list_admin_accounts_via_database(self, query: str | None = None, limit: int = 100) -> list[AdminAccountListItem]:
         stmt = (

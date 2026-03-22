@@ -45,6 +45,7 @@ async def my_account_detail(
             "can_edit_profile": current_user.role == UserRole.ADMIN,
             "show_role_field": current_user.role == UserRole.ADMIN,
             "show_password_form": current_user.role == UserRole.ADMIN,
+            "error_message": None,
             "password_error_message": password_error,
             "password_success_message": password_message,
         },
@@ -104,6 +105,7 @@ async def admin_account_new(
 async def admin_account_detail(
     request: Request,
     account_id: int,
+    error: str | None = None,
     current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
@@ -134,6 +136,7 @@ async def admin_account_detail(
             "can_edit_profile": True,
             "show_role_field": True,
             "show_password_form": False,
+            "error_message": error,
             "password_error_message": None,
             "password_success_message": None,
         },

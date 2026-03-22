@@ -16,6 +16,35 @@ from tests.helpers import make_authenticated_user, override_authenticated_user
 class FakeAdminAccountsService:
     def __init__(self) -> None:
         self.created_account = None
+        self.deleted_account = None
+        self._details = {
+            5: AdminAccountDetail(
+                user_account_id=5,
+                auth_user_id=uuid4(),
+                legacy_user_id=4,
+                username="admin",
+                email="admin.user@example.test",
+                display_name="System User",
+                role=UserRole.ADMIN,
+                last_login=datetime(2026, 3, 13, 12, 0, tzinfo=UTC),
+                created_at=datetime(2026, 3, 12, 11, 0, tzinfo=UTC),
+                migrated_at=datetime(2026, 3, 13, 9, 30, tzinfo=UTC),
+                group_admin_group_ids=[2, 4],
+            ),
+            7: AdminAccountDetail(
+                user_account_id=7,
+                auth_user_id=uuid4(),
+                legacy_user_id=4,
+                username="sample.admin",
+                email="sample.admin@example.test",
+                display_name="Sample Admin",
+                role=UserRole.ADMIN,
+                last_login=datetime(2026, 3, 13, 12, 0, tzinfo=UTC),
+                created_at=datetime(2026, 3, 12, 11, 0, tzinfo=UTC),
+                migrated_at=datetime(2026, 3, 13, 9, 30, tzinfo=UTC),
+                group_admin_group_ids=[2, 4],
+            ),
+        }
 
     async def list_admin_accounts(self, query: str | None = None, limit: int = 100) -> list[AdminAccountListItem]:
         return [
@@ -34,21 +63,7 @@ class FakeAdminAccountsService:
         ]
 
     async def get_admin_account_detail(self, user_account_id: int) -> AdminAccountDetail | None:
-        if user_account_id not in {5, 7}:
-            return None
-        return AdminAccountDetail(
-            user_account_id=user_account_id,
-            auth_user_id=uuid4(),
-            legacy_user_id=4,
-            username="sample.admin",
-            email="sample.admin@example.test",
-            display_name="Sample Admin",
-            role=UserRole.ADMIN,
-            last_login=datetime(2026, 3, 13, 12, 0, tzinfo=UTC),
-            created_at=datetime(2026, 3, 12, 11, 0, tzinfo=UTC),
-            migrated_at=datetime(2026, 3, 13, 9, 30, tzinfo=UTC),
-            group_admin_group_ids=[2, 4],
-        )
+        return self._details.get(user_account_id)
 
     async def update_admin_account(self, *, user_account_id: int, username: str, email: str, display_name: str | None, role: UserRole):
         return await self.get_admin_account_detail(user_account_id)
@@ -76,6 +91,10 @@ class FakeAdminAccountsService:
             migrated_at=None,
             group_admin_group_ids=[],
         )
+
+    async def delete_admin_account(self, *, user_account_id: int, auth_user_id) -> None:
+        self.deleted_account = (user_account_id, auth_user_id)
+        self._details.pop(user_account_id, None)
 
 class FakeSupabaseAuthGateway:
     def __init__(self) -> None:
@@ -171,6 +190,7 @@ def test_admin_account_pages_render_for_admins() -> None:
     assert detail_response.status_code == 200
     assert "Lagre endringer" in detail_response.text
     assert "Logg inn som denne brukeren" in detail_response.text
+    assert "Slett admin-konto" in detail_response.text
     assert "2 gruppeadministrator-tilganger" in detail_response.text
     assert profile_response.status_code == 200
     assert "Min konto" in profile_response.text
@@ -267,3 +287,38 @@ def test_admin_can_start_impersonation_from_admin_account() -> None:
     assert "kvarteret_session" in response.headers["set-cookie"]
     assert session_store.created_sessions[0]["user_account_id"] == 7
     assert session_store.created_sessions[0]["impersonator_user_account_id"] == current_user.user_account_id
+
+
+def test_admin_can_delete_other_admin_account() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    admin_accounts_service = FakeAdminAccountsService()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+    client = TestClient(app)
+
+    target = admin_accounts_service._details[7]
+    response = client.post("/admin-accounts/7?_method=DELETE", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin-accounts"
+    assert supabase_auth_gateway.deleted_user == target.auth_user_id
+    assert admin_accounts_service.deleted_account == (7, target.auth_user_id)
+
+
+def test_admin_cannot_delete_own_account() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    admin_accounts_service = FakeAdminAccountsService()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+    client = TestClient(app)
+
+    response = client.post("/admin-accounts/5?_method=DELETE", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin-accounts/5?error=Du+kan+ikke+slette+din+egen+admin-konto."
+    assert supabase_auth_gateway.deleted_user is None
+    assert admin_accounts_service.deleted_account is None
