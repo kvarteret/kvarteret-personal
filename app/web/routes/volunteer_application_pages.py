@@ -25,6 +25,7 @@ async def volunteer_applications_index(
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     volunteer_applications = await volunteer_applications_service.list_volunteer_applications()
+    recent_registrations_page = await volunteer_applications_service.list_recent_volunteer_registrations_page(limit=20)
     group_options = await volunteers_service.list_assignment_groups()
     log_admin_activity(
         request=request,
@@ -41,6 +42,9 @@ async def volunteer_applications_index(
             "section": "volunteer-applications",
             "current_user": current_user,
             "volunteer_applications": volunteer_applications,
+            "recent_registrations": recent_registrations_page.items,
+            "recent_registrations_cursor": recent_registrations_page.cursor,
+            "recent_registrations_next_cursor": recent_registrations_page.next_cursor,
             "group_options": group_options,
             "role_options": [],
             "selected_group_id": None,
@@ -68,6 +72,30 @@ async def volunteer_application_assignment_fields(
             "role_options": role_options,
         },
     )
+
+
+@router.get("/volunteer-applications/recent-registrations")
+async def volunteer_recent_registrations(
+    request: Request,
+    cursor: str | None = None,
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+):
+    recent_registrations_page = await volunteer_applications_service.list_recent_volunteer_registrations_page(
+        limit=20,
+        cursor=cursor,
+    )
+    return templates.TemplateResponse(
+        request,
+        "components/recent_volunteer_registrations.html",
+        {
+            "current_user": current_user,
+            "recent_registrations": recent_registrations_page.items,
+            "cursor": recent_registrations_page.cursor,
+            "next_cursor": recent_registrations_page.next_cursor,
+        },
+    )
+
 
 @router.get("/apply/{token}")
 async def volunteer_application_form(

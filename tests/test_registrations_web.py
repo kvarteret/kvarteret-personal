@@ -8,6 +8,8 @@ from app.auth.roles import UserRole
 from app.dependencies import get_volunteer_applications_service, get_volunteers_service
 from app.main import create_app
 from app.services.volunteer_applications import (
+    RecentVolunteerRegistrationItem,
+    RecentVolunteerRegistrationPage,
     VolunteerAlreadyExistsError,
     VolunteerApplicationDetail,
     VolunteerApplicationListItem,
@@ -22,6 +24,7 @@ class FakeVolunteerApplicationsService:
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, int | str | None]] = []
         self.resent_registration_ids: list[int] = []
+        self.recent_registration_calls: list[dict[str, object | None]] = []
         self.submission_calls: list[dict[str, object | None]] = []
         self.volunteer_applications = [
             VolunteerApplicationListItem(
@@ -39,6 +42,48 @@ class FakeVolunteerApplicationsService:
                 initial_role_name="Skiftleder",
             )
         ]
+        self.recent_registration_pages = {
+            None: RecentVolunteerRegistrationPage(
+                items=[
+                    RecentVolunteerRegistrationItem(
+                        volunteer_id=12,
+                        first_name="Ny",
+                        last_name="Frivillig",
+                        full_name="Ny Frivillig",
+                        email="ny@example.com",
+                        phone="+4799999999",
+                        created_at=datetime(2026, 3, 15, tzinfo=UTC),
+                        latest_group_name="Bar",
+                        latest_role_name="Skiftleder",
+                        latest_semester_code=20261,
+                        latest_semester_label="Vår 2026",
+                    )
+                ],
+                limit=20,
+                cursor=None,
+                next_cursor="12",
+            ),
+            "12": RecentVolunteerRegistrationPage(
+                items=[
+                    RecentVolunteerRegistrationItem(
+                        volunteer_id=11,
+                        first_name="Eldre",
+                        last_name="Frivillig",
+                        full_name="Eldre Frivillig",
+                        email="eldre@example.com",
+                        phone=None,
+                        created_at=datetime(2026, 3, 14, tzinfo=UTC),
+                        latest_group_name=None,
+                        latest_role_name=None,
+                        latest_semester_code=None,
+                        latest_semester_label=None,
+                    )
+                ],
+                limit=20,
+                cursor="12",
+                next_cursor=None,
+            ),
+        }
 
     async def create_volunteer_application_invitation(
         self,
@@ -69,6 +114,14 @@ class FakeVolunteerApplicationsService:
 
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
         return list(self.volunteer_applications)
+
+    async def list_recent_volunteer_registrations_page(
+        self,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> RecentVolunteerRegistrationPage:
+        self.recent_registration_calls.append({"limit": limit, "cursor": cursor})
+        return self.recent_registration_pages[cursor]
 
     async def count_pending_volunteer_applications(self) -> int:
         return 1
@@ -207,6 +260,9 @@ def test_volunteer_application_pages_render() -> None:
     assert "Frivilligsøknader" in admin_response.text
     assert "Opprett invitasjon" in admin_response.text
     assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
+    assert "Siste registreringer" in admin_response.text
+    assert "Ny Frivillig" in admin_response.text
+    assert 'hx-get="/volunteer-applications/recent-registrations"' in admin_response.text
     assert public_response.status_code == 200
     assert "Fullfør dine detaljer" in public_response.text
     assert submitted_response.status_code == 200
@@ -238,6 +294,22 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Godkjenn søknad" in response.text
     assert "Avvis søknad" in response.text
     assert "Lenke" not in response.text
+
+
+def test_recent_registrations_fragment_renders_next_page() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications/recent-registrations", params={"cursor": "12"})
+
+    assert response.status_code == 200
+    assert "Eldre Frivillig" in response.text
+    assert "Ingen startgruppe registrert" in response.text
+    assert volunteer_applications_service.recent_registration_calls == [{"limit": 20, "cursor": "12"}]
 
 
 def test_group_admin_can_open_new_volunteer_page_with_all_groups() -> None:

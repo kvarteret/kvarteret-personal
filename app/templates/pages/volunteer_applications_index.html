@@ -25,5 +25,14 @@
     </section>
 
     {% include "components/volunteer_applications_list.html" %}
+
+    <section class="app-panel">
+      <h2 class="text-2xl font-medium tracking-tight text-stone-900">Siste registreringer</h2>
+      <div class="mt-5 rounded-[1.75rem] border border-stone-200 bg-white/70 px-5">
+        {% with cursor=recent_registrations_cursor, next_cursor=recent_registrations_next_cursor %}
+          {% include "components/recent_volunteer_registrations.html" %}
+        {% endwith %}
+      </div>
+    </section>
   </section>
 {% endblock %}

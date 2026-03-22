@@ -13,6 +13,7 @@ from app.errors import NotConfiguredError
 from app.services.email import EmailSenderProtocol
 from app.services.photo_processing import process_uploaded_photo
 from app.services.phone_numbers import require_e164_phone_number
+from app.services.semester import format_semester_code
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,29 @@ class VolunteerApplicationDetail:
 
 
 @dataclass(slots=True)
+class RecentVolunteerRegistrationItem:
+    volunteer_id: int
+    first_name: str | None
+    last_name: str
+    full_name: str
+    email: str | None
+    phone: str | None
+    created_at: datetime
+    latest_group_name: str | None
+    latest_role_name: str | None
+    latest_semester_code: int | None = None
+    latest_semester_label: str | None = None
+
+
+@dataclass(slots=True)
+class RecentVolunteerRegistrationPage:
+    items: list[RecentVolunteerRegistrationItem]
+    limit: int
+    cursor: str | None
+    next_cursor: str | None
+
+
+@dataclass(slots=True)
 class VolunteerApplicationSubmissionInput:
     first_name: str | None
     last_name: str
@@ -114,6 +138,11 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite: ...
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]: ...
+    async def list_recent_volunteer_registrations_page(
+        self,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> RecentVolunteerRegistrationPage: ...
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
@@ -147,6 +176,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite: ...
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]: ...
+    async def list_recent_volunteer_registrations(self, *, limit: int, before_volunteer_id: int | None = None) -> list[dict]: ...
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
@@ -215,6 +245,46 @@ class VolunteerApplicationsService:
 
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
         return await self.repository.list_volunteer_applications()
+
+    async def list_recent_volunteer_registrations_page(
+        self,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> RecentVolunteerRegistrationPage:
+        safe_limit = max(1, min(limit, 100))
+        before_volunteer_id = _parse_recent_registration_cursor(cursor)
+        rows = await self.repository.list_recent_volunteer_registrations(
+            limit=safe_limit + 1,
+            before_volunteer_id=before_volunteer_id,
+        )
+        has_more = len(rows) > safe_limit
+        visible_rows = rows[:safe_limit]
+        items = [
+            RecentVolunteerRegistrationItem(
+                volunteer_id=row["id"],
+                first_name=row["fornavn"],
+                last_name=row["etternavn"],
+                full_name=_build_full_name(row["fornavn"], row["etternavn"]),
+                email=row["epost"],
+                phone=row["telefon"],
+                created_at=row["opprettet"],
+                latest_group_name=row["latest_group_name"],
+                latest_role_name=row["latest_role_name"],
+                latest_semester_code=row["latest_semester_code"],
+                latest_semester_label=(
+                    format_semester_code(row["latest_semester_code"])
+                    if row["latest_semester_code"] is not None
+                    else None
+                ),
+            )
+            for row in visible_rows
+        ]
+        return RecentVolunteerRegistrationPage(
+            items=items,
+            limit=safe_limit,
+            cursor=cursor,
+            next_cursor=str(visible_rows[-1]["id"]) if has_more and visible_rows else None,
+        )
 
     async def count_pending_volunteer_applications(self) -> int:
         cached_count = self._pending_count_cache.get("pending-count")
@@ -342,6 +412,23 @@ class VolunteerApplicationsService:
             raise VolunteerApplicationNotFoundError("Registration was not found.")
         await self._send_invitation_email(email=detail.email, token=detail.token, base_url=base_url)
         return detail
+
+
+def _parse_recent_registration_cursor(cursor: str | None) -> int | None:
+    if cursor is None:
+        return None
+    stripped = cursor.strip()
+    if not stripped:
+        return None
+    try:
+        volunteer_id = int(stripped)
+    except ValueError:
+        return None
+    return volunteer_id if volunteer_id > 0 else None
+
+
+def _build_full_name(first_name: str | None, last_name: str) -> str:
+    return " ".join(part for part in [first_name or "", last_name] if part.strip()).strip() or last_name
 
     def _require_storage_service(self) -> StorageService:
         if self.storage_service is None:

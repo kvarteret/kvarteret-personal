@@ -115,6 +115,60 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             for row in rows
         ]
 
+    async def list_recent_volunteer_registrations(
+        self,
+        *,
+        limit: int,
+        before_volunteer_id: int | None = None,
+    ) -> list[dict]:
+        latest_assignment_rank = func.row_number().over(
+            partition_by=historie.c.id_personal,
+            order_by=(historie.c.id.desc(),),
+        ).label("assignment_rank")
+        latest_assignment_rows = (
+            select(
+                historie.c.id_personal.label("id_personal"),
+                historie.c.id_gruppe.label("latest_group_id"),
+                historie.c.id_verv.label("latest_role_id"),
+                historie.c.semester.label("latest_semester_code"),
+                latest_assignment_rank,
+            )
+        ).subquery()
+        latest_assignment = (
+            select(
+                latest_assignment_rows.c.id_personal,
+                latest_assignment_rows.c.latest_group_id,
+                latest_assignment_rows.c.latest_role_id,
+                latest_assignment_rows.c.latest_semester_code,
+            )
+            .where(latest_assignment_rows.c.assignment_rank == 1)
+        ).subquery()
+        stmt = (
+            select(
+                personal.c.id,
+                personal.c.fornavn,
+                personal.c.etternavn,
+                personal.c.epost,
+                personal.c.telefon,
+                personal.c.opprettet,
+                latest_assignment.c.latest_semester_code,
+                grupper.c.navn.label("latest_group_name"),
+                verv.c.verv.label("latest_role_name"),
+            )
+            .select_from(
+                personal.outerjoin(latest_assignment, latest_assignment.c.id_personal == personal.c.id)
+                .outerjoin(grupper, grupper.c.id == latest_assignment.c.latest_group_id)
+                .outerjoin(verv, verv.c.id == latest_assignment.c.latest_role_id)
+            )
+            .order_by(personal.c.id.desc())
+            .limit(limit)
+        )
+        if before_volunteer_id is not None:
+            stmt = stmt.where(personal.c.id < before_volunteer_id)
+        async with self.session_factory() as session:
+            rows = (await session.execute(stmt)).mappings().all()
+        return [dict(row) for row in rows]
+
     async def count_pending_volunteer_applications(self) -> int:
         stmt = select(func.count()).select_from(registrering.join(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id))
         async with self.session_factory() as session:
