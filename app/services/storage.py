@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
@@ -10,6 +11,8 @@ from azure.storage.blob import BlobSasPermissions, BlobServiceClient, ContentSet
 
 from app.config import Settings, get_settings
 from app.errors import NotConfiguredError
+
+logger = logging.getLogger(__name__)
 
 
 class StorageHttpClientProtocol(Protocol):
@@ -266,8 +269,22 @@ def _has_supabase_documents(settings: Settings) -> bool:
 
 def _build_blob_service_client(settings: Settings) -> BlobServiceClient | None:
     if not settings.azure_blob_connection_string:
+        return _build_blob_service_client_from_account(settings)
+    try:
+        return BlobServiceClient.from_connection_string(settings.azure_blob_connection_string)
+    except ValueError:
+        fallback = _build_blob_service_client_from_account(settings)
+        if fallback is not None:
+            logger.warning("Invalid Azure Blob connection string; falling back to account name/key.")
+            return fallback
+        raise
+
+
+def _build_blob_service_client_from_account(settings: Settings) -> BlobServiceClient | None:
+    if not settings.azure_blob_account_name or not settings.azure_blob_account_key:
         return None
-    return BlobServiceClient.from_connection_string(settings.azure_blob_connection_string)
+    account_url = f"https://{settings.azure_blob_account_name}.blob.core.windows.net"
+    return BlobServiceClient(account_url=account_url, credential=settings.azure_blob_account_key)
 
 
 def _parse_connection_string_value(connection_string: str | None, key: str) -> str | None:
