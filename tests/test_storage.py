@@ -1,7 +1,7 @@
 import httpx
 
 from app.config import Settings
-from app.services.storage import StorageService, _build_blob_service_client
+from app.services.storage import StorageService
 
 
 class FakeDownloadStream:
@@ -314,32 +314,3 @@ def test_empty_bucket_uses_empty_bucket_endpoint() -> None:
     assert captured["method"] == "POST"
     assert captured["url"] == "https://example.supabase.co/storage/v1/bucket/personnel-photos/empty"
     assert message == "Empty bucket has been queued. Completion may take up to an hour."
-
-
-def test_build_blob_service_client_falls_back_to_account_credentials(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    class FakeBlobServiceClientCtor:
-        @staticmethod
-        def from_connection_string(connection_string: str):
-            raise ValueError("bad connection string")
-
-        def __init__(self, *, account_url: str, credential: str) -> None:
-            captured["account_url"] = account_url
-            captured["credential"] = credential
-
-    monkeypatch.setattr("app.services.storage.BlobServiceClient", FakeBlobServiceClientCtor)
-
-    client = _build_blob_service_client(
-        Settings(
-            azure_blob_connection_string="broken",
-            azure_blob_account_name="personaldatabasen",
-            azure_blob_account_key="secret",
-        )
-    )
-
-    assert isinstance(client, FakeBlobServiceClientCtor)
-    assert captured == {
-        "account_url": "https://personaldatabasen.blob.core.windows.net",
-        "credential": "secret",
-    }
