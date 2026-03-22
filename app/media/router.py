@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import mimetypes
 from asyncio import to_thread
 
@@ -22,6 +23,7 @@ from app.services.photo_processing import ProcessedPhoto, render_photo_variant
 from app.services.storage import StorageService
 from app.services.volunteers import VolunteersService
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 SECURE_MEDIA_HEADERS = {
     "Cache-Control": "private, max-age=900",
@@ -148,7 +150,17 @@ def _load_photo_variant(storage_service: StorageService, photo_path: str, size: 
         return cached
 
     source = storage_service.download_photo(photo_path)
-    rendered = render_photo_variant(source, max_dimension=size)
+    try:
+        rendered = render_photo_variant(source, max_dimension=size)
+    except Exception:
+        logger.exception("Failed to render photo variant for %s at size=%s; serving original bytes.", photo_path, size)
+        rendered = ProcessedPhoto(
+            content=source,
+            content_type=mimetypes.guess_type(photo_path)[0] or "application/octet-stream",
+            extension=photo_path.rsplit(".", 1)[-1].lower() if "." in photo_path else "",
+            width=0,
+            height=0,
+        )
     PHOTO_VARIANT_CACHE.set(cache_key, rendered)
     return rendered
 
