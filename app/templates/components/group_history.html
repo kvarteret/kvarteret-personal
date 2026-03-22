@@ -16,8 +16,17 @@
           </summary>
           <div class="mt-2 grid gap-0 rounded-b-lg border border-t-0 border-stone-200">
             {% for member in semester_group.members %}
-              <div class="grid gap-3 border-b border-stone-200 px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.4fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)_auto] md:items-center">
-                <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/volunteers/{{ member.volunteer_id }}">{{ member.volunteer_name }}</a>
+              <div class="grid gap-3 border-b border-stone-200 px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.8fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)_auto] md:items-center">
+                <div class="flex min-w-0 items-center gap-3">
+                  <div class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600">
+                    {% if member.photo_url %}
+                      <img alt="{{ member.volunteer_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ member.photo_url }}">
+                    {% else %}
+                      {{ member.volunteer_name[:1] }}
+                    {% endif %}
+                  </div>
+                  <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/volunteers/{{ member.volunteer_id }}">{{ member.volunteer_name }}</a>
+                </div>
                 <span class="text-sm text-stone-500">{{ member.role_name or "Ingen rolle" }}</span>
                 <span class="text-sm text-stone-500">{% if member.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</span>
                 {% if can_manage_group %}

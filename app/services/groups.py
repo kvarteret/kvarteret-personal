@@ -10,7 +10,8 @@ from typing import Protocol
 from sqlalchemy import BigInteger, Boolean, Integer, Text, case, delete, distinct, func, insert, literal, or_, select, union_all, update
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import group_admin_memberships, grupper, grupper_kurs_kobling, historie, personal, verv
+from app.db.tables import group_admin_memberships, grupper, grupper_kurs_kobling, historie, personal, personal_bilde, verv
+from app.media_tokens import build_photo_media_url
 from app.observability import log_operation_timing
 from app.services.common import build_full_name, coerce_datetime
 from app.services.semester import format_semester_code, get_current_semester_code
@@ -59,6 +60,7 @@ class GroupMemberItem:
     history_id: int
     volunteer_id: int
     volunteer_name: str
+    photo_url: str | None
     role_name: str | None
     semester_code: int
     semester_label: str
@@ -228,6 +230,8 @@ class GroupsService(SqlAlchemyRepository):
             literal(None, type_=BigInteger()).label("volunteer_id"),
             literal(None, type_=Text()).label("volunteer_first_name"),
             literal(None, type_=Text()).label("volunteer_last_name"),
+            literal(None, type_=Text()).label("volunteer_photo_sha1"),
+            literal(None, type_=Text()).label("volunteer_photo_filetype"),
             literal(None, type_=Text()).label("member_role_name"),
             literal(None, type_=Integer()).label("member_semester"),
             literal(None, type_=Boolean()).label("member_contract_signed"),
@@ -250,6 +254,8 @@ class GroupsService(SqlAlchemyRepository):
             literal(None, type_=BigInteger()).label("volunteer_id"),
             literal(None, type_=Text()).label("volunteer_first_name"),
             literal(None, type_=Text()).label("volunteer_last_name"),
+            literal(None, type_=Text()).label("volunteer_photo_sha1"),
+            literal(None, type_=Text()).label("volunteer_photo_filetype"),
             literal(None, type_=Text()).label("member_role_name"),
             literal(None, type_=Integer()).label("member_semester"),
             literal(None, type_=Boolean()).label("member_contract_signed"),
@@ -264,10 +270,14 @@ class GroupsService(SqlAlchemyRepository):
                 historie.c.signert_kontrakt,
                 personal.c.fornavn,
                 personal.c.etternavn,
+                personal_bilde.c.sha1,
+                personal_bilde.c.filetype,
                 verv.c.verv.label("role_name"),
             )
             .select_from(
-                historie.join(personal, personal.c.id == historie.c.id_personal).outerjoin(verv, verv.c.id == historie.c.id_verv)
+                historie.join(personal, personal.c.id == historie.c.id_personal)
+                .outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id)
+                .outerjoin(verv, verv.c.id == historie.c.id_verv)
             )
             .where(historie.c.id_gruppe == group_id, historie.c.semester == current_semester)
             .order_by(personal.c.etternavn.asc(), personal.c.fornavn.asc(), historie.c.id.asc())
@@ -291,6 +301,8 @@ class GroupsService(SqlAlchemyRepository):
             recent_members.c.id_personal.label("volunteer_id"),
             recent_members.c.fornavn.label("volunteer_first_name"),
             recent_members.c.etternavn.label("volunteer_last_name"),
+            recent_members.c.sha1.label("volunteer_photo_sha1"),
+            recent_members.c.filetype.label("volunteer_photo_filetype"),
             recent_members.c.role_name.label("member_role_name"),
             recent_members.c.semester.label("member_semester"),
             recent_members.c.signert_kontrakt.label("member_contract_signed"),
@@ -326,6 +338,10 @@ class GroupsService(SqlAlchemyRepository):
                         history_id=row["history_id"],
                         volunteer_id=row["volunteer_id"],
                         volunteer_name=build_full_name(row.get("volunteer_first_name"), row.get("volunteer_last_name")),
+                        photo_url=_build_group_member_photo_url(
+                            row.get("volunteer_photo_sha1"),
+                            row.get("volunteer_photo_filetype"),
+                        ),
                         role_name=row.get("member_role_name"),
                         semester_code=row["member_semester"],
                         semester_label=format_semester_code(row["member_semester"]) or str(row["member_semester"]),
@@ -359,10 +375,14 @@ class GroupsService(SqlAlchemyRepository):
                 historie.c.signert_kontrakt,
                 personal.c.fornavn,
                 personal.c.etternavn,
+                personal_bilde.c.sha1,
+                personal_bilde.c.filetype,
                 verv.c.verv.label("role_name"),
             )
             .select_from(
-                historie.join(personal, personal.c.id == historie.c.id_personal).outerjoin(verv, verv.c.id == historie.c.id_verv)
+                historie.join(personal, personal.c.id == historie.c.id_personal)
+                .outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id)
+                .outerjoin(verv, verv.c.id == historie.c.id_verv)
             )
             .where(historie.c.id_gruppe == group_id)
             .order_by(historie.c.semester.desc(), personal.c.etternavn.asc(), personal.c.fornavn.asc(), historie.c.id.asc())
@@ -376,6 +396,7 @@ class GroupsService(SqlAlchemyRepository):
                     history_id=row["id"],
                     volunteer_id=row["id_personal"],
                     volunteer_name=build_full_name(row.get("fornavn"), row.get("etternavn")),
+                    photo_url=_build_group_member_photo_url(row.get("sha1"), row.get("filetype")),
                     role_name=row.get("role_name"),
                     semester_code=semester_code,
                     semester_label=format_semester_code(semester_code) or str(semester_code),
@@ -786,3 +807,9 @@ def _map_retention_stat_row(row) -> SemesterRetentionStats:
         retained_to_next=retained_to_next,
         churned=total_members - retained_to_next,
     )
+
+
+def _build_group_member_photo_url(sha1: str | None, filetype: str | None) -> str | None:
+    if not sha1 or not filetype:
+        return None
+    return build_photo_media_url(f"{sha1}.{filetype}")

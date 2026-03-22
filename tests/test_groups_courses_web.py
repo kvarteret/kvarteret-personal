@@ -69,6 +69,7 @@ class FakeGroupsService:
                     history_id=9,
                     volunteer_id=12,
                     volunteer_name="Sample Person",
+                    photo_url="/media/photos/abc123.jpg?token=test",
                     role_name="Shift lead",
                     semester_code=20262,
                     semester_label="Fall 2026",
@@ -100,6 +101,7 @@ class FakeGroupsService:
                         history_id=9,
                         volunteer_id=12,
                         volunteer_name="Sample Person",
+                        photo_url="/media/photos/abc123.jpg?token=test",
                         role_name="Shift lead",
                         semester_code=20262,
                         semester_label="Fall 2026",
@@ -297,6 +299,7 @@ def test_groups_and_courses_pages_render() -> None:
     assert 'id="group-history-panel"' in group_detail_response.text
     assert 'hx-disinherit="hx-select hx-target hx-swap"' in group_detail_response.text
     assert 'href="/volunteers/12"' in group_detail_response.text
+    assert 'src="/media/photos/abc123.jpg?token=test"' in group_detail_response.text
     assert 'hx-delete="/groups/7/history/9"' in group_detail_response.text
     assert '/groups/7/history/9?_method=DELETE' in group_detail_response.text
     assert group_stats_response.status_code == 200
@@ -308,6 +311,7 @@ def test_groups_and_courses_pages_render() -> None:
     assert group_history_response.status_code == 200
     assert "Gruppehistorikk" in group_history_response.text
     assert 'href="/volunteers/12"' in group_history_response.text
+    assert 'src="/media/photos/abc123.jpg?token=test"' in group_history_response.text
     assert '/groups/7/history/9?_method=DELETE' in group_history_response.text
     assert semester_transfer_response.status_code == 200
     assert "Flytt til nytt semester" in semester_transfer_response.text

@@ -240,6 +240,8 @@ async def test_group_detail_recent_members_are_scoped_to_current_semester(monkey
                 "volunteer_id": None,
                 "volunteer_first_name": None,
                 "volunteer_last_name": None,
+                "volunteer_photo_sha1": None,
+                "volunteer_photo_filetype": None,
                 "member_role_name": None,
                 "member_semester": None,
                 "member_contract_signed": None,
@@ -262,6 +264,8 @@ async def test_group_detail_recent_members_are_scoped_to_current_semester(monkey
                 "volunteer_id": 12,
                 "volunteer_first_name": "Ada",
                 "volunteer_last_name": "Lovelace",
+                "volunteer_photo_sha1": "abc123",
+                "volunteer_photo_filetype": "jpg",
                 "member_role_name": "Shift lead",
                 "member_semester": 20262,
                 "member_contract_signed": True,
@@ -280,6 +284,8 @@ async def test_group_detail_recent_members_are_scoped_to_current_semester(monkey
     assert detail is not None
     assert len(detail.recent_members) == 1
     assert detail.recent_members[0].semester_code == 20262
+    assert detail.recent_members[0].photo_url is not None
+    assert detail.recent_members[0].photo_url.startswith("/media/photos/abc123.jpg")
     assert "historie.semester = :semester_1" in captured["sql"]
 
 
