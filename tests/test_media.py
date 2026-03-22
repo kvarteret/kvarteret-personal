@@ -177,3 +177,18 @@ def test_authenticated_image_route_returns_304_when_etag_matches(monkeypatch) ->
 
     assert response.status_code == 304
     assert response.content == b""
+
+
+def test_media_photo_route_falls_back_to_original_bytes_when_variant_rendering_fails(monkeypatch) -> None:
+    from app.media import router as media_module
+
+    media_module.PHOTO_VARIANT_CACHE.clear()
+    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(media_module, "render_photo_variant", lambda content, max_dimension: (_ for _ in ()).throw(RuntimeError("boom")))
+    client = TestClient(create_app())
+
+    response = client.get(build_photo_media_url("abc123.jpg"))
+
+    assert response.status_code == 200
+    assert response.content == JPEG_BYTES
+    assert response.headers["content-type"] == "image/jpeg"
