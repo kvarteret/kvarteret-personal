@@ -44,7 +44,7 @@ class FakeVolunteersService:
                     full_name="Sample Person",
                     email="person.one@example.test",
                     phone="00000000",
-                    photo_url=None,
+                    photo_url="/media/photos/abc123.jpg?token=test",
                 )
             ],
             limit=limit,
@@ -69,7 +69,7 @@ class FakeVolunteersService:
             address="Example address",
             postal_code="0000",
             pingvin_points=8,
-            photo_url=None,
+            photo_url="/media/photos/abc123.jpg?token=test",
         )
 
     async def list_role_assignments(self, volunteer_id: int, limit: int = 12) -> list[RoleAssignmentItem]:
@@ -250,6 +250,8 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert 'enctype="multipart/form-data"' in detail_response.text
     assert 'id="volunteer-photo-input"' in detail_response.text
     assert 'onchange="this.form.submit()"' in detail_response.text
+    assert 'src="/media/photos/abc123.jpg?token=test"' in detail_response.text
+    assert 'class="grid h-11 w-11 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600 shadow-md transition hover:shadow-lg"' in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
     assert "Slett frivillig" in detail_response.text
 
