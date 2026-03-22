@@ -251,7 +251,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert 'id="volunteer-photo-input"' in detail_response.text
     assert 'onchange="this.form.submit()"' in detail_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in detail_response.text
-    assert 'class="grid h-11 w-11 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600 shadow-md transition hover:shadow-lg"' in detail_response.text
+    assert 'class="grid h-52 w-52 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md transition hover:shadow-lg"' in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
     assert "Slett frivillig" in detail_response.text
 
