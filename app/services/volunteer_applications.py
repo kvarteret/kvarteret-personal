@@ -413,23 +413,6 @@ class VolunteerApplicationsService:
         await self._send_invitation_email(email=detail.email, token=detail.token, base_url=base_url)
         return detail
 
-
-def _parse_recent_registration_cursor(cursor: str | None) -> int | None:
-    if cursor is None:
-        return None
-    stripped = cursor.strip()
-    if not stripped:
-        return None
-    try:
-        volunteer_id = int(stripped)
-    except ValueError:
-        return None
-    return volunteer_id if volunteer_id > 0 else None
-
-
-def _build_full_name(first_name: str | None, last_name: str) -> str:
-    return " ".join(part for part in [first_name or "", last_name] if part.strip()).strip() or last_name
-
     def _require_storage_service(self) -> StorageService:
         if self.storage_service is None:
             raise NotConfiguredError("Supabase credentials are required for storage integration.")
@@ -501,6 +484,23 @@ def _build_full_name(first_name: str | None, last_name: str) -> str:
                     registration.registration_id,
                     recipient,
                 )
+
+
+def _parse_recent_registration_cursor(cursor: str | None) -> int | None:
+    if cursor is None:
+        return None
+    stripped = cursor.strip()
+    if not stripped:
+        return None
+    try:
+        volunteer_id = int(stripped)
+    except ValueError:
+        return None
+    return volunteer_id if volunteer_id > 0 else None
+
+
+def _build_full_name(first_name: str | None, last_name: str) -> str:
+    return " ".join(part for part in [first_name or "", last_name] if part.strip()).strip() or last_name
 
 
 def _sanitize_filename(filename: str) -> str:
