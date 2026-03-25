@@ -62,6 +62,21 @@ The current hosted Supabase project also expects these additive structures to ex
     public.personal.internkort_access_token_created_at
     storage buckets personnel-photos and personnel-documents
 
+### Migration authority
+
+Supabase Postgres schema changes are authored in Alembic from this repository.
+That includes the event schema used by `frontend-eventside`, such as:
+
+    public.events
+    public.event_types
+    public.event_organizer_groups
+    public.event_organizer_group_memberships
+
+Use the Supabase CLI for inspection, linking, and applying the database behind
+this repository, but do not treat `frontend-eventside/supabase/migrations` as
+the schema source of truth. `frontend-eventside` consumes the event schema and
+may keep historical migration files for reference only.
+
 Legacy Azure media recovery is scripted in `scripts/download_legacy_azure_media.sh`.
 It downloads the old Azure Blob `images` container into `data/legacy-images/`
 and pulls the old App Service `files/` tree for `personal_fil` into

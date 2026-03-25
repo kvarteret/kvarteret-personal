@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, ForeignKey, Integer, MetaData, String, Table, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, MetaData, String, Table, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 
 public_metadata = MetaData(schema="public")
@@ -226,6 +226,82 @@ integration_tokens = Table(
     Column("refresh_token", Text, nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Column("updated_by_user_account_id", BigInteger, ForeignKey("public.user_accounts.id")),
+)
+
+event_types = Table(
+    "event_types",
+    public_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("slug", Text, nullable=False, unique=True),
+    Column("name", Text, nullable=False),
+    Column("description", Text),
+    Column("sort_order", Integer, nullable=False),
+    Column("is_active", Boolean, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+event_organizer_groups = Table(
+    "event_organizer_groups",
+    public_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("slug", Text, nullable=False, unique=True),
+    Column("name", Text, nullable=False),
+    Column("sort_order", Integer, nullable=False),
+    Column("is_active", Boolean, nullable=False),
+    Column(
+        "default_event_type_id",
+        UUID(as_uuid=True),
+        ForeignKey("public.event_types.id", ondelete="SET NULL"),
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+events = Table(
+    "events",
+    public_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("slug", Text, nullable=False),
+    Column("translations", JSON, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("price", Text),
+    Column("ticket_url", Text),
+    Column("image_url", Text),
+    Column("event_start", DateTime),
+    Column("event_end", DateTime),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime),
+    Column("facebook_url", Text),
+    Column(
+        "event_type_id",
+        UUID(as_uuid=True),
+        ForeignKey("public.event_types.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("is_internal", Boolean, nullable=False),
+    Column("is_featured", Boolean, nullable=False),
+    Column("recurring_interval_days", Integer),
+)
+
+event_organizer_group_memberships = Table(
+    "event_organizer_group_memberships",
+    public_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("event_id", UUID(as_uuid=True), ForeignKey("public.events.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "organizer_group_id",
+        UUID(as_uuid=True),
+        ForeignKey("public.event_organizer_groups.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("display_order", Integer, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint(
+        "event_id",
+        "organizer_group_id",
+        name="event_organizer_group_memberships_event_id_organizer_group_id_key",
+    ),
 )
 
 auth_migration_events = Table(
