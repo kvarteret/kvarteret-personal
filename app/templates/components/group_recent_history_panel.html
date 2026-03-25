@@ -46,8 +46,8 @@
             <label class="grid gap-1 min-w-0">
               <span class="text-sm text-stone-500">Semester</span>
               <select class="app-input" name="term" required>
-                {% for option in semester_term_options %}
-                  <option value="{{ option.code }}" {% if option.code == default_assignment_term %}selected{% endif %}>{{ option.label }}</option>
+                {% for term_value, term_label in semester_term_options %}
+                  <option value="{{ term_value }}" {% if term_value|int == default_assignment_term %}selected{% endif %}>{{ term_label }}</option>
                 {% endfor %}
               </select>
             </label>

@@ -1,0 +1,74 @@
+<section class="app-panel">
+  <div class="mb-5 flex items-center justify-between gap-3">
+    <h2 class="text-2xl font-medium tracking-tight text-stone-900">Kurs</h2>
+    <span class="app-badge">{{ completions|length }} rader</span>
+  </div>
+
+  {% if can_manage_course_completions %}
+    <div class="mb-5 rounded-2xl bg-kvarteret-background p-4">
+      <h3 class="text-xl font-medium tracking-tight text-stone-900">Legg til kurs</h3>
+      <form
+        action="/volunteers/{{ volunteer.volunteer_id }}/course-completions"
+        class="mt-4 grid gap-4"
+        hx-disinherit="hx-select hx-target hx-swap"
+        hx-post="/volunteers/{{ volunteer.volunteer_id }}/course-completions"
+        hx-swap="outerHTML"
+        hx-target="closest section"
+        method="post"
+      >
+        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_9rem_9rem]">
+          <label class="grid gap-1 min-w-0">
+            <span class="text-sm text-stone-500">Kurs</span>
+            <select class="app-input" name="course_id" required>
+              <option value="">Velg kurs</option>
+              {% for course in course_options %}
+                <option value="{{ course.course_id }}">{{ course.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="grid gap-1 min-w-0">
+            <span class="text-sm text-stone-500">År</span>
+            <input class="app-input" max="3000" min="1900" name="year" required step="1" type="number" value="{{ default_year }}">
+          </label>
+          <label class="grid gap-1 min-w-0">
+            <span class="text-sm text-stone-500">Semester</span>
+            <select class="app-input" name="term" required>
+              {% for term_value, term_label in semester_term_options %}
+                <option value="{{ term_value }}" {% if term_value|int == default_term %}selected{% endif %}>{{ term_label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div>
+          <button class="app-button" type="submit">Legg til kurs</button>
+        </div>
+      </form>
+    </div>
+  {% endif %}
+
+  <div class="grid gap-0">
+    {% for completion in completions %}
+      <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-[minmax(0,1.8fr)_minmax(8rem,0.8fr)_auto] md:items-center">
+        <a class="text-lg font-medium tracking-tight text-stone-900 no-underline hover:text-kvarteret-red" href="/courses/{{ completion.course_id }}">{{ completion.course_name }}</a>
+        <div class="text-sm text-stone-700">{{ completion.completed_semester_label }}</div>
+        {% if can_manage_course_completions %}
+          <div class="flex md:justify-end">
+            <form
+              action="/volunteers/{{ volunteer.volunteer_id }}/course-completions/{{ completion.completion_id }}?_method=DELETE"
+              hx-disinherit="hx-select hx-target hx-swap"
+              hx-delete="/volunteers/{{ volunteer.volunteer_id }}/course-completions/{{ completion.completion_id }}"
+              hx-swap="outerHTML"
+              hx-target="closest section"
+              method="post"
+              onsubmit="return window.confirm('Slette denne kursfullføringen?');"
+            >
+              <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="text-sm text-stone-600">Ingen kurs registrert.</p>
+    {% endfor %}
+  </div>
+</section>

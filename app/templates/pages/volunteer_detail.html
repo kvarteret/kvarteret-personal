@@ -149,6 +149,10 @@
           <p class="text-sm text-stone-500">Laster historikk...</p>
         </section>
 
+        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/course-completions/panel" hx-swap="outerHTML" hx-trigger="intersect once">
+          <p class="text-sm text-stone-500">Laster kurs...</p>
+        </section>
+
         <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/documents/panel" hx-swap="outerHTML" hx-trigger="intersect once">
           <p class="text-sm text-stone-500">Laster filer...</p>
         </section>

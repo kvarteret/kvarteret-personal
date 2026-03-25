@@ -8,6 +8,7 @@ from app.services.volunteer_models import (
     GroupOption,
     NextOfKinItem,
     RoleAssignmentItem,
+    VolunteerCourseCompletionItem,
     VolunteerDetail,
     VolunteerListItem,
     VolunteerRelations,
@@ -88,6 +89,17 @@ def map_role_assignment_item(row: dict) -> RoleAssignmentItem:
         semester_code=semester_code,
         semester_label=format_semester_code(semester_code) or str(semester_code),
         contract_signed=bool(row["signert_kontrakt"]),
+    )
+
+
+def map_course_completion_item(row: dict) -> VolunteerCourseCompletionItem:
+    semester_code = int(row["gjennomfort_dato"])
+    return VolunteerCourseCompletionItem(
+        completion_id=int(row["id"]),
+        course_id=int(row["id_kurs"]),
+        course_name=row["course_name"],
+        completed_semester_code=semester_code,
+        completed_semester_label=format_semester_code(semester_code) or str(semester_code),
     )
 
 

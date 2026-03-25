@@ -28,6 +28,8 @@
 
   select.app-input:not([multiple]),
   select.app-select:not([multiple]) {
+    appearance: auto;
+    -webkit-appearance: menulist;
     background-color: var(--color-kvarteret-surface);
     color: var(--color-kvarteret-ink);
     border: 1px solid color-mix(in srgb, var(--color-kvarteret-red) 45%, white);
@@ -61,6 +63,10 @@
 }
 
 @layer base {
+  [x-cloak] {
+    display: none !important;
+  }
+
   body {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--color-kvarteret-background);

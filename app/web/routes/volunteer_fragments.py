@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.dependencies import get_volunteers_service, require_authenticated_user, require_management_user
+from app.dependencies import get_courses_service, get_volunteers_service, require_authenticated_user, require_management_user
+from app.services.courses import CoursesService
 from app.services.semester import get_current_semester_code
 from app.services.volunteer_options import SEMESTER_TERM_OPTIONS
 from app.services.volunteers import VolunteersService
-from app.web.routes.volunteer_route_helpers import render_role_assignments_panel, require_existing_volunteer
+from app.web.routes.volunteer_route_helpers import (
+    render_course_completions_panel,
+    render_relations_panel,
+    render_role_assignments_panel,
+    require_existing_volunteer,
+)
 from app.web.templates import templates
 
 router = APIRouter()
@@ -86,6 +92,24 @@ async def volunteer_role_assignment_role_field(
     )
 
 
+@router.get("/volunteers/{volunteer_id}/course-completions/panel")
+async def volunteer_course_completions_panel(
+    request: Request,
+    volunteer_id: int,
+    current_user=Depends(require_authenticated_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
+    return await render_course_completions_panel(
+        request,
+        current_user=current_user,
+        volunteers_service=volunteers_service,
+        courses_service=courses_service,
+        volunteer=volunteer,
+    )
+
+
 @router.get("/volunteers/{volunteer_id}/documents/panel")
 async def volunteer_documents_panel(
     request: Request,
@@ -110,18 +134,15 @@ async def volunteer_documents_panel(
 async def volunteer_relations_panel(
     request: Request,
     volunteer_id: int,
+    edit: bool = False,
     current_user=Depends(require_authenticated_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
-    relations = await volunteers_service.get_volunteer_relations(volunteer_id)
-    return templates.TemplateResponse(
+    return await render_relations_panel(
         request,
-        "components/volunteer_relations_panel.html",
-        {
-            "current_user": current_user,
-            "volunteer": volunteer,
-            "cards": relations.cards,
-            "next_of_kin": relations.next_of_kin,
-        },
+        current_user=current_user,
+        volunteers_service=volunteers_service,
+        volunteer=volunteer,
+        editing=edit,
     )

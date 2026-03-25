@@ -23,6 +23,18 @@ class CourseDeleteBlockedError(ValueError):
         self.blockers = blockers
 
 
+class InvalidCourseCompletionError(ValueError):
+    pass
+
+
+class DuplicateCourseCompletionError(ValueError):
+    pass
+
+
+class CourseCompletionNotFoundError(ValueError):
+    pass
+
+
 @dataclass(slots=True)
 class CourseListItem:
     course_id: int
@@ -63,6 +75,16 @@ class CoursesServiceProtocol(Protocol):
     async def create_course(self, *, name: str, description: str | None) -> int: ...
     async def update_course(self, course_id: int, *, name: str, description: str | None) -> bool: ...
     async def delete_course(self, course_id: int) -> bool: ...
+    async def create_course_completion(self, *, course_id: int, volunteer_id: int, year: int, term: int) -> int: ...
+    async def create_course_completions(
+        self,
+        *,
+        course_id: int,
+        volunteer_ids: list[int],
+        year: int,
+        term: int,
+    ) -> int: ...
+    async def delete_course_completion(self, *, course_id: int, completion_id: int) -> None: ...
 
 
 class CoursesService(SqlAlchemyRepository):
@@ -235,6 +257,87 @@ class CoursesService(SqlAlchemyRepository):
         deleted_course_id = await self.execute_in_transaction(callback)
         return deleted_course_id == course_id
 
+    async def create_course_completion(self, *, course_id: int, volunteer_id: int, year: int, term: int) -> int:
+        semester_code = _build_semester_code(year=year, term=term)
+        if not await self._course_exists(course_id):
+            raise InvalidCourseCompletionError("Selected course was not found.")
+        if not await self._volunteer_exists(volunteer_id):
+            raise InvalidCourseCompletionError("Selected volunteer was not found.")
+        if await self._course_completion_exists(
+            course_id=course_id,
+            volunteer_id=volunteer_id,
+            semester_code=semester_code,
+        ):
+            raise DuplicateCourseCompletionError("Dette kurset er allerede registrert for valgt semester.")
+        row = await self.execute_one_mapping(
+            insert(historie_kurs)
+            .values(
+                id_personal=volunteer_id,
+                id_kurs=course_id,
+                gjennomfort_dato=semester_code,
+            )
+            .returning(historie_kurs.c.id)
+        )
+        return int(row["id"])
+
+    async def create_course_completions(
+        self,
+        *,
+        course_id: int,
+        volunteer_ids: list[int],
+        year: int,
+        term: int,
+    ) -> int:
+        semester_code = _build_semester_code(year=year, term=term)
+        normalized_volunteer_ids = [int(volunteer_id) for volunteer_id in volunteer_ids]
+        if not normalized_volunteer_ids:
+            raise InvalidCourseCompletionError("Velg minst én frivillig.")
+        if len(set(normalized_volunteer_ids)) != len(normalized_volunteer_ids):
+            raise InvalidCourseCompletionError("Den samme frivillige kan ikke velges flere ganger.")
+        if not await self._course_exists(course_id):
+            raise InvalidCourseCompletionError("Selected course was not found.")
+
+        existing_volunteer_ids = await self._list_existing_volunteer_ids(normalized_volunteer_ids)
+        missing_volunteer_ids = [volunteer_id for volunteer_id in normalized_volunteer_ids if volunteer_id not in existing_volunteer_ids]
+        if missing_volunteer_ids:
+            raise InvalidCourseCompletionError("Selected volunteer was not found.")
+
+        duplicate_existing_ids = await self._list_existing_course_completion_volunteer_ids(
+            course_id=course_id,
+            volunteer_ids=normalized_volunteer_ids,
+            semester_code=semester_code,
+        )
+        if duplicate_existing_ids:
+            raise DuplicateCourseCompletionError("Dette kurset er allerede registrert for valgt semester.")
+
+        async def callback(session):
+            result = await session.execute(
+                insert(historie_kurs)
+                .returning(historie_kurs.c.id),
+                [
+                    {
+                        "id_personal": volunteer_id,
+                        "id_kurs": course_id,
+                        "gjennomfort_dato": semester_code,
+                    }
+                    for volunteer_id in normalized_volunteer_ids
+                ],
+            )
+            return result.scalars().all()
+
+        created_ids = await self.execute_in_transaction(callback)
+        return len(created_ids)
+
+    async def delete_course_completion(self, *, course_id: int, completion_id: int) -> None:
+        row = await self.fetch_first_mapping(
+            select(historie_kurs.c.id, historie_kurs.c.id_kurs)
+            .where(historie_kurs.c.id == completion_id)
+            .limit(1)
+        )
+        if not row or row["id_kurs"] != course_id:
+            raise CourseCompletionNotFoundError(f"Course completion {completion_id} was not found.")
+        await self.execute(delete(historie_kurs).where(historie_kurs.c.id == completion_id))
+
     async def _get_course_delete_blockers(self, course_id: int) -> list[str]:
         completion_count = await self.fetch_scalar(
             select(func.count()).select_from(historie_kurs).where(historie_kurs.c.id_kurs == course_id)
@@ -243,3 +346,57 @@ class CoursesService(SqlAlchemyRepository):
         if completion_count:
             blockers.append("Kurset har fullføringer og kan ikke slettes.")
         return blockers
+
+    async def _course_exists(self, course_id: int) -> bool:
+        return bool(await self.fetch_scalar(select(func.count()).select_from(kurs).where(kurs.c.id == course_id)))
+
+    async def _volunteer_exists(self, volunteer_id: int) -> bool:
+        return bool(
+            await self.fetch_scalar(select(func.count()).select_from(personal).where(personal.c.id == volunteer_id))
+        )
+
+    async def _list_existing_volunteer_ids(self, volunteer_ids: list[int]) -> set[int]:
+        rows = await self.fetch_all_mappings(select(personal.c.id).where(personal.c.id.in_(volunteer_ids)))
+        return {int(row["id"]) for row in rows}
+
+    async def _course_completion_exists(
+        self,
+        *,
+        course_id: int,
+        volunteer_id: int,
+        semester_code: int,
+    ) -> bool:
+        stmt = (
+            select(func.count())
+            .select_from(historie_kurs)
+            .where(historie_kurs.c.id_kurs == course_id)
+            .where(historie_kurs.c.id_personal == volunteer_id)
+            .where(historie_kurs.c.gjennomfort_dato == semester_code)
+        )
+        return bool(await self.fetch_scalar(stmt))
+
+    async def _list_existing_course_completion_volunteer_ids(
+        self,
+        *,
+        course_id: int,
+        volunteer_ids: list[int],
+        semester_code: int,
+    ) -> set[int]:
+        rows = await self.fetch_all_mappings(
+            select(historie_kurs.c.id_personal)
+            .where(historie_kurs.c.id_kurs == course_id)
+            .where(historie_kurs.c.id_personal.in_(volunteer_ids))
+            .where(historie_kurs.c.gjennomfort_dato == semester_code)
+        )
+        return {int(row["id_personal"]) for row in rows}
+
+
+def _build_semester_code(*, year: int, term: int) -> int:
+    if year < 1900 or year > 3000:
+        raise InvalidCourseCompletionError("Year must be between 1900 and 3000.")
+    if term not in {1, 2}:
+        raise InvalidCourseCompletionError("Semester must be Vår or Høst.")
+    semester_code = year * 10 + term
+    if not format_semester_code(semester_code):
+        raise InvalidCourseCompletionError("Unsupported semester code.")
+    return semester_code

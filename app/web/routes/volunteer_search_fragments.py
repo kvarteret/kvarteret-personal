@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from app.cache import TTLCache
-from app.dependencies import get_courses_service, get_groups_service, require_authenticated_user
+from app.dependencies import (
+    get_courses_service,
+    get_groups_service,
+    get_volunteers_service,
+    require_authenticated_user,
+    require_management_user,
+)
 from app.services.courses import CoursesService
 from app.services.groups import GroupsService
+from app.services.volunteers import VolunteersService
 from app.web.templates import templates
 
 router = APIRouter()
@@ -81,6 +88,30 @@ async def volunteer_search_course_options(
             "value_attr": "course_id",
             "label_attr": "name",
         },
+    )
+
+
+@router.get("/volunteers/search/options/typeahead")
+async def volunteer_search_typeahead_options(
+    q: str | None = None,
+    current_user=Depends(require_management_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    query = (q or "").strip()
+    if len(query) < 2:
+        return JSONResponse({"items": []})
+    volunteers = await volunteers_service.list_volunteer_search_options(query, limit=12)
+    return JSONResponse(
+        {
+            "items": [
+                {
+                    "volunteer_id": volunteer.volunteer_id,
+                    "full_name": volunteer.full_name,
+                    "profile_url": volunteer.profile_url,
+                }
+                for volunteer in volunteers
+            ]
+        }
     )
 
 

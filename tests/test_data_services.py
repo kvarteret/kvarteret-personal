@@ -6,7 +6,7 @@ from typing import cast
 import pytest
 
 from app.config import Settings
-from app.services.courses import CoursesService
+from app.services.courses import CoursesService, DuplicateCourseCompletionError, InvalidCourseCompletionError
 from app.services.groups import GroupsService
 from app.services.volunteer_applications import (
     VolunteerAlreadyExistsError,
@@ -315,6 +315,88 @@ async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None:
+    service = CoursesService()
+    captured = {}
+
+    async def fake_course_exists(course_id: int) -> bool:
+        return course_id == 4
+
+    async def fake_list_existing_volunteer_ids(volunteer_ids: list[int]) -> set[int]:
+        return set(volunteer_ids)
+
+    async def fake_list_existing_course_completion_volunteer_ids(*, course_id: int, volunteer_ids: list[int], semester_code: int) -> set[int]:
+        captured["semester_code"] = semester_code
+        return set()
+
+    class FakeResult:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return [101, 102]
+
+    class FakeSession:
+        async def execute(self, stmt, params=None):
+            captured["params"] = params
+            return FakeResult()
+
+    async def fake_execute_in_transaction(callback):
+        return await callback(FakeSession())
+
+    monkeypatch.setattr(service, "_course_exists", fake_course_exists)
+    monkeypatch.setattr(service, "_list_existing_volunteer_ids", fake_list_existing_volunteer_ids)
+    monkeypatch.setattr(
+        service,
+        "_list_existing_course_completion_volunteer_ids",
+        fake_list_existing_course_completion_volunteer_ids,
+    )
+    monkeypatch.setattr(service, "execute_in_transaction", fake_execute_in_transaction)
+
+    created_count = await service.create_course_completions(course_id=4, volunteer_ids=[12, 13], year=2026, term=1)
+
+    assert created_count == 2
+    assert captured["semester_code"] == 20261
+    assert captured["params"] == [
+        {"id_personal": 12, "id_kurs": 4, "gjennomfort_dato": 20261},
+        {"id_personal": 13, "id_kurs": 4, "gjennomfort_dato": 20261},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_courses_service_bulk_create_rejects_duplicate_selected_volunteers() -> None:
+    service = CoursesService()
+
+    with pytest.raises(InvalidCourseCompletionError):
+        await service.create_course_completions(course_id=4, volunteer_ids=[12, 12], year=2026, term=1)
+
+
+@pytest.mark.asyncio
+async def test_courses_service_bulk_create_rejects_existing_same_semester_completion(monkeypatch) -> None:
+    service = CoursesService()
+
+    async def fake_course_exists(course_id: int) -> bool:
+        return True
+
+    async def fake_list_existing_volunteer_ids(volunteer_ids: list[int]) -> set[int]:
+        return set(volunteer_ids)
+
+    async def fake_list_existing_course_completion_volunteer_ids(*, course_id: int, volunteer_ids: list[int], semester_code: int) -> set[int]:
+        return {13}
+
+    monkeypatch.setattr(service, "_course_exists", fake_course_exists)
+    monkeypatch.setattr(service, "_list_existing_volunteer_ids", fake_list_existing_volunteer_ids)
+    monkeypatch.setattr(
+        service,
+        "_list_existing_course_completion_volunteer_ids",
+        fake_list_existing_course_completion_volunteer_ids,
+    )
+
+    with pytest.raises(DuplicateCourseCompletionError):
+        await service.create_course_completions(course_id=4, volunteer_ids=[13, 14], year=2026, term=1)
+
+
+@pytest.mark.asyncio
 async def test_volunteers_service_plain_listing_uses_repository() -> None:
     repository = FakeVolunteersRepository(
         [
@@ -346,6 +428,28 @@ async def test_volunteers_service_plain_listing_uses_repository() -> None:
             "after_first_name": None,
             "after_volunteer_id": None,
         }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_volunteers_service_search_options_are_minimal_and_sorted(monkeypatch) -> None:
+    service = VolunteersService()
+
+    async def fake_list_volunteers(query: str | None = None, limit: int = 50):
+        assert query == "sample"
+        assert limit == 4
+        return [
+            type("Volunteer", (), {"volunteer_id": 14, "full_name": "Zeta Person"})(),
+            type("Volunteer", (), {"volunteer_id": 12, "full_name": "Alpha Person"})(),
+        ]
+
+    monkeypatch.setattr(service, "list_volunteers", fake_list_volunteers)
+
+    items = await service.list_volunteer_search_options("sample", limit=2)
+
+    assert [(item.volunteer_id, item.full_name, item.profile_url) for item in items] == [
+        (12, "Alpha Person", "/volunteers/12"),
+        (14, "Zeta Person", "/volunteers/14"),
     ]
 
 

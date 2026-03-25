@@ -5,15 +5,20 @@ from datetime import UTC, date, datetime
 from fastapi.testclient import TestClient
 
 from app.auth.roles import UserRole
-from app.dependencies import get_groups_service, get_volunteers_service
+from app.dependencies import get_courses_service, get_groups_service, get_volunteers_service
 from app.main import create_app
+from app.services.courses import CourseListItem
 from app.services.groups import GroupBreakdownItem, GroupMemberCount, OrgSemesterDetailed, SemesterRetentionStats
 from app.services.volunteer_models import (
     CardItem,
+    CourseCompletionNotFoundError,
+    DuplicateCourseCompletionError,
     DocumentItem,
     GroupOption,
+    InvalidCourseCompletionError,
     RoleAssignmentItem,
     NextOfKinItem,
+    VolunteerCourseCompletionItem,
     VolunteerDetail,
     VolunteerListItem,
     VolunteerListPage,
@@ -26,6 +31,9 @@ from tests.helpers import make_authenticated_user, override_authenticated_user
 class FakeVolunteersService:
     def __init__(self) -> None:
         self.updated_profile_calls: list[dict[str, object | None]] = []
+        self.updated_relations_calls: list[dict[str, object]] = []
+        self.created_course_completion_calls: list[dict[str, int]] = []
+        self.deleted_course_completion_calls: list[dict[str, int]] = []
         self.updated_role_assignment_calls: list[dict[str, int | bool]] = []
         self.uploaded_photo_calls: list[dict[str, str | int | None]] = []
         self.deleted_photo_calls: list[int] = []
@@ -87,6 +95,21 @@ class FakeVolunteersService:
             )
         ]
 
+    async def list_course_completions(
+        self,
+        volunteer_id: int,
+        limit: int = 100,
+    ) -> list[VolunteerCourseCompletionItem]:
+        return [
+            VolunteerCourseCompletionItem(
+                completion_id=11,
+                course_id=4,
+                course_name="Fire safety",
+                completed_semester_code=20262,
+                completed_semester_label="Fall 2026",
+            )
+        ]
+
     async def list_volunteer_documents(self, volunteer_id: int) -> list[DocumentItem]:
         return [
             DocumentItem(
@@ -141,6 +164,53 @@ class FakeVolunteersService:
         detail = await self.get_volunteer_detail(volunteer_id)
         assert detail is not None
         return detail
+
+    async def replace_volunteer_relations(
+        self,
+        *,
+        volunteer_id: int,
+        card_numbers: list[str],
+        next_of_kin: list[tuple[str, str]],
+    ) -> VolunteerRelations:
+        self.updated_relations_calls.append(
+            {
+                "volunteer_id": volunteer_id,
+                "card_numbers": card_numbers,
+                "next_of_kin": next_of_kin,
+            }
+        )
+        return await self.get_volunteer_relations(volunteer_id)
+
+    async def add_course_completion(
+        self,
+        *,
+        volunteer_id: int,
+        course_id: int,
+        year: int,
+        term: int,
+    ) -> None:
+        if course_id == 999:
+            raise InvalidCourseCompletionError("Selected course was not found.")
+        if course_id == 4 and year == 2026 and term == 2:
+            raise DuplicateCourseCompletionError("Dette kurset er allerede registrert for valgt semester.")
+        self.created_course_completion_calls.append(
+            {
+                "volunteer_id": volunteer_id,
+                "course_id": course_id,
+                "year": year,
+                "term": term,
+            }
+        )
+
+    async def delete_course_completion_for_volunteer(self, volunteer_id: int, completion_id: int) -> None:
+        if completion_id != 11:
+            raise CourseCompletionNotFoundError(f"Course completion {completion_id} was not found.")
+        self.deleted_course_completion_calls.append(
+            {
+                "volunteer_id": volunteer_id,
+                "completion_id": completion_id,
+            }
+        )
 
     async def update_role_assignment_for_volunteer(
         self,
@@ -223,11 +293,46 @@ class FakeGroupsService:
         ]
 
 
+class FakeCoursesService:
+    async def list_courses(self, query: str | None = None, limit: int = 100) -> list[CourseListItem]:
+        return [CourseListItem(4, "Fire safety", "Safety basics", datetime(2026, 3, 13, tzinfo=UTC))]
+
+    async def get_current_group_member_counts(self) -> list[GroupMemberCount]:
+        return [GroupMemberCount(group_id=9, group_name="Bar", member_count=14)]
+
+    async def get_org_retention_stats(self) -> list[SemesterRetentionStats]:
+        return [
+            SemesterRetentionStats(
+                semester_code=20261,
+                semester_label="Spring 2026",
+                total_members=11,
+                retained_from_prev=7,
+                new_members=4,
+                retained_to_next_same_group=5,
+                retained_to_next_other_group=3,
+                retained_to_next=8,
+                churned=3,
+            ),
+            SemesterRetentionStats(
+                semester_code=20262,
+                semester_label="Fall 2026",
+                total_members=14,
+                retained_from_prev=8,
+                new_members=6,
+                retained_to_next_same_group=0,
+                retained_to_next_other_group=0,
+                retained_to_next=0,
+                churned=14,
+            ),
+        ]
+
+
 def test_volunteer_pages_render_with_fake_service() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     list_response = client.get("/volunteers")
@@ -243,6 +348,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert detail_response.status_code == 200
     assert detail_response.headers["cache-control"] == "no-store"
     assert "Laster historikk" in detail_response.text
+    assert "Laster kurs" in detail_response.text
     assert "Laster filer" in detail_response.text
     assert "Laster kort og pårørende" in detail_response.text
     assert "name=\"gender\"" in detail_response.text
@@ -478,6 +584,109 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     assert relations_response.status_code == 200
     assert "CARD-42" in relations_response.text
     assert "Contact Person" in relations_response.text
+    assert "Rediger" in relations_response.text
+
+
+def test_volunteer_relations_panel_renders_edit_state() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
+    client = TestClient(app)
+
+    response = client.get("/volunteers/12/relations/panel?edit=true")
+
+    assert response.status_code == 200
+    assert "Lagre kort og pårørende" in response.text
+    assert 'hx-patch="/volunteers/12/relations"' in response.text
+    assert 'name="card_number"' in response.text
+    assert 'name="next_of_kin_name"' in response.text
+    assert 'name="next_of_kin_phone"' in response.text
+    assert "Legg til kort" in response.text
+    assert "Legg til pårørende" in response.text
+    assert "Avbryt redigering" in response.text
+
+
+def test_volunteer_course_panel_renders_with_fake_service() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
+    client = TestClient(app)
+
+    response = client.get("/volunteers/12/course-completions/panel")
+
+    assert response.status_code == 200
+    assert "Fire safety" in response.text
+    assert "Fall 2026" in response.text
+    assert 'href="/courses/4"' in response.text
+    assert 'hx-post="/volunteers/12/course-completions"' in response.text
+    assert 'action="/volunteers/12/course-completions/11?_method=DELETE"' in response.text
+
+
+def test_volunteer_relations_update_route_uses_service_for_htmx() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.post(
+        "/volunteers/12/relations?_method=PATCH",
+        headers={"HX-Request": "true"},
+        data={
+            "card_number": ["CARD-42", "CARD-99"],
+            "next_of_kin_name": ["Contact Person", "Backup Contact"],
+            "next_of_kin_phone": ["00000001", "00000002"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.updated_relations_calls == [
+        {
+            "volunteer_id": 12,
+            "card_numbers": ["CARD-42", "CARD-99"],
+            "next_of_kin": [("Contact Person", "00000001"), ("Backup Contact", "00000002")],
+        }
+    ]
+    assert "CARD-42" in response.text
+    assert "Contact Person" in response.text
+
+
+def test_volunteer_course_completion_routes_use_service_for_htmx() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/volunteers/12/course-completions",
+        headers={"HX-Request": "true"},
+        data={"course_id": "5", "year": "2026", "term": "1"},
+    )
+    delete_response = client.post(
+        "/volunteers/12/course-completions/11?_method=DELETE",
+        headers={"HX-Request": "true"},
+    )
+
+    assert create_response.status_code == 200
+    assert delete_response.status_code == 200
+    assert service.created_course_completion_calls == [
+        {
+            "volunteer_id": 12,
+            "course_id": 5,
+            "year": 2026,
+            "term": 1,
+        }
+    ]
+    assert service.deleted_course_completion_calls == [
+        {
+            "volunteer_id": 12,
+            "completion_id": 11,
+        }
+    ]
 
 
 def test_volunteer_role_assignment_panel_renders_edit_state() -> None:

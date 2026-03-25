@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Float, Text, and_, case, delete, exists, func, insert, literal, or_, select, union_all, update
@@ -8,6 +9,7 @@ from app.db.repository import SqlAlchemyRepository
 from app.db.tables import (
     assignment_roles,
     course_completions,
+    courses,
     groups,
     role_assignments,
     volunteer_cards,
@@ -170,6 +172,26 @@ class VolunteersRepository(SqlAlchemyRepository):
         )
         return await self.fetch_all_mappings(stmt)
 
+    async def fetch_volunteer_course_completion_rows(
+        self,
+        volunteer_id: int,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        stmt = (
+            select(
+                course_completions.c.id,
+                course_completions.c.id_kurs,
+                course_completions.c.gjennomfort_dato,
+                courses.c.navn.label("course_name"),
+            )
+            .select_from(course_completions.join(courses, courses.c.id == course_completions.c.id_kurs))
+            .where(course_completions.c.id_personal == volunteer_id)
+            .order_by(course_completions.c.gjennomfort_dato.desc(), course_completions.c.id.desc())
+            .limit(limit)
+        )
+        return await self.fetch_all_mappings(stmt)
+
     async def list_assignment_group_rows(self) -> list[dict[str, Any]]:
         stmt = (
             select(groups.c.id, groups.c.navn, groups.c.aktiv)
@@ -248,6 +270,9 @@ class VolunteersRepository(SqlAlchemyRepository):
             .limit(1)
         )
 
+    async def course_exists(self, course_id: int) -> bool:
+        return bool(await self.fetch_scalar(select(exists().where(courses.c.id == course_id))))
+
     async def fetch_photo_record(self, volunteer_id: int):
         return await self.fetch_first_mapping(
             select(volunteer_photos.c.sha1, volunteer_photos.c.filetype)
@@ -304,6 +329,104 @@ class VolunteersRepository(SqlAlchemyRepository):
                 postnummerid=postal_code,
             )
         )
+
+    async def replace_volunteer_relations(
+        self,
+        *,
+        volunteer_id: int,
+        card_numbers: list[str],
+        next_of_kin: list[dict[str, str]],
+    ) -> None:
+        created_at = datetime.now(UTC)
+
+        async def replace(session) -> None:
+            await session.execute(delete(volunteer_cards).where(volunteer_cards.c.id_personal == volunteer_id))
+            await session.execute(
+                delete(volunteer_next_of_kin).where(volunteer_next_of_kin.c.id_personal == volunteer_id)
+            )
+            if card_numbers:
+                await session.execute(
+                    insert(volunteer_cards),
+                    [
+                        {
+                            "id_personal": volunteer_id,
+                            "kortnummer": card_number,
+                            "opprettet": created_at,
+                        }
+                        for card_number in card_numbers
+                    ],
+                )
+            if next_of_kin:
+                await session.execute(
+                    insert(volunteer_next_of_kin),
+                    [
+                        {
+                            "id_personal": volunteer_id,
+                            "navn": item["name"],
+                            "telefon": item["phone"],
+                            "opprettet": created_at,
+                        }
+                        for item in next_of_kin
+                    ],
+                )
+
+        await self.execute_in_transaction(replace)
+
+    async def course_completion_exists(
+        self,
+        *,
+        volunteer_id: int,
+        course_id: int,
+        semester_code: int,
+        exclude_completion_id: int | None = None,
+    ) -> bool:
+        filters = [
+            course_completions.c.id_personal == volunteer_id,
+            course_completions.c.id_kurs == course_id,
+            course_completions.c.gjennomfort_dato == semester_code,
+        ]
+        if exclude_completion_id is not None:
+            filters.append(course_completions.c.id != exclude_completion_id)
+        return bool(await self.fetch_scalar(select(exists().where(*filters))))
+
+    async def create_course_completion(
+        self,
+        *,
+        volunteer_id: int,
+        course_id: int,
+        semester_code: int,
+    ) -> dict[str, Any]:
+        stmt = (
+            insert(course_completions)
+            .values(
+                id_personal=volunteer_id,
+                id_kurs=course_id,
+                gjennomfort_dato=semester_code,
+            )
+            .returning(
+                course_completions.c.id,
+                course_completions.c.id_personal,
+                course_completions.c.id_kurs,
+                course_completions.c.gjennomfort_dato,
+            )
+        )
+        return await self.execute_one_mapping(stmt)
+
+    async def fetch_course_completion_record(self, completion_id: int) -> dict[str, Any] | None:
+        stmt = (
+            select(
+                course_completions.c.id,
+                course_completions.c.id_personal,
+                course_completions.c.id_kurs,
+                course_completions.c.gjennomfort_dato,
+            )
+            .where(course_completions.c.id == completion_id)
+            .limit(1)
+        )
+        return await self.fetch_first_mapping(stmt)
+
+    async def delete_course_completion(self, completion_id: int) -> None:
+        await self.execute(delete(course_completions).where(course_completions.c.id == completion_id))
 
     async def role_belongs_to_group(self, *, group_id: int, role_id: int) -> bool:
         return bool(

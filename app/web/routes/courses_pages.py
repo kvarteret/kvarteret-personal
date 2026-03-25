@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import get_courses_service, require_authenticated_user, require_management_user
 from app.errors import NotConfiguredError
+from app.services.semester import get_current_semester_code
+from app.services.volunteer_options import SEMESTER_TERM_OPTIONS
 from app.services.courses import CoursesService
 from app.web.route_helpers import not_configured_http_exception
 from app.web.templates import templates
@@ -72,5 +74,9 @@ async def courses_detail(
             "section": "courses",
             "current_user": current_user,
             "course": course,
+            "default_completion_year": get_current_semester_code() // 10,
+            "default_completion_term": get_current_semester_code() % 10,
+            "semester_term_options": SEMESTER_TERM_OPTIONS,
+            "completion_error": request.query_params.get("completion_error"),
         },
     )

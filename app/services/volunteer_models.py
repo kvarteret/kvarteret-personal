@@ -37,6 +37,22 @@ class RoleAssignmentNotFoundError(VolunteersServiceError):
     pass
 
 
+class InvalidVolunteerRelationsError(VolunteersServiceError):
+    pass
+
+
+class InvalidCourseCompletionError(VolunteersServiceError):
+    pass
+
+
+class DuplicateCourseCompletionError(VolunteersServiceError):
+    pass
+
+
+class CourseCompletionNotFoundError(VolunteersServiceError):
+    pass
+
+
 @dataclass(slots=True)
 class VolunteerListItem:
     volunteer_id: int
@@ -49,6 +65,14 @@ class VolunteerListItem:
     pingvin_points: int = 0
     last_semester_code: int | None = None
     last_semester_label: str | None = None
+
+
+@dataclass(slots=True)
+class VolunteerSearchOption:
+    volunteer_id: int
+    full_name: str
+    profile_url: str
+
 
 @dataclass(slots=True)
 class VolunteerListPage:
@@ -93,6 +117,15 @@ class RoleAssignmentItem:
     semester_code: int
     semester_label: str
     contract_signed: bool
+
+
+@dataclass(slots=True)
+class VolunteerCourseCompletionItem:
+    completion_id: int
+    course_id: int
+    course_name: str
+    completed_semester_code: int
+    completed_semester_label: str
 
 
 @dataclass(slots=True)
@@ -151,11 +184,13 @@ class VolunteerDocumentUploadResult:
 
 class VolunteersServiceProtocol(Protocol):
     async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]: ...
+    async def list_volunteer_search_options(self, query: str, limit: int = 10) -> list[VolunteerSearchOption]: ...
     async def list_volunteers_page(self, query: str | None = None, limit: int = 10, cursor: str | None = None) -> VolunteerListPage: ...
     async def get_volunteer_detail(self, volunteer_id: int) -> VolunteerDetail | None: ...
     async def get_photo_storage_path(self, volunteer_id: int) -> str | None: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
     async def list_role_assignments(self, volunteer_id: int, limit: int = 12) -> list[RoleAssignmentItem]: ...
+    async def list_course_completions(self, volunteer_id: int, limit: int = 100) -> list[VolunteerCourseCompletionItem]: ...
     async def list_volunteer_documents(self, volunteer_id: int) -> list[DocumentItem]: ...
     async def get_volunteer_relations(self, volunteer_id: int) -> VolunteerRelations: ...
     async def list_assignment_groups(self) -> list[GroupOption]: ...
@@ -175,7 +210,23 @@ class VolunteersServiceProtocol(Protocol):
         address: str | None,
         postal_code: str | None,
     ) -> VolunteerDetail: ...
+    async def replace_volunteer_relations(
+        self,
+        *,
+        volunteer_id: int,
+        card_numbers: list[str],
+        next_of_kin: list[tuple[str, str]],
+    ) -> VolunteerRelations: ...
     async def delete_volunteer(self, volunteer_id: int) -> None: ...
+    async def add_course_completion(
+        self,
+        *,
+        volunteer_id: int,
+        course_id: int,
+        year: int,
+        term: int,
+    ) -> None: ...
+    async def delete_course_completion_for_volunteer(self, volunteer_id: int, completion_id: int) -> None: ...
     async def add_role_assignment(
         self,
         *,

@@ -4,7 +4,11 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
-from app.services.volunteers import VolunteersService, VolunteerDetail
+from app.services.volunteers import (
+    DuplicateCourseCompletionError,
+    VolunteersService,
+    VolunteerDetail,
+)
 
 
 def _build_png_bytes() -> bytes:
@@ -187,3 +191,77 @@ async def test_upload_photo_normalizes_to_jpeg_before_storage() -> None:
     assert saved_record["extension"] == "jpg"
     assert result.storage_path.endswith(".jpg")
     assert result.photo_url.endswith(".jpg?token=test")
+
+
+@pytest.mark.asyncio
+async def test_add_course_completion_invalidates_course_completion_cache() -> None:
+    fetch_calls = 0
+    created_calls: list[dict[str, int]] = []
+
+    class FakeRepository:
+        async def volunteer_exists(self, volunteer_id: int) -> bool:
+            return volunteer_id == 1
+
+        async def course_exists(self, course_id: int) -> bool:
+            return course_id == 4
+
+        async def course_completion_exists(self, *, volunteer_id: int, course_id: int, semester_code: int) -> bool:
+            return False
+
+        async def create_course_completion(self, *, volunteer_id: int, course_id: int, semester_code: int):
+            created_calls.append(
+                {
+                    "volunteer_id": volunteer_id,
+                    "course_id": course_id,
+                    "semester_code": semester_code,
+                }
+            )
+            return {"id": 99}
+
+        async def fetch_volunteer_course_completion_rows(self, volunteer_id: int, *, limit: int = 100):
+            nonlocal fetch_calls
+            fetch_calls += 1
+            return [
+                {
+                    "id": fetch_calls,
+                    "id_kurs": 4,
+                    "gjennomfort_dato": 20261 + fetch_calls,
+                    "course_name": "Fire safety",
+                }
+            ]
+
+    service = VolunteersService(repository=FakeRepository())  # type: ignore[arg-type]
+
+    first = await service.list_course_completions(1)
+    second = await service.list_course_completions(1)
+    await service.add_course_completion(volunteer_id=1, course_id=4, year=2026, term=2)
+    third = await service.list_course_completions(1)
+
+    assert fetch_calls == 2
+    assert first is second
+    assert third[0].completed_semester_code == 20263
+    assert created_calls == [
+        {
+            "volunteer_id": 1,
+            "course_id": 4,
+            "semester_code": 20262,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_add_course_completion_rejects_same_course_same_semester() -> None:
+    class FakeRepository:
+        async def volunteer_exists(self, volunteer_id: int) -> bool:
+            return True
+
+        async def course_exists(self, course_id: int) -> bool:
+            return True
+
+        async def course_completion_exists(self, *, volunteer_id: int, course_id: int, semester_code: int) -> bool:
+            return True
+
+    service = VolunteersService(repository=FakeRepository())  # type: ignore[arg-type]
+
+    with pytest.raises(DuplicateCourseCompletionError):
+        await service.add_course_completion(volunteer_id=1, course_id=4, year=2026, term=2)

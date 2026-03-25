@@ -5,12 +5,17 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_settings, get_volunteers_service, require_management_user
+from app.dependencies import get_courses_service, get_settings, get_volunteers_service, require_management_user
 from app.observability import log_admin_activity
+from app.services.courses import CoursesService
 from app.services.photo_processing import InvalidPhotoError, PhotoUploadTooLargeError
 from app.services.volunteers import (
+    CourseCompletionNotFoundError,
+    DuplicateCourseCompletionError,
     DuplicateRoleAssignmentError,
     DocumentNotFoundError,
+    InvalidCourseCompletionError,
+    InvalidVolunteerRelationsError,
     InvalidRoleAssignmentError,
     RoleAssignmentNotFoundError,
     UnsupportedUploadError,
@@ -18,7 +23,12 @@ from app.services.volunteers import (
     VolunteerNotFoundError,
 )
 from app.web.upload_helpers import read_upload_file_limited
-from app.web.routes.volunteer_route_helpers import render_role_assignments_panel, require_existing_volunteer
+from app.web.routes.volunteer_route_helpers import (
+    render_course_completions_panel,
+    render_relations_panel,
+    render_role_assignments_panel,
+    require_existing_volunteer,
+)
 
 router = APIRouter()
 
@@ -62,6 +72,53 @@ async def volunteer_update_profile(
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@router.patch("/volunteers/{volunteer_id}/relations")
+async def volunteer_update_relations(
+    request: Request,
+    volunteer_id: int,
+    current_user=Depends(require_management_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    form = await request.form()
+    card_numbers = [str(value) for value in form.getlist("card_number")]
+    next_of_kin_names = [str(value) for value in form.getlist("next_of_kin_name")]
+    next_of_kin_phones = [str(value) for value in form.getlist("next_of_kin_phone")]
+    max_next_of_kin_rows = max(len(next_of_kin_names), len(next_of_kin_phones))
+    next_of_kin = [
+        (
+            next_of_kin_names[index] if index < len(next_of_kin_names) else "",
+            next_of_kin_phones[index] if index < len(next_of_kin_phones) else "",
+        )
+        for index in range(max_next_of_kin_rows)
+    ]
+    try:
+        await volunteers_service.replace_volunteer_relations(
+            volunteer_id=volunteer_id,
+            card_numbers=card_numbers,
+            next_of_kin=next_of_kin,
+        )
+    except VolunteerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidVolunteerRelationsError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer.update_relations",
+        subject_type="volunteer",
+        subject_id=volunteer_id,
+    )
+    if request.headers.get("HX-Request") == "true":
+        volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
+        return await render_relations_panel(
+            request,
+            current_user=current_user,
+            volunteers_service=volunteers_service,
+            volunteer=volunteer,
+        )
+    return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.delete("/volunteers/{volunteer_id}")
 async def volunteer_delete(
     request: Request,
@@ -81,6 +138,81 @@ async def volunteer_delete(
         subject_id=volunteer_id,
     )
     return RedirectResponse(url="/volunteers", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/volunteers/{volunteer_id}/course-completions")
+async def volunteer_add_course_completion(
+    request: Request,
+    volunteer_id: int,
+    course_id: int = Form(...),
+    year: int = Form(...),
+    term: int = Form(...),
+    current_user=Depends(require_management_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    try:
+        await volunteers_service.add_course_completion(
+            volunteer_id=volunteer_id,
+            course_id=course_id,
+            year=year,
+            term=term,
+        )
+    except VolunteerNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (DuplicateCourseCompletionError, InvalidCourseCompletionError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer.add_course_completion",
+        subject_type="volunteer",
+        subject_id=volunteer_id,
+        details={"course_id": course_id, "year": year, "term": term},
+    )
+    if request.headers.get("HX-Request") == "true":
+        volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
+        return await render_course_completions_panel(
+            request,
+            current_user=current_user,
+            volunteers_service=volunteers_service,
+            courses_service=courses_service,
+            volunteer=volunteer,
+        )
+    return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.delete("/volunteers/{volunteer_id}/course-completions/{completion_id}")
+async def volunteer_delete_course_completion(
+    request: Request,
+    volunteer_id: int,
+    completion_id: int,
+    current_user=Depends(require_management_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    try:
+        await volunteers_service.delete_course_completion_for_volunteer(volunteer_id, completion_id)
+    except CourseCompletionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer.delete_course_completion",
+        subject_type="course_completion",
+        subject_id=completion_id,
+        details={"volunteer_id": volunteer_id},
+    )
+    if request.headers.get("HX-Request") == "true":
+        volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
+        return await render_course_completions_panel(
+            request,
+            current_user=current_user,
+            volunteers_service=volunteers_service,
+            courses_service=courses_service,
+            volunteer=volunteer,
+        )
+    return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/volunteers/{volunteer_id}/role-assignments")

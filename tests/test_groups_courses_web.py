@@ -12,7 +12,15 @@ from app.dependencies import (
     get_volunteers_service,
 )
 from app.main import create_app
-from app.services.courses import CourseCompletionItem, CourseDetail, CourseListItem, RequiredGroupItem
+from app.services.courses import (
+    CourseCompletionItem,
+    CourseCompletionNotFoundError,
+    CourseDetail,
+    CourseListItem,
+    DuplicateCourseCompletionError,
+    InvalidCourseCompletionError,
+    RequiredGroupItem,
+)
 from app.services.groups import (
     GroupDetail,
     GroupListItem,
@@ -27,7 +35,7 @@ from app.services.groups import (
     SemesterStats,
 )
 from app.services.semester_transfer import SemesterTransferCandidate, SemesterTransferPreview
-from app.services.volunteer_models import VolunteerListItem
+from app.services.volunteer_models import VolunteerListItem, VolunteerSearchOption
 from tests.helpers import make_authenticated_user, override_authenticated_user
 
 
@@ -164,6 +172,10 @@ class FakeGroupsService:
 
 
 class FakeCoursesService:
+    def __init__(self) -> None:
+        self.created_completion = None
+        self.deleted_completion = None
+
     async def list_courses(self, query: str | None = None, limit: int = 100) -> list[CourseListItem]:
         return [CourseListItem(4, "Fire safety", "Safety basics", datetime(2026, 3, 13, tzinfo=UTC))]
 
@@ -185,6 +197,31 @@ class FakeCoursesService:
             ],
             delete_blockers=[],
         )
+
+    async def create_course_completion(self, *, course_id: int, volunteer_id: int, year: int, term: int) -> int:
+        if volunteer_id == 999:
+            raise InvalidCourseCompletionError("Selected volunteer was not found.")
+        if volunteer_id == 12 and year == 2026 and term == 2:
+            raise DuplicateCourseCompletionError("Dette kurset er allerede registrert for valgt semester.")
+        self.created_completion = (course_id, volunteer_id, year, term)
+        return 21
+
+    async def create_course_completions(self, *, course_id: int, volunteer_ids: list[int], year: int, term: int) -> int:
+        if not volunteer_ids:
+            raise InvalidCourseCompletionError("Velg minst én frivillig.")
+        if len(set(volunteer_ids)) != len(volunteer_ids):
+            raise InvalidCourseCompletionError("Den samme frivillige kan ikke velges flere ganger.")
+        if 999 in volunteer_ids:
+            raise InvalidCourseCompletionError("Selected volunteer was not found.")
+        if 12 in volunteer_ids and year == 2026 and term == 2:
+            raise DuplicateCourseCompletionError("Dette kurset er allerede registrert for valgt semester.")
+        self.created_completion = (course_id, volunteer_ids, year, term)
+        return len(volunteer_ids)
+
+    async def delete_course_completion(self, *, course_id: int, completion_id: int) -> None:
+        if completion_id != 11:
+            raise CourseCompletionNotFoundError(f"Course completion {completion_id} was not found.")
+        self.deleted_completion = (course_id, completion_id)
 
 
 class FakeSemesterTransferService:
@@ -216,6 +253,8 @@ class FakeVolunteersService:
     def __init__(self) -> None:
         self.created_assignment = None
         self.last_list_limit = None
+        self.last_search_option_query = None
+        self.last_search_option_limit = None
 
     async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
         self.last_list_limit = limit
@@ -247,6 +286,19 @@ class FakeVolunteersService:
         contract_signed: bool,
     ) -> None:
         self.created_assignment = (volunteer_id, group_id, role_id, year, term, contract_signed)
+
+    async def list_volunteer_search_options(self, query: str, limit: int = 10) -> list[VolunteerSearchOption]:
+        self.last_search_option_query = query
+        self.last_search_option_limit = limit
+        if "sample" not in query.lower():
+            return []
+        return [
+            VolunteerSearchOption(
+                volunteer_id=12,
+                full_name="Sample Person",
+                profile_url="/volunteers/12",
+            )
+        ]
 
 
 def test_groups_and_courses_pages_render() -> None:
@@ -324,10 +376,19 @@ def test_groups_and_courses_pages_render() -> None:
     assert "Opprett kurs" in course_new_response.text
     assert "Tilbake til kurs" in course_new_response.text
     assert course_detail_response.status_code == 200
-    assert "Siste fullføringer" in course_detail_response.text
+    assert "Kursfullføringer" in course_detail_response.text
     assert "Lagre kurs" in course_detail_response.text
+    assert "Legg til frivillig" in course_detail_response.text
+    assert "volunteerPicker({" in course_detail_response.text
+    assert "/volunteers/search/options/typeahead" in course_detail_response.text
+    assert "Valgte frivillige" in course_detail_response.text
+    assert "Alpine.initTree" in course_detail_response.text
+    assert 'action="/courses/4/completions"' in course_detail_response.text
+    assert '/courses/4/completions/11?_method=DELETE' in course_detail_response.text
     assert 'href="/groups/7"' in course_detail_response.text
     assert 'href="/volunteers/12"' in course_detail_response.text
+    assert "cdn.jsdelivr.net/npm/alpinejs" in course_detail_response.text
+    assert "Legg til</button>" in course_detail_response.text
 
 
 def test_group_role_actions_redirect_and_call_service() -> None:
@@ -406,6 +467,69 @@ def test_group_role_assignment_create_redirects_and_calls_service() -> None:
     assert response.status_code == 303
     assert response.headers["location"] == "/groups/7"
     assert volunteers_service.created_assignment == (12, 7, 3, 2026, 2, True)
+
+
+def test_course_completion_volunteer_search_returns_matches() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.get("/volunteers/search/options/typeahead?q=sample")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "volunteer_id": 12,
+                "full_name": "Sample Person",
+                "profile_url": "/volunteers/12",
+            }
+        ]
+    }
+    assert volunteers_service.last_search_option_query == "sample"
+    assert volunteers_service.last_search_option_limit == 12
+
+
+def test_course_completion_volunteer_search_short_query_returns_empty_list() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.get("/volunteers/search/options/typeahead?q=s")
+
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+    assert volunteers_service.last_search_option_query is None
+
+
+def test_course_completion_actions_redirect_and_call_service() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    courses_service = FakeCoursesService()
+    app.dependency_overrides[get_courses_service] = lambda: courses_service
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/courses/4/completions",
+        data={"volunteer_ids": ["13", "14"], "year": "2026", "term": "1"},
+        follow_redirects=False,
+    )
+    delete_response = client.post(
+        "/courses/4/completions/11?_method=DELETE",
+        follow_redirects=False,
+    )
+
+    assert create_response.status_code == 303
+    assert create_response.headers["location"] == "/courses/4"
+    assert courses_service.created_completion == (4, [13, 14], 2026, 1)
+
+    assert delete_response.status_code == 303
+    assert delete_response.headers["location"] == "/courses/4"
+    assert courses_service.deleted_completion == (4, 11)
 
 
 def test_group_admin_can_manage_their_group() -> None:
