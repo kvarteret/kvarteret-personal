@@ -60,7 +60,7 @@
               data-volunteer-picker-root
               x-data="volunteerPicker({ searchUrl: '{{ url_for('volunteer_search_typeahead_options') }}', minQueryLength: 2 })"
             >
-              <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_9rem]">
+              <div class="grid gap-4">
                 <div class="grid gap-4">
                   <label class="grid gap-1">
                     <span class="text-sm text-stone-500">Finn frivillig</span>
@@ -73,7 +73,7 @@
                         @keydown.enter.prevent="handleEnter()"
                         @input.debounce.250ms="search()"
                         autocomplete="off"
-                        class="app-input rounded-none border-2 border-kvarteret-ink px-3 py-3 shadow-none focus:border-kvarteret-red"
+                        class="w-full border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink placeholder:text-kvarteret-sky/65 focus:border-kvarteret-red focus:outline-none"
                         placeholder="Søk etter frivillig"
                         type="search"
                       >
@@ -149,24 +149,35 @@
                     </template>
                   </div>
                 </div>
-                <label class="grid gap-1 min-w-0">
-                  <span class="text-sm text-stone-500">År</span>
-                  <input class="app-input" max="3000" min="1900" name="year" required step="1" type="number" value="{{ default_completion_year }}">
-                </label>
+                <div class="grid w-full gap-4 sm:grid-cols-3">
+                  <label class="grid gap-1 min-w-0 sm:col-span-2">
+                    <span class="text-sm text-stone-500">År</span>
+                    <input
+                      class="w-full border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink focus:border-kvarteret-red focus:outline-none"
+                      max="3000"
+                      min="1900"
+                      name="year"
+                      required
+                      step="1"
+                      type="number"
+                      value="{{ default_completion_year }}"
+                    >
+                  </label>
+                  <label class="grid gap-1 min-w-0 sm:col-span-1">
+                    <span class="text-sm text-stone-500">Semester</span>
+                    <select
+                      class="w-full appearance-auto border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink focus:border-kvarteret-red focus:outline-none"
+                      name="term"
+                      required
+                    >
+                      {% for term_value, term_label in semester_term_options %}
+                        <option value="{{ term_value }}" {% if term_value|int == default_completion_term %}selected{% endif %}>{{ term_label }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                </div>
               </div>
-              <div class="flex flex-col gap-4 sm:flex-row sm:items-end">
-                <label class="grid gap-1 min-w-0 sm:w-56">
-                  <span class="text-sm text-stone-500">Semester</span>
-                  <select
-                    class="w-full appearance-auto border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink focus:border-kvarteret-red focus:outline-none"
-                    name="term"
-                    required
-                  >
-                    {% for term_value, term_label in semester_term_options %}
-                      <option value="{{ term_value }}" {% if term_value|int == default_completion_term %}selected{% endif %}>{{ term_label }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
+              <div class="flex">
                 <button class="app-button" type="submit">Legg til</button>
               </div>
             </form>
