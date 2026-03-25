@@ -1413,6 +1413,11 @@
       opacity: 50%;
     }
   }
+  .sm\:w-56 {
+    @media (width >= 40rem) {
+      width: calc(var(--spacing) * 56);
+    }
+  }
   .sm\:flex-row {
     @media (width >= 40rem) {
       flex-direction: row;
@@ -1421,6 +1426,11 @@
   .sm\:items-center {
     @media (width >= 40rem) {
       align-items: center;
+    }
+  }
+  .sm\:items-end {
+    @media (width >= 40rem) {
+      align-items: flex-end;
     }
   }
   .sm\:p-6 {
@@ -1565,6 +1575,11 @@
   .lg\:w-12 {
     @media (width >= 64rem) {
       width: calc(var(--spacing) * 12);
+    }
+  }
+  .lg\:grid-cols-\[minmax\(0\,1fr\)_9rem\] {
+    @media (width >= 64rem) {
+      grid-template-columns: minmax(0,1fr) 9rem;
     }
   }
   .lg\:grid-cols-\[minmax\(0\,1fr\)_9rem_9rem\] {
