@@ -155,7 +155,11 @@
                 </label>
                 <label class="grid gap-1 min-w-0">
                   <span class="text-sm text-stone-500">Semester</span>
-                  <select class="app-input" name="term" required>
+                  <select
+                    class="w-full appearance-auto border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink focus:border-kvarteret-red focus:outline-none"
+                    name="term"
+                    required
+                  >
                     {% for term_value, term_label in semester_term_options %}
                       <option value="{{ term_value }}" {% if term_value|int == default_completion_term %}selected{% endif %}>{{ term_label }}</option>
                     {% endfor %}

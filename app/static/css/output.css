@@ -537,6 +537,9 @@
   .list-disc {
     list-style-type: disc;
   }
+  .appearance-auto {
+    appearance: auto;
+  }
   .grid-cols-3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1387,6 +1390,12 @@
   .focus\:border-kvarteret-red {
     &:focus {
       border-color: var(--color-kvarteret-red);
+    }
+  }
+  .focus\:outline-none {
+    &:focus {
+      --tw-outline-style: none;
+      outline-style: none;
     }
   }
   .disabled\:cursor-not-allowed {
