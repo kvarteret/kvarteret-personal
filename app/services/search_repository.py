@@ -67,6 +67,7 @@ def _build_filters(query: SearchQuery, points) -> list:
 
     filters.extend(
         [
+            _active_signed_contract_filter(query.has_active_signed_contract),
             _membership_filter(query.include_groups, semester_code=None, include_mode=True),
             _membership_filter(query.include_current_groups, semester_code=_get_current_semester_code(), include_mode=True),
             _membership_filter(query.exclude_groups, semester_code=None, include_mode=False),
@@ -80,6 +81,19 @@ def _build_filters(query: SearchQuery, points) -> list:
         ]
     )
     return [filter_clause for filter_clause in filters if filter_clause is not None]
+
+
+def _active_signed_contract_filter(enabled: bool):
+    if not enabled:
+        return None
+
+    return exists(
+        select(1)
+        .select_from(historie)
+        .where(historie.c.id_personal == personal.c.id)
+        .where(historie.c.semester == _get_current_semester_code())
+        .where(historie.c.signert_kontrakt.is_(True))
+    )
 
 
 def _membership_filter(

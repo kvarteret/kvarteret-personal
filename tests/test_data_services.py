@@ -61,6 +61,9 @@ class FakeVolunteerApplicationsRepository:
         self.created_invites: list[dict[str, object | None]] = []
         self.group_admin_email_recipients: dict[int, list[str]] = {}
         self.existing_volunteer_ids_by_email: dict[str, int] = {}
+        self.application_photo_sha1: str | None = None
+        self.application_photo_filetype: str | None = None
+        self.application_photo_url: str | None = None
 
     async def create_volunteer_application_invitation(
         self,
@@ -120,9 +123,9 @@ class FakeVolunteerApplicationsRepository:
             gender="K",
             address=None,
             postal_code=None,
-            photo_sha1=None,
-            photo_filetype=None,
-            photo_url=None,
+            photo_sha1=self.application_photo_sha1,
+            photo_filetype=self.application_photo_filetype,
+            photo_url=self.application_photo_url,
             initial_group_id=3,
             initial_group_name="Bar",
             initial_role_id=9,
@@ -491,6 +494,9 @@ async def test_volunteer_applications_pending_count_is_cached() -> None:
 @pytest.mark.asyncio
 async def test_volunteer_applications_submit_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
+    repository.application_photo_sha1 = "abc123"
+    repository.application_photo_filetype = "jpg"
+    repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     service = VolunteerApplicationsService(
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
@@ -525,6 +531,9 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
 async def test_volunteer_applications_submit_notifies_group_admins_with_review_link() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.group_admin_email_recipients = {3: ["leader@example.test", "second@example.test"]}
+    repository.application_photo_sha1 = "abc123"
+    repository.application_photo_filetype = "jpg"
+    repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
         settings=Settings(app_secret_key="test-secret", app_public_base_url="https://personal.kvarteret.no"),
@@ -580,6 +589,9 @@ async def test_volunteer_applications_submit_notifies_group_admins_with_review_l
 @pytest.mark.asyncio
 async def test_volunteer_applications_submit_preserves_valid_e164_phone_number() -> None:
     repository = FakeVolunteerApplicationsRepository()
+    repository.application_photo_sha1 = "abc123"
+    repository.application_photo_filetype = "jpg"
+    repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     service = VolunteerApplicationsService(
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
@@ -620,6 +632,31 @@ async def test_volunteer_applications_submit_requires_e164_phone_number() -> Non
                 first_name="Ada",
                 last_name="Lovelace",
                 phone="99999999",
+                birth_date=None,
+                gender="K",
+                address=None,
+                postal_code=None,
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_submit_requires_profile_photo_when_missing() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    with pytest.raises(VolunteerApplicationValidationError, match="Profilbilde er påkrevd."):
+        await service.submit_volunteer_application(
+            "token-123",
+            VolunteerApplicationSubmissionInput(
+                first_name="Ada",
+                last_name="Lovelace",
+                phone="+4799999998",
                 birth_date=None,
                 gender="K",
                 address=None,

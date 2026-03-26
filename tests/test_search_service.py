@@ -36,6 +36,7 @@ async def test_search_service_delegates_query_to_repository() -> None:
     query = SearchQuery(
         include_groups=SearchFilterList(ids=[10, 12], conjunction=False),
         pingvin_points_above=0,
+        has_active_signed_contract=True,
     )
 
     results = await service.search_volunteers(query)

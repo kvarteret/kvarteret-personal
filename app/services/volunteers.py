@@ -73,7 +73,7 @@ class VolunteersService:
         storage_service: StorageService | None = None,
         media_token_service: MediaTokenService | None = None,
         detail_cache_ttl_seconds: int | None = None,
-        photo_upload_max_bytes: int = 3 * 1024 * 1024,
+        photo_upload_max_bytes: int = 40 * 1024 * 1024,
         photo_max_dimension: int = 2048,
     ) -> None:
         self.repository = repository or VolunteersRepository()

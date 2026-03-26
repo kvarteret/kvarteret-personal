@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     azure_blob_account_name: str | None = Field(default=None)
     azure_blob_account_key: str | None = Field(default=None)
     azure_photo_container: str = Field(default="images")
-    photo_upload_max_bytes: int = Field(default=3 * 1024 * 1024)
+    photo_upload_max_bytes: int = Field(default=40 * 1024 * 1024)
     photo_max_dimension: int = Field(default=2048)
     photo_default_size: int = Field(default=512)
     database_url: str | None = Field(default=None)

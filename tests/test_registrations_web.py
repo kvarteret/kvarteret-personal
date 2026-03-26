@@ -245,6 +245,33 @@ class InvalidPhoneVolunteerApplicationsService(FakeVolunteerApplicationsService)
         raise VolunteerApplicationValidationError("Phone number must be entered in E.164 format, for example +4791234567.")
 
 
+class NoPhotoVolunteerApplicationsService(FakeVolunteerApplicationsService):
+    async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None:
+        detail = await super().get_volunteer_application_by_token(token)
+        if detail is None:
+            return None
+        detail.photo_sha1 = None
+        detail.photo_filetype = None
+        detail.photo_url = None
+        return detail
+
+
+class MissingPhotoVolunteerApplicationsService(FakeVolunteerApplicationsService):
+    async def submit_volunteer_application(
+        self,
+        token,
+        submission,
+        *,
+        base_url: str | None = None,
+        photo_filename: str | None = None,
+        photo_content: bytes | None = None,
+        photo_content_type: str | None = None,
+    ):
+        from app.services.volunteer_applications import VolunteerApplicationValidationError
+
+        raise VolunteerApplicationValidationError("Profilbilde er påkrevd.")
+
+
 def test_volunteer_application_pages_render() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
@@ -276,6 +303,21 @@ def test_volunteer_application_pages_render() -> None:
     assert "URL.createObjectURL(file)" in public_response.text
     assert 'pattern="\\+[1-9][0-9]{7,14}"' in public_response.text
     assert 'placeholder="+4791234567"' in public_response.text
+    assert 'name="profile_photo"' in public_response.text
+
+
+def test_volunteer_application_form_requires_photo_when_none_exists() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: NoPhotoVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/apply/token-123")
+
+    assert response.status_code == 200
+    assert 'name="profile_photo"' in response.text
+    assert 'name="profile_photo"' in response.text and "required" in response.text
 
 
 def test_volunteer_application_detail_page_renders_full_preview() -> None:
@@ -467,7 +509,7 @@ def test_volunteer_application_submit_accepts_profile_photo_upload() -> None:
     ]
 
 
-def test_volunteer_application_submit_rejects_profile_photo_over_3mb() -> None:
+def test_volunteer_application_submit_rejects_profile_photo_over_40mb() -> None:
     app = create_app()
     override_authenticated_user(app, None)
     volunteer_applications_service = FakeVolunteerApplicationsService()
@@ -485,12 +527,12 @@ def test_volunteer_application_submit_rejects_profile_photo_over_3mb() -> None:
             "address": "Example address",
             "postal_code": "0000",
         },
-        files={"profile_photo": ("avatar.png", b"x" * (3 * 1024 * 1024 + 1), "image/png")},
+        files={"profile_photo": ("avatar.png", b"x" * (40 * 1024 * 1024 + 1), "image/png")},
         follow_redirects=False,
     )
 
     assert response.status_code == 413
-    assert response.json() == {"detail": "Photos must be 3 MB or smaller."}
+    assert response.json() == {"detail": "Photos must be 40 MB or smaller."}
     assert volunteer_applications_service.submission_calls == []
 
 
@@ -516,6 +558,30 @@ def test_volunteer_application_submit_rejects_non_e164_phone() -> None:
 
     assert response.status_code == 400
     assert "E.164" in response.text
+
+
+def test_volunteer_application_submit_rejects_missing_profile_photo() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: MissingPhotoVolunteerApplicationsService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/apply/token-123",
+        data={
+            "first_name": "Sample",
+            "last_name": "Registrant",
+            "phone": "+4791234567",
+            "birth_date": "1815-12-10",
+            "gender": "K",
+            "address": "Example address",
+            "postal_code": "0000",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Profilbilde er påkrevd." in response.text
 
 
 def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:

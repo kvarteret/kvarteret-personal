@@ -325,6 +325,9 @@ class VolunteerApplicationsService:
         uploaded_new_photo = False
         storage_service: StorageService | None = None
 
+        if not existing.photo_sha1 and not (photo_filename and photo_content):
+            raise VolunteerApplicationValidationError("Profilbilde er påkrevd.")
+
         if photo_filename and photo_content:
             safe_filename = _sanitize_filename(photo_filename)
             extension = _normalize_extension(safe_filename)

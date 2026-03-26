@@ -17,6 +17,7 @@ class SearchQuery:
     birth_date_after: date | None = None
     pingvin_points_below: int | None = None
     pingvin_points_above: int | None = None
+    has_active_signed_contract: bool = False
     include_groups: SearchFilterList | None = None
     include_current_groups: SearchFilterList | None = None
     exclude_groups: SearchFilterList | None = None

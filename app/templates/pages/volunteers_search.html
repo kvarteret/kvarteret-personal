@@ -29,6 +29,13 @@
           </label>
         </div>
 
+        <div class="mt-6">
+          <label class="inline-flex cursor-pointer items-center gap-3 rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold tracking-wide text-stone-900 transition hover:border-kvarteret-red hover:text-kvarteret-red">
+            <input class="h-4 w-4 accent-kvarteret-red" name="has_active_signed_contract" type="checkbox" value="on" {% if form.has_active_signed_contract %}checked{% endif %}>
+            <span>Kun aktive frivillige med signert kontrakt</span>
+          </label>
+        </div>
+
         <div class="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           <div hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/search/options/groups?field=include_groups&selected={{ form.include_groups|join(',') }}" hx-swap="outerHTML" hx-trigger="load">
             <label class="grid gap-1">

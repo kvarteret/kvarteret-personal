@@ -71,10 +71,11 @@
               class="app-input file:px-0 file:text-sm"
               data-photo-input
               name="profile_photo"
+              {% if not volunteer_application.photo_url %}required{% endif %}
               type="file"
             >
             <p class="text-sm leading-6 text-stone-500">
-              Du kan laste opp og kontrollere bildet før du sender inn. Maks størrelse er 3 MB.
+              Du kan laste opp og kontrollere bildet før du sender inn.
             </p>
           </label>
         </section>
