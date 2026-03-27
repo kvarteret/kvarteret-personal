@@ -258,6 +258,18 @@ event_organizer_groups = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+rooms = Table(
+    "rooms",
+    public_metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("slug", Text, nullable=False, unique=True),
+    Column("name", Text, nullable=False),
+    Column("sort_order", Integer, nullable=False),
+    Column("is_active", Boolean, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
 events = Table(
     "events",
     public_metadata,
@@ -273,6 +285,8 @@ events = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime),
     Column("facebook_url", Text),
+    Column("room_id", UUID(as_uuid=True), ForeignKey("public.rooms.id", ondelete="SET NULL")),
+    Column("room_text", Text),
     Column(
         "event_type_id",
         UUID(as_uuid=True),
