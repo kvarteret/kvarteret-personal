@@ -41,16 +41,16 @@ ROOM_SEED_STATEMENTS = [
     """
 insert into public.rooms (slug, name, sort_order)
 values
-    ('teglverket', 'TEGLVERKET', 10),
-    ('tivoli', 'TIVOLI', 20),
-    ('storelogen', 'STORELOGEN', 30),
-    ('speilsalen', 'SPEILSALEN', 40),
-    ('maos', 'MAOS', 50),
-    ('stillhet', 'STILLHET', 60),
-    ('stoy', 'STØY', 70),
-    ('grondahls', 'GRØNDAHLS', 80),
-    ('halvtimen', 'HALVTIMEN', 90),
-    ('stjernesalen', 'STJERNESALEN', 100)
+    ('teglverket', 'Teglverket', 10),
+    ('tivoli', 'Tivoli', 20),
+    ('storelogen', 'Storelogen', 30),
+    ('speilsalen', 'Speilsalen', 40),
+    ('maos', 'Maos', 50),
+    ('stillhet', 'Stillhet', 60),
+    ('stoy', 'Støy', 70),
+    ('grondahls', 'Grøndahls', 80),
+    ('halvtimen', 'Halvtimen', 90),
+    ('stjernesalen', 'Stjernesalen', 100)
 on conflict (slug) do update
 set
     name = excluded.name,
