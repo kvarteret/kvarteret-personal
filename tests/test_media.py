@@ -4,9 +4,19 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.auth.roles import UserRole
-from app.dependencies import get_current_user, get_mobile_card_service, get_volunteers_service
+from app.dependencies import (
+    get_current_user,
+    get_mobile_card_service,
+    get_volunteers_service,
+)
 from app.main import create_app
-from app.media_tokens import build_document_media_url, build_photo_media_url, sign_media_token
+from app.media_tokens import (
+    build_document_media_url,
+    build_photo_media_url,
+    sign_media_token,
+)
+from app.services.mobile_card import MobileCardCurrentCardResult
+
 
 def _build_jpeg_bytes() -> bytes:
     from io import BytesIO
@@ -55,13 +65,15 @@ class FakeMobileCardService:
         class Card:
             person_id = 12
 
-        return Card()
+        return MobileCardCurrentCardResult(card=Card())
 
 
 def test_media_photo_route_returns_backend_bytes(monkeypatch) -> None:
     from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
     client = TestClient(create_app())
 
     response = client.get(build_photo_media_url("abc123.jpg"))
@@ -77,7 +89,9 @@ def test_media_photo_route_returns_backend_bytes(monkeypatch) -> None:
 def test_media_document_route_returns_backend_bytes(monkeypatch) -> None:
     from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
     client = TestClient(create_app())
 
     response = client.get(build_document_media_url("12/certificate.pdf"))
@@ -93,7 +107,9 @@ def test_media_document_route_returns_backend_bytes(monkeypatch) -> None:
 def test_media_route_rejects_invalid_token(monkeypatch) -> None:
     from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
     client = TestClient(create_app())
     token = sign_media_token(kind="photo", path="other.jpg")
 
@@ -105,7 +121,9 @@ def test_media_route_rejects_invalid_token(monkeypatch) -> None:
 def test_authenticated_image_route_allows_admin_session(monkeypatch) -> None:
     from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: type(
         "User",
@@ -128,7 +146,9 @@ def test_authenticated_image_route_allows_admin_session(monkeypatch) -> None:
 def test_authenticated_image_route_rejects_other_volunteer(monkeypatch) -> None:
     from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: type(
         "User",
@@ -147,7 +167,9 @@ def test_authenticated_image_route_rejects_other_volunteer(monkeypatch) -> None:
 def test_authenticated_image_route_allows_mobile_card_bearer(monkeypatch) -> None:
     from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: None
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
@@ -162,7 +184,9 @@ def test_authenticated_image_route_allows_mobile_card_bearer(monkeypatch) -> Non
 def test_authenticated_image_route_returns_304_when_etag_matches(monkeypatch) -> None:
     from app.media import router as media_module
 
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: type(
         "User",
@@ -179,12 +203,20 @@ def test_authenticated_image_route_returns_304_when_etag_matches(monkeypatch) ->
     assert response.content == b""
 
 
-def test_media_photo_route_falls_back_to_original_bytes_when_variant_rendering_fails(monkeypatch) -> None:
+def test_media_photo_route_falls_back_to_original_bytes_when_variant_rendering_fails(
+    monkeypatch,
+) -> None:
     from app.media import router as media_module
 
     media_module.PHOTO_VARIANT_CACHE.clear()
-    monkeypatch.setattr(media_module, "_get_storage_service", lambda request: FakeStorageService())
-    monkeypatch.setattr(media_module, "render_photo_variant", lambda content, max_dimension: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        media_module, "_get_storage_service", lambda request: FakeStorageService()
+    )
+    monkeypatch.setattr(
+        media_module,
+        "render_photo_variant",
+        lambda content, max_dimension: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
     client = TestClient(create_app())
 
     response = client.get(build_photo_media_url("abc123.jpg"))

@@ -40,13 +40,18 @@ DOCUMENT_HEADERS = {
     "Pragma": "no-cache",
     "X-Content-Type-Options": "nosniff",
 }
-PHOTO_VARIANT_CACHE: TTLCache[tuple[str, int], ProcessedPhoto] = TTLCache(ttl_seconds=3600, max_entries=4096)
+PHOTO_VARIANT_CACHE: TTLCache[tuple[str, int], ProcessedPhoto] = TTLCache(
+    ttl_seconds=3600, max_entries=4096
+)
 
 
 def _get_storage_service(request: Request) -> StorageService:
     storage_service = request.app.state.container.storage_service
     if storage_service is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Media storage is not configured.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Media storage is not configured.",
+        )
     return storage_service
 
 
@@ -59,13 +64,24 @@ async def get_photo(
     settings=Depends(get_settings),
     media_token_service: MediaTokenService = Depends(get_media_token_service),
 ) -> Response:
-    if not media_token_service.verify_media_token(token=token, kind="photo", path=photo_path):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid media token.")
+    if not media_token_service.verify_media_token(
+        token=token, kind="photo", path=photo_path
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid media token."
+        )
     try:
         requested_size = _resolve_photo_size(size, settings.photo_default_size)
-        photo = await to_thread(_load_photo_variant, _get_storage_service(request), photo_path, requested_size)
+        photo = await to_thread(
+            _load_photo_variant,
+            _get_storage_service(request),
+            photo_path,
+            requested_size,
+        )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found."
+        ) from exc
     return _build_photo_response(
         request=request,
         content=photo.content,
@@ -98,13 +114,22 @@ async def get_authenticated_photo(
 
     photo_path = await volunteers_service.get_photo_storage_path(volunteer_id)
     if photo_path is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found."
+        )
 
     requested_size = _resolve_photo_size(size, settings.photo_default_size)
     try:
-        photo = await to_thread(_load_photo_variant, _get_storage_service(request), photo_path, requested_size)
+        photo = await to_thread(
+            _load_photo_variant,
+            _get_storage_service(request),
+            photo_path,
+            requested_size,
+        )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found."
+        ) from exc
     return _build_photo_response(
         request=request,
         content=photo.content,
@@ -121,12 +146,20 @@ async def get_document(
     token: str = Query(..., min_length=1),
     media_token_service: MediaTokenService = Depends(get_media_token_service),
 ) -> Response:
-    if not media_token_service.verify_media_token(token=token, kind="document", path=document_path):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid media token.")
+    if not media_token_service.verify_media_token(
+        token=token, kind="document", path=document_path
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid media token."
+        )
     try:
-        content = await to_thread(_get_storage_service(request).download_document, document_path)
+        content = await to_thread(
+            _get_storage_service(request).download_document, document_path
+        )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found."
+        ) from exc
     media_type = mimetypes.guess_type(document_path)[0] or "application/octet-stream"
     filename = document_path.rsplit("/", 1)[-1]
     return Response(
@@ -143,7 +176,9 @@ def _resolve_photo_size(size: int | None, default_size: int) -> int:
     return size or default_size
 
 
-def _load_photo_variant(storage_service: StorageService, photo_path: str, size: int) -> ProcessedPhoto:
+def _load_photo_variant(
+    storage_service: StorageService, photo_path: str, size: int
+) -> ProcessedPhoto:
     cache_key = (photo_path, size)
     cached = PHOTO_VARIANT_CACHE.get(cache_key)
     if cached is not None:
@@ -153,11 +188,18 @@ def _load_photo_variant(storage_service: StorageService, photo_path: str, size: 
     try:
         rendered = render_photo_variant(source, max_dimension=size)
     except Exception:
-        logger.exception("Failed to render photo variant for %s at size=%s; serving original bytes.", photo_path, size)
+        logger.exception(
+            "Failed to render photo variant for %s at size=%s; serving original bytes.",
+            photo_path,
+            size,
+        )
         rendered = ProcessedPhoto(
             content=source,
-            content_type=mimetypes.guess_type(photo_path)[0] or "application/octet-stream",
-            extension=photo_path.rsplit(".", 1)[-1].lower() if "." in photo_path else "",
+            content_type=mimetypes.guess_type(photo_path)[0]
+            or "application/octet-stream",
+            extension=photo_path.rsplit(".", 1)[-1].lower()
+            if "." in photo_path
+            else "",
             width=0,
             height=0,
         )
@@ -178,7 +220,9 @@ def _build_photo_response(
         "ETag": etag,
     }
     if request.headers.get("if-none-match") == etag:
-        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=response_headers)
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED, headers=response_headers
+        )
     return Response(content=content, media_type=media_type, headers=response_headers)
 
 
@@ -193,10 +237,10 @@ async def _authorize_photo_request(
     bearer_token = _extract_bearer_token(authorization)
     if bearer_token is not None:
         try:
-            card = await mobile_card_service.get_current_card(bearer_token)
+            card_result = await mobile_card_service.get_current_card(bearer_token)
         except MobileCardInvalidAccessCodeError:
             return Response(status_code=status.HTTP_401_UNAUTHORIZED)
-        if card.person_id != volunteer_id:
+        if card_result.card.person_id != volunteer_id:
             return Response(status_code=status.HTTP_403_FORBIDDEN)
         return None
 
@@ -206,7 +250,9 @@ async def _authorize_photo_request(
     if current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}:
         return None
 
-    current_volunteer_id = await volunteers_service.find_volunteer_id_by_email(current_user.email)
+    current_volunteer_id = await volunteers_service.find_volunteer_id_by_email(
+        current_user.email
+    )
     if current_volunteer_id != volunteer_id:
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     return None

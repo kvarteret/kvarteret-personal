@@ -30,24 +30,43 @@ class Settings(BaseSettings):
     photo_bucket: str = Field(default="personnel-photos")
     document_bucket: str = Field(default="personnel-documents")
     slack_feedback_webhook_url: str | None = Field(default=None)
-    smtp_server: str | None = Field(default=None, validation_alias=AliasChoices("SMTP_SERVER", "EMAIL_SERVER", "Email__Server"))
-    smtp_port: int = Field(default=587, validation_alias=AliasChoices("SMTP_PORT", "EMAIL_PORT", "Email__Port"))
+    smtp_server: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SMTP_SERVER", "EMAIL_SERVER", "Email__Server"),
+    )
+    smtp_port: int = Field(
+        default=587,
+        validation_alias=AliasChoices("SMTP_PORT", "EMAIL_PORT", "Email__Port"),
+    )
     smtp_sender_name: str | None = Field(
         default="Det Akademiske Kvarter",
-        validation_alias=AliasChoices("SMTP_SENDER_NAME", "EMAIL_SENDER_NAME", "Email__SenderName"),
+        validation_alias=AliasChoices(
+            "SMTP_SENDER_NAME", "EMAIL_SENDER_NAME", "Email__SenderName"
+        ),
     )
     smtp_sender_email: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("SMTP_SENDER_EMAIL", "EMAIL_SENDER_EMAIL", "Email__SenderEmail"),
+        validation_alias=AliasChoices(
+            "SMTP_SENDER_EMAIL", "EMAIL_SENDER_EMAIL", "Email__SenderEmail"
+        ),
     )
-    smtp_account: str | None = Field(default=None, validation_alias=AliasChoices("SMTP_ACCOUNT", "EMAIL_ACCOUNT", "Email__Account"))
+    smtp_account: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "SMTP_ACCOUNT", "EMAIL_ACCOUNT", "Email__Account"
+        ),
+    )
     smtp_password: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("SMTP_PASSWORD", "EMAIL_PASSWORD", "Email__Password"),
+        validation_alias=AliasChoices(
+            "SMTP_PASSWORD", "EMAIL_PASSWORD", "Email__Password"
+        ),
     )
     smtp_use_starttls: bool = Field(
         default=True,
-        validation_alias=AliasChoices("SMTP_USE_STARTTLS", "EMAIL_USE_STARTTLS", "Email__UseStartTls"),
+        validation_alias=AliasChoices(
+            "SMTP_USE_STARTTLS", "EMAIL_USE_STARTTLS", "Email__UseStartTls"
+        ),
     )
     spotify_client_id: str | None = Field(default=None)
     spotify_client_secret: str | None = Field(default=None)
@@ -70,7 +89,8 @@ class Settings(BaseSettings):
     mobile_card_access_code_request_window_seconds: int = Field(default=300)
     mobile_card_session_attempt_limit: int = Field(default=5)
     mobile_card_session_attempt_window_seconds: int = Field(default=600)
-    mobile_card_session_ttl_days: int = Field(default=7)
+    mobile_card_session_ttl_days: int = Field(default=90)
+    mobile_card_session_renewal_threshold_days: int = Field(default=30)
 
     @field_validator(
         "app_env",
@@ -120,6 +140,7 @@ def validate_production_secrets(settings: Settings) -> Settings:
         msg = "APP_SECRET_KEY must be set to a non-default value in production."
         raise ValueError(msg)
     return settings
+
 
 def get_settings() -> Settings:
     return validate_production_secrets(Settings())

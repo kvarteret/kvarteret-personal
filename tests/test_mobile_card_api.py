@@ -6,6 +6,7 @@ from app.dependencies import get_mobile_card_service
 from app.main import create_app
 from app.services.mobile_card import MobileCardPersonNotFoundError
 from app.services.mobile_card import (
+    MobileCardCurrentCardResult,
     MobileCardInvalidAccessCodeError,
     MobileCardResponse,
     MobileCardRole,
@@ -15,17 +16,29 @@ from app.services.mobile_card import (
 
 
 class FakeMobileCardService:
-    async def request_access_code(self, email: str, *, source_key: str | None = None) -> None:
+    async def request_access_code(
+        self, email: str, *, source_key: str | None = None
+    ) -> None:
         if email == "missing@example.com":
-            raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
+            raise MobileCardPersonNotFoundError(
+                "Email not found in the personnel database."
+            )
         if email == "rate-limited@example.com":
-            raise MobileCardRateLimitedError("Too many access-code requests. Try again later.")
+            raise MobileCardRateLimitedError(
+                "Too many access-code requests. Try again later."
+            )
 
-    async def create_session(self, email: str, access_code: str, *, source_key: str | None = None) -> MobileCardSession:
+    async def create_session(
+        self, email: str, access_code: str, *, source_key: str | None = None
+    ) -> MobileCardSession:
         if email == "missing@example.com":
-            raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
+            raise MobileCardPersonNotFoundError(
+                "Email not found in the personnel database."
+            )
         if email == "rate-limited@example.com":
-            raise MobileCardRateLimitedError("Too many access-code attempts. Try again later.")
+            raise MobileCardRateLimitedError(
+                "Too many access-code attempts. Try again later."
+            )
         if access_code != "123456":
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         card = MobileCardResponse(
@@ -50,12 +63,19 @@ class FakeMobileCardService:
         )
         return MobileCardSession(session_token="token-123", card=card)
 
-    async def get_current_card(self, session_token: str) -> MobileCardResponse:
+    async def get_current_card(self, session_token: str) -> MobileCardCurrentCardResult:
         if session_token != "token-123":
+            if session_token == "renew-me":
+                return MobileCardCurrentCardResult(
+                    card=(
+                        await self.create_session("person.one@example.com", "123456")
+                    ).card,
+                    renewed_session_token="token-456",
+                )
             raise MobileCardInvalidAccessCodeError("Unknown session token.")
-        return (
-            await self.create_session("person.one@example.com", "123456")
-        ).card
+        return MobileCardCurrentCardResult(
+            card=(await self.create_session("person.one@example.com", "123456")).card,
+        )
 
 
 def _make_client() -> TestClient:
@@ -93,12 +113,26 @@ def test_new_mobile_card_session_flow_returns_english_contract() -> None:
 
     assert me_response.status_code == 200
     assert me_response.json()["person_id"] == 12
+    assert "x-mobile-card-session-token" not in me_response.headers
+
+
+def test_new_mobile_card_me_returns_renewed_token_header_when_available() -> None:
+    client = _make_client()
+
+    response = client.get(
+        "/api/v1/mobile-card/me", headers={"Authorization": "Bearer renew-me"}
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-mobile-card-session-token"] == "token-456"
 
 
 def test_new_mobile_card_me_requires_known_bearer_token() -> None:
     client = _make_client()
 
-    response = client.get("/api/v1/mobile-card/me", headers={"Authorization": "Bearer invalid"})
+    response = client.get(
+        "/api/v1/mobile-card/me", headers={"Authorization": "Bearer invalid"}
+    )
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Unknown session token."
@@ -178,4 +212,52 @@ def test_mobile_card_access_code_request_returns_429_when_rate_limited() -> None
     )
 
     assert response.status_code == 429
-    assert response.json() == {"detail": "Too many access-code requests. Try again later."}
+    assert response.json() == {
+        "detail": "Too many access-code requests. Try again later."
+    }
+
+
+def test_mobile_card_client_logout_event_accepts_valid_payload() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/v1/mobile-card/client-events/session-logout",
+        json={
+            "app_version": "2026.2.0",
+            "auth_error_code": "INVALID_AUTH",
+            "auth_error_message": "Session expired. Please sign in again.",
+            "auth_error_status": 401,
+            "cached_user_id": 12,
+            "event_name": "session_invalidated",
+            "execution_environment": "standalone",
+            "had_cached_user": True,
+            "had_login_marker": True,
+            "had_stored_credentials": True,
+            "occurred_at": "2026-03-28T10:15:00.000Z",
+            "platform": "ios",
+            "runtime_version": "2026.2.0",
+            "update_channel": "production",
+            "update_id": "update-123",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted"}
+
+
+def test_mobile_card_client_logout_event_rejects_invalid_payload() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/v1/mobile-card/client-events/session-logout",
+        json={
+            "event_name": "not-valid",
+            "had_cached_user": True,
+            "had_login_marker": True,
+            "had_stored_credentials": True,
+            "occurred_at": "2026-03-28T10:15:00.000Z",
+            "platform": "ios",
+        },
+    )
+
+    assert response.status_code == 422
