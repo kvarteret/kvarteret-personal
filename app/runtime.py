@@ -18,6 +18,10 @@ from app.media_tokens import MediaTokenService
 from app.services.email import SmtpEmailSender
 from app.services.feedback import FeedbackService
 from app.services.mobile_card_repository import MobileCardRepository
+from app.services.mobile_card_april_state import (
+    MobileCardAprilStateRepository,
+    MobileCardAprilStateService,
+)
 from app.services.integration_tokens_repository import IntegrationTokensRepository
 from app.services.now_playing import NowPlayingService
 from app.services.volunteers_repository import VolunteersRepository
@@ -74,6 +78,7 @@ class ApplicationContainer:
     volunteer_search_service: VolunteerSearchService
     admin_accounts_service: AdminAccountsService
     mobile_card_service: MobileCardService
+    mobile_card_april_state_service: MobileCardAprilStateService
     now_playing_service: NowPlayingService
     volunteer_applications_service: VolunteerApplicationsService
     semester_transfer_service: SemesterTransferService
@@ -98,6 +103,9 @@ def build_application_container(settings: Settings | None = None) -> Application
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
     email_sender = SmtpEmailSender(resolved_settings)
+    mobile_card_april_state_service = MobileCardAprilStateService(
+        repository=MobileCardAprilStateRepository(session_factory=session_factory)
+    )
 
     return ApplicationContainer(
         settings=resolved_settings,
@@ -129,11 +137,13 @@ def build_application_container(settings: Settings | None = None) -> Application
             session_factory=session_factory,
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
         ),
+        mobile_card_april_state_service=mobile_card_april_state_service,
         mobile_card_service=MobileCardService(
             resolved_settings,
             repository=MobileCardRepository(session_factory=session_factory),
             email_sender=email_sender,
             media_token_service=media_token_service,
+            april_state_service=mobile_card_april_state_service,
         ),
         now_playing_service=NowPlayingService(
             resolved_settings,

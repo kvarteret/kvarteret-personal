@@ -8,6 +8,7 @@ from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
 from app.dependencies import (
     get_admin_accounts_service,
+    get_mobile_card_april_state_service,
     get_session_cookie_signer,
     get_session_store,
     get_settings,
@@ -17,9 +18,11 @@ from app.dependencies import (
 )
 from app.observability import log_admin_activity
 from app.services.admin_accounts import AdminAccountsService
+from app.services.mobile_card_april_state import MobileCardAprilStateService
 from app.web.route_helpers import redirect_to
 
 router = APIRouter()
+_APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 
 
 def _redirect_with_error(path: str, message: str):
@@ -237,6 +240,46 @@ async def admin_account_impersonate(
         session_id=new_session.session_id,
     )
     return response
+
+
+@router.post("/mobile-card-april-state")
+async def mobile_card_april_state_update(
+    request: Request,
+    enabled: str = Form(...),
+    current_user=Depends(require_admin_user),
+    mobile_card_april_state_service: MobileCardAprilStateService = Depends(
+        get_mobile_card_april_state_service
+    ),
+):
+    if current_user.email.strip().lower() != _APRIL_TOGGLE_EMAIL:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access is required.",
+        )
+    normalized_enabled = enabled.strip().lower()
+    if normalized_enabled not in {"true", "false"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid enabled value.",
+        )
+    target_enabled = normalized_enabled == "true"
+    await mobile_card_april_state_service.set_enabled(
+        enabled=target_enabled,
+        updated_by_user_account_id=current_user.user_account_id,
+    )
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="mobile_card_april_state.update",
+        subject_type="mobile_card_april_state",
+        details={"enabled": target_enabled},
+    )
+    message = (
+        "Aprilspøken ble aktivert."
+        if target_enabled
+        else "Aprilspøken ble deaktivert."
+    )
+    return redirect_to(f"/?mobile_card_april_message={quote_plus(message)}")
 
 
 @router.delete("/admin-accounts/{account_id}")

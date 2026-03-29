@@ -2,6 +2,31 @@
 
 {% block page_content %}
   <section class="mx-auto grid max-w-5xl gap-5">
+    {% if mobile_card_april_message %}
+      <div class="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        {{ mobile_card_april_message }}
+      </div>
+    {% endif %}
+    {% if show_mobile_card_april_toggle %}
+      <section class="rounded-3xl border border-stone-200 bg-stone-50 px-6 py-5 text-stone-900 shadow-sm">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div class="grid gap-1">
+            <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">April Fools</p>
+            <h2 class="text-2xl font-light tracking-tight">Mobil internkort-bilder</h2>
+            <p class="text-sm text-stone-600">
+              Status:
+              <strong>{% if mobile_card_april_enabled %}aktiv{% else %}deaktivert{% endif %}</strong>
+            </p>
+          </div>
+          <form action="/mobile-card-april-state" method="post">
+            <input name="enabled" type="hidden" value="{% if mobile_card_april_enabled %}false{% else %}true{% endif %}">
+            <button class="app-button" type="submit">
+              {% if mobile_card_april_enabled %}Deaktiver{% else %}Aktiver{% endif %}
+            </button>
+          </form>
+        </div>
+      </section>
+    {% endif %}
     <div class="grid gap-5 md:grid-cols-2">
       <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-kvarteret-surface no-underline shadow-[0_24px_48px_-28px_rgba(245,75,75,0.45)] transition hover:bg-kvarteret-red-dark" href="/volunteers">
         <div>

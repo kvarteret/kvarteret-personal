@@ -11,6 +11,7 @@ from app.auth.roles import UserRole
 from app.dependencies import (
     get_current_user,
     get_login_service,
+    get_mobile_card_april_state_service,
     get_session_store,
     get_volunteers_service,
     require_authenticated_user,
@@ -19,6 +20,26 @@ from app.main import create_app
 from app.runtime import build_application_container
 from app.services.volunteers import VolunteerListItem, VolunteerListPage
 from tests.helpers import make_authenticated_user
+
+
+class FakeMobileCardAprilStateService:
+    def __init__(self, enabled: bool = False) -> None:
+        self.enabled = enabled
+        self.set_calls: list[dict[str, int | bool | None]] = []
+
+    async def is_enabled(self) -> bool:
+        return self.enabled
+
+    async def set_enabled(
+        self, *, enabled: bool, updated_by_user_account_id: int | None
+    ) -> None:
+        self.enabled = enabled
+        self.set_calls.append(
+            {
+                "enabled": enabled,
+                "updated_by_user_account_id": updated_by_user_account_id,
+            }
+        )
 
 
 class FakeLoginService:
@@ -216,6 +237,59 @@ def test_group_admin_sees_registrations_and_new_volunteer_but_not_admin_accounts
     assert "Admin-kontoer" not in dashboard_response.text
     assert people_response.status_code == 200
     assert "Ny frivillig" in people_response.text
+
+
+def test_dashboard_shows_april_toggle_only_for_it_leder() -> None:
+    app = create_app()
+    user = make_authenticated_user(UserRole.ADMIN)
+    user.email = "it.leder@kvarteret.no"
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[require_authenticated_user] = lambda: user
+    app.dependency_overrides[get_mobile_card_april_state_service] = (
+        lambda: FakeMobileCardAprilStateService()
+    )
+    client = TestClient(app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Mobil internkort-bilder" in response.text
+    assert "Aktiver" in response.text
+
+
+def test_dashboard_hides_april_toggle_for_other_admins() -> None:
+    app = create_app()
+    user = make_authenticated_user(UserRole.ADMIN)
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[require_authenticated_user] = lambda: user
+    app.dependency_overrides[get_mobile_card_april_state_service] = (
+        lambda: FakeMobileCardAprilStateService()
+    )
+    client = TestClient(app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Mobil internkort-bilder" not in response.text
+
+
+def test_april_toggle_post_forbids_other_admins() -> None:
+    app = create_app()
+    user = make_authenticated_user(UserRole.ADMIN)
+    april_service = FakeMobileCardAprilStateService()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[require_authenticated_user] = lambda: user
+    app.dependency_overrides[get_mobile_card_april_state_service] = lambda: april_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/mobile-card-april-state",
+        data={"enabled": "true"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert april_service.set_calls == []
 
 
 def test_container_backed_auth_middleware_populates_current_user_and_pending_count() -> None:

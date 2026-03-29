@@ -228,6 +228,18 @@ integration_tokens = Table(
     Column("updated_by_user_account_id", BigInteger, ForeignKey("public.user_accounts.id")),
 )
 
+mobile_card_april_state = Table(
+    "mobile_card_april_state",
+    public_metadata,
+    Column("enabled", Boolean, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column(
+        "updated_by_user_account_id",
+        BigInteger,
+        ForeignKey("public.user_accounts.id", ondelete="SET NULL"),
+    ),
+)
+
 event_types = Table(
     "event_types",
     public_metadata,
