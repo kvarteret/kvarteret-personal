@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
+
+from app.dependencies import get_courses_service, require_management_user
+from app.services.courses import (
+    CourseCompletionNotFoundError,
+    CourseDeleteBlockedError,
+    CoursesService,
+    DuplicateCourseCompletionError,
+    InvalidCourseCompletionError,
+)
+from app.web.route_helpers import blocked_http_exception, log_and_redirect
+
+router = APIRouter()
+
+
+@router.post("/courses")
+async def courses_create(
+    request: Request,
+    name: str = Form(...),
+    description: str | None = Form(default=None),
+    current_user=Depends(require_management_user),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    course_id = await courses_service.create_course(name=name, description=description)
+    return log_and_redirect(
+        request=request,
+        user=current_user,
+        action="course.create",
+        subject_type="course",
+        subject_id=course_id,
+        redirect_path=f"/courses/{course_id}",
+    )
+
+
+@router.patch("/courses/{course_id}")
+async def courses_update(
+    request: Request,
+    course_id: int,
+    name: str = Form(...),
+    description: str | None = Form(default=None),
+    current_user=Depends(require_management_user),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    updated = await courses_service.update_course(course_id, name=name, description=description)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+    return log_and_redirect(
+        request=request,
+        user=current_user,
+        action="course.update",
+        subject_type="course",
+        subject_id=course_id,
+        redirect_path=f"/courses/{course_id}",
+    )
+
+
+@router.delete("/courses/{course_id}")
+async def courses_delete(
+    request: Request,
+    course_id: int,
+    current_user=Depends(require_management_user),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    try:
+        deleted = await courses_service.delete_course(course_id)
+    except CourseDeleteBlockedError as exc:
+        raise blocked_http_exception(exc.blockers) from exc
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+    return log_and_redirect(
+        request=request,
+        user=current_user,
+        action="course.delete",
+        subject_type="course",
+        subject_id=course_id,
+        redirect_path="/courses",
+    )
+
+
+@router.post("/courses/{course_id}/completions")
+async def courses_add_completion(
+    request: Request,
+    course_id: int,
+    volunteer_ids: list[int] = Form(default=[]),
+    year: int = Form(...),
+    term: int = Form(...),
+    current_user=Depends(require_management_user),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    try:
+        created_count = await courses_service.create_course_completions(
+            course_id=course_id,
+            volunteer_ids=volunteer_ids,
+            year=year,
+            term=term,
+        )
+    except HTTPException:
+        raise
+    except (DuplicateCourseCompletionError, InvalidCourseCompletionError) as exc:
+        return RedirectResponse(
+            url=f"/courses/{course_id}?completion_error={quote(str(exc))}",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    return log_and_redirect(
+        request=request,
+        user=current_user,
+        action="course_completion.create",
+        subject_type="course",
+        subject_id=course_id,
+        details={"volunteer_ids": volunteer_ids, "created_count": created_count, "year": year, "term": term},
+        redirect_path=f"/courses/{course_id}",
+    )
+
+
+@router.delete("/courses/{course_id}/completions/{completion_id}")
+async def courses_delete_completion(
+    request: Request,
+    course_id: int,
+    completion_id: int,
+    current_user=Depends(require_management_user),
+    courses_service: CoursesService = Depends(get_courses_service),
+):
+    try:
+        await courses_service.delete_course_completion(course_id=course_id, completion_id=completion_id)
+    except CourseCompletionNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return log_and_redirect(
+        request=request,
+        user=current_user,
+        action="course_completion.delete",
+        subject_type="course_completion",
+        subject_id=completion_id,
+        details={"course_id": course_id},
+        redirect_path=f"/courses/{course_id}",
+    )

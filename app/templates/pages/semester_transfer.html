@@ -1,0 +1,42 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">Flytt til nytt semester</p>
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ preview.group_name }}</h1>
+      <p class="max-w-4xl text-base leading-7 text-stone-700">
+        Kopier medlemmer fra {{ preview.source_semester_label or preview.source_semester }} til
+        {{ preview.target_semester_label or preview.target_semester }}.
+      </p>
+    </header>
+
+    <section class="app-panel">
+      <form action="/groups/{{ preview.group_id }}/semester-transfer" class="grid gap-6" method="post">
+        <input name="target_semester" type="hidden" value="{{ preview.target_semester }}">
+        <div class="grid gap-0">
+          {% for candidate in preview.candidates %}
+            {% if candidate.role_id %}
+              <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-3 md:items-center">
+                <div>
+                  <div class="text-lg font-medium tracking-tight text-stone-900">{{ candidate.volunteer_name }}</div>
+                  <div class="text-sm text-stone-500">{{ candidate.role_name or "Ingen rolle" }}</div>
+                </div>
+                <div class="text-sm text-stone-700">{{ preview.target_semester_label or preview.target_semester }}</div>
+                <div class="text-sm text-stone-700">{% if candidate.contract_signed %}Signert tidligere{% else %}Usignert tidligere{% endif %}</div>
+                <input name="volunteer_ids" type="hidden" value="{{ candidate.volunteer_id }}">
+                <input name="role_ids" type="hidden" value="{{ candidate.role_id }}">
+              </div>
+            {% endif %}
+          {% else %}
+            <p class="text-sm text-stone-600">Ingen kildemedlemmer funnet for dette semesteret.</p>
+          {% endfor %}
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <button class="app-button" type="submit">Overfør medlemmer</button>
+          <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/groups/{{ preview.group_id }}'; }" type="button">Tilbake</button>
+        </div>
+      </form>
+    </section>
+  </section>
+{% endblock %}

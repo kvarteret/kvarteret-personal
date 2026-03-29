@@ -1,0 +1,95 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="space-y-6">
+    <div class="flex flex-col gap-4 rounded-[2rem] border border-kvarteret-red/10 bg-kvarteret-surface p-6 shadow-[0_28px_55px_-30px_rgba(35,43,72,0.22)]">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div class="space-y-2">
+          <p class="text-xs font-semibold tracking-[0.28em] text-kvarteret-red uppercase">Spotify</p>
+          <h1 class="text-3xl font-semibold text-kvarteret-ink">Now Playing</h1>
+          <p class="max-w-2xl text-sm text-kvarteret-night/80">
+            Administrer den delte Spotify-tilkoblingen som driver Grøndahls-status i internbevis-appen.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <a
+            class="inline-flex min-h-11 items-center justify-center rounded-full bg-kvarteret-red px-5 text-sm font-semibold text-kvarteret-surface shadow-[0_18px_35px_-22px_rgba(245,75,75,0.5)] transition hover:bg-kvarteret-red-dark"
+            data-no-preload
+            href="/spotify/login"
+            hx-boost="false"
+          >
+            Koble til Spotify
+          </a>
+          {% if has_shared_token %}
+            <form action="/spotify/logout" method="post">
+              <button
+                class="inline-flex min-h-11 items-center justify-center rounded-full bg-kvarteret-sand px-5 text-sm font-semibold text-kvarteret-night shadow-[0_18px_35px_-24px_rgba(35,43,72,0.2)] transition hover:bg-kvarteret-sand-dark"
+                type="submit"
+              >
+                Koble fra
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if message %}
+        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {{ message }}
+        </div>
+      {% endif %}
+      {% if error_message %}
+        <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          {{ error_message }}
+        </div>
+      {% endif %}
+      {% if not is_spotify_configured %}
+        <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Spotify OAuth er ikke konfigurert. Sett <code>SPOTIFY_CLIENT_ID</code>, <code>SPOTIFY_CLIENT_SECRET</code> og <code>APP_PUBLIC_BASE_URL</code>.
+        </div>
+      {% endif %}
+    </div>
+
+    {% if not now_playing.authorized %}
+      <section class="rounded-[2rem] border border-amber-200 bg-amber-50 p-6 text-amber-900 shadow-[0_18px_40px_-28px_rgba(245,75,75,0.2)]">
+        <h2 class="text-lg font-semibold">Ikke koblet til</h2>
+        <p class="mt-2 text-sm">
+          Den delte Spotify-kontoen er ikke koblet til ennå. Bruk knappen over for å starte OAuth-flyten.
+        </p>
+      </section>
+    {% elif not now_playing.hasTrack %}
+      <section class="rounded-[2rem] border border-stone-200 bg-stone-50 p-6 text-stone-800 shadow-[0_18px_40px_-28px_rgba(35,43,72,0.15)]">
+        <h2 class="text-lg font-semibold">Tilkoblet, men ingen aktiv avspilling</h2>
+        <p class="mt-2 text-sm">
+          Spotify er koblet til, men det spilles ingenting akkurat nå.
+        </p>
+      </section>
+    {% else %}
+      <section class="rounded-[2rem] border border-kvarteret-red/10 bg-kvarteret-surface p-6 shadow-[0_28px_55px_-30px_rgba(35,43,72,0.22)]">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
+          {% if now_playing.image %}
+            <img alt="Album cover" class="h-24 w-24 rounded-2xl object-cover shadow-[0_16px_32px_-24px_rgba(35,43,72,0.4)]" src="{{ now_playing.image }}">
+          {% else %}
+            <div class="h-24 w-24 rounded-2xl bg-kvarteret-red/10"></div>
+          {% endif %}
+          <div class="min-w-0 flex-1 space-y-2">
+            <div>
+              <h2 class="truncate text-2xl font-semibold text-kvarteret-ink">{{ now_playing.name }}</h2>
+              <p class="truncate text-sm text-kvarteret-night/80">
+                {{ now_playing.artists }}{% if now_playing.album %} · {{ now_playing.album }}{% endif %}
+              </p>
+            </div>
+            {% if now_playing.progressPercent is not none %}
+              <div class="h-2.5 w-full overflow-hidden rounded-full bg-kvarteret-red/10">
+                <div class="h-full rounded-full bg-kvarteret-red" style="width: {{ now_playing.progressPercent }}%"></div>
+              </div>
+            {% endif %}
+            <p class="text-sm font-medium {% if now_playing.isPlaybackActive %}text-emerald-700{% else %}text-stone-600{% endif %}">
+              {{ "Spiller nå" if now_playing.isPlaybackActive else "Pauset" }}
+            </p>
+          </div>
+        </div>
+      </section>
+    {% endif %}
+  </section>
+{% endblock %}

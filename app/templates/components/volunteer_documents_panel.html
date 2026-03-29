@@ -1,0 +1,31 @@
+<section class="app-panel">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h2 class="text-2xl font-medium tracking-tight text-stone-900">Filer</h2>
+  </div>
+  <div class="mt-5 grid gap-4">
+    {% for document in documents %}
+      <div class="border-b border-stone-300 pb-4">
+        <div class="text-lg font-medium tracking-tight text-stone-900">{{ document.filename }}</div>
+        <div class="mt-1 text-sm text-stone-600">
+          {{ document.filetype or "ukjent" }} ·
+          {{ document.created_at.strftime("%Y-%m-%d") }}
+        </div>
+        <div class="mt-1 text-xs text-stone-500">Lagringssti: {{ document.storage_path }}</div>
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          {% if document.download_url %}
+            <a class="text-sm font-medium text-kvarteret-red underline underline-offset-2" href="{{ document.download_url }}">Midlertidig nedlastingslenke</a>
+          {% else %}
+            <span class="text-xs text-stone-500">Ingen lagret fil tilgjengelig ennå.</span>
+          {% endif %}
+          {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+            <form action="/volunteers/{{ volunteer.volunteer_id }}/documents/{{ document.document_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne filen?');">
+              <button class="inline-flex min-h-10 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" type="submit">Slett fil</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <p class="text-sm text-stone-600">Ingen filer registrert.</p>
+    {% endfor %}
+  </div>
+</section>

@@ -1,0 +1,53 @@
+<section class="app-panel" id="group-history-panel" {% if swap_oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <div class="mb-5 flex items-center justify-between gap-3">
+    <h2 class="text-2xl font-medium tracking-tight text-stone-900">Gruppehistorikk</h2>
+    <span class="app-badge">{{ history|length }} semestere</span>
+  </div>
+
+  {% if not history %}
+    <p class="text-sm text-stone-600">Ingen historikk funnet.</p>
+  {% else %}
+    <div class="grid gap-6">
+      {% for semester_group in history %}
+        <details class="group/semester">
+          <summary class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 hover:bg-stone-100">
+            <span class="font-medium text-stone-900">{{ semester_group.semester_label }}</span>
+            <span class="app-badge">{{ semester_group.members|length }} medlemmer</span>
+          </summary>
+          <div class="mt-2 grid gap-0 rounded-b-lg border border-t-0 border-stone-200">
+            {% for member in semester_group.members %}
+              <div class="grid gap-3 border-b border-stone-200 px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.8fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)_auto] md:items-center">
+                <div class="flex min-w-0 items-center gap-3">
+                  <div class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600">
+                    {% if member.photo_url %}
+                      <img alt="{{ member.volunteer_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ member.photo_url }}">
+                    {% else %}
+                      {{ member.volunteer_name[:1] }}
+                    {% endif %}
+                  </div>
+                  <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/volunteers/{{ member.volunteer_id }}">{{ member.volunteer_name }}</a>
+                </div>
+                <span class="text-sm text-stone-500">{{ member.role_name or "Ingen rolle" }}</span>
+                <span class="text-sm text-stone-500">{% if member.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</span>
+                {% if can_manage_group %}
+                  <div class="flex md:justify-end">
+                    <form
+                      action="/groups/{{ group_id }}/history/{{ member.history_id }}?_method=DELETE"
+                      hx-disinherit="hx-select hx-target hx-swap"
+                      hx-delete="/groups/{{ group_id }}/history/{{ member.history_id }}"
+                      hx-swap="none"
+                      method="post"
+                      onsubmit="return window.confirm('Slette denne historikkraden?');"
+                    >
+                      <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
+                    </form>
+                  </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </details>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>

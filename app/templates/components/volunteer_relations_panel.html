@@ -1,0 +1,151 @@
+<section class="app-panel">
+  <div class="mb-5 flex items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h2 class="text-2xl font-medium tracking-tight text-stone-900">Kort og pårørende</h2>
+      <span class="app-badge">{{ cards|length }} kort</span>
+      <span class="app-badge">{{ next_of_kin|length }} pårørende</span>
+    </div>
+    {% if can_manage_relations %}
+      {% if editing_relations %}
+        <button
+          class="app-button-secondary"
+          hx-disinherit="hx-select hx-target hx-swap"
+          hx-get="/volunteers/{{ volunteer.volunteer_id }}/relations/panel"
+          hx-swap="outerHTML"
+          hx-target="closest section"
+          type="button"
+        >
+          Avbryt redigering
+        </button>
+      {% else %}
+        <button
+          class="app-button-secondary"
+          hx-disinherit="hx-select hx-target hx-swap"
+          hx-get="/volunteers/{{ volunteer.volunteer_id }}/relations/panel?edit=true"
+          hx-swap="outerHTML"
+          hx-target="closest section"
+          type="button"
+        >
+          Rediger
+        </button>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% if editing_relations %}
+    <form
+      action="/volunteers/{{ volunteer.volunteer_id }}/relations?_method=PATCH"
+      class="grid gap-6"
+      hx-disinherit="hx-select hx-target hx-swap"
+      hx-patch="/volunteers/{{ volunteer.volunteer_id }}/relations"
+      hx-swap="outerHTML"
+      hx-target="closest section"
+      method="post"
+    >
+      <div class="grid gap-6 md:grid-cols-2">
+        <div class="grid gap-4">
+          <div>
+            <p class="text-sm font-semibold text-stone-900">Kort</p>
+            <p class="text-sm text-stone-500">Du kan registrere flere kort for samme frivillig.</p>
+          </div>
+          <div class="grid gap-3" id="volunteer-card-rows-{{ volunteer.volunteer_id }}">
+            {% for card in editable_cards %}
+              <div class="grid gap-2 rounded-2xl border border-stone-200 bg-white/70 p-3" data-card-row>
+                <label class="grid gap-1">
+                  <span class="text-sm text-stone-500">Kortnummer</span>
+                  <input class="app-input" name="card_number" type="text" value="{{ card.card_number }}">
+                </label>
+                <div>
+                  <button class="text-sm font-medium text-stone-700 underline-offset-4 hover:underline" onclick="this.closest('[data-card-row]').remove()" type="button">Fjern felt</button>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          <template id="volunteer-card-row-template-{{ volunteer.volunteer_id }}">
+            <div class="grid gap-2 rounded-2xl border border-stone-200 bg-white/70 p-3" data-card-row>
+              <label class="grid gap-1">
+                <span class="text-sm text-stone-500">Kortnummer</span>
+                <input class="app-input" name="card_number" type="text" value="">
+              </label>
+              <div>
+                <button class="text-sm font-medium text-stone-700 underline-offset-4 hover:underline" onclick="this.closest('[data-card-row]').remove()" type="button">Fjern felt</button>
+              </div>
+            </div>
+          </template>
+          <div>
+            <button class="app-button-secondary" onclick="document.getElementById('volunteer-card-rows-{{ volunteer.volunteer_id }}').append(document.getElementById('volunteer-card-row-template-{{ volunteer.volunteer_id }}').content.cloneNode(true))" type="button">Legg til kort</button>
+          </div>
+        </div>
+        <div class="grid gap-4">
+          <div>
+            <p class="text-sm font-semibold text-stone-900">Pårørende</p>
+            <p class="text-sm text-stone-500">Hver pårørende må ha både navn og telefon.</p>
+          </div>
+          <div class="grid gap-3" id="volunteer-next-of-kin-rows-{{ volunteer.volunteer_id }}">
+            {% for item in editable_next_of_kin %}
+              <div class="grid gap-3 rounded-2xl border border-stone-200 bg-white/70 p-3" data-next-of-kin-row>
+                <label class="grid gap-1">
+                  <span class="text-sm text-stone-500">Navn</span>
+                  <input class="app-input" name="next_of_kin_name" type="text" value="{{ item.name }}">
+                </label>
+                <label class="grid gap-1">
+                  <span class="text-sm text-stone-500">Telefon</span>
+                  <input class="app-input" name="next_of_kin_phone" type="text" value="{{ item.phone }}">
+                </label>
+                <div>
+                  <button class="text-sm font-medium text-stone-700 underline-offset-4 hover:underline" onclick="this.closest('[data-next-of-kin-row]').remove()" type="button">Fjern felt</button>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+          <template id="volunteer-next-of-kin-row-template-{{ volunteer.volunteer_id }}">
+            <div class="grid gap-3 rounded-2xl border border-stone-200 bg-white/70 p-3" data-next-of-kin-row>
+              <label class="grid gap-1">
+                <span class="text-sm text-stone-500">Navn</span>
+                <input class="app-input" name="next_of_kin_name" type="text" value="">
+              </label>
+              <label class="grid gap-1">
+                <span class="text-sm text-stone-500">Telefon</span>
+                <input class="app-input" name="next_of_kin_phone" type="text" value="">
+              </label>
+              <div>
+                <button class="text-sm font-medium text-stone-700 underline-offset-4 hover:underline" onclick="this.closest('[data-next-of-kin-row]').remove()" type="button">Fjern felt</button>
+              </div>
+            </div>
+          </template>
+          <div>
+            <button class="app-button-secondary" onclick="document.getElementById('volunteer-next-of-kin-rows-{{ volunteer.volunteer_id }}').append(document.getElementById('volunteer-next-of-kin-row-template-{{ volunteer.volunteer_id }}').content.cloneNode(true))" type="button">Legg til pårørende</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <button class="app-button" type="submit">Lagre kort og pårørende</button>
+      </div>
+    </form>
+  {% else %}
+    <div class="grid gap-6 md:grid-cols-2">
+      <div>
+        <h3 class="text-xl font-medium tracking-tight text-stone-900">Kort</h3>
+        <div class="mt-5 grid gap-3">
+          {% for card in cards %}
+            <div class="border-b border-stone-300 pb-3 text-stone-800">{{ card.card_number }}</div>
+          {% else %}
+            <p class="text-sm text-stone-600">Ingen kort registrert.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <h3 class="text-xl font-medium tracking-tight text-stone-900">Pårørende</h3>
+        <div class="mt-5 grid gap-3">
+          {% for item in next_of_kin %}
+            <div class="border-b border-stone-300 pb-3">
+              <div class="text-stone-900">{{ item.name }}</div>
+              <div class="text-sm text-stone-600">{{ item.phone }}</div>
+            </div>
+          {% else %}
+            <p class="text-sm text-stone-600">Ingen pårørende registrert.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</section>

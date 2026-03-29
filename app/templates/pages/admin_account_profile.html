@@ -1,0 +1,119 @@
+{% extends "layouts/base.html" %}
+{% from "components/ui_macros.html" import flash_notice, form_field, page_header %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    {{ page_header(page_label, page_heading) }}
+
+    <section class="app-panel">
+      {{ flash_notice(error_message, 'error') }}
+      {{ flash_notice(password_error_message, 'error') }}
+      {{ flash_notice(password_success_message, 'success') }}
+      <form action="{{ save_action }}" class="grid gap-6" method="post">
+        <div class="grid gap-5 md:grid-cols-2">
+          {% call form_field("Brukernavn") %}
+            <input class="app-input" name="username" type="text" value="{{ admin_account.username }}" {% if not can_edit_profile %}disabled{% endif %}>
+          {% endcall %}
+          {% call form_field("E-post") %}
+            <input class="app-input" name="email" type="email" value="{{ admin_account.email }}" {% if not can_edit_profile %}disabled{% endif %}>
+          {% endcall %}
+          {% call form_field("Navn") %}
+            <input class="app-input" name="display_name" type="text" value="{{ admin_account.display_name or '' }}" {% if not can_edit_profile %}disabled{% endif %}>
+          {% endcall %}
+          {% call form_field("Rolle") %}
+            {% if show_role_field %}
+              <select class="app-input" name="role" {% if not can_edit_profile %}disabled{% endif %}>
+                {% for role_option in ["Admin", "Gruppeadmin", "Frivillig", "Tilskuer"] %}
+                  <option value="{{ role_option }}" {% if admin_account.role == role_option %}selected{% endif %}>{{ role_option }}</option>
+                {% endfor %}
+              </select>
+            {% else %}
+              <input class="app-input" type="text" value="{{ admin_account.role }}" disabled>
+              <input name="role" type="hidden" value="{{ admin_account.role }}">
+            {% endif %}
+          {% endcall %}
+        </div>
+
+        <div class="grid gap-4 border-t border-stone-300 pt-6 md:grid-cols-2">
+          <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Gammel bruker-ID</dt>
+            <dd class="mt-1 text-stone-900">{{ admin_account.legacy_user_id or "Direkte konto" }}</dd>
+          </div>
+          <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Auth user id</dt>
+            <dd class="mt-1 break-all text-stone-900">{{ admin_account.auth_user_id }}</dd>
+          </div>
+          <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Opprettet</dt>
+            <dd class="mt-1 text-stone-900">{{ admin_account.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+          </div>
+          <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Migrert</dt>
+            <dd class="mt-1 text-stone-900">{{ admin_account.migrated_at.strftime('%Y-%m-%d %H:%M') if admin_account.migrated_at else 'Ikke migrert' }}</dd>
+          </div>
+          <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Siste innlogging</dt>
+            <dd class="mt-1 text-stone-900">{{ admin_account.last_login.strftime('%Y-%m-%d %H:%M') if admin_account.last_login else 'Aldri' }}</dd>
+          </div>
+          <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Gruppeadmin</dt>
+            <dd class="mt-1 text-stone-900">
+              {% if admin_account.group_admin_group_ids %}
+                {{ admin_account.group_admin_group_ids|length }} gruppeadministrator-tilganger
+              {% else %}
+                Ingen gruppeadmin-medlemskap
+              {% endif %}
+            </dd>
+          </div>
+        </div>
+
+        {% if can_edit_profile %}
+          <div class="flex flex-wrap gap-3">
+            <button class="app-button" type="submit">Lagre endringer</button>
+            {% if section == "admin-accounts" and current_user.role == "Admin" and current_user.user_account_id != admin_account.user_account_id %}
+              <button
+                class="app-button-secondary"
+                formaction="/admin-accounts/{{ admin_account.user_account_id }}/impersonate"
+                formmethod="post"
+                type="submit"
+              >
+                Logg inn som denne brukeren
+              </button>
+            {% endif %}
+          </div>
+        {% endif %}
+      </form>
+
+      {% if section == "admin-accounts" and current_user.role == "Admin" and current_user.user_account_id != admin_account.user_account_id %}
+        <form action="/admin-accounts/{{ admin_account.user_account_id }}?_method=DELETE" class="mt-6 border-t border-stone-300 pt-6" method="post" onsubmit="return window.confirm('Slette denne admin-kontoen?');">
+          <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit">
+            Slett admin-konto
+          </button>
+        </form>
+      {% endif %}
+
+      {% if show_password_form %}
+        <form action="/my-account/password" class="mt-8 grid gap-6 border-t border-stone-300 pt-6" method="post">
+          <div class="grid gap-2">
+            <h2 class="text-2xl font-medium tracking-tight text-stone-900">Endre passord</h2>
+            <p class="text-sm text-stone-500">Bruk ditt nåværende passord for å bekrefte endringen.</p>
+          </div>
+          <div class="grid gap-5 md:grid-cols-3">
+            {% call form_field("Nåværende passord") %}
+              <input class="app-input" name="current_password" required type="password">
+            {% endcall %}
+            {% call form_field("Nytt passord") %}
+              <input class="app-input" name="new_password" required type="password">
+            {% endcall %}
+            {% call form_field("Bekreft nytt passord") %}
+              <input class="app-input" name="confirm_password" required type="password">
+            {% endcall %}
+          </div>
+          <div>
+            <button class="app-button" type="submit">Oppdater passord</button>
+          </div>
+        </form>
+      {% endif %}
+    </section>
+  </section>
+{% endblock %}

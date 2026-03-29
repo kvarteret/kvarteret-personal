@@ -1,0 +1,24 @@
+{% extends "layouts/base.html" %}
+{% from "components/ui_macros.html" import form_field, page_header %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    {% call page_header("Nytt kurs", "Opprett kurs") %}
+      <a class="app-button-secondary" href="/courses">Tilbake til kurs</a>
+    {% endcall %}
+
+    <section class="app-panel">
+      <form action="/courses" class="grid gap-4" method="post">
+        {% call form_field("Navn") %}
+          <input class="app-input" name="name" required type="text">
+        {% endcall %}
+        {% call form_field("Beskrivelse") %}
+          <textarea class="app-input min-h-24" name="description"></textarea>
+        {% endcall %}
+        <div>
+          <button class="app-button" type="submit">Opprett kurs</button>
+        </div>
+      </form>
+    </section>
+  </section>
+{% endblock %}

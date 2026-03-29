@@ -1,0 +1,62 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Frivillige</h1>
+      <div class="flex flex-wrap justify-center gap-3">
+        <a class="app-button-secondary" href="/volunteers/stats">Organisasjonsstatistikk</a>
+      </div>
+    </header>
+
+    <div class="grid gap-4">
+      <div class="flex items-center gap-5">
+        <h2 class="text-3xl font-light tracking-tight text-stone-900">Resultat</h2>
+        {% if query %}
+          <a class="text-lg font-medium text-kvarteret-red underline underline-offset-2" href="/volunteers">Tilbakestill</a>
+        {% endif %}
+      </div>
+
+      <form action="/volunteers" class="app-panel" id="volunteer-search" method="get">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-end">
+          <div class="min-w-0 flex-1">
+            <label class="grid gap-1" for="q">
+              <span class="text-sm text-stone-500">Filtrer på navn</span>
+              <input
+                autocomplete="off"
+                class="app-input"
+                hx-disinherit="hx-select hx-target hx-swap"
+                hx-get="/volunteers/list"
+                hx-include="#volunteer-search"
+                hx-indicator="#volunteer-search-indicator"
+                hx-push-url="true"
+                hx-target="#volunteer-results"
+                hx-trigger="keyup changed delay:300ms, search"
+                hx-vals='{"cursor": ""}'
+                id="q"
+                name="q"
+                placeholder="Sir Nils Olav III"
+                type="search"
+                value="{{ query }}"
+              >
+            </label>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <button class="app-button" type="submit">Søk</button>
+            <span class="htmx-indicator text-sm text-stone-500" id="volunteer-search-indicator">Laster...</span>
+            <a class="app-button-secondary" href="/volunteers/search">Avansert søk</a>
+            {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+              <a class="app-button-secondary" href="/volunteer-applications">Ny frivillig</a>
+            {% endif %}
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <section class="app-panel">
+      <div class="grid gap-0" id="volunteer-results">
+        {% include "components/volunteer_results.html" %}
+      </div>
+    </section>
+  </section>
+{% endblock %}

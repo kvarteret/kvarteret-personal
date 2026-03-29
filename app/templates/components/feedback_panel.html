@@ -1,0 +1,113 @@
+<div
+  class="fixed inset-0 z-50 flex items-end justify-end bg-stone-950/45 p-4 sm:items-center sm:p-6"
+  hx-disinherit="hx-select hx-target hx-swap"
+  hx-get="/feedback/dismiss"
+  hx-swap="innerHTML"
+  hx-target="#feedback-root"
+  id="feedback-modal"
+>
+  <div
+    aria-describedby="feedback-modal-copy"
+    aria-labelledby="feedback-modal-title"
+    aria-modal="true"
+    class="w-full max-w-xl rounded-[2rem] border border-stone-200 bg-white shadow-2xl"
+    hx-on:click="event.stopPropagation()"
+    id="feedback-modal-dialog"
+    onkeydown="if (event.key === 'Escape') { document.getElementById('feedback-root').innerHTML = ''; }"
+    role="dialog"
+    tabindex="-1"
+  >
+    <div class="flex items-start justify-between gap-4 border-b border-stone-200 px-6 py-5">
+      <div class="space-y-3">
+        <div class="space-y-2">
+          <h2 class="text-2xl font-semibold tracking-tight text-stone-900" id="feedback-modal-title">Ris / Ros / Forslag</h2>
+          <div class="space-y-3 text-sm leading-6 text-stone-700" id="feedback-modal-copy">
+            <p>Hallaien 👋</p>
+            <p>
+              E-tjenesten trenger
+              <span class="font-semibold underline decoration-2 underline-offset-4"> din </span>
+              hjelp til å gjøre en god jobb. Ønsker du noe endret, forbedret, eller fikset? Gi oss en lyd i skjemaet her, så skal vi se på saken.
+            </p>
+            <p>okthxbye 👋</p>
+          </div>
+        </div>
+      </div>
+      <button
+        aria-label="Lukk tilbakemeldingsdialog"
+        class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 text-xl text-stone-500 transition hover:border-stone-300 hover:text-stone-900"
+        autofocus
+        hx-disinherit="hx-select hx-target hx-swap"
+        hx-get="/feedback/dismiss"
+        hx-swap="innerHTML"
+        hx-target="#feedback-root"
+        type="button"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="px-6 py-5">
+      <form
+        action="/feedback"
+        class="flex flex-col gap-4"
+        hx-disinherit="hx-select hx-target hx-swap"
+        hx-post="/feedback"
+        hx-swap="innerHTML"
+        hx-target="#feedback-root"
+        method="post"
+      >
+        <input name="page" type="hidden" value="{{ page }}">
+        <input name="name" type="hidden" value="{{ feedback_name }}">
+        <input name="email" type="hidden" value="{{ feedback_email }}">
+
+        <fieldset class="flex flex-col gap-2">
+          <legend class="sr-only">Velg kategori</legend>
+          <div class="grid grid-cols-3 gap-2">
+            {% for value, label in feedback_categories %}
+              <label class="cursor-pointer">
+                <input class="peer sr-only" name="category" type="radio" value="{{ value }}" {% if feedback_category == value %}checked{% endif %}>
+                <span class="inline-flex w-full items-center justify-center rounded-full border border-stone-300 px-4 py-2 text-sm text-stone-700 transition peer-checked:border-kvarteret-red peer-checked:bg-kvarteret-red peer-checked:text-white">{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+
+        {% if feedback_name or feedback_email %}
+          <div class="rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
+            Sender som
+            <span class="font-medium text-stone-900">{{ feedback_name or "Innlogget bruker" }}</span>
+            {% if feedback_email %}
+              · {{ feedback_email }}
+            {% endif %}
+          </div>
+        {% endif %}
+
+        <label class="flex flex-col gap-2 text-sm font-medium text-stone-900">
+          Ris / Ros / Forslag goes here:
+          <textarea autofocus class="app-input min-h-36 resize-y" name="message" placeholder="Slay on 🚀" required>{{ feedback_message }}</textarea>
+        </label>
+
+        {% if feedback_status != "idle" %}
+          <p class="text-sm {% if feedback_status == 'success' %}text-emerald-700{% else %}text-red-700{% endif %}">
+            {{ feedback_status_message }}
+          </p>
+        {% endif %}
+
+        <div class="flex items-center justify-end gap-3 pt-2">
+          <button
+            class="app-button-secondary"
+            formnovalidate
+            hx-disinherit="hx-select hx-target hx-swap"
+            hx-get="/feedback/dismiss"
+            hx-swap="innerHTML"
+            hx-target="#feedback-root"
+            type="button"
+          >
+            Lukk
+          </button>
+          <button class="app-button" type="submit">Send</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,40 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Kurs</h1>
+    </header>
+
+    <form action="/courses" class="app-panel" method="get">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end">
+        <label class="grid flex-1 gap-1" for="q">
+          <span class="text-sm text-stone-500">Filtrer kurs</span>
+          <input class="app-input" id="q" name="q" placeholder="Søk etter kurs" type="search" value="{{ query }}">
+        </label>
+        <div class="flex flex-wrap gap-3">
+          <button class="app-button" type="submit">Søk</button>
+          {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+            <a class="app-button-secondary" href="/courses/new">Opprett kurs</a>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+
+    <section class="app-panel">
+      <div class="grid gap-0">
+        {% for course in courses %}
+          <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-3 md:items-center" href="/courses/{{ course.course_id }}">
+            <div>
+              <div class="text-lg font-medium tracking-tight">{{ course.name }}</div>
+            </div>
+            <div class="text-sm text-stone-700">{{ course.description or "Ingen beskrivelse" }}</div>
+            <div class="text-sm text-stone-500">{{ course.created_at.strftime("%Y-%m-%d") if course.created_at else "Ingen dato" }}</div>
+          </a>
+        {% else %}
+          <div class="py-10 text-center text-sm text-stone-600">Ingen kurs matchet dette søket.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </section>
+{% endblock %}

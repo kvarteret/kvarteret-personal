@@ -1,0 +1,114 @@
+<section class="app-panel" id="group-recent-history-panel" {% if swap_oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <div class="mb-5 flex items-center justify-between gap-3">
+    <h2 class="text-2xl font-medium tracking-tight text-stone-900">Aktive dette semesteret</h2>
+    <span class="app-badge">{{ group.recent_members|length }} rader</span>
+  </div>
+
+  {% if can_manage_group %}
+    <div class="mb-5 rounded-2xl bg-kvarteret-background p-4">
+      <h3 class="text-xl font-medium tracking-tight text-stone-900">Legg til frivillig</h3>
+      {% if group.positions %}
+        {% if assignment_error %}
+          <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {{ assignment_error }}
+          </div>
+        {% endif %}
+        <form action="/groups/{{ group.group_id }}/role-assignments" class="mt-4 grid gap-4" method="post">
+          <label class="grid gap-1">
+            <span class="text-sm text-stone-500">Finn frivillig</span>
+            <input
+              class="app-input"
+              hx-disinherit="hx-select hx-target hx-swap"
+              hx-get="/groups/{{ group.group_id }}/assignment-volunteers"
+              hx-swap="innerHTML"
+              hx-target="#group-assignment-volunteer-results"
+              hx-trigger="input changed delay:250ms, search"
+              name="q"
+              placeholder="Søk på navn, e-post eller telefon"
+              type="search"
+            >
+          </label>
+
+          <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_9rem_9rem]">
+            <label class="grid gap-1 min-w-0">
+              <span class="text-sm text-stone-500">Verv</span>
+              <select class="app-input" name="role_id" required>
+                <option value="">Velg verv</option>
+                {% for position in group.positions %}
+                  <option value="{{ position.role_id }}">{{ position.role_name or "Uten navn" }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="grid gap-1 min-w-0">
+              <span class="text-sm text-stone-500">År</span>
+              <input class="app-input" max="3000" min="1900" name="year" required step="1" type="number" value="{{ default_assignment_year }}">
+            </label>
+            <label class="grid gap-1 min-w-0">
+              <span class="text-sm text-stone-500">Semester</span>
+              <select class="app-input" name="term" required>
+                {% for term_value, term_label in semester_term_options %}
+                  <option value="{{ term_value }}" {% if term_value|int == default_assignment_term %}selected{% endif %}>{{ term_label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+
+          <div class="rounded-2xl border border-stone-200 bg-kvarteret-background p-4" id="group-assignment-volunteer-results">
+            <p class="text-sm text-stone-600">Søk etter en frivillig for å velge hvem som skal legges inn i gruppen.</p>
+          </div>
+
+          <label class="inline-flex items-center gap-3 text-sm text-stone-700">
+            <input class="h-4 w-4 accent-kvarteret-red" name="contract_signed" type="checkbox" value="true">
+            Kontrakt signert
+          </label>
+
+          <div class="flex items-end">
+            <button class="app-button" type="submit">Legg til i gruppe</button>
+          </div>
+        </form>
+      {% else %}
+        <div class="mt-4 rounded-2xl bg-kvarteret-surface/95 px-4 py-3 text-sm text-stone-700">
+          Opprett minst ett verv før du kan legge frivillige direkte inn i gruppen.
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="grid gap-0">
+    {% for member in group.recent_members %}
+      <div class="grid gap-3 border-b border-stone-300 py-4 md:grid-cols-[minmax(0,1.8fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)_auto] md:items-center">
+        <div class="flex min-w-0 items-center gap-3">
+          <div class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600">
+            {% if member.photo_url %}
+              <img alt="{{ member.volunteer_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ member.photo_url }}">
+            {% else %}
+              {{ member.volunteer_name[:1] }}
+            {% endif %}
+          </div>
+          <div class="min-w-0">
+            <a class="text-lg font-medium tracking-tight text-stone-900 no-underline hover:text-kvarteret-red" href="/volunteers/{{ member.volunteer_id }}">{{ member.volunteer_name }}</a>
+            <div class="text-sm text-stone-500">{{ member.role_name or "Ingen rolle" }}</div>
+          </div>
+        </div>
+        <div class="text-sm text-stone-700">{{ member.semester_label }}</div>
+        <div class="text-sm text-stone-700">{% if member.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</div>
+        {% if can_manage_group %}
+          <div class="flex md:justify-end">
+            <form
+              action="/groups/{{ group.group_id }}/history/{{ member.history_id }}?_method=DELETE"
+              hx-disinherit="hx-select hx-target hx-swap"
+              hx-delete="/groups/{{ group.group_id }}/history/{{ member.history_id }}"
+              hx-swap="none"
+              method="post"
+              onsubmit="return window.confirm('Slette denne historikkraden?');"
+            >
+              <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="text-sm text-stone-600">Ingen aktive medlemmer dette semesteret.</p>
+    {% endfor %}
+  </div>
+</section>

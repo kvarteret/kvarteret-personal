@@ -1,0 +1,20 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="mx-auto grid max-w-3xl gap-7 pt-3">
+    <section class="app-panel grid gap-4 text-center">
+      <div class="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">
+        ✓
+      </div>
+      <div class="grid gap-2">
+        <p class="text-lg font-medium tracking-tight text-stone-900">Søknaden din er mottatt</p>
+        <p class="text-sm leading-6 text-stone-700">
+          En gruppeleder må godkjenne søknaden før du blir opprettet i personaldatabasen. Du trenger ikke sende inn på nytt.
+        </p>
+      </div>
+      <div class="rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
+        Status: Venter på godkjenning
+      </div>
+    </section>
+  </section>
+{% endblock %}

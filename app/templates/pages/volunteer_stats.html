@@ -1,0 +1,303 @@
+{% extends "layouts/base.html" %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">Frivillige</p>
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Organisasjonsstatistikk</h1>
+      <p class="max-w-4xl text-base leading-7 text-stone-700">Oversikt over frivillige på tvers av grupper og semestere.</p>
+    </header>
+
+    <section class="app-panel">
+      <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Frivillige per semester</h2>
+      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+        <strong>Unike frivillige</strong> betyr antall forskjellige personer som var registrert i minst én gruppe i semesteret.
+      </p>
+      {% if org_stats %}
+        <div id="org-trend-chart" style="width: 100%; height: 340px;"></div>
+        <script>
+          (function () {
+            const semesters = [
+              {% for item in org_stats %}
+              {
+                label: "{{ item.semester_label }}",
+                value: {{ item.unique_members }},
+                groups: [{% for group in item.groups %}{"name": {{ group.group_name | tojson }}, "count": {{ group.member_count }}}{% if not loop.last %},{% endif %}{% endfor %}]
+              }{% if not loop.last %},{% endif %}
+              {% endfor %}
+            ];
+
+            const element = document.getElementById("org-trend-chart");
+            const existingChart = echarts.getInstanceByDom(element);
+            if (existingChart) existingChart.dispose();
+
+            const chart = echarts.init(element);
+            chart.setOption({
+              tooltip: {
+                trigger: "axis",
+                formatter: (params) => {
+                  const currentSemester = semesters[params[0].dataIndex];
+                  let html = `<b>${params[0].name}</b><br/>${params[0].value} unike frivillige`;
+                  if (currentSemester.groups?.length) {
+                    html += "<br/><br/>";
+                    html += currentSemester.groups.map((group) => `${group.name}: ${group.count}`).join("<br/>");
+                  }
+                  return html;
+                },
+              },
+              grid: { left: 40, right: 16, top: 16, bottom: 60, containLabel: true },
+              xAxis: {
+                type: "category",
+                data: semesters.map((semester) => semester.label),
+                axisLabel: { rotate: 45, fontSize: 11, color: "#78716c" },
+                axisLine: { lineStyle: { color: "#d6d3d1" } },
+              },
+              yAxis: {
+                type: "value",
+                minInterval: 1,
+                axisLabel: { color: "#78716c" },
+                splitLine: { lineStyle: { color: "#e7e5e4" } },
+              },
+              series: [{
+                type: "line",
+                data: semesters.map((semester) => semester.value),
+                smooth: true,
+                lineStyle: { color: "#c0392b", width: 2 },
+                itemStyle: { color: "#c0392b" },
+                areaStyle: { color: "rgba(192,57,43,0.08)" },
+              }],
+            });
+
+            window.addEventListener("resize", () => chart.resize(), { passive: true });
+          })();
+        </script>
+      {% else %}
+        <p class="text-sm text-stone-600">Ingen data tilgjengelig.</p>
+      {% endif %}
+    </section>
+
+    <section class="app-panel">
+      <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Tilbakeholdelse over tid</h2>
+      <ul class="mb-5 max-w-3xl list-disc space-y-1 pl-5 text-sm leading-6 text-stone-600">
+        <li><strong>Samme gruppe</strong> viser hvor stor andel av de frivillige i et semester som også var aktive i minst én av de samme gruppene neste semester.</li>
+        <li><strong>Annen gruppe</strong> viser hvor stor andel som fortsatt var aktive neste semester, men ikke i noen av de samme gruppene.</li>
+        <li><strong>Totalt beholdt</strong> viser hvor stor andel som fortsatt var aktive neste semester, uansett gruppe.</li>
+      </ul>
+      {% if org_retention and org_retention | length > 1 %}
+        <div id="org-retention-chart" style="width: 100%; height: 320px;"></div>
+        <script>
+          (function () {
+            const retentionData = [
+              {% for item in org_retention %}
+              {
+                label: "{{ item.semester_label }}",
+                total: {{ item.total_members }},
+                same_group: {{ item.retained_to_next_same_group }},
+                other_group: {{ item.retained_to_next_other_group }},
+                total_retained: {{ item.retained_to_next }},
+                new_members: {{ item.new_members }},
+                same_group_pct: {{ item.total_members > 0 and ((item.retained_to_next_same_group / item.total_members * 100) | round(1)) or 0 }},
+                other_group_pct: {{ item.total_members > 0 and ((item.retained_to_next_other_group / item.total_members * 100) | round(1)) or 0 }},
+                total_retained_pct: {{ item.total_members > 0 and ((item.retained_to_next / item.total_members * 100) | round(1)) or 0 }}
+              }{% if not loop.last %},{% endif %}
+              {% endfor %}
+            ];
+
+            const element = document.getElementById("org-retention-chart");
+            const existingChart = echarts.getInstanceByDom(element);
+            if (existingChart) existingChart.dispose();
+
+            const chart = echarts.init(element);
+            chart.setOption({
+              tooltip: {
+                trigger: "axis",
+                formatter: (params) => {
+                  const item = retentionData[params[0].dataIndex];
+                  return `<b>${item.label}</b><br/>` +
+                    `${item.total} frivillige totalt<br/>` +
+                    `${item.same_group} i samme gruppe (${item.same_group_pct}%)<br/>` +
+                    `${item.other_group} i annen gruppe (${item.other_group_pct}%)<br/>` +
+                    `${item.total_retained} totalt beholdt (${item.total_retained_pct}%)<br/>` +
+                    `${item.new_members} nye dette semesteret`;
+                },
+              },
+              legend: {
+                data: ["Samme gruppe", "Annen og samme"],
+                bottom: 0,
+                textStyle: { color: "#78716c", fontSize: 12 },
+              },
+              grid: { left: 40, right: 16, top: 16, bottom: 60, containLabel: true },
+              xAxis: {
+                type: "category",
+                data: retentionData.map((item) => item.label),
+                axisLabel: { rotate: 45, fontSize: 11, color: "#78716c" },
+                axisLine: { lineStyle: { color: "#d6d3d1" } },
+              },
+              yAxis: {
+                type: "value",
+                min: 0,
+                max: 100,
+                axisLabel: { color: "#78716c", formatter: "{value}%" },
+                splitLine: { lineStyle: { color: "#e7e5e4" } },
+              },
+              series: [
+                {
+                  name: "Samme gruppe",
+                  type: "line",
+                  stack: "retention",
+                  data: retentionData.map((item) => item.same_group_pct),
+                  smooth: true,
+                  lineStyle: { color: "#c0392b", width: 2 },
+                  itemStyle: { color: "#c0392b" },
+                  areaStyle: { color: "rgba(192,57,43,0.14)" },
+                },
+                {
+                  name: "Annen og samme",
+                  type: "line",
+                  stack: "retention",
+                  data: retentionData.map((item) => item.other_group_pct),
+                  smooth: true,
+                  lineStyle: { color: "#d97706", width: 2 },
+                  itemStyle: { color: "#d97706" },
+                  areaStyle: { color: "rgba(217,119,6,0.14)" },
+                },
+              ],
+            });
+
+            window.addEventListener("resize", () => chart.resize(), { passive: true });
+          })();
+        </script>
+      {% else %}
+        <p class="text-sm text-stone-600">Ikke nok data for å beregne tilbakeholdelse.</p>
+      {% endif %}
+    </section>
+
+    <section class="app-panel">
+      <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Nye vs. tilbakevendte frivillige</h2>
+      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+        <strong>Tilbakevendte</strong> er personer som også var aktive forrige semester. <strong>Nye</strong> er personer som ikke var aktive forrige semester.
+      </p>
+      {% if org_retention and org_retention | length > 1 %}
+        <div id="org-cohort-chart" style="width: 100%; height: 320px;"></div>
+        <script>
+          (function () {
+            const cohortData = [
+              {% for item in org_retention %}
+              {
+                label: "{{ item.semester_label }}",
+                new_members: {{ item.new_members }},
+                retained: {{ item.retained_from_prev }}
+              }{% if not loop.last %},{% endif %}
+              {% endfor %}
+            ];
+
+            const element = document.getElementById("org-cohort-chart");
+            const existingChart = echarts.getInstanceByDom(element);
+            if (existingChart) existingChart.dispose();
+
+            const chart = echarts.init(element);
+            chart.setOption({
+              tooltip: {
+                trigger: "axis",
+                formatter: (params) => {
+                  const item = cohortData[params[0].dataIndex];
+                  return `<b>${item.label}</b><br/>` +
+                    `${item.retained} tilbakevendte<br/>` +
+                    `${item.new_members} nye`;
+                },
+              },
+              legend: {
+                data: ["Tilbakevendte", "Nye"],
+                bottom: 0,
+                textStyle: { color: "#78716c", fontSize: 12 },
+              },
+              grid: { left: 40, right: 16, top: 16, bottom: 60, containLabel: true },
+              xAxis: {
+                type: "category",
+                data: cohortData.map((item) => item.label),
+                axisLabel: { rotate: 45, fontSize: 11, color: "#78716c" },
+                axisLine: { lineStyle: { color: "#d6d3d1" } },
+              },
+              yAxis: {
+                type: "value",
+                minInterval: 1,
+                axisLabel: { color: "#78716c" },
+                splitLine: { lineStyle: { color: "#e7e5e4" } },
+              },
+              series: [
+                {
+                  name: "Tilbakevendte",
+                  type: "bar",
+                  stack: "total",
+                  data: cohortData.map((item) => item.retained),
+                  itemStyle: { color: "#c0392b" },
+                },
+                {
+                  name: "Nye",
+                  type: "bar",
+                  stack: "total",
+                  data: cohortData.map((item) => item.new_members),
+                  itemStyle: { color: "#e8b4b0" },
+                },
+              ],
+            });
+
+            window.addEventListener("resize", () => chart.resize(), { passive: true });
+          })();
+        </script>
+      {% else %}
+        <p class="text-sm text-stone-600">Ikke nok data.</p>
+      {% endif %}
+    </section>
+
+    <section class="app-panel">
+      <h2 class="mb-5 text-2xl font-medium tracking-tight text-stone-900">Aktive grupper dette semesteret</h2>
+      <p class="mb-5 max-w-3xl text-sm leading-6 text-stone-600">
+        Grafen viser gruppene med flest aktive frivillige i inneværende semester.
+      </p>
+      {% if group_counts %}
+        <div id="group-counts-chart" style="width: 100%; height: {{ [group_counts|length * 36 + 40, 260]|max }}px;"></div>
+        <script>
+          (function () {
+            const groups = [{% for group in group_counts | reverse %}"{{ group.group_name }}"{% if not loop.last %},{% endif %}{% endfor %}];
+            const counts = [{% for group in group_counts | reverse %}{{ group.member_count }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+            const element = document.getElementById("group-counts-chart");
+            const existingChart = echarts.getInstanceByDom(element);
+            if (existingChart) existingChart.dispose();
+
+            const chart = echarts.init(element);
+            chart.setOption({
+              tooltip: {
+                trigger: "axis",
+                formatter: (params) => `${params[0].name}<br/>${params[0].value} medlemmer`,
+              },
+              grid: { left: 16, right: 40, top: 8, bottom: 8, containLabel: true },
+              xAxis: {
+                type: "value",
+                minInterval: 1,
+                axisLabel: { color: "#78716c" },
+                splitLine: { lineStyle: { color: "#e7e5e4" } },
+              },
+              yAxis: {
+                type: "category",
+                data: groups,
+                axisLabel: { color: "#44403c", fontSize: 12 },
+                axisLine: { lineStyle: { color: "#d6d3d1" } },
+              },
+              series: [{
+                type: "bar",
+                data: counts,
+                itemStyle: { color: "#c0392b", borderRadius: [0, 3, 3, 0] },
+              }],
+            });
+
+            window.addEventListener("resize", () => chart.resize(), { passive: true });
+          })();
+        </script>
+      {% else %}
+        <p class="text-sm text-stone-600">Ingen aktive grupper funnet for inneværende semester.</p>
+      {% endif %}
+    </section>
+  </section>
+{% endblock %}

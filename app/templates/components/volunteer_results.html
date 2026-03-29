@@ -1,0 +1,47 @@
+{% for volunteer in volunteers %}
+  <a class="grid gap-4 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.7fr)_minmax(10rem,0.8fr)_minmax(14rem,1fr)_minmax(13rem,1fr)_minmax(10rem,0.8fr)] md:items-center" href="/volunteers/{{ volunteer.volunteer_id }}">
+    <div class="flex min-w-0 items-center gap-4">
+      <div class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600">
+        {% if volunteer.photo_url %}
+          <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ volunteer.photo_url }}">
+        {% else %}
+          {{ volunteer.last_name[:1] }}
+        {% endif %}
+      </div>
+      <div class="min-w-0">
+        <div class="truncate text-[1.15rem] font-normal tracking-[-0.03em]">{{ volunteer.full_name }}</div>
+      </div>
+    </div>
+    <div class="text-sm text-stone-700">Tlf: {{ volunteer.phone or "-" }}</div>
+    <div class="text-sm text-stone-700">{{ volunteer.email or "Ingen e-post" }}</div>
+    <div class="text-sm text-stone-700">
+      {% if volunteer.last_semester_label %}
+        Sist registrert {{ volunteer.last_semester_label }}
+      {% else %}
+        Ingen registrert historikk
+      {% endif %}
+    </div>
+    <div class="text-sm text-stone-700">{{ volunteer.pingvin_points }} pingvinpoeng</div>
+  </a>
+{% endfor %}
+
+{% if not volunteers and not cursor %}
+  <div class="py-10 text-center text-sm text-stone-600">
+    Ingen frivillige matchet dette søket.
+  </div>
+{% endif %}
+
+{% if next_cursor is not none %}
+  <div
+    class="py-4 text-center text-sm text-stone-500"
+    hx-disinherit="hx-select hx-target hx-swap"
+    hx-get="/volunteers/list"
+    hx-include="#volunteer-search"
+    hx-swap="outerHTML"
+    hx-target="this"
+    hx-trigger="revealed"
+    hx-vals='{"cursor": "{{ next_cursor }}"}'
+  >
+    Laster flere frivillige...
+  </div>
+{% endif %}

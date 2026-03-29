@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme {
+  --color-kvarteret-red: #f54b4b;
+  --color-kvarteret-red-dark: #e03f3f;
+  --color-kvarteret-background: #fff7e4;
+  --color-kvarteret-surface: #fbf2df;
+  --color-kvarteret-sand: #e8d4b2;
+  --color-kvarteret-sand-dark: #d9bf95;
+  --color-kvarteret-night: #232b48;
+  --color-kvarteret-sky: #6d7696;
+  --color-kvarteret-glow: #f7b54a;
+  --color-kvarteret-ink: #171c30;
+}
+
+@layer components {
+  .app-panel {
+    @apply bg-kvarteret-surface/94 p-5 text-kvarteret-ink shadow-[0_22px_55px_-30px_rgba(245,75,75,0.2)] backdrop-blur-sm;
+  }
+
+  .app-input {
+    @apply border-0 border-b-2 border-kvarteret-red/45 bg-transparent px-0 py-2 text-lg text-kvarteret-ink placeholder:text-kvarteret-sky/65 focus:border-kvarteret-red;
+  }
+
+  .app-select {
+    @apply bg-kvarteret-surface/95 px-3 py-3 text-sm text-kvarteret-ink shadow-[0_10px_30px_-24px_rgba(35,43,72,0.35)] focus:outline-none focus:ring-2 focus:ring-kvarteret-red/30;
+  }
+
+  select.app-input:not([multiple]),
+  select.app-select:not([multiple]) {
+    appearance: auto;
+    -webkit-appearance: menulist;
+    background-color: var(--color-kvarteret-surface);
+    color: var(--color-kvarteret-ink);
+    border: 1px solid color-mix(in srgb, var(--color-kvarteret-red) 45%, white);
+    border-radius: 0.75rem;
+    min-height: 3.5rem;
+    padding: 0.75rem 1rem;
+    line-height: 1.5;
+    box-shadow: 0 10px 30px -24px rgba(35, 43, 72, 0.35);
+  }
+
+  select.app-input:not([multiple]):focus,
+  select.app-select:not([multiple]):focus {
+    outline: none;
+    border-color: var(--color-kvarteret-red);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--color-kvarteret-red) 25%, transparent),
+      0 10px 30px -24px rgba(35, 43, 72, 0.35);
+  }
+
+  .app-button {
+    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-kvarteret-surface shadow-[0_18px_36px_-18px_rgba(245,75,75,0.55)] transition hover:bg-kvarteret-red-dark;
+  }
+
+  .app-button-secondary {
+    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-sand px-6 font-semibold text-kvarteret-night shadow-[0_16px_32px_-24px_rgba(35,43,72,0.26)] transition hover:bg-kvarteret-sand-dark;
+  }
+
+  .app-badge {
+    @apply inline-flex min-h-8 items-center bg-kvarteret-red/12 px-3 text-sm font-medium text-kvarteret-night;
+  }
+}
+
+@layer base {
+  [x-cloak] {
+    display: none !important;
+  }
+
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--color-kvarteret-background);
+    color: var(--color-kvarteret-ink);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button,
+  [type="button"],
+  [type="submit"],
+  [type="reset"] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [type="button"]:disabled,
+  [type="submit"]:disabled,
+  [type="reset"]:disabled {
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-kvarteret-red) 35%, white);
+    color: var(--color-kvarteret-night);
+  }
+}
