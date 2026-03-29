@@ -215,6 +215,19 @@ class FakeEmailSender:
         )
 
 
+class FakeMediaTokenService:
+    def build_photo_media_url(self, path: str) -> str:
+        return f"/media/photos/{path}?token=test"
+
+
+class FakeMobileCardAprilStateService:
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+    async def is_enabled(self) -> bool:
+        return self.enabled
+
+
 def _build_mobile_card_snapshot() -> MobileCardSnapshot:
     return MobileCardSnapshot(
         volunteer_id=12,
@@ -228,6 +241,7 @@ def _build_mobile_card_snapshot() -> MobileCardSnapshot:
             MobileCardRoleSnapshot(
                 name="Shift lead",
                 group="Bar",
+                group_id=253,
                 discount_level=2,
                 pingvin_points=4,
                 signed_contract=True,
@@ -1036,6 +1050,140 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
     assert isinstance(result, MobileCardCurrentCardResult)
     assert result.card.person_id == 12
     assert result.renewed_session_token is None
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disabled() -> (
+    None
+):
+    repository = FakeMobileCardRepository(
+        card_snapshot=MobileCardSnapshot(
+            volunteer_id=12,
+            first_name="Ada",
+            last_name="Lovelace",
+            birth_date=None,
+            created_at=datetime(2026, 3, 13, tzinfo=UTC),
+            photo_path="abc123.jpg",
+            pingvin_points=8,
+            active_roles=[
+                MobileCardRoleSnapshot(
+                    name="Skjenker",
+                    group="Skjenkegruppen",
+                    group_id=253,
+                    discount_level=2,
+                    pingvin_points=4,
+                    signed_contract=True,
+                )
+            ],
+        )
+    )
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+        media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
+        april_state_service=FakeMobileCardAprilStateService(False),
+    )
+
+    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+
+    assert result.card.photo_url == "/media/photos/abc123.jpg?token=test"
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_enabled() -> (
+    None
+):
+    repository = FakeMobileCardRepository(card_snapshot=_build_mobile_card_snapshot())
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+        media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
+        april_state_service=FakeMobileCardAprilStateService(True),
+    )
+
+    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+
+    assert result.card.photo_url == "/static/images/april/skjenkeetaten.webp"
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> None:
+    repository = FakeMobileCardRepository(
+        card_snapshot=MobileCardSnapshot(
+            volunteer_id=12,
+            first_name="Ada",
+            last_name="Lovelace",
+            birth_date=None,
+            created_at=datetime(2026, 3, 13, tzinfo=UTC),
+            photo_path="abc123.jpg",
+            pingvin_points=8,
+            active_roles=[
+                MobileCardRoleSnapshot(
+                    name="Presse",
+                    group="PR-etaten",
+                    group_id=270,
+                    discount_level=2,
+                    pingvin_points=4,
+                    signed_contract=True,
+                ),
+                MobileCardRoleSnapshot(
+                    name="Utvikler",
+                    group="E-tjenesten",
+                    group_id=254,
+                    discount_level=2,
+                    pingvin_points=4,
+                    signed_contract=True,
+                ),
+            ],
+        )
+    )
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+        april_state_service=FakeMobileCardAprilStateService(True),
+    )
+
+    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+
+    assert result.card.photo_url == "/static/images/april/pr.jpg"
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups() -> None:
+    repository = FakeMobileCardRepository(
+        card_snapshot=MobileCardSnapshot(
+            volunteer_id=12,
+            first_name="Ada",
+            last_name="Lovelace",
+            birth_date=None,
+            created_at=datetime(2026, 3, 13, tzinfo=UTC),
+            photo_path="abc123.jpg",
+            pingvin_points=8,
+            active_roles=[
+                MobileCardRoleSnapshot(
+                    name="Leder",
+                    group="Administrasjonen",
+                    group_id=263,
+                    discount_level=2,
+                    pingvin_points=4,
+                    signed_contract=True,
+                )
+            ],
+        )
+    )
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+        april_state_service=FakeMobileCardAprilStateService(True),
+    )
+
+    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+
+    assert result.card.photo_url == "/static/images/april/default.jpg"
 
 
 @pytest.mark.asyncio

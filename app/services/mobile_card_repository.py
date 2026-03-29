@@ -19,6 +19,7 @@ logger = logging.getLogger("app.performance")
 class MobileCardRoleSnapshot:
     name: str
     group: str
+    group_id: int
     discount_level: int | None
     pingvin_points: int
     signed_contract: bool
@@ -117,6 +118,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                 points_stmt.label("pingvin_points"),
                 verv.c.verv.label("verv_navn"),
                 grupper.c.navn.label("gruppe_navn"),
+                historie.c.id_gruppe.label("gruppe_id"),
                 grupper.c.rabatt_trinn,
                 verv.c.pingvinpoeng.label("pingvin_poeng"),
                 historie.c.signert_kontrakt,
@@ -161,6 +163,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                 MobileCardRoleSnapshot(
                     name=row["verv_navn"],
                     group=row["gruppe_navn"],
+                    group_id=row["gruppe_id"],
                     discount_level=row["rabatt_trinn"],
                     pingvin_points=int(row["pingvin_poeng"] or 0),
                     signed_contract=row["signert_kontrakt"],

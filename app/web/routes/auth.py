@@ -9,6 +9,7 @@ from app.auth.login_service import LoginError, LoginService
 from app.dependencies import (
     get_current_user,
     get_login_service,
+    get_mobile_card_april_state_service,
     get_session_cookie_signer,
     get_session_store,
     get_settings,
@@ -16,9 +17,11 @@ from app.dependencies import (
 )
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
+from app.services.mobile_card_april_state import MobileCardAprilStateService
 from app.web.templates import templates
 
 router = APIRouter()
+_APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 
 
 def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
@@ -35,10 +38,21 @@ def _set_session_cookie(response, *, request: Request, settings, session_cookie_
 @router.get("/")
 async def dashboard(
     request: Request,
+    mobile_card_april_message: str | None = None,
     current_user=Depends(get_current_user),
+    mobile_card_april_state_service: MobileCardAprilStateService = Depends(
+        get_mobile_card_april_state_service
+    ),
 ):
     if current_user is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    show_mobile_card_april_toggle = (
+        current_user.role == UserRole.ADMIN
+        and current_user.email.strip().lower() == _APRIL_TOGGLE_EMAIL
+    )
+    mobile_card_april_enabled = False
+    if show_mobile_card_april_toggle:
+        mobile_card_april_enabled = await mobile_card_april_state_service.is_enabled()
     return templates.TemplateResponse(
         request,
         "pages/dashboard.html",
@@ -46,6 +60,9 @@ async def dashboard(
             "title": "Kvarteret Personal",
             "section": "dashboard",
             "current_user": current_user,
+            "mobile_card_april_enabled": mobile_card_april_enabled,
+            "mobile_card_april_message": mobile_card_april_message,
+            "show_mobile_card_april_toggle": show_mobile_card_april_toggle,
         },
     )
 

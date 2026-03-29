@@ -14,10 +14,34 @@ from app.cache import TTLCache
 from app.config import Settings
 from app.media_tokens import MediaTokenService
 from app.services.email import EmailSenderProtocol
+from app.services.mobile_card_april_state import MobileCardAprilStateService
 from app.services.mobile_card_repository import MobileCardRepository, MobileCardSnapshot
 from app.services.semester import get_current_semester_code
 
 logger = logging.getLogger(__name__)
+
+_APRIL_FOOLS_IMAGE_BY_GROUP_ID = {
+    2: "hovedstyret.avif",
+    78: "vaktetaten.jpg",
+    83: "asf-aktive-studenter--hits-for-kids.jpg",
+    146: "kraftetaten.webp",
+    195: "immaturus.avif",
+    253: "skjenkeetaten.webp",
+    254: "e-tjenesten.jpeg",
+    260: "pingvinordenen.jpeg",
+    264: "samfunnet-i-bergen.jpeg",
+    265: "bergen-realistforening.jpg",
+    266: "bergen-filmklubb.png",
+    267: "immaturus.avif",
+    268: "asf-aktive-studenter--hits-for-kids.jpg",
+    270: "pr.jpg",
+    271: "pr.jpg",
+    272: "arme-riddere.jpg",
+    277: "blak.jpg",
+    278: "sirenene.jpg",
+    284: "hf.jpg",
+}
+_APRIL_FOOLS_DEFAULT_IMAGE = "default.jpg"
 
 _LEGACY_PENGUIN_WORD_PREFIXES = [
     "bug",
@@ -178,11 +202,13 @@ class MobileCardService:
         repository: MobileCardRepository,
         email_sender: EmailSenderProtocol,
         media_token_service: MediaTokenService | None = None,
+        april_state_service: MobileCardAprilStateService | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
         self.email_sender = email_sender
         self.media_token_service = media_token_service
+        self.april_state_service = april_state_service
         self.serializer = URLSafeTimedSerializer(
             settings.app_secret_key, salt="kvarteret-mobile-card"
         )
@@ -314,14 +340,21 @@ class MobileCardService:
             raise MobileCardPersonNotFoundError(
                 f"Volunteer {volunteer_id} was not found."
             )
-        return self._build_card_response(snapshot)
+        return await self._build_card_response(snapshot)
 
-    def _build_card_response(self, snapshot: MobileCardSnapshot) -> MobileCardResponse:
+    async def _build_card_response(
+        self, snapshot: MobileCardSnapshot
+    ) -> MobileCardResponse:
         photo_url = (
             self.media_token_service.build_photo_media_url(snapshot.photo_path)
             if snapshot.photo_path and self.media_token_service is not None
             else None
         )
+        if (
+            self.april_state_service is not None
+            and await self.april_state_service.is_enabled()
+        ):
+            photo_url = self._build_april_photo_url(snapshot)
         return MobileCardResponse(
             person_id=snapshot.volunteer_id,
             first_name=snapshot.first_name,
@@ -344,6 +377,20 @@ class MobileCardService:
             ],
             word_of_the_day=_word_of_the_day(),
         )
+
+    def _build_april_photo_url(self, snapshot: MobileCardSnapshot) -> str:
+        filename = _APRIL_FOOLS_DEFAULT_IMAGE
+        for role in snapshot.active_roles:
+            mapped_filename = _APRIL_FOOLS_IMAGE_BY_GROUP_ID.get(role.group_id)
+            if mapped_filename is not None:
+                filename = mapped_filename
+                break
+        prefix = (
+            self.settings.app_public_base_url.rstrip("/")
+            if self.settings.app_public_base_url
+            else ""
+        )
+        return f"{prefix}/static/images/april/{filename}"
 
     def _build_session_token(self, payload: dict[str, int | bool]) -> str:
         return self.serializer.dumps(payload)
