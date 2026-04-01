@@ -1,5 +1,5 @@
 {
-  "buildCommand": "bun run build:css && python scripts/prepare_vercel_static.py",
+  "buildCommand": "bun run build:assets && python scripts/prepare_vercel_static.py",
   "regions": ["arn1"],
   "functions": {
     "api/index.py": {
