@@ -4,9 +4,10 @@ function registerVolunteerPicker() {
   }
 
   window.Alpine.__volunteerPickerRegistered = true;
-  Alpine.data("volunteerPicker", ({ searchUrl, minQueryLength = 2 }) => ({
+  Alpine.data("volunteerPicker", ({ searchUrl, minQueryLength = 2, selectionMode = "multiple" }) => ({
     searchUrl,
     minQueryLength,
+    selectionMode,
     query: "",
     results: [],
     selectedVolunteers: [],
@@ -86,7 +87,8 @@ function registerVolunteerPicker() {
         return;
       }
 
-      this.selectedVolunteers.push(volunteer);
+      this.selectedVolunteers =
+        this.selectionMode === "single" ? [volunteer] : [...this.selectedVolunteers, volunteer];
       this.query = "";
       this.results = [];
       this.showDropdown = false;

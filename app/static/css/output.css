@@ -1031,9 +1031,6 @@
     --tw-tracking: var(--tracking-widest);
     letter-spacing: var(--tracking-widest);
   }
-  .break-words {
-    overflow-wrap: break-word;
-  }
   .break-all {
     word-break: break-all;
   }
@@ -1274,16 +1271,6 @@
       }
     }
   }
-  .hover\:border-kvarteret-red\/40 {
-    &:hover {
-      @media (hover: hover) {
-        border-color: color-mix(in srgb, #f54b4b 40%, transparent);
-        @supports (color: color-mix(in lab, red, red)) {
-          border-color: color-mix(in oklab, var(--color-kvarteret-red) 40%, transparent);
-        }
-      }
-    }
-  }
   .hover\:border-stone-300 {
     &:hover {
       @media (hover: hover) {
@@ -1396,14 +1383,6 @@
       }
     }
   }
-  .hover\:shadow-md {
-    &:hover {
-      @media (hover: hover) {
-        --tw-shadow: 0 4px 6px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 2px 4px -2px var(--tw-shadow-color, rgb(0 0 0 / 0.1));
-        box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
-      }
-    }
-  }
   .focus\:border-kvarteret-red {
     &:focus {
       border-color: var(--color-kvarteret-red);
@@ -1471,11 +1450,6 @@
       grid-column: span 2 / span 2;
     }
   }
-  .md\:mt-0 {
-    @media (width >= 48rem) {
-      margin-top: calc(var(--spacing) * 0);
-    }
-  }
   .md\:grid-cols-2 {
     @media (width >= 48rem) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1489,11 +1463,6 @@
   .md\:grid-cols-\[9rem_minmax\(0\,1fr\)\] {
     @media (width >= 48rem) {
       grid-template-columns: 9rem minmax(0,1fr);
-    }
-  }
-  .md\:grid-cols-\[auto_minmax\(0\,1fr\)\] {
-    @media (width >= 48rem) {
-      grid-template-columns: auto minmax(0,1fr);
     }
   }
   .md\:grid-cols-\[minmax\(0\,1\.4fr\)_minmax\(0\,2fr\)\] {
@@ -1519,11 +1488,6 @@
   .md\:grid-cols-\[minmax\(0\,1\.8fr\)_minmax\(8rem\,0\.8fr\)_minmax\(9rem\,0\.9fr\)_auto\] {
     @media (width >= 48rem) {
       grid-template-columns: minmax(0,1.8fr) minmax(8rem,0.8fr) minmax(9rem,0.9fr) auto;
-    }
-  }
-  .md\:grid-cols-\[minmax\(0\,1fr\)_auto\] {
-    @media (width >= 48rem) {
-      grid-template-columns: minmax(0,1fr) auto;
     }
   }
   .md\:flex-row {
@@ -1554,11 +1518,6 @@
   .md\:justify-start {
     @media (width >= 48rem) {
       justify-content: flex-start;
-    }
-  }
-  .md\:self-start {
-    @media (width >= 48rem) {
-      align-self: flex-start;
     }
   }
   .md\:p-12 {

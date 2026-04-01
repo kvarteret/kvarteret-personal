@@ -252,12 +252,10 @@ class FakeSemesterTransferService:
 class FakeVolunteersService:
     def __init__(self) -> None:
         self.created_assignment = None
-        self.last_list_limit = None
         self.last_search_option_query = None
         self.last_search_option_limit = None
 
     async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
-        self.last_list_limit = limit
         if not query or "sample" not in query.lower():
             return []
         return [
@@ -335,7 +333,9 @@ def test_groups_and_courses_pages_render() -> None:
     assert "Lagre verv" in group_detail_response.text
     assert "Opprett verv" in group_detail_response.text
     assert "Legg til frivillig" in group_detail_response.text
-    assert 'hx-get="/groups/7/assignment-volunteers"' in group_detail_response.text
+    assert "volunteerPicker({" in group_detail_response.text
+    assert "/volunteers/search/options/typeahead" in group_detail_response.text
+    assert "Valgt frivillig" in group_detail_response.text
     assert 'action="/groups/7/role-assignments"' in group_detail_response.text
     assert "Flytt til nytt semester" in group_detail_response.text
     assert "Aktiv til semester" not in group_detail_response.text
@@ -424,25 +424,6 @@ def test_group_role_actions_redirect_and_call_service() -> None:
     assert delete_response.status_code == 303
     assert delete_response.headers["location"] == "/groups/7"
     assert groups_service.deleted_role == (7, 3)
-
-
-def test_group_assignment_volunteer_search_returns_matches() -> None:
-    app = create_app()
-    override_authenticated_user(app, make_authenticated_user())
-    app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
-    volunteers_service = FakeVolunteersService()
-    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
-    client = TestClient(app)
-
-    response = client.get("/groups/7/assignment-volunteers?q=sample")
-
-    assert response.status_code == 200
-    assert "Sample Person" in response.text
-    assert 'name="volunteer_id"' in response.text
-    assert "sample.person@example.test" in response.text
-    assert "Se profil" in response.text
-    assert 'href="/volunteers/12"' in response.text
-    assert volunteers_service.last_list_limit == 3
 
 
 def test_group_role_assignment_create_redirects_and_calls_service() -> None:
