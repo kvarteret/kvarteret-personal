@@ -8,7 +8,6 @@ from app.auth.roles import UserRole
 from app.dependencies import (
     get_groups_service,
     get_semester_transfer_service,
-    get_volunteers_service,
     require_management_user,
     require_authenticated_user,
 )
@@ -18,7 +17,6 @@ from app.services.groups import GroupsService
 from app.services.semester import get_current_semester_code
 from app.services.semester_transfer import SemesterTransferService
 from app.services.volunteer_options import SEMESTER_TERM_OPTIONS
-from app.services.volunteers import VolunteersService
 from app.web.route_helpers import not_configured_http_exception
 from app.web.templates import templates
 
@@ -101,34 +99,6 @@ async def groups_detail(
             "default_assignment_term": get_current_semester_code() % 10,
             "semester_term_options": SEMESTER_TERM_OPTIONS,
             "assignment_error": request.query_params.get("assignment_error"),
-        },
-    )
-
-
-@router.get("/groups/{group_id}/assignment-volunteers")
-async def groups_assignment_volunteers(
-    request: Request,
-    group_id: int,
-    q: str | None = None,
-    current_user=Depends(require_management_user),
-    groups_service: GroupsService = Depends(get_groups_service),
-    volunteers_service: VolunteersService = Depends(get_volunteers_service),
-):
-    try:
-        group = await groups_service.get_group_detail(group_id)
-        volunteers = await volunteers_service.list_volunteers(query=q, limit=3) if q and q.strip() else []
-    except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed group views are not configured yet.")
-    if group is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
-    return templates.TemplateResponse(
-        request,
-        "components/group_assignment_volunteer_results.html",
-        {
-            "current_user": current_user,
-            "group": group,
-            "volunteers": volunteers,
-            "query": q or "",
         },
     )
 
