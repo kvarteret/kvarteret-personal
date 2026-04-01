@@ -16,6 +16,17 @@ from app.config import Settings
 
 _request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
 
+# The root logger stays at settings.log_level, so application logs still emit at INFO by default.
+# Only these specific third-party loggers are overridden to WARNING to reduce Vercel noise.
+_NOISY_LOGGER_LEVELS: dict[str, int] = {
+    "httpx": logging.WARNING,
+    "httpcore": logging.WARNING,
+    "azure": logging.WARNING,
+    "azure.core": logging.WARNING,
+    "azure.storage": logging.WARNING,
+    "azure.core.pipeline.policies.http_logging_policy": logging.WARNING,
+}
+
 
 class JsonLogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -44,6 +55,8 @@ def configure_logging(settings: Settings) -> None:
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
     root_logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
+    for logger_name, level in _NOISY_LOGGER_LEVELS.items():
+        logging.getLogger(logger_name).setLevel(level)
 
 
 def bind_request_context(**values: Any):

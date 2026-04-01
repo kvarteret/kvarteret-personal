@@ -1,11 +1,12 @@
 -include .env
 
-.PHONY: help install css css-watch run test smoke-auth upload-legacy-images empty-supabase-storage
+.PHONY: help install css assets css-watch run test smoke-auth upload-legacy-images empty-supabase-storage
 
 help:
 	@printf "Targets:\n"
 	@printf "  make install    Install Python and frontend dependencies\n"
 	@printf "  make css        Build Tailwind CSS once\n"
+	@printf "  make assets     Build CSS and browser assets once\n"
 	@printf "  make css-watch  Watch and rebuild Tailwind CSS\n"
 	@printf "  make run        Build CSS and start the FastAPI app\n"
 	@printf "  make test       Run the test suite\n"
@@ -20,10 +21,13 @@ install:
 css:
 	bun run build:css
 
+assets:
+	bun run build:assets
+
 css-watch:
 	bun run watch:css
 
-run: css
+run: assets
 	uv run uvicorn app.main:create_app --factory --reload
 
 test:
