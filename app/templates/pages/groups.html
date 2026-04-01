@@ -25,7 +25,7 @@
     {% if groups %}
       <div class="grid gap-6 xl:grid-cols-2">
         <section class="app-panel">
-          <h2 class="border-b border-stone-300 pb-3 text-2xl font-medium tracking-tight text-stone-900">Active groups</h2>
+          <h2 class="border-b border-stone-300 pb-3 text-2xl font-medium tracking-tight text-stone-900">Aktive grupper</h2>
           <div class="grid gap-0">
             {% for group in active_groups %}
               <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)] md:items-center" href="/groups/{{ group.group_id }}">
@@ -39,7 +39,7 @@
         </section>
 
         <section class="app-panel">
-          <h2 class="border-b border-stone-300 pb-3 text-2xl font-medium tracking-tight text-stone-900">Inactive groups</h2>
+          <h2 class="border-b border-stone-300 pb-3 text-2xl font-medium tracking-tight text-stone-900">Inaktive grupper</h2>
           <div class="grid gap-0">
             {% for group in inactive_groups %}
               <a class="grid gap-3 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)] md:items-center" href="/groups/{{ group.group_id }}">

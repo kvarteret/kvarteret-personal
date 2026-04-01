@@ -1,4 +1,5 @@
 {% extends "layouts/base.html" %}
+{% from "components/ui_macros.html" import lazy_panel %}
 
 {% block page_content %}
   <section class="grid gap-7">
@@ -52,7 +53,7 @@
       </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
-        {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+        {% if can_manage_volunteer_profile %}
           <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne frivilligen? Dette fjerner historikk, filer, kort og profilbilde.');">
             <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit">Slett frivillig</button>
           </form>
@@ -139,23 +140,13 @@
           {% endif %}
         </section>
 
-        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/relations/panel" hx-swap="outerHTML" hx-trigger="intersect once">
-          <p class="text-sm text-stone-500">Laster kort og pårørende...</p>
-        </section>
+        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/relations/panel', 'Laster kort og pårørende...') }}
       </div>
 
       <div class="grid gap-6">
-        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/panel" hx-swap="outerHTML" hx-trigger="intersect once">
-          <p class="text-sm text-stone-500">Laster historikk...</p>
-        </section>
-
-        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/course-completions/panel" hx-swap="outerHTML" hx-trigger="intersect once">
-          <p class="text-sm text-stone-500">Laster kurs...</p>
-        </section>
-
-        <section class="app-panel" hx-disinherit="hx-select hx-target hx-swap" hx-get="/volunteers/{{ volunteer.volunteer_id }}/documents/panel" hx-swap="outerHTML" hx-trigger="intersect once">
-          <p class="text-sm text-stone-500">Laster filer...</p>
-        </section>
+        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/role-assignments/panel', 'Laster historikk...') }}
+        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/course-completions/panel', 'Laster kurs...') }}
+        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/documents/panel', 'Laster filer...') }}
       </div>
     </div>
   </section>

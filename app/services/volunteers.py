@@ -82,23 +82,10 @@ class VolunteersService:
         self.detail_cache_ttl_seconds = detail_cache_ttl_seconds or 300
         self.photo_upload_max_bytes = photo_upload_max_bytes
         self.photo_max_dimension = photo_max_dimension
-        self._shell_cache: TTLCache[int, VolunteerDetail] = TTLCache(
-            ttl_seconds=self.detail_cache_ttl_seconds,
-            max_entries=2048,
-        )
-        self._history_cache: TTLCache[int, list[RoleAssignmentItem]] = TTLCache(
-            ttl_seconds=self.detail_cache_ttl_seconds,
-            max_entries=2048,
-        )
-        self._course_completions_cache: TTLCache[int, list[VolunteerCourseCompletionItem]] = TTLCache(
-            ttl_seconds=self.detail_cache_ttl_seconds,
-            max_entries=2048,
-        )
-        self._documents_cache: TTLCache[int, list[DocumentItem]] = TTLCache(
-            ttl_seconds=self.detail_cache_ttl_seconds,
-            max_entries=2048,
-        )
-        self._relations_cache: TTLCache[int, VolunteerRelations] = TTLCache(
+        # Single cache per volunteer ID. Each entry is a namespace dict keyed by panel name
+        # ("shell", "history", "course_completions", "documents", "relations").
+        # _invalidate_volunteer_cache pops the entire entry, so new panels can never be forgotten.
+        self._cache: TTLCache[int, dict[str, Any]] = TTLCache(
             ttl_seconds=self.detail_cache_ttl_seconds,
             max_entries=2048,
         )
@@ -162,17 +149,16 @@ class VolunteersService:
 
     async def get_volunteer_detail(self, volunteer_id: int) -> VolunteerDetail | None:
         started_at = perf_counter()
-        cached = self._shell_cache.get(volunteer_id)
+        cached = self._cache_get(volunteer_id, "shell")
         if cached is not None:
             return cached
         try:
             row = await self.repository.fetch_volunteer_shell_row(volunteer_id)
             if row is None:
-                self._shell_cache.pop(volunteer_id)
                 return None
             volunteer = map_volunteer_detail(row)
             volunteer.photo_url = _build_photo_url(self.media_token_service, row.get("sha1"), row.get("filetype"))
-            self._shell_cache.set(volunteer_id, volunteer)
+            self._cache_set(volunteer_id, "shell", volunteer)
             return volunteer
         finally:
             log_operation_timing(
@@ -184,13 +170,13 @@ class VolunteersService:
 
     async def list_role_assignments(self, volunteer_id: int, limit: int = 12) -> list[RoleAssignmentItem]:
         started_at = perf_counter()
-        cached = self._history_cache.get(volunteer_id)
+        cached = self._cache_get(volunteer_id, "history")
         if cached is not None:
             return cached
         try:
             rows = await self.repository.fetch_volunteer_role_assignment_rows(volunteer_id, limit=limit)
             items = [map_role_assignment_item(row) for row in rows]
-            self._history_cache.set(volunteer_id, items)
+            self._cache_set(volunteer_id, "history", items)
             return items
         finally:
             log_operation_timing(
@@ -206,13 +192,13 @@ class VolunteersService:
         limit: int = 100,
     ) -> list[VolunteerCourseCompletionItem]:
         started_at = perf_counter()
-        cached = self._course_completions_cache.get(volunteer_id)
+        cached = self._cache_get(volunteer_id, "course_completions")
         if cached is not None:
             return cached
         try:
             rows = await self.repository.fetch_volunteer_course_completion_rows(volunteer_id, limit=limit)
             items = [map_course_completion_item(row) for row in rows]
-            self._course_completions_cache.set(volunteer_id, items)
+            self._cache_set(volunteer_id, "course_completions", items)
             return items
         finally:
             log_operation_timing(
@@ -224,7 +210,7 @@ class VolunteersService:
 
     async def list_volunteer_documents(self, volunteer_id: int) -> list[DocumentItem]:
         started_at = perf_counter()
-        cached = self._documents_cache.get(volunteer_id)
+        cached = self._cache_get(volunteer_id, "documents")
         if cached is not None:
             return cached
         try:
@@ -232,7 +218,7 @@ class VolunteersService:
             items = [map_document_item(volunteer_id, row) for row in rows]
             for item in items:
                 item.download_url = _build_document_url(self.media_token_service, volunteer_id, item.filename)
-            self._documents_cache.set(volunteer_id, items)
+            self._cache_set(volunteer_id, "documents", items)
             return items
         finally:
             log_operation_timing(
@@ -244,13 +230,13 @@ class VolunteersService:
 
     async def get_volunteer_relations(self, volunteer_id: int) -> VolunteerRelations:
         started_at = perf_counter()
-        cached = self._relations_cache.get(volunteer_id)
+        cached = self._cache_get(volunteer_id, "relations")
         if cached is not None:
             return cached
         try:
             rows = await self.repository.fetch_volunteer_relation_rows(volunteer_id)
             relations = map_relations(rows)
-            self._relations_cache.set(volunteer_id, relations)
+            self._cache_set(volunteer_id, "relations", relations)
             return relations
         finally:
             log_operation_timing(
@@ -408,17 +394,11 @@ class VolunteersService:
         term: int,
         contract_signed: bool,
     ) -> None:
-        if year < 1900 or year > 3000:
-            raise InvalidRoleAssignmentError("Year must be between 1900 and 3000.")
-        if term not in {1, 2}:
-            raise InvalidRoleAssignmentError("Semester must be Vår or Høst.")
+        semester_code = _build_semester_code(year=year, term=term, error_cls=InvalidRoleAssignmentError)
         if not await self.repository.volunteer_exists(volunteer_id):
             raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
         if not await self.repository.role_belongs_to_group(group_id=group_id, role_id=role_id):
             raise InvalidRoleAssignmentError("Selected verv does not belong to the selected group.")
-        semester_code = year * 10 + term
-        if not format_semester_code(semester_code):
-            raise InvalidRoleAssignmentError("Unsupported semester code.")
         if await self.repository.role_assignment_exists(
             volunteer_id=volunteer_id,
             group_id=group_id,
@@ -449,15 +429,9 @@ class VolunteersService:
         row = await self.repository.fetch_role_assignment_record(history_id)
         if not row or row["id_personal"] != volunteer_id:
             raise RoleAssignmentNotFoundError(f"Role assignment {history_id} was not found.")
-        if year < 1900 or year > 3000:
-            raise InvalidRoleAssignmentError("Year must be between 1900 and 3000.")
-        if term not in {1, 2}:
-            raise InvalidRoleAssignmentError("Semester must be Vår or Høst.")
+        semester_code = _build_semester_code(year=year, term=term, error_cls=InvalidRoleAssignmentError)
         if not await self.repository.role_belongs_to_group(group_id=group_id, role_id=role_id):
             raise InvalidRoleAssignmentError("Selected verv does not belong to the selected group.")
-        semester_code = year * 10 + term
-        if not format_semester_code(semester_code):
-            raise InvalidRoleAssignmentError("Unsupported semester code.")
         if await self.repository.role_assignment_exists(
             volunteer_id=volunteer_id,
             group_id=group_id,
@@ -617,11 +591,16 @@ class VolunteersService:
         await self._delete_document_row(row)
 
     def _invalidate_volunteer_cache(self, volunteer_id: int) -> None:
-        self._shell_cache.pop(volunteer_id)
-        self._history_cache.pop(volunteer_id)
-        self._course_completions_cache.pop(volunteer_id)
-        self._documents_cache.pop(volunteer_id)
-        self._relations_cache.pop(volunteer_id)
+        self._cache.pop(volunteer_id)
+
+    def _cache_get(self, volunteer_id: int, key: str):
+        namespace = self._cache.get(volunteer_id)
+        return namespace.get(key) if namespace is not None else None
+
+    def _cache_set(self, volunteer_id: int, key: str, value) -> None:
+        namespace = dict(self._cache.get(volunteer_id) or {})
+        namespace[key] = value
+        self._cache.set(volunteer_id, namespace)
 
     def _require_storage_service(self) -> StorageService:
         if self.storage_service is None:
@@ -762,30 +741,3 @@ async def _best_effort_remove(remove_action) -> None:
         await to_thread(remove_action)
     except Exception:
         cleanup_logger.warning("storage cleanup failed", exc_info=True)
-
-
-__all__ = [
-    "CardItem",
-    "CourseCompletionNotFoundError",
-    "DocumentItem",
-    "DocumentNotFoundError",
-    "DuplicateCourseCompletionError",
-    "VolunteerDocumentUploadResult",
-    "DuplicateDocumentError",
-    "InvalidCourseCompletionError",
-    "InvalidVolunteerRelationsError",
-    "RoleAssignmentItem",
-    "NextOfKinItem",
-    "VolunteerCourseCompletionItem",
-    "VolunteersService",
-    "VolunteersServiceError",
-    "VolunteersServiceProtocol",
-    "VolunteerDetail",
-    "VolunteerListItem",
-    "VolunteerListPage",
-    "VolunteerNotFoundError",
-    "VolunteerRelations",
-    "VolunteerPhotoUploadResult",
-    "VolunteerSearchOption",
-    "UnsupportedUploadError",
-]
