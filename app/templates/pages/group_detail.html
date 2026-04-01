@@ -1,5 +1,5 @@
 {% extends "layouts/base.html" %}
-{% from "components/ui_macros.html" import blocker_notice, form_field, history_back_button, page_header %}
+{% from "components/ui_macros.html" import blocker_notice, form_field, history_back_button, lazy_panel, page_header %}
 
 {% block page_content %}
   <section class="grid gap-7">
@@ -115,26 +115,7 @@
       {% include "components/group_recent_history_panel.html" %}
     </div>
 
-    <section
-      class="app-panel"
-      id="group-stats-panel"
-      hx-disinherit="hx-select hx-target hx-swap"
-      hx-get="/groups/{{ group.group_id }}/stats"
-      hx-swap="outerHTML"
-      hx-trigger="load"
-    >
-      <p class="text-sm text-stone-500">Laster gruppestatistikk...</p>
-    </section>
-
-    <section
-      class="app-panel"
-      id="group-history-panel"
-      hx-disinherit="hx-select hx-target hx-swap"
-      hx-get="/groups/{{ group.group_id }}/history"
-      hx-swap="outerHTML"
-      hx-trigger="load"
-    >
-      <p class="text-sm text-stone-500">Laster full historikk...</p>
-    </section>
+    {{ lazy_panel('/groups/' ~ group.group_id ~ '/stats', 'Laster gruppestatistikk...', trigger='load', panel_id='group-stats-panel') }}
+    {{ lazy_panel('/groups/' ~ group.group_id ~ '/history', 'Laster full historikk...', trigger='load', panel_id='group-history-panel') }}
   </section>
 {% endblock %}

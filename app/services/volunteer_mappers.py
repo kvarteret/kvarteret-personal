@@ -21,14 +21,6 @@ def build_document_storage_path(volunteer_id: int, filename: str) -> str:
     return f"{volunteer_id}/{filename}"
 
 
-def build_photo_url(sha1: str | None, filetype: str | None) -> str | None:
-    return None
-
-
-def build_document_url(volunteer_id: int, filename: str | None) -> str | None:
-    return None
-
-
 def map_volunteer_list_item(row: dict) -> VolunteerListItem:
     last_semester_code = int(row["last_semester"]) if row.get("last_semester") is not None else None
     return VolunteerListItem(
@@ -38,7 +30,7 @@ def map_volunteer_list_item(row: dict) -> VolunteerListItem:
         full_name=build_full_name(row["fornavn"], row["etternavn"]),
         email=row["epost"],
         phone=row["telefon"],
-        photo_url=build_photo_url(row.get("sha1"), row.get("filetype")),
+        photo_url=None,
         pingvin_points=int(row.get("pingvin_points") or 0),
         last_semester_code=last_semester_code,
         last_semester_label=format_semester_code(last_semester_code),
@@ -61,7 +53,7 @@ def map_volunteer_detail(row: dict) -> VolunteerDetail:
         address=row["gateadresse"],
         postal_code=row["postnummerid"],
         pingvin_points=int(row.get("pingvin_points") or 0),
-        photo_url=build_photo_url(row.get("sha1"), row.get("filetype")),
+        photo_url=None,
     )
 
 
@@ -73,7 +65,7 @@ def map_document_item(volunteer_id: int, row: dict) -> DocumentItem:
         group_id=row.get("gruppekobling"),
         created_at=require_datetime(row["opprettet"]),
         storage_path=build_document_storage_path(volunteer_id, row["filename"]),
-        download_url=build_document_url(volunteer_id, row["filename"]),
+        download_url=None,
     )
 
 

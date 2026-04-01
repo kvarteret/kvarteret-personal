@@ -37,6 +37,12 @@
   {% endif %}
 {%- endmacro %}
 
+{% macro lazy_panel(url, loading_text="Laster...", trigger="intersect once", panel_id=None) -%}
+  <section class="app-panel"{% if panel_id %} id="{{ panel_id }}"{% endif %} hx-disinherit="hx-select hx-target hx-swap" hx-get="{{ url }}" hx-swap="outerHTML" hx-trigger="{{ trigger }}">
+    <p class="text-sm text-stone-500">{{ loading_text }}</p>
+  </section>
+{%- endmacro %}
+
 {% macro blocker_notice(blockers, classes='mt-4') -%}
   {% if blockers %}
     <div class="{{ classes }} rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">

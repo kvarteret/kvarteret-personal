@@ -35,6 +35,7 @@ async def render_role_assignments_panel(
         else []
     )
     current_semester_code = get_current_semester_code()
+    can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     return templates.TemplateResponse(
         request,
         "components/volunteer_role_assignments_panel.html",
@@ -42,6 +43,7 @@ async def render_role_assignments_panel(
             "current_user": current_user,
             "volunteer": volunteer,
             "assignments": assignments,
+            "can_manage": can_manage,
             "group_options": groups,
             "editing_assignment": editing_assignment,
             "editing_role_options": editing_role_options,

@@ -105,7 +105,7 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
     monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch_row)
 
     cached = await service.get_volunteer_detail(1)
-    service._shell_cache.force_expire(1)
+    service._cache.force_expire(1)
     reloaded = await service.get_volunteer_detail(1)
 
     assert cached is not None

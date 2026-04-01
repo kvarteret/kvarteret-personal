@@ -336,7 +336,6 @@ async def volunteer_delete_role_assignment(
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.delete("/volunteers/{volunteer_id}/photo")
 @router.post("/volunteers/{volunteer_id}/photo")
 async def volunteer_upload_photo(
     request: Request,

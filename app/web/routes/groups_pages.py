@@ -4,6 +4,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.auth.roles import UserRole
 from app.dependencies import (
     get_groups_service,
     get_semester_transfer_service,
@@ -85,7 +86,7 @@ async def groups_detail(
         raise not_configured_http_exception("Database-backed group views are not configured yet.")
     if group is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
-    can_manage = current_user.role in {"Admin", "Gruppeadmin"}
+    can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     return templates.TemplateResponse(
         request,
         "pages/group_detail.html",
@@ -143,7 +144,7 @@ async def groups_detail_history(
         history = await groups_service.get_group_history_by_semester(group_id)
     except NotConfiguredError:
         raise not_configured_http_exception("Database-backed group views are not configured yet.")
-    can_manage = current_user.role in {"Admin", "Gruppeadmin"}
+    can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     return templates.TemplateResponse(
         request,
         "components/group_history.html",

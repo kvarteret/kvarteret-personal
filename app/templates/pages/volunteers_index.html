@@ -45,7 +45,7 @@
             <button class="app-button" type="submit">Søk</button>
             <span class="htmx-indicator text-sm text-stone-500" id="volunteer-search-indicator">Laster...</span>
             <a class="app-button-secondary" href="/volunteers/search">Avansert søk</a>
-            {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+            {% if request.state.show_management_tools %}
               <a class="app-button-secondary" href="/volunteer-applications">Ny frivillig</a>
             {% endif %}
           </div>

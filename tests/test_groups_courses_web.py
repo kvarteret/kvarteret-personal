@@ -321,8 +321,8 @@ def test_groups_and_courses_pages_render() -> None:
     course_detail_response = client.get("/courses/4")
 
     assert groups_response.status_code == 200
-    assert "Active groups" in groups_response.text
-    assert "Inactive groups" in groups_response.text
+    assert "Aktive grupper" in groups_response.text
+    assert "Inaktive grupper" in groups_response.text
     assert 'href="/groups/new"' in groups_response.text
     assert "Bar group" in groups_response.text
     assert "Archive group" in groups_response.text
