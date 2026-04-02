@@ -20,11 +20,11 @@ class SupabaseAuthGatewayProtocol(Protocol):
     async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None) -> UUID: ...
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None: ...
     async def delete_user(self, auth_user_id: UUID) -> None: ...
-    def close(self) -> None: ...
+    async def aclose(self) -> None: ...
 
 
 class SupabaseAuthGateway:
-    def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
+    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None) -> None:
         if not settings.supabase_url or not settings.supabase_secret_key:
             raise NotConfiguredError("Supabase credentials are required for authentication.")
         self._base_url = f"{settings.supabase_url.rstrip('/')}/auth/v1"
@@ -33,11 +33,11 @@ class SupabaseAuthGateway:
             "Authorization": f"Bearer {settings.supabase_secret_key}",
             _API_VERSION_HEADER: _API_VERSION,
         }
-        self._client = client or httpx.Client(timeout=20.0, follow_redirects=True)
+        self._client = client or httpx.AsyncClient(timeout=20.0, follow_redirects=True)
 
     async def sign_in_with_password(self, email: str, password: str) -> UUID | None:
         try:
-            response = self._request(
+            response = await self._request(
                 "POST",
                 "token",
                 params={"grant_type": "password"},
@@ -64,7 +64,7 @@ class SupabaseAuthGateway:
         )
 
     async def create_user(self, *, email: str, password: str, metadata: dict | None = None) -> UUID:
-        response = self._request(
+        response = await self._request(
             "POST",
             "admin/users",
             json={
@@ -81,7 +81,7 @@ class SupabaseAuthGateway:
 
     async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None) -> UUID:
         params = {"redirect_to": redirect_to} if redirect_to else None
-        response = self._request(
+        response = await self._request(
             "POST",
             "invite",
             params=params,
@@ -96,23 +96,23 @@ class SupabaseAuthGateway:
         return auth_user_id
 
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None:
-        self._request(
+        await self._request(
             "PUT",
             f"admin/users/{auth_user_id}",
             json={"password": password},
         )
 
     async def delete_user(self, auth_user_id: UUID) -> None:
-        self._request(
+        await self._request(
             "DELETE",
             f"admin/users/{auth_user_id}",
             json={"should_soft_delete": False},
         )
 
-    def close(self) -> None:
-        self._client.close()
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
-    def _request(
+    async def _request(
         self,
         method: str,
         path: str,
@@ -120,7 +120,7 @@ class SupabaseAuthGateway:
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
     ) -> httpx.Response:
-        response = self._client.request(
+        response = await self._client.request(
             method,
             f"{self._base_url}/{path.lstrip('/')}",
             headers=self._headers,

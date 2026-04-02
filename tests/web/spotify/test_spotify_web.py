@@ -9,7 +9,7 @@ from app.auth.roles import UserRole
 from app.main import create_app
 from app.runtime import build_application_container
 from app.domain.spotify.now_playing import NowPlayingResult, SpotifyOAuthError
-from tests.support.helpers import make_authenticated_user
+from tests.support.helpers import csrf_headers, make_authenticated_user, prime_csrf
 
 
 class MiddlewareSessionStore:
@@ -202,16 +202,21 @@ def test_spotify_callback_redirects_with_error_message_when_callback_fails() -> 
     )
 
     assert response.status_code == 303
-    assert "error=Spotify+login+state+is+invalid.+Start+the+flow+again." in response.headers["location"]
+    assert "error=Kunne+ikke+koble+til+Spotify.+Pr%C3%B8v+igjen." in response.headers["location"]
 
 
 def test_spotify_logout_clears_shared_token_and_redirects() -> None:
     service = FakeSpotifyNowPlayingService()
     client, session_cookie = _build_authed_client(UserRole.ADMIN, service)
+    prime_csrf(
+        client,
+        path="/spotify/now-playing",
+        cookies={"kvarteret_session": session_cookie},
+    )
 
     response = client.post(
         "/spotify/logout",
-        cookies={"kvarteret_session": session_cookie},
+        headers=csrf_headers(client),
         follow_redirects=False,
     )
 

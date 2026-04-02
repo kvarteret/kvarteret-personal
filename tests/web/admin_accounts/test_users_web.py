@@ -128,6 +128,14 @@ class FakeSupabaseAuthGateway:
         self.deleted_user = auth_user_id
 
 
+class FailingSupabaseAuthGateway(FakeSupabaseAuthGateway):
+    async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None):
+        raise RuntimeError("upstream invite failed with sensitive details")
+
+    async def delete_user(self, auth_user_id) -> None:
+        raise RuntimeError("upstream delete failed with sensitive details")
+
+
 class FakeSessionStore:
     def __init__(self) -> None:
         self.created_sessions = []
@@ -322,3 +330,44 @@ def test_admin_cannot_delete_own_account() -> None:
     assert response.headers["location"] == "/admin-accounts/5?error=Du+kan+ikke+slette+din+egen+admin-konto."
     assert supabase_auth_gateway.deleted_user is None
     assert admin_accounts_service.deleted_account is None
+
+
+def test_admin_account_create_uses_safe_error_message_on_provider_failure() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: FailingSupabaseAuthGateway()
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin-accounts",
+        data={
+            "username": "new.admin",
+            "email": "new.admin@example.test",
+            "display_name": "New Admin",
+            "role": "Admin",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert (
+        response.headers["location"]
+        == "/admin-accounts/new?error=Kunne+ikke+opprette+admin-kontoen+akkurat+n%C3%A5."
+    )
+
+
+def test_admin_account_delete_uses_safe_error_message_on_provider_failure() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: FailingSupabaseAuthGateway()
+    client = TestClient(app)
+
+    response = client.post("/admin-accounts/7?_method=DELETE", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert (
+        response.headers["location"]
+        == "/admin-accounts/7?error=Kunne+ikke+slette+admin-kontoen+akkurat+n%C3%A5."
+    )

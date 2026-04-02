@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from app.cache import TTLCache
 from app.config import Settings
 from app.media_tokens import MediaTokenService
-from app.infrastructure.email.smtp import EmailSenderProtocol
+from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.domain.mobile_card.repository import MobileCardRepository, MobileCardSnapshot
 from app.infrastructure.formatting.semester import get_current_semester_code

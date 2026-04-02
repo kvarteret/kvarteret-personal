@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
@@ -13,6 +14,7 @@ from app.domain.spotify.now_playing import NowPlayingService, SpotifyOAuthError
 from app.web.templates import templates
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/spotify/now-playing")
@@ -60,8 +62,9 @@ async def spotify_login(
             session_id=session.session_id,
             user_account_id=current_user.user_account_id,
         )
-    except NotConfiguredError as exc:
-        return _redirect_with_feedback(error=str(exc))
+    except NotConfiguredError:
+        logger.exception("Spotify OAuth login attempted without configuration.")
+        return _redirect_with_feedback(error="Spotify er ikke konfigurert.")
     log_admin_activity(
         request=request,
         user=current_user,
@@ -92,7 +95,7 @@ async def spotify_callback(
             subject_id=session.session_id,
             details={"spotify_error": error},
         )
-        return _redirect_with_feedback(error=f"Spotify denied the authorization request: {error}.")
+        return _redirect_with_feedback(error="Spotify avviste autoriseringen.")
     if not code or not state:
         return _redirect_with_feedback(error="Spotify callback was incomplete. Start the flow again.")
 
@@ -104,6 +107,7 @@ async def spotify_callback(
             code=code,
         )
     except (NotConfiguredError, SpotifyOAuthError) as exc:
+        logger.exception("Spotify OAuth callback failed.")
         log_admin_activity(
             request=request,
             user=current_user,
@@ -113,7 +117,7 @@ async def spotify_callback(
             subject_id=session.session_id,
             details={"reason": str(exc)},
         )
-        return _redirect_with_feedback(error=str(exc))
+        return _redirect_with_feedback(error="Kunne ikke koble til Spotify. Prøv igjen.")
 
     log_admin_activity(
         request=request,
@@ -133,8 +137,9 @@ async def spotify_logout(
 ):
     try:
         await now_playing_service.clear_shared_token()
-    except SpotifyOAuthError as exc:
-        return _redirect_with_feedback(error=str(exc))
+    except SpotifyOAuthError:
+        logger.exception("Failed to clear Spotify connection.")
+        return _redirect_with_feedback(error="Kunne ikke koble fra Spotify akkurat nå.")
     log_admin_activity(
         request=request,
         user=current_user,

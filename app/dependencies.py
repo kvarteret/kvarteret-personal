@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request, status
@@ -21,6 +22,8 @@ from app.domain.volunteer_applications.service import VolunteerApplicationsServi
 from app.domain.search import VolunteerSearchService
 from app.domain.volunteers.semester_transfer import SemesterTransferService
 from app.domain.admin_accounts.service import AdminAccountsService
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -161,6 +164,7 @@ async def load_web_navigation_state(
             await volunteer_applications_service.count_pending_volunteer_applications()
         )
     except Exception:
+        logger.exception("Failed to load pending volunteer-application count.")
         request.state.volunteer_application_pending_count = 0
 
 

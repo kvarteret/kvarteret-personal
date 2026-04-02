@@ -30,7 +30,6 @@ from app.domain.volunteers.mappers import (
 )
 from app.domain.volunteers.models import (
     AssignmentRoleOption,
-    CardItem,
     CourseCompletionNotFoundError,
     DuplicateCourseCompletionError,
     DuplicateRoleAssignmentError,
@@ -41,7 +40,6 @@ from app.domain.volunteers.models import (
     InvalidCourseCompletionError,
     InvalidVolunteerRelationsError,
     InvalidRoleAssignmentError,
-    NextOfKinItem,
     RoleAssignmentItem,
     RoleAssignmentNotFoundError,
     UnsupportedUploadError,
@@ -55,7 +53,6 @@ from app.domain.volunteers.models import (
     VolunteerRelations,
     VolunteerSearchOption,
     VolunteersServiceError,
-    VolunteersServiceProtocol,
 )
 from app.domain.volunteers.options import normalize_gender_code
 from app.domain.volunteers.repository import VolunteersRepository
