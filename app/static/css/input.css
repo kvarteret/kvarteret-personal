@@ -198,20 +198,16 @@
 
 @utility btn-brutal {
   border: 2px solid var(--border);
-  box-shadow: var(--shadow);
   transition:
     transform var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out),
     background-color var(--duration-base) var(--ease-out);
 
   &:hover {
-    transform: translate(-2px, -2px);
-    box-shadow: 6px 6px 0 0 var(--border);
+    transform: translate(-1px, -1px);
   }
 
   &:active {
-    transform: translate(2px, 2px);
-    box-shadow: 2px 2px 0 0 var(--border);
+    transform: translate(1px, 1px);
   }
 }
 
@@ -219,7 +215,6 @@
   .app-panel {
     @apply bg-card p-5 text-card-foreground;
     border: 2px solid var(--border);
-    box-shadow: var(--shadow);
   }
 
   .app-input {
@@ -246,21 +241,17 @@
   .app-button {
     @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-primary-foreground;
     border: 2px solid var(--border);
-    box-shadow: var(--shadow);
     transition:
       transform var(--duration-fast) var(--ease-out),
-      box-shadow var(--duration-fast) var(--ease-out),
       background-color var(--duration-base) var(--ease-out);
 
     &:hover:not(:disabled) {
       background-color: var(--kvarteret-red-dark);
-      transform: translate(-2px, -2px);
-      box-shadow: 6px 6px 0 0 var(--border);
+      transform: translate(-1px, -1px);
     }
 
     &:active:not(:disabled) {
-      transform: translate(2px, 2px);
-      box-shadow: 2px 2px 0 0 var(--border);
+      transform: translate(1px, 1px);
     }
 
     &:disabled {
@@ -271,21 +262,17 @@
   .app-button-secondary {
     @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-surface px-6 font-semibold text-kvarteret-ink;
     border: 2px solid var(--border);
-    box-shadow: var(--shadow);
     transition:
       transform var(--duration-fast) var(--ease-out),
-      box-shadow var(--duration-fast) var(--ease-out),
       background-color var(--duration-base) var(--ease-out);
 
     &:hover:not(:disabled) {
       background-color: var(--gold-100);
-      transform: translate(-2px, -2px);
-      box-shadow: 6px 6px 0 0 var(--border);
+      transform: translate(-1px, -1px);
     }
 
     &:active:not(:disabled) {
-      transform: translate(2px, 2px);
-      box-shadow: 2px 2px 0 0 var(--border);
+      transform: translate(1px, 1px);
     }
   }
 
