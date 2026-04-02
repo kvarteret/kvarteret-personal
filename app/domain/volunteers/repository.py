@@ -29,10 +29,12 @@ class VolunteersRepository(SqlAlchemyRepository):
         after_last_name: str | None = None,
         after_first_name: str | None = None,
         after_volunteer_id: int | None = None,
+        only_active: bool = False,
     ) -> list[dict[str, Any]]:
         name_sort = _name_sort_columns()
+        active_volunteers = _current_active_volunteers_subquery() if only_active else None
         stmt = (
-            _volunteer_list_base_stmt()
+            _volunteer_list_base_stmt(active_volunteers=active_volunteers)
             .order_by(name_sort.last_name.asc(), name_sort.first_name.asc(), volunteer_records.c.id.asc())
             .limit(limit)
         )
@@ -53,64 +55,22 @@ class VolunteersRepository(SqlAlchemyRepository):
             )
         return await self.fetch_all_mappings(stmt)
 
-    async def search_volunteers_page(self, *, normalized_query: str, limit: int, offset: int = 0) -> list[dict[str, Any]]:
-        search = _search_columns()
-        tokens = normalized_query.split()
-        token_filters = [
-            or_(
-                search.full_name.contains(token),
-                search.first_name.contains(token),
-                search.last_name.contains(token),
-                search.email.contains(token),
-                search.phone.contains(token),
-                func.word_similarity(search.full_name, token) >= 0.55,
-                func.similarity(search.first_name, token) >= 0.40,
-                func.similarity(search.last_name, token) >= 0.40,
-                func.similarity(search.email, token) >= 0.45,
-                func.similarity(search.phone, token) >= 0.85,
+    async def search_volunteers_page(
+        self,
+        *,
+        normalized_query: str,
+        limit: int,
+        offset: int = 0,
+        only_active: bool = False,
+    ) -> list[dict[str, Any]]:
+        return await self.fetch_all_mappings(
+            _build_volunteer_search_stmt(
+                normalized_query=normalized_query,
+                limit=limit,
+                offset=offset,
+                only_active=only_active,
             )
-            for token in tokens
-        ]
-
-        rank_score = literal(0.0, type_=Float())
-        rank_score = rank_score + case((search.full_name == normalized_query, 100.0), else_=0.0)
-        rank_score = rank_score + case((search.last_name == normalized_query, 45.0), else_=0.0)
-        rank_score = rank_score + case((search.first_name == normalized_query, 35.0), else_=0.0)
-        rank_score = rank_score + case((search.full_name.startswith(normalized_query), 28.0), else_=0.0)
-        rank_score = rank_score + case((search.full_name.contains(normalized_query), 16.0), else_=0.0)
-        rank_score = rank_score + case((search.email.contains(normalized_query), 10.0), else_=0.0)
-        rank_score = rank_score + case((search.phone.contains(normalized_query), 10.0), else_=0.0)
-        rank_score = rank_score + (
-            func.greatest(
-                func.word_similarity(search.full_name, normalized_query),
-                func.similarity(search.full_name, normalized_query),
-                func.similarity(search.first_name, normalized_query),
-                func.similarity(search.last_name, normalized_query),
-                func.similarity(search.email, normalized_query),
-                func.similarity(search.phone, normalized_query),
-            )
-            * 20.0
         )
-
-        for token in tokens:
-            rank_score = rank_score + case((search.full_name.contains(token), 4.0), else_=0.0)
-            rank_score = rank_score + case((search.first_name.startswith(token), 5.0), else_=0.0)
-            rank_score = rank_score + case((search.last_name.startswith(token), 6.0), else_=0.0)
-            rank_score = rank_score + case((search.email.contains(token), 2.5), else_=0.0)
-
-        stmt = (
-            _volunteer_list_base_stmt(rank_score=rank_score.label("rank_score"))
-            .where(and_(*token_filters))
-            .order_by(
-                rank_score.desc(),
-                volunteer_records.c.etternavn.asc(),
-                func.coalesce(volunteer_records.c.fornavn, "").asc(),
-                volunteer_records.c.id.asc(),
-            )
-            .limit(limit)
-            .offset(offset)
-        )
-        return await self.fetch_all_mappings(stmt)
 
     async def fetch_volunteer_shell_row(self, volunteer_id: int) -> dict[str, Any] | None:
         points = _pingvin_points_subquery()
@@ -594,7 +554,7 @@ class VolunteersRepository(SqlAlchemyRepository):
 
 
 class _SearchColumns:
-    def __init__(self) -> None:
+    def __init__(self, assignment_search_text=None) -> None:
         self.first_name = func.lower(func.coalesce(volunteer_records.c.fornavn, ""))
         self.last_name = func.lower(func.coalesce(volunteer_records.c.etternavn, ""))
         self.full_name = func.lower(
@@ -602,6 +562,18 @@ class _SearchColumns:
         )
         self.email = func.lower(func.coalesce(volunteer_records.c.epost, ""))
         self.phone = func.lower(func.coalesce(volunteer_records.c.telefon, ""))
+        self.group_names = func.lower(
+            func.coalesce(
+                assignment_search_text.c.group_names if assignment_search_text is not None else literal("", type_=Text()),
+                "",
+            )
+        )
+        self.role_names = func.lower(
+            func.coalesce(
+                assignment_search_text.c.role_names if assignment_search_text is not None else literal("", type_=Text()),
+                "",
+            )
+        )
 
 
 class _NameSortColumns:
@@ -610,15 +582,15 @@ class _NameSortColumns:
         self.first_name = func.coalesce(volunteer_records.c.fornavn, "")
 
 
-def _search_columns() -> _SearchColumns:
-    return _SearchColumns()
+def _search_columns(assignment_search_text=None) -> _SearchColumns:
+    return _SearchColumns(assignment_search_text)
 
 
 def _name_sort_columns() -> _NameSortColumns:
     return _NameSortColumns()
 
 
-def _volunteer_list_base_stmt(*, rank_score=None):
+def _volunteer_list_base_stmt(*, rank_score=None, active_volunteers=None):
     points = _pingvin_points_subquery()
     last_semester = _last_semester_subquery()
     columns = [
@@ -634,8 +606,11 @@ def _volunteer_list_base_stmt(*, rank_score=None):
     ]
     if rank_score is not None:
         columns.append(rank_score)
+    base_from = volunteer_records
+    if active_volunteers is not None:
+        base_from = base_from.join(active_volunteers, active_volunteers.c.id_personal == volunteer_records.c.id)
     return select(*columns).select_from(
-        volunteer_records.outerjoin(volunteer_photos, volunteer_photos.c.id_personal == volunteer_records.c.id)
+        base_from.outerjoin(volunteer_photos, volunteer_photos.c.id_personal == volunteer_records.c.id)
         .outerjoin(points, points.c.id_personal == volunteer_records.c.id)
         .outerjoin(last_semester, last_semester.c.id_personal == volunteer_records.c.id)
     )
@@ -675,3 +650,101 @@ def _current_discount_level_subquery():
         .group_by(role_assignments.c.id_personal)
         .subquery()
     )
+
+
+def _current_active_volunteers_subquery():
+    return (
+        select(role_assignments.c.id_personal.label("id_personal"))
+        .where(role_assignments.c.semester == get_current_semester_code())
+        .where(role_assignments.c.signert_kontrakt.is_(True))
+        .group_by(role_assignments.c.id_personal)
+        .subquery()
+    )
+
+
+def _assignment_search_text_subquery():
+    return (
+        select(
+            role_assignments.c.id_personal.label("id_personal"),
+            func.coalesce(func.lower(func.string_agg(func.distinct(groups.c.navn), literal(" "))), "").label("group_names"),
+            func.coalesce(
+                func.lower(func.string_agg(func.distinct(assignment_roles.c.verv), literal(" "))),
+                "",
+            ).label("role_names"),
+        )
+        .select_from(
+            role_assignments.outerjoin(groups, groups.c.id == role_assignments.c.id_gruppe).outerjoin(
+                assignment_roles,
+                assignment_roles.c.id == role_assignments.c.id_verv,
+            )
+        )
+        .where(role_assignments.c.semester == get_current_semester_code())
+        .where(role_assignments.c.signert_kontrakt.is_(True))
+        .group_by(role_assignments.c.id_personal)
+        .subquery()
+    )
+
+
+def _build_volunteer_search_stmt(*, normalized_query: str, limit: int, offset: int, only_active: bool = False):
+    assignment_search_text = _assignment_search_text_subquery()
+    active_volunteers = _current_active_volunteers_subquery() if only_active else None
+    search = _search_columns(assignment_search_text)
+    tokens = normalized_query.split()
+    token_filters = [
+        or_(
+            search.full_name.contains(token),
+            search.first_name.contains(token),
+            search.last_name.contains(token),
+            search.email.contains(token),
+            search.phone.contains(token),
+            search.group_names.contains(token),
+            search.role_names.contains(token),
+            func.word_similarity(search.full_name, token) >= 0.55,
+            func.similarity(search.first_name, token) >= 0.40,
+            func.similarity(search.last_name, token) >= 0.40,
+        )
+        for token in tokens
+    ]
+
+    rank_score = literal(0.0, type_=Float())
+    rank_score = rank_score + case((search.full_name == normalized_query, 100.0), else_=0.0)
+    rank_score = rank_score + case((search.last_name == normalized_query, 45.0), else_=0.0)
+    rank_score = rank_score + case((search.first_name == normalized_query, 35.0), else_=0.0)
+    rank_score = rank_score + case((search.full_name.startswith(normalized_query), 28.0), else_=0.0)
+    rank_score = rank_score + case((search.full_name.contains(normalized_query), 16.0), else_=0.0)
+    rank_score = rank_score + case((search.group_names.contains(normalized_query), 14.0), else_=0.0)
+    rank_score = rank_score + case((search.role_names.contains(normalized_query), 14.0), else_=0.0)
+    rank_score = rank_score + case((search.email.contains(normalized_query), 10.0), else_=0.0)
+    rank_score = rank_score + case((search.phone.contains(normalized_query), 10.0), else_=0.0)
+    rank_score = rank_score + (
+        func.greatest(
+            func.word_similarity(search.full_name, normalized_query),
+            func.similarity(search.full_name, normalized_query),
+            func.similarity(search.first_name, normalized_query),
+            func.similarity(search.last_name, normalized_query),
+        )
+        * 20.0
+    )
+
+    for token in tokens:
+        rank_score = rank_score + case((search.full_name.contains(token), 4.0), else_=0.0)
+        rank_score = rank_score + case((search.first_name.startswith(token), 5.0), else_=0.0)
+        rank_score = rank_score + case((search.last_name.startswith(token), 6.0), else_=0.0)
+        rank_score = rank_score + case((search.group_names.contains(token), 3.0), else_=0.0)
+        rank_score = rank_score + case((search.role_names.contains(token), 3.0), else_=0.0)
+        rank_score = rank_score + case((search.email.contains(token), 2.5), else_=0.0)
+
+    stmt = (
+        _volunteer_list_base_stmt(rank_score=rank_score.label("rank_score"), active_volunteers=active_volunteers)
+        .outerjoin(assignment_search_text, assignment_search_text.c.id_personal == volunteer_records.c.id)
+        .where(and_(*token_filters))
+        .order_by(
+            rank_score.desc(),
+            volunteer_records.c.etternavn.asc(),
+            func.coalesce(volunteer_records.c.fornavn, "").asc(),
+            volunteer_records.c.id.asc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    return stmt

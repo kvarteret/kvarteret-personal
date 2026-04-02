@@ -21,6 +21,12 @@ router = APIRouter()
 VOLUNTEERS_PAGE_SIZE = 20
 
 
+def _to_checkbox_bool(value: str | None, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() == "on"
+
+
 @router.get("/volunteers/stats")
 async def volunteers_stats(
     request: Request,
@@ -57,11 +63,18 @@ async def volunteers_index(
     request: Request,
     q: str | None = None,
     cursor: str | None = None,
+    only_active: str | None = None,
     current_user=Depends(require_authenticated_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
+    only_active_enabled = _to_checkbox_bool(only_active, default=True)
     try:
-        page = await volunteers_service.list_volunteers_page(query=q, limit=VOLUNTEERS_PAGE_SIZE, cursor=cursor)
+        page = await volunteers_service.list_volunteers_page(
+            query=q,
+            limit=VOLUNTEERS_PAGE_SIZE,
+            cursor=cursor,
+            only_active=only_active_enabled,
+        )
     except NotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -77,6 +90,7 @@ async def volunteers_index(
             "volunteers": page.items,
             "query": q or "",
             "cursor": cursor,
+            "only_active": only_active_enabled,
             "next_cursor": page.next_cursor,
         },
     )
