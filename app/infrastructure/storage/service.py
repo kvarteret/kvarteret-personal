@@ -38,6 +38,8 @@ class BlobServiceClientProtocol(Protocol):
     def get_container_client(self, container_name: str) -> BlobContainerClientProtocol: ...
 
 
+# This adapter deliberately hides a split storage setup: photos can stay on Azure
+# for legacy compatibility, while private documents continue to use Supabase storage APIs.
 class StorageService:
     def __init__(
         self,
@@ -241,6 +243,8 @@ class StorageService:
         return response
 
     def _extract_signed_url(self, result: dict[str, Any]) -> str:
+        # Supabase has returned both signedURL and signedUrl payloads, so normalize
+        # the shape here before the rest of the app has to care about provider quirks.
         data = result.get("signedURL") or result.get("signedUrl")
         if data:
             return self._coerce_signed_url(data)

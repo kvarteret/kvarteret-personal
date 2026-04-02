@@ -14,6 +14,8 @@ from app.infrastructure.formatting.semester import format_semester_code
 
 class VolunteerSearchRepository(SqlAlchemyRepository):
     async def search_volunteers(self, query: SearchQuery) -> list[SearchResultItem]:
+        # Build one set-based query up front so new filters stay composable
+        # instead of multiplying into separate SQL branches for each combination.
         points = _pingvin_points_subquery()
         last_semesters = _last_semester_subquery()
         stmt = (
@@ -55,6 +57,8 @@ class VolunteerSearchRepository(SqlAlchemyRepository):
 
 
 def _build_filters(query: SearchQuery, points) -> list:
+    # Compose candidate clauses first and drop the missing ones at the end so
+    # include/exclude combinations stay readable and individually testable.
     filters = []
     if query.birth_date_after is not None:
         filters.append(personal.c.fodselsdato >= query.birth_date_after)
@@ -126,6 +130,8 @@ def _course_filter(filter_list: SearchFilterList | None, *, include_mode: bool):
 def _related_filter(filter_list: SearchFilterList | None, *, include_mode: bool, build_exists):
     if filter_list is None or not filter_list.ids:
         return None
+    # Each filter list can mean "all of these" or "any of these"; flipping that
+    # choice here keeps the surrounding query builders from duplicating the same logic.
     clauses = [build_exists(filter_id) for filter_id in filter_list.ids]
     match_clause = and_(*clauses) if filter_list.conjunction else or_(*clauses)
     return match_clause if include_mode else not_(match_clause)

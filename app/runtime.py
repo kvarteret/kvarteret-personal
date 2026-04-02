@@ -37,6 +37,8 @@ from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
 
 
+# Keep the app bootable in local and test environments that do not have live
+# Supabase credentials, while still failing fast once a protected auth path is used.
 class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def sign_in_with_password(self, email: str, password: str):
         raise NotConfiguredError("Supabase credentials are required for authentication.")
@@ -92,6 +94,8 @@ class ApplicationContainer:
         await self.database_runtime_manager.aclose()
 
 
+# Centralize the object graph here so the app, tests, and one-off scripts can
+# swap an entire runtime configuration by replacing a single container object.
 def build_application_container(settings: Settings | None = None) -> ApplicationContainer:
     resolved_settings = validate_production_secrets(settings or get_settings())
     database_runtime_manager = DatabaseRuntimeManager(resolved_settings)
@@ -174,6 +178,8 @@ async def app_lifespan(app: FastAPI):
         await app.state.container.aclose()
 
 
+# Photos and documents can be configured independently, so only create the
+# storage adapter when at least one side of the split storage setup is usable.
 def _build_storage_service(settings: Settings) -> StorageService | None:
     has_supabase_documents = bool(settings.supabase_url and settings.supabase_secret_key)
     has_azure_photos = bool(settings.azure_blob_connection_string)
