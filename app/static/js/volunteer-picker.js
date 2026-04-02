@@ -120,24 +120,6 @@ function registerVolunteerPicker() {
       }
     },
   }));
-
-  initVolunteerPickerRoots(document);
-}
-
-function initVolunteerPickerRoots(root) {
-  if (!window.Alpine?.initTree || !root) {
-    return;
-  }
-
-  const roots = root.matches?.("[data-volunteer-picker-root]")
-    ? [root]
-    : root.querySelectorAll?.("[data-volunteer-picker-root]") || [];
-
-  for (const element of roots) {
-    if (!element._x_dataStack) {
-      window.Alpine.initTree(element);
-    }
-  }
 }
 
 if (window.Alpine) {
@@ -145,5 +127,3 @@ if (window.Alpine) {
 } else {
   document.addEventListener("alpine:init", registerVolunteerPicker, { once: true });
 }
-
-document.addEventListener("DOMContentLoaded", () => initVolunteerPickerRoots(document));

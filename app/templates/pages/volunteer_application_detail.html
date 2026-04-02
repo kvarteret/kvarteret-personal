@@ -27,7 +27,7 @@
           </form>
         {% endif %}
         <form action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('{% if volunteer_application.submitted %}Avvise denne søknaden?{% else %}Avbryte denne invitasjonen?{% endif %}');">
-          <button class="inline-flex min-h-11 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" type="submit">
+          <button class="app-button" type="submit">
             {% if volunteer_application.submitted %}Avvis søknad{% else %}Avbryt invitasjon{% endif %}
           </button>
         </form>

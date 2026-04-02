@@ -9,7 +9,7 @@
 
     <div class="grid gap-6 xl:grid-cols-2">
       <section class="app-panel">
-        {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+        {% if can_manage_course %}
           <form action="/courses/{{ course.course_id }}?_method=PATCH" class="grid gap-4" method="post">
             <h2 class="text-2xl font-medium tracking-tight text-stone-900">Kursdetaljer</h2>
             {% call form_field("Navn") %}
@@ -45,7 +45,7 @@
           <h2 class="text-2xl font-medium tracking-tight text-stone-900">Kursfullføringer</h2>
           <span class="app-badge">{{ course.recent_completions|length }} rader</span>
         </div>
-        {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+        {% if can_manage_course %}
           {% call volunteer_picker_card(
             '/courses/' ~ course.course_id ~ '/completions',
             url_for('volunteer_search_typeahead_options'),
@@ -54,25 +54,12 @@
           ) %}
             <div class="grid w-full gap-4 sm:grid-cols-3">
               <label class="grid gap-1 min-w-0 sm:col-span-2">
-                <span class="text-sm text-stone-500">År</span>
-                <input
-                  class="w-full border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink focus:border-kvarteret-red focus:outline-none"
-                  max="3000"
-                  min="1900"
-                  name="year"
-                  required
-                  step="1"
-                  type="number"
-                  value="{{ default_completion_year }}"
-                >
+                <span class="text-sm text-kvarteret-sky">År</span>
+                <input class="app-input" max="3000" min="1900" name="year" required step="1" type="number" value="{{ default_completion_year }}">
               </label>
               <label class="grid gap-1 min-w-0 sm:col-span-1">
-                <span class="text-sm text-stone-500">Semester</span>
-                <select
-                  class="w-full appearance-auto border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink focus:border-kvarteret-red focus:outline-none"
-                  name="term"
-                  required
-                >
+                <span class="text-sm text-kvarteret-sky">Semester</span>
+                <select class="app-input" name="term" required>
                   {% for term_value, term_label in semester_term_options %}
                     <option value="{{ term_value }}" {% if term_value|int == default_completion_term %}selected{% endif %}>{{ term_label }}</option>
                   {% endfor %}
@@ -86,7 +73,7 @@
             <div class="grid gap-2 border-b border-stone-300 py-4 md:grid-cols-[minmax(0,1.4fr)_minmax(8rem,0.8fr)_auto] md:items-center">
               <a class="text-stone-900 no-underline transition hover:text-kvarteret-red" href="/volunteers/{{ completion.volunteer_id }}">{{ completion.volunteer_name }}</a>
               <div class="text-sm text-stone-600">{{ completion.completed_semester_label }}</div>
-              {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+              {% if can_manage_course %}
                 <div class="flex md:justify-end">
                   <form action="/courses/{{ course.course_id }}/completions/{{ completion.completion_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne kursfullføringen?');">
                     <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>

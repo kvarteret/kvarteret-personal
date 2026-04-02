@@ -534,11 +534,9 @@ async def test_volunteers_service_search_options_are_minimal_and_sorted(
 
     items = await service.list_volunteer_search_options("sample", limit=2)
 
-    assert [
-        (item.volunteer_id, item.full_name, item.profile_url) for item in items
-    ] == [
-        (12, "Alpha Person", "/volunteers/12"),
-        (14, "Zeta Person", "/volunteers/14"),
+    assert [(item.volunteer_id, item.full_name) for item in items] == [
+        (12, "Alpha Person"),
+        (14, "Zeta Person"),
     ]
 
 

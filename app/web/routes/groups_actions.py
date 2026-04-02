@@ -140,7 +140,7 @@ async def group_roles_create(
 async def group_role_assignments_create(
     request: Request,
     group_id: int,
-    volunteer_id: str | None = Form(default=None),
+    volunteer_ids: list[int] = Form(default=[]),
     role_id: int = Form(...),
     year: int = Form(...),
     term: int = Form(...),
@@ -148,18 +148,17 @@ async def group_role_assignments_create(
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
-    if volunteer_id is None or not volunteer_id.strip():
+    if not volunteer_ids:
         return RedirectResponse(
             url=f"/groups/{group_id}?assignment_error=Velg%20en%20frivillig%20for%20du%20legger%20til%20i%20gruppen.",
             status_code=status.HTTP_303_SEE_OTHER,
         )
-    try:
-        parsed_volunteer_id = int(volunteer_id)
-    except ValueError:
+    if len(volunteer_ids) != 1:
         return RedirectResponse(
-            url=f"/groups/{group_id}?assignment_error=Ugyldig%20frivilligvalg.",
+            url=f"/groups/{group_id}?assignment_error=Velg%20n%C3%B8yaktig%20%C3%A9n%20frivillig.",
             status_code=status.HTTP_303_SEE_OTHER,
         )
+    parsed_volunteer_id = volunteer_ids[0]
     try:
         await volunteers_service.add_role_assignment(
             volunteer_id=parsed_volunteer_id,

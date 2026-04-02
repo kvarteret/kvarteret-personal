@@ -107,7 +107,6 @@ async def volunteer_search_typeahead_options(
                 {
                     "volunteer_id": volunteer.volunteer_id,
                     "full_name": volunteer.full_name,
-                    "profile_url": volunteer.profile_url,
                 }
                 for volunteer in volunteers
             ]
