@@ -82,6 +82,8 @@ class VolunteersService:
         self.detail_cache_ttl_seconds = detail_cache_ttl_seconds or 300
         self.photo_upload_max_bytes = photo_upload_max_bytes
         self.photo_max_dimension = photo_max_dimension
+        # Cache volunteer detail panels independently so one write can invalidate
+        # a volunteer's full detail view without forcing every panel to reload on every request.
         self._cache: TTLCache[int, dict[str, Any]] = TTLCache(
             ttl_seconds=self.detail_cache_ttl_seconds,
             max_entries=2048,
@@ -109,6 +111,8 @@ class VolunteersService:
         limit: int = 10,
         cursor: str | None = None,
     ) -> VolunteerListPage:
+        # Browsing and free-text search need different cursor strategies: browse
+        # uses stable name-based cursors, while search falls back to offsets because the query drives ordering.
         started_at = perf_counter()
         safe_limit = max(1, min(limit, 100))
         normalized_query = normalize_search_query(query)
@@ -604,6 +608,8 @@ class VolunteersService:
         return self.storage_service
 
     async def _search_volunteers_page(self, normalized_query: str, limit: int, cursor: str | None) -> VolunteerListPage:
+        # Search pagination intentionally uses a bounded offset cursor instead of
+        # reusing browse cursors, because query-shaped result sets do not have a stable natural key order.
         decoded = _decode_cursor(cursor)
         offset = int(decoded.get("offset", 0)) if decoded.get("mode") == "search" else 0
         rows = await self.repository.search_volunteers_page(

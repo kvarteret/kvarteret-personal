@@ -11,6 +11,8 @@ from app.domain.volunteers.service import VolunteersService
 from app.web.templates import templates
 
 
+# Keep panel-specific orchestration here so full-page renders and HTMX fragment
+# refreshes reuse the same management rules and default form state.
 async def render_role_assignments_panel(
     request: Request,
     *,
@@ -75,6 +77,8 @@ async def render_relations_panel(
     volunteer,
     editing: bool = False,
 ):
+    # Seed empty card and next-of-kin rows only in edit mode so the template can
+    # stay dumb about the "first item" case without inventing placeholder records.
     relations = await volunteers_service.get_volunteer_relations(volunteer.volunteer_id)
     can_manage_relations = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     editing_relations = editing and can_manage_relations
@@ -106,6 +110,8 @@ async def render_course_completions_panel(
     courses_service: CoursesService,
     volunteer,
 ):
+    # Course options are fetched only for managers because they are only needed
+    # to render the mutation form, not for the read-only panel.
     completions = await volunteers_service.list_course_completions(volunteer.volunteer_id)
     can_manage_course_completions = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     course_options = (

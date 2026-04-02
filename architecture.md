@@ -1,188 +1,244 @@
-# Kvarteret Personal Architecture
+# Architecture Overview
+This document serves as a critical, living template designed to equip agents with a rapid and comprehensive understanding of the codebase's architecture, enabling efficient navigation and effective contribution from day one. Update this document as the codebase evolves.
+
+This document was last updated by Codex 5.4 High on Thu April 2.
+
+## 1. Project Structure
+This section provides a high-level overview of the project's directory and file structure, categorized by architectural layer or major functional area. It is essential for quickly navigating the codebase, locating relevant files, and understanding the overall organization and separation of concerns.
+
+```text
+[Project Root]/
+├── api/
+│   └── index.py                 # Vercel ASGI entrypoint
+├── app/
+│   ├── api/                     # JSON APIs, including legacy adapters and v1 routes
+│   ├── auth/                    # Login bridge, session storage, cookies, roles
+│   ├── db/                      # SQLAlchemy session/runtime setup and shared table metadata
+│   ├── domain/                  # Feature-oriented business logic
+│   │   ├── admin_accounts/
+│   │   ├── courses/
+│   │   ├── feedback/
+│   │   ├── groups/
+│   │   ├── mobile_card/
+│   │   ├── search/
+│   │   ├── spotify/
+│   │   ├── volunteer_applications/
+│   │   └── volunteers/
+│   ├── infrastructure/          # Cross-cutting adapters such as storage, email, phone, media, formatting
+│   ├── media/                   # Backend media proxy routes for photos and documents
+│   ├── shared/                  # Small reusable helpers with no domain ownership
+│   ├── static/                  # Tailwind output, images, browser-side scripts
+│   ├── system/                  # Health and system-oriented routes
+│   ├── templates/               # Jinja layouts, pages, and feature-grouped components
+│   ├── web/                     # Server-rendered route composition and template integration
+│   ├── main.py                  # FastAPI app factory and middleware
+│   └── runtime.py               # Application container and dependency wiring
+├── plans/                       # Design notes and migration plans
+├── scripts/                     # Operational and maintenance scripts
+├── tests/
+│   ├── api/                     # API and system route coverage
+│   ├── support/                 # Shared test helpers
+│   ├── unit/                    # Domain and infrastructure unit tests
+│   └── web/                     # Server-rendered route coverage
+├── AGENTS.md                    # Agent-specific repo instructions
+├── Makefile                     # Common development commands
+├── README.md                    # Project overview and local setup
+├── architecture.md              # This document
+├── package.json                 # Bun/Tailwind/browser asset pipeline
+├── pyproject.toml               # Python package metadata and tool config
+└── vercel.json                  # Vercel deployment and routing config
+```
+
+## 2. High-Level System Diagram
+Provide a simple block diagram or a clear text-based description of the major components and their interactions. Focus on how data flows, services communicate, and key architectural boundaries.
+
+```text
+[Browser Admin UI]
+        |
+        v
+[FastAPI app: app/main.py]
+        |
+        +--> [Web routes + Jinja templates]
+        |         |
+        |         v
+        |   [Domain services]
+        |         |
+        |         v
+        |   [SQLAlchemy repositories / db tables]
+        |         |
+        |         v
+        |   [Supabase Postgres]
+        |
+        +--> [Media proxy routes]
+        |         |
+        |         +--> [Azure Blob Storage for photos when configured]
+        |         |
+        |         +--> [Supabase Storage for documents and fallback photo storage]
+        |
+        +--> [JSON APIs]
+                  |
+                  +--> [/api/v1/mobile-card/*]
+                  +--> [/api/legacy/mobile-card/*]
+                  +--> [/api/now-playing/*]
 
-This document describes the current architecture of the FastAPI rewrite in `/Users/kluvin/dev/kvarteret/kvarteret-personal`. It is written for someone who has only this repository and the live Supabase project.
+[Browser Admin UI] <--> [Session cookie + session store] <--> [Supabase Auth bridge]
+[Spotify OAuth flow] <--> [Now playing domain] <--> [Spotify Web API]
+[SMTP adapter] <--> [Volunteer applications / mobile card email flows]
+```
 
-## Purpose
+## 3. Core Components
+List and briefly describe the main components of the system. For each, include its primary responsibility and key technologies used.
 
-The system replaces the old Angular frontend and ASP.NET backend with a server-rendered FastAPI application. It keeps the legacy personnel data model in Supabase Postgres, uses Supabase Auth for migrated web users, uses Supabase Storage for private photos and documents, and keeps the Digital Internkort app working through both a new English API and a temporary legacy adapter.
+### 3.1. Frontend
 
-## High-Level Structure
+Name: Server-rendered admin UI
 
-The application is divided into five main areas.
+Description: The primary user-facing interface is rendered on the server with FastAPI and Jinja templates. It covers volunteer management, groups, courses, admin accounts, volunteer applications, feedback, and Spotify now-playing administration. The UI uses feature-grouped templates and small browser-side scripts rather than a separate SPA.
 
-- `app/main.py` creates the FastAPI app, mounts static assets, and installs the session-loading middleware.
-- `api/index.py` is the Vercel deployment shim. It only imports `create_app()` from `app/main.py` and exposes a module-level `app` because Vercel expects an ASGI object there.
-- `app/web/` contains HTML routes that render Jinja templates for the admin interface.
-- `app/api/` now only contains the Digital Internkort JSON surface: the current mobile-card endpoints and the legacy compatibility adapter.
-- `app/media/` contains the backend media proxy routes for signed photo and document access.
-- `app/system/` contains infrastructure-style routes such as `/health`.
-- `app/auth/` contains the web session model, the ASP.NET Identity bridge, Supabase Auth integration, and role handling.
-- `app/services/` contains domain orchestration, while repository-style data access now lives alongside it for the more complex domains.
+Technologies: FastAPI templating, Jinja2, Tailwind CSS, small Bun-built browser scripts
 
-The code intentionally keeps route handlers thin. Route handlers validate inputs, enforce authentication or admin access, and call services. Services orchestrate workflows; repositories own SQLAlchemy, PostgREST, and storage-facing persistence details.
+Deployment: Served from the same Vercel-hosted FastAPI application as the backend routes
 
-## Request Flow
+### 3.2. Backend Services
 
-An incoming browser request hits FastAPI in `app/main.py`. The middleware reads the signed session cookie, unsigns it, and loads the authenticated user through `app/auth/session_store.py`. The session store uses a short in-process cache to avoid a database hit on every request in the same worker.
+#### 3.2.1. FastAPI Application
 
-After that, the request goes to either:
+Name: Kvarteret Personal application server
 
-- an HTML route in `app/web/router.py`, which renders a template in `app/templates/`, or
-- a mobile-card JSON route in `app/api/router.py`, or
-- a media or system route mounted directly from `app/main.py`.
+Description: Handles server-rendered HTML, JSON APIs, media proxying, authentication/session middleware, and dependency wiring. The application is deployed as one ASGI service with separate route surfaces for web, API, media, and system endpoints.
 
-Protected routes use `require_authenticated_user()` from `app/auth/dependencies.py`. Admin-only routes currently use explicit admin checks in the route modules.
+Technologies: Python 3.13, FastAPI, SQLAlchemy Core, httpx, Jinja2
 
-## Data Access
+Deployment: Vercel via `api/index.py`
 
-The system uses two data access strategies.
+#### 3.2.2. Domain Packages
 
-- SQLAlchemy Core is the default for direct database work. Shared table metadata lives in `app/db/tables.py`, and sessions come from `app/db/session.py`.
-- PostgREST is used internally only for simple list reads where it reduces boilerplate. The internal client lives in `app/postgrest.py`.
+Name: Feature-oriented domain layer
 
-There is no inline SQL in the repository code. The SQLAlchemy Core layer is used for auth, people, search, registrations, semester transfer, and the mobile-card flow. PostgREST is currently used for simpler read-heavy list/detail cases.
+Description: Encapsulates business workflows by feature instead of by technical layer. Each domain package owns its service orchestration and any feature-specific repositories, models, and mappers.
 
-## Authentication and Authorization
+Technologies: Python, SQLAlchemy Core, dataclasses
 
-Web authentication is session-cookie based.
+Deployment: Runs inside the same FastAPI process
 
-1. `POST /login` calls `LoginService.login_with_bridge()` in `app/auth/login_service.py`.
-2. If a migrated `public.user_accounts` row exists, the code signs in through Supabase Auth.
-3. If no migrated account exists, the code checks the legacy ASP.NET Identity hash from `public.aspnetusers`.
-4. On successful legacy login, the code creates the Supabase Auth user, upserts `public.user_accounts`, copies group-admin memberships, records an auth migration event, and creates a web session.
-5. The browser stores only a signed opaque session id. The real session row lives in `public.web_sessions`.
+## 4. Data Stores
+List and describe the databases and other persistent storage solutions used.
 
-The current role model is stored in `public.user_accounts.role` and represented in Python by `UserRole` in `app/auth/roles.py`.
+### 4.1. Primary Relational Database
 
-## Storage and Media
+Name: Kvarteret personnel database
 
-Supabase Storage is private by default.
+Type: Supabase Postgres
 
-- `personnel-photos` stores profile photos by `{sha1}.{filetype}`.
-- `personnel-documents` stores person documents by `{person_id}/{filename}`.
+Purpose: Stores the copied legacy personnel schema plus additive application tables for sessions, migrated users, admin memberships, volunteer applications, and related operational state.
 
-The backend does not embed Supabase signed URLs in list pages anymore. Instead, it generates short-lived application-signed media URLs through `app/media_tokens.py`, and the actual bytes are served by backend proxy routes in `app/media/router.py`.
+Key Schemas/Collections: `public.personal`, `public.historie`, `public.verv`, `public.grupper`, `public.user_accounts`, `public.group_admin_memberships`, `public.web_sessions`, `public.registrering`, `public.nytt_personal`, `public.integration_tokens`
 
-This reduced the people-list latency dramatically because the server no longer signs one Supabase URL per row during HTML generation.
+### 4.2. Private File Storage
 
-## Domain Areas
+Name: Document and media storage
 
-### People
+Type: Supabase Storage and Azure Blob Storage
 
-`app/services/people.py` handles orchestration for:
+Purpose: Private documents are stored in Supabase Storage. Photos can be served from Azure Blob Storage when legacy Azure credentials are configured, otherwise photo operations can fall back to Supabase storage.
 
-- people list and detail reads
-- card, next-of-kin, and document metadata reads
-- photo upload and delete
-- document upload and delete
+Key Schemas/Collections: Supabase buckets such as document and photo buckets, Azure photo container configured through settings
 
-`app/services/people_repository.py` owns the SQLAlchemy and PostgREST access for that domain.
+### 4.3. In-Process Caches
 
-The person detail page in `app/templates/pages/person_detail.html` is the current operational hub for photos and documents.
+Name: Runtime TTL caches
 
-### Groups and Semester Transfer
+Type: Process-local memory
 
-`app/services/groups.py` handles group list and detail reads. `app/services/semester_transfer.py` handles previewing and applying semester transfer for one group.
+Purpose: Used for request-adjacent performance optimizations such as session lookups, volunteer detail panels, pending application counts, and small option lists. These caches improve latency but are intentionally ephemeral and worker-local.
 
-The web workflow is:
+## 5. External Integrations / APIs
+List any third-party services or external APIs the system interacts with.
 
-- `GET /groups/{id}` for group detail
-- `GET /groups/{id}/semester-transfer` for preview
-- `POST /groups/{id}/semester-transfer` to insert the next semester rows
+Service Name 1: Supabase Auth
 
-The JSON API mirrors this under `/api/v1/groups/{id}/semester-transfer`.
+Purpose: Migrated web-user authentication and user lifecycle management
 
-### Courses
+Integration Method: Supabase Auth HTTP API through the auth gateway
 
-`app/services/courses.py` handles course list and detail reads, including required groups and recent completions.
+Service Name 2: Supabase Storage
 
-### Search
+Purpose: Private document storage, signed URLs, bucket maintenance, optional photo storage
 
-`app/services/search.py` ports the legacy set-based search logic. It performs include and exclude filtering across groups and courses, birth-date windows, pingvin-point ranges, and current-semester variants.
+Integration Method: Storage REST API through `httpx`
 
-### Users
+Service Name 3: Azure Blob Storage
 
-`app/services/users.py` reads `public.user_accounts` and `public.group_admin_memberships`. These pages let admins inspect migrated and direct users.
+Purpose: Legacy-compatible photo storage and signed photo access when configured
 
-### Registrations
+Integration Method: Azure SDK
 
-`app/services/registrations.py` implements the new registration flow using the legacy-style tables:
+Service Name 4: Spotify Web API
 
-- `public.registrering` stores invitation tokens and emails
-- `public.nytt_personal` stores the submitted pending profile
+Purpose: OAuth token exchange and current-track retrieval for the now-playing feature
 
-The public flow is `/register/{token}`. The admin flow is `/registrations`.
+Integration Method: HTTPS API through `httpx`
 
-### Mobile Card
+Service Name 5: SMTP server
 
-`app/services/mobile_card.py` implements the Digital Internkort flow.
+Purpose: Sending volunteer application and mobile-card related emails
 
-- `POST /api/v1/mobile-card/access-codes` generates and stores a six-digit code on `public.personal`.
-- `POST /api/v1/mobile-card/sessions` verifies email plus code and returns a signed mobile session token and the current card payload.
-- `GET /api/v1/mobile-card/me` rebuilds the live card from the signed session token.
+Integration Method: Python SMTP client
 
-The legacy endpoints under `/api/DigitalInternkort` call the same service and translate the response shape.
+## 6. Deployment & Infrastructure
 
-## Database and Supabase State
+Cloud Provider: Vercel for the application runtime, plus Supabase and Azure for managed services
 
-The hosted Supabase project already contained the copied legacy personnel schema. This repository has added only additive support tables and columns so far.
+Key Services Used: Vercel Functions, Supabase Postgres, Supabase Auth, Supabase Storage, Azure Blob Storage
 
-Implemented additive structures:
+CI/CD Pipeline: Not explicitly documented in this repository
 
-- `public.user_accounts`
-- `public.group_admin_memberships`
-- `public.web_sessions`
-- `public.auth_migration_events`
-- `public.registrering`
-- `public.nytt_personal`
-- `public.personal.internkort_access_token_created_at`
-- storage buckets `personnel-photos` and `personnel-documents`
+Monitoring & Logging: Application request logging and context binding live in `app/observability.py`; browser-side Vercel Analytics and Speed Insights assets are bundled through the frontend asset pipeline
 
-The repository still does not contain a full immutable baseline migration for the copied legacy public schema. That remains an operational gap.
+## 7. Security Considerations
+Highlight any critical security aspects, authentication mechanisms, or data encryption practices.
 
-## Performance Notes
+Authentication: Signed session cookies for the admin UI, Supabase Auth for migrated users, signed mobile-card session tokens for app access
 
-Two important performance fixes have already landed.
+Authorization: Role-based checks via `UserRole` and route-level dependency enforcement; group-admin scope is still narrower in some flows than intended
 
-- The app no longer signs Supabase URLs per person row. Media is served through backend proxy routes instead.
-- Session resolution uses a short-lived in-process cache instead of hitting Postgres on every protected request.
+Data Encryption: Application-layer signing is used for cookies and media tokens. Transport security and managed-service encryption are primarily delegated to the deployment platform and hosted providers.
 
-The current deliberate split is:
+Key Security Tools/Practices: Signed opaque session ids, backend media-token indirection instead of exposing storage URLs directly, explicit `NotConfiguredError` failures for missing secrets, known gaps around CSRF and RLS still tracked as debt
 
-- SQLAlchemy Core for complex and transactional flows
-- internal PostgREST for simple list reads
-- backend media proxy for private files
+## 8. Development & Testing Environment
 
-## Current Known Gaps
+Local Setup Instructions: `make install` installs Python dependencies with `uv` and frontend tooling with `bun`; `make run` builds assets and starts the FastAPI app; `make css-watch` watches Tailwind CSS changes
 
-The system is operational for the implemented slices, but it is not fully finished.
+Testing Frameworks: `pytest`, `pytest-asyncio`
 
-- Group-admin scoped authorization is not fully implemented yet. Most admin mutations currently require full admin access.
-- RLS policies are not yet enforced for the app tables.
-- CSRF protection for browser mutations is not yet implemented.
-- Full CRUD parity is still incomplete for some domains, especially broader create/update/delete coverage for groups, courses, and users.
-- A full baseline migration for the copied legacy public schema is still missing.
+Code Quality Tools: `ruff`, `ty`, Bun asset builds, Tailwind CLI
 
-## Operational Commands
+## 9. Future Considerations / Roadmap
+Briefly note any known architectural debts, planned major changes, or significant future features that might impact the architecture.
 
-Common commands are defined in `Makefile`.
+- Tighten group-admin scoped authorization so admin mutations do not over-rely on full admin role checks
+- Add stronger browser mutation protections such as CSRF coverage
+- Improve migration story for the copied legacy public schema so the baseline is reproducible
+- Continue replacing stale architectural language left over from the old Angular/ASP.NET system as new slices are rewritten
 
-- `make run` starts the app.
-- `make test` runs the test suite.
-- `make smoke-auth` performs a real create-login-cleanup smoke test against Supabase Auth.
+## 10. Project Identification
 
-## Source Map
+Project Name: Kvarteret Personal
 
-Useful entry points:
+Repository URL: https://github.com/kvarteret/kvarteret-personal
 
-- `app/main.py`
-- `app/api/router.py`
-- `app/web/router.py`
-- `app/auth/login_service.py`
-- `app/auth/repository.py`
-- `app/services/people.py`
-- `app/services/registrations.py`
-- `app/services/mobile_card.py`
-- `app/services/semester_transfer.py`
-- `app/db/tables.py`
-- `plans/fastapi-rewrite.md`
+Primary Contact/Team: Not documented in the repository
+
+Date of Last Update: 2026-04-02
+
+## 11. Glossary / Acronyms
+Define any project-specific terms or acronyms.
+
+Digital Internkort: The mobile card feature and API surface used by the organization's mobile app
+
+Pingvin points: Legacy point values attached to role assignments and used in reporting and search filters
+
+HTMX fragment request: A partial-page request identified by headers such as `HX-Request`, used to refresh sections of server-rendered pages without a full navigation
+
+Semester transfer: The workflow that previews and inserts next-semester group assignments based on a prior semester
