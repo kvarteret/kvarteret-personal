@@ -78,6 +78,7 @@ class FakeVolunteersService:
             postal_code="0000",
             pingvin_points=8,
             photo_url="/media/photos/abc123.jpg?token=test",
+            current_discount_level=2,
         )
 
     async def list_role_assignments(self, volunteer_id: int, limit: int = 12) -> list[RoleAssignmentItem]:
@@ -585,6 +586,19 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     assert "CARD-42" in relations_response.text
     assert "Contact Person" in relations_response.text
     assert "Rediger" in relations_response.text
+
+
+def test_volunteer_detail_page_renders_discount_level_label() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
+    client = TestClient(app)
+
+    response = client.get("/volunteers/12")
+
+    assert response.status_code == 200
+    assert "8 pingvinpoeng · dorg" in response.text
 
 
 def test_volunteer_relations_panel_renders_edit_state() -> None:

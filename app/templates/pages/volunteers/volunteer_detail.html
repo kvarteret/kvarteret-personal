@@ -49,7 +49,7 @@
       {% endif %}
       <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ volunteer.full_name }}</h1>
       <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">
-        {{ volunteer.pingvin_points }} pingvinpoeng
+        {{ volunteer.pingvin_points }} pingvinpoeng{% if volunteer.discount_level_label %} · {{ volunteer.discount_level_label }}{% endif %}
       </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>

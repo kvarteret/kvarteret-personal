@@ -55,6 +55,7 @@ def map_volunteer_detail(row: dict) -> VolunteerDetail:
         postal_code=row["postnummerid"],
         pingvin_points=int(row.get("pingvin_points") or 0),
         photo_url=None,
+        current_discount_level=int(row["current_discount_level"]) if row.get("current_discount_level") is not None else None,
     )
 
 

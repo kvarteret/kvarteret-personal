@@ -49,6 +49,16 @@ class DuplicateCourseCompletionError(VolunteersServiceError):
     pass
 
 
+def discount_level_label(level: int | None) -> str | None:
+    if level == 1:
+        return "borg"
+    if level == 2:
+        return "dorg"
+    if level == 3:
+        return "arg"
+    return None
+
+
 class CourseCompletionNotFoundError(VolunteersServiceError):
     pass
 
@@ -158,6 +168,11 @@ class VolunteerDetail:
     postal_code: str | None
     pingvin_points: int
     photo_url: str | None
+    current_discount_level: int | None = None
+
+    @property
+    def discount_level_label(self) -> str | None:
+        return discount_level_label(self.current_discount_level)
 
 @dataclass(slots=True)
 class VolunteerRelations:
