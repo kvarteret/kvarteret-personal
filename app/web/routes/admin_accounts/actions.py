@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -23,6 +24,7 @@ from app.web.route_helpers import redirect_to
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
+logger = logging.getLogger(__name__)
 
 
 def _redirect_with_error(path: str, message: str):
@@ -32,6 +34,13 @@ def _redirect_with_error(path: str, message: str):
 
 def _redirect_with_password_error(message: str):
     return redirect_to(f"/my-account?password_error={quote_plus(message)}")
+
+
+async def _best_effort_delete_auth_user(auth_gateway, auth_user_id, *, context: str) -> None:
+    try:
+        await auth_gateway.delete_user(auth_user_id)
+    except Exception:
+        logger.exception("Failed to clean up auth user after %s.", context)
 
 
 def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
@@ -94,10 +103,18 @@ async def my_account_change_password(
         return _redirect_with_password_error("Det nye passordet må være minst 8 tegn.")
     if new_password != confirm_password:
         return _redirect_with_password_error("Passordene må være like.")
-    verified_auth_user_id = await supabase_auth_gateway.sign_in_with_password(current_user.email, current_password)
+    try:
+        verified_auth_user_id = await supabase_auth_gateway.sign_in_with_password(current_user.email, current_password)
+    except Exception:
+        logger.exception("Failed to verify admin password change request.")
+        return _redirect_with_password_error("Kunne ikke oppdatere passordet akkurat nå.")
     if verified_auth_user_id != current_user.auth_user_id:
         return _redirect_with_password_error("Nåværende passord er feil.")
-    await supabase_auth_gateway.update_user_password(current_user.auth_user_id, new_password)
+    try:
+        await supabase_auth_gateway.update_user_password(current_user.auth_user_id, new_password)
+    except Exception:
+        logger.exception("Failed to update admin password.")
+        return _redirect_with_password_error("Kunne ikke oppdatere passordet akkurat nå.")
     log_admin_activity(
         request=request,
         user=current_user,
@@ -143,12 +160,24 @@ async def admin_account_create(
         )
     except ValueError as exc:
         if auth_user_id is not None:
-            await supabase_auth_gateway.delete_user(auth_user_id)
+            await _best_effort_delete_auth_user(
+                supabase_auth_gateway,
+                auth_user_id,
+                context="admin-account validation failure",
+            )
         return _redirect_with_error("/admin-accounts/new", str(exc))
-    except Exception as exc:
+    except Exception:
         if auth_user_id is not None:
-            await supabase_auth_gateway.delete_user(auth_user_id)
-        return _redirect_with_error("/admin-accounts/new", str(exc))
+            await _best_effort_delete_auth_user(
+                supabase_auth_gateway,
+                auth_user_id,
+                context="admin-account creation failure",
+            )
+        logger.exception("Failed to create admin account.")
+        return _redirect_with_error(
+            "/admin-accounts/new",
+            "Kunne ikke opprette admin-kontoen akkurat nå.",
+        )
 
     log_admin_activity(
         request=request,
@@ -303,8 +332,12 @@ async def admin_account_delete(
             user_account_id=admin_account.user_account_id,
             auth_user_id=admin_account.auth_user_id,
         )
-    except Exception as exc:
-        return _redirect_with_error(f"/admin-accounts/{account_id}", str(exc))
+    except Exception:
+        logger.exception("Failed to delete admin account %s.", account_id)
+        return _redirect_with_error(
+            f"/admin-accounts/{account_id}",
+            "Kunne ikke slette admin-kontoen akkurat nå.",
+        )
 
     log_admin_activity(
         request=request,

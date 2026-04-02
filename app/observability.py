@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from fastapi import Request
@@ -26,6 +27,18 @@ _NOISY_LOGGER_LEVELS: dict[str, int] = {
     "azure.storage": logging.WARNING,
     "azure.core.pipeline.policies.http_logging_policy": logging.WARNING,
 }
+_SENSITIVE_QUERY_KEYS = frozenset(
+    {
+        "code",
+        "completion_error",
+        "csrf_token",
+        "error",
+        "password",
+        "password_error",
+        "state",
+        "token",
+    }
+)
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -106,7 +119,7 @@ def log_request(logger: logging.Logger, *, request: Request, status_code: int, s
             "event_data": {
                 "status_code": status_code,
                 "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-                "query_string": request.url.query,
+                "query_string_redacted": redact_query_string(request),
             },
         },
     )
@@ -119,7 +132,7 @@ def log_request_exception(logger: logging.Logger, *, request: Request, started_a
             "event": "http.request.failed",
             "event_data": {
                 "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-                "query_string": request.url.query,
+                "query_string_redacted": redact_query_string(request),
             },
         },
     )
@@ -145,7 +158,7 @@ def log_admin_activity(
                 "subject_type": subject_type,
                 "subject_id": subject_id,
                 "path": request.url.path,
-                "query_string": request.url.query,
+                "query_string_redacted": redact_query_string(request),
                 "admin_user_account_id": user.user_account_id,
                 "admin_auth_user_id": str(user.auth_user_id),
                 "admin_username": user.username,
@@ -155,6 +168,20 @@ def log_admin_activity(
             },
         },
     )
+
+
+def redact_query_string(request: Request) -> str:
+    if not request.query_params:
+        return ""
+    sanitized_items: list[tuple[str, str]] = []
+    for key, value in request.query_params.multi_items():
+        sanitized_items.append(
+            (
+                key,
+                "[redacted]" if key.strip().lower() in _SENSITIVE_QUERY_KEYS else value,
+            )
+        )
+    return urlencode(sanitized_items, doseq=True)
 
 
 def log_operation_timing(

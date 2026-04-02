@@ -58,7 +58,7 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def delete_user(self, auth_user_id):
         raise NotConfiguredError("Supabase credentials are required for authentication.")
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         return None
 
 
@@ -90,7 +90,7 @@ class ApplicationContainer:
         if self.storage_service is not None:
             self.storage_service.close()
         await self.now_playing_service.aclose()
-        self.supabase_auth_gateway.close()
+        await self.supabase_auth_gateway.aclose()
         await self.database_runtime_manager.aclose()
 
 

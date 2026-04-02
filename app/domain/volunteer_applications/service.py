@@ -10,7 +10,7 @@ from typing import Protocol
 from app.cache import TTLCache
 from app.config import Settings
 from app.errors import NotConfiguredError
-from app.infrastructure.email.smtp import EmailSenderProtocol
+from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import require_e164_phone_number
 from app.infrastructure.formatting.semester import format_semester_code

@@ -7,7 +7,6 @@ from email.utils import formataddr
 
 from app.config import Settings
 from app.errors import NotConfiguredError
-from app.infrastructure.email.protocols import EmailSenderProtocol
 
 
 class SmtpEmailSender:

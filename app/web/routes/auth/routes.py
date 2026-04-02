@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
+from itsdangerous import BadSignature
 
 from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
@@ -22,6 +25,7 @@ from app.web.templates import templates
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
+logger = logging.getLogger(__name__)
 
 
 def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
@@ -148,8 +152,10 @@ async def logout(
         try:
             session_id = session_cookie_signer.unsign_session_id(signed_cookie)
             await session_store.delete_session(session_id)
+        except BadSignature:
+            logger.warning("Discarded invalid session cookie during logout.")
         except Exception:
-            pass
+            logger.exception("Failed to revoke session during logout.")
     if current_user is not None and current_user.role == UserRole.ADMIN:
         log_admin_activity(
             request=request,
