@@ -18,10 +18,10 @@ from app.dependencies import (
     get_volunteers_service,
 )
 from app.media_tokens import MediaTokenService
-from app.services.mobile_card import MobileCardInvalidAccessCodeError, MobileCardService
-from app.services.photo_processing import ProcessedPhoto, render_photo_variant
-from app.services.storage import StorageService
-from app.services.volunteers import VolunteersService
+from app.domain.mobile_card.service import MobileCardInvalidAccessCodeError, MobileCardService
+from app.infrastructure.media.photo_processing import ProcessedPhoto, render_photo_variant
+from app.infrastructure.storage.service import StorageService
+from app.domain.volunteers.service import VolunteersService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

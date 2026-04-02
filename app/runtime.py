@@ -15,26 +15,26 @@ from app.config import Settings, get_settings, validate_production_secrets
 from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
-from app.services.email import SmtpEmailSender
-from app.services.feedback import FeedbackService
-from app.services.mobile_card_repository import MobileCardRepository
-from app.services.mobile_card_april_state import (
+from app.infrastructure.email.smtp import SmtpEmailSender
+from app.domain.feedback.service import FeedbackService
+from app.domain.mobile_card.repository import MobileCardRepository
+from app.domain.mobile_card.april_state import (
     MobileCardAprilStateRepository,
     MobileCardAprilStateService,
 )
-from app.services.integration_tokens_repository import IntegrationTokensRepository
-from app.services.now_playing import NowPlayingService
-from app.services.volunteers_repository import VolunteersRepository
-from app.services.volunteer_applications_repository import VolunteerApplicationsRepository
-from app.services.courses import CoursesService
-from app.services.groups import GroupsService
-from app.services.mobile_card import MobileCardService
-from app.services.volunteers import VolunteersService
-from app.services.volunteer_applications import VolunteerApplicationsService
-from app.services.search import VolunteerSearchRepository, VolunteerSearchService
-from app.services.semester_transfer import SemesterTransferService
-from app.services.storage import StorageService
-from app.services.admin_accounts import AdminAccountsService
+from app.domain.spotify.repository import IntegrationTokensRepository
+from app.domain.spotify.now_playing import NowPlayingService
+from app.domain.volunteers.repository import VolunteersRepository
+from app.domain.volunteer_applications.repository import VolunteerApplicationsRepository
+from app.domain.courses.service import CoursesService
+from app.domain.groups.service import GroupsService
+from app.domain.mobile_card.service import MobileCardService
+from app.domain.volunteers.service import VolunteersService
+from app.domain.volunteer_applications.service import VolunteerApplicationsService
+from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
+from app.domain.volunteers.semester_transfer import SemesterTransferService
+from app.infrastructure.storage.service import StorageService
+from app.domain.admin_accounts.service import AdminAccountsService
 
 
 class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):

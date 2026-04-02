@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.dependencies import get_now_playing_service
-from app.services.now_playing import NowPlayingResult, NowPlayingService
+from app.domain.spotify.now_playing import NowPlayingResult, NowPlayingService
 
 
 class NowPlayingStateResponse(BaseModel):

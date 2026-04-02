@@ -11,8 +11,8 @@
   --color-navy-950: oklch(14% 0.035 258);
 
   /* ── Original warm off-white palette ── */
-  --color-kvarteret-red:        oklch(60% 0.180 56);   /* amber primary */
-  --color-kvarteret-red-dark:   oklch(50% 0.171 56);   /* amber darker */
+  --color-kvarteret-red:        #f54b4b;               /* Original Red */
+  --color-kvarteret-red-dark:   #e54242;               /* Original Red Dark */
   --color-kvarteret-background: #fff7e4;               /* original warm off-white bg */
   --color-kvarteret-surface:    #fbf2df;               /* original warm panel surface */
   --color-kvarteret-sand:       #e8d4b2;               /* original sand */

@@ -3,7 +3,7 @@ from pydantic import BaseModel, ConfigDict
 from fastapi.responses import PlainTextResponse
 
 from app.dependencies import get_mobile_card_service
-from app.services.mobile_card import (
+from app.domain.mobile_card.service import (
     MobileCardDuplicatePersonError,
     MobileCardInvalidAccessCodeError,
     MobileCardPersonNotFoundError,
