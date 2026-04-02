@@ -18,36 +18,52 @@
       </div>
 
       <form action="/volunteers" class="app-panel" id="volunteer-search" method="get">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-end">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div class="min-w-0 flex-1">
             <label class="grid gap-1" for="q">
-              <span class="text-sm text-stone-500">Filtrer på navn</span>
-              <input
-                autocomplete="off"
-                class="app-input"
-                hx-disinherit="hx-select hx-target hx-swap"
-                hx-get="/volunteers/list"
-                hx-include="#volunteer-search"
-                hx-indicator="#volunteer-search-indicator"
-                hx-push-url="true"
-                hx-target="#volunteer-results"
-                hx-trigger="keyup changed delay:300ms, search"
-                hx-vals='{"cursor": ""}'
-                id="q"
-                name="q"
-                placeholder="Sir Nils Olav III"
-                type="search"
-                value="{{ query }}"
-              >
+              <span class="text-sm text-stone-500">Filtrer på navn, verv, gruppe eller e-post</span>
+              <div class="relative">
+                <input
+                  autocomplete="off"
+                  class="app-input"
+                  hx-disinherit="hx-select hx-target hx-swap"
+                  hx-get="/volunteers/list"
+                  hx-include="#volunteer-search"
+                  hx-push-url="true"
+                  hx-target="#volunteer-results"
+                  hx-trigger="keyup changed delay:300ms, search"
+                  hx-vals='{"cursor": ""}'
+                  id="q"
+                  name="q"
+                  placeholder="Sir Nils Olav III"
+                  type="search"
+                  value="{{ query }}"
+                >
+              </div>
             </label>
           </div>
-          <div class="flex flex-wrap items-center gap-3">
-            <button class="app-button" type="submit">Søk</button>
-            <span class="htmx-indicator text-sm text-stone-500" id="volunteer-search-indicator">Laster...</span>
-            <a class="app-button-secondary" href="/volunteers/search">Avansert søk</a>
-            {% if request.state.show_management_tools %}
-              <a class="app-button-secondary" href="/volunteer-applications">Ny frivillig</a>
-            {% endif %}
+          <div class="grid gap-3 lg:min-w-[26rem] lg:justify-items-end">
+            <div class="flex min-h-6 items-center justify-end">
+              <input name="only_active" type="hidden" value="">
+              <label class="inline-flex items-center gap-3 text-sm text-stone-700" for="only_active">
+                <input
+                  class="h-4 w-4 accent-kvarteret-red"
+                  id="only_active"
+                  name="only_active"
+                  type="checkbox"
+                  value="on"
+                  {% if only_active %}checked{% endif %}
+                >
+                <span>Bare aktive frivillige</span>
+              </label>
+            </div>
+            <div class="flex min-h-12 flex-wrap items-center gap-3 lg:justify-end">
+              <button class="app-button" type="submit">Søk</button>
+              <a class="app-button-secondary" href="/volunteers/search">Avansert søk</a>
+              {% if request.state.show_management_tools %}
+                <a class="app-button-secondary" href="/volunteer-applications">Ny frivillig</a>
+              {% endif %}
+            </div>
           </div>
         </div>
       </form>
