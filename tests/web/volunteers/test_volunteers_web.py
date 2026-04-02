@@ -38,11 +38,26 @@ class FakeVolunteersService:
         self.uploaded_photo_calls: list[dict[str, str | int | None]] = []
         self.deleted_photo_calls: list[int] = []
         self.deleted_volunteer_calls: list[int] = []
+        self.list_page_calls: list[dict[str, object | None]] = []
 
     async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
         return (await self.list_volunteers_page(query=query, limit=limit, cursor=None)).items
 
-    async def list_volunteers_page(self, query: str | None = None, limit: int = 10, cursor: str | None = None) -> VolunteerListPage:
+    async def list_volunteers_page(
+        self,
+        query: str | None = None,
+        limit: int = 10,
+        cursor: str | None = None,
+        only_active: bool = False,
+    ) -> VolunteerListPage:
+        self.list_page_calls.append(
+            {
+                "query": query,
+                "limit": limit,
+                "cursor": cursor,
+                "only_active": only_active,
+            }
+        )
         return VolunteerListPage(
             items=[
                 VolunteerListItem(
@@ -331,7 +346,8 @@ class FakeCoursesService:
 def test_volunteer_pages_render_with_fake_service() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
-    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: service
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
     app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
@@ -341,10 +357,15 @@ def test_volunteer_pages_render_with_fake_service() -> None:
 
     assert list_response.status_code == 200
     assert "Sample Person" in list_response.text
-    assert "Filtrer på navn" in list_response.text
+    assert "Filtrer på navn, verv, gruppe eller e-post" in list_response.text
+    assert 'id="only_active"' in list_response.text
+    assert 'name="only_active"' in list_response.text
+    assert 'type="checkbox"' in list_response.text
+    assert 'checked' in list_response.text
+    assert "Bare aktive frivillige" in list_response.text
+    assert "Sir Nils Olav III" in list_response.text
     assert 'href="/volunteers/stats"' in list_response.text
     assert 'hx-trigger="keyup changed delay:300ms, search"' in list_response.text
-    assert 'id="volunteer-search-indicator"' in list_response.text
     assert "Laster flere frivillige" in list_response.text
     assert detail_response.status_code == 200
     assert detail_response.headers["cache-control"] == "no-store"
@@ -361,6 +382,20 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert 'class="grid h-52 w-52 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md transition hover:shadow-lg"' in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
     assert "Slett frivillig" in detail_response.text
+    assert service.list_page_calls[0]["only_active"] is True
+
+
+def test_volunteer_page_can_disable_only_active_filter() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.get("/volunteers?only_active=")
+
+    assert response.status_code == 200
+    assert service.list_page_calls[0]["only_active"] is False
 
 
 def test_management_user_can_delete_volunteer() -> None:
