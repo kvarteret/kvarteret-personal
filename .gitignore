@@ -18,3 +18,5 @@ htmlcov/
 .vercel_python_packages/
 supabase/.temp/
 .DS_Store
+app/static/css/output.css
+public/static/css/output.css
