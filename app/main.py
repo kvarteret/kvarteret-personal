@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from itsdangerous import BadSignature
 
 from app.api.router import api_router
 from app.media.router import router as media_router
@@ -21,6 +22,7 @@ from app.observability import (
 )
 from app.runtime import app_lifespan, build_application_container
 from app.system.router import router as system_router
+from app.web.csrf import CSRF_COOKIE_NAME, CSRF_FIELD_NAME, CSRF_HEADER_NAME, CsrfTokenService
 from app.web.router import web_router
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 def create_app(container=None) -> FastAPI:
     resolved_container = container or build_application_container()
+    csrf_token_service = CsrfTokenService(resolved_container.settings)
     configure_logging(resolved_container.settings)
     app = FastAPI(title="Kvarteret Personal", lifespan=app_lifespan)
     app.state.container = resolved_container
@@ -40,6 +43,23 @@ def create_app(container=None) -> FastAPI:
             if override:
                 request.scope["method"] = override.upper()
         return await call_next(request)
+
+    @app.middleware("http")
+    async def csrf_middleware(request: Request, call_next):
+        csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+        csrf_cookie_is_valid = csrf_token_service.is_valid_token(csrf_cookie)
+        request.state.csrf_token = csrf_cookie if csrf_cookie_is_valid else csrf_token_service.issue_token()
+        request.state.csrf_cookie_needs_refresh = not csrf_cookie_is_valid
+
+        if _requires_csrf_validation(request):
+            submitted_token = await _load_submitted_csrf_token(request)
+            if not csrf_token_service.tokens_match(csrf_cookie, submitted_token):
+                return Response(status_code=403, content="CSRF validation failed.")
+
+        response = await call_next(request)
+        if request.state.csrf_cookie_needs_refresh:
+            csrf_token_service.set_cookie(response, request, request.state.csrf_token)
+        return response
 
     @app.middleware("http")
     async def auth_context_middleware(request: Request, call_next):
@@ -56,7 +76,12 @@ def create_app(container=None) -> FastAPI:
                     request.state.session, request.state.current_user = auth_context
                     request.state.impersonator_user = request.state.session.impersonator_user
                     bind_request_context(**request_context_for_user(request.state.current_user))
+            except BadSignature:
+                request.state.current_user = None
+                request.state.session = None
+                request.state.impersonator_user = None
             except Exception:
+                logger.exception("Failed to hydrate auth context from session cookie.")
                 request.state.current_user = None
                 request.state.session = None
                 request.state.impersonator_user = None
@@ -124,3 +149,24 @@ def _merge_vary_headers(response, *values: str) -> None:
 def _is_web_navigation_request(request: Request) -> bool:
     path = request.url.path
     return not path.startswith("/api/")
+
+
+def _requires_csrf_validation(request: Request) -> bool:
+    if request.method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return False
+    if request.url.path.startswith("/api/"):
+        return False
+    session_cookie_name = request.app.state.container.settings.session_cookie_name
+    return bool(request.cookies.get(session_cookie_name))
+
+
+async def _load_submitted_csrf_token(request: Request) -> str | None:
+    header_token = request.headers.get(CSRF_HEADER_NAME)
+    if header_token:
+        return header_token
+    try:
+        form = await request.form()
+    except Exception:
+        return None
+    value = form.get(CSRF_FIELD_NAME)
+    return value if isinstance(value, str) else None
