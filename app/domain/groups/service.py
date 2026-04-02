@@ -162,6 +162,7 @@ class GroupsServiceProtocol(Protocol):
         parent_group_id: int | None,
         discount_step: int | None,
     ) -> bool: ...
+    async def archive_group(self, group_id: int) -> bool: ...
     async def delete_group(self, group_id: int) -> bool: ...
     async def create_group_role(self, group_id: int, *, role_name: str, pingvin_points: int) -> int | None: ...
     async def update_group_role(self, group_id: int, role_id: int, *, role_name: str, pingvin_points: int) -> bool: ...
@@ -686,6 +687,28 @@ class GroupsService(SqlAlchemyRepository):
 
         updated_group_id = await self.execute_in_transaction(callback)
         return updated_group_id == group_id
+
+    async def archive_group(self, group_id: int) -> bool:
+        current_semester = get_current_semester_code()
+
+        async def callback(session):
+            result = await session.execute(
+                update(grupper)
+                .where(grupper.c.id == group_id)
+                .values(
+                    aktiv=False,
+                    aktiv_til_og_med=case(
+                        (grupper.c.aktiv_til_og_med > current_semester, current_semester),
+                        else_=grupper.c.aktiv_til_og_med,
+                    ),
+                )
+                .returning(grupper.c.id)
+            )
+            row = result.first()
+            return row[0] if row is not None else None
+
+        archived_group_id = await self.execute_in_transaction(callback)
+        return archived_group_id == group_id
 
     async def delete_group(self, group_id: int) -> bool:
         blockers = await self._get_group_delete_blockers(group_id)

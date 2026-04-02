@@ -45,6 +45,7 @@ class FakeGroupsService:
         self.updated_role = None
         self.deleted_role = None
         self.deleted_history = None
+        self.archived_group = None
 
     async def list_groups(self, query: str | None = None, limit: int = 100) -> list[GroupListItem]:
         return [
@@ -169,6 +170,10 @@ class FakeGroupsService:
 
     async def delete_group_history_entry(self, group_id: int, history_id: int) -> None:
         self.deleted_history = (group_id, history_id)
+
+    async def archive_group(self, group_id: int) -> bool:
+        self.archived_group = group_id
+        return True
 
 
 class FakeCoursesService:
@@ -311,6 +316,7 @@ def test_groups_and_courses_pages_render() -> None:
     assert group_detail_response.status_code == 200
     assert "Aktive dette semesteret" in group_detail_response.text
     assert "Lagre gruppe" in group_detail_response.text
+    assert "Arkiver gruppe" in group_detail_response.text
     assert "Lagre verv" in group_detail_response.text
     assert "Opprett verv" in group_detail_response.text
     assert "Legg til frivillig" in group_detail_response.text
@@ -405,6 +411,23 @@ def test_group_role_actions_redirect_and_call_service() -> None:
     assert delete_response.status_code == 303
     assert delete_response.headers["location"] == "/groups/7"
     assert groups_service.deleted_role == (7, 3)
+
+
+def test_group_archive_redirects_and_calls_service() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    groups_service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: groups_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/groups/7/archive",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/groups/7"
+    assert groups_service.archived_group == 7
 
 
 def test_group_role_assignment_create_redirects_and_calls_service() -> None:

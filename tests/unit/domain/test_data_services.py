@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.config import Settings
 from app.domain.courses.service import (
@@ -354,6 +355,39 @@ async def test_group_detail_recent_members_are_scoped_to_current_semester(
     assert detail.recent_members[0].photo_url is not None
     assert detail.recent_members[0].photo_url.startswith("/media/photos/abc123.jpg")
     assert "historie.semester = :semester_1" in captured["sql"]
+
+
+@pytest.mark.asyncio
+async def test_groups_service_archive_marks_group_inactive(monkeypatch) -> None:
+    service = GroupsService()
+    captured = {}
+
+    class FakeResult:
+        def first(self):
+            return (7,)
+
+    class FakeSession:
+        async def execute(self, stmt):
+            captured["sql"] = str(
+                stmt.compile(
+                    dialect=postgresql.dialect(),
+                    compile_kwargs={"literal_binds": True},
+                )
+            )
+            return FakeResult()
+
+    async def fake_execute_in_transaction(callback):
+        return await callback(FakeSession())
+
+    monkeypatch.setattr(service, "execute_in_transaction", fake_execute_in_transaction)
+    monkeypatch.setattr("app.domain.groups.service.get_current_semester_code", lambda: 20261)
+
+    archived = await service.archive_group(7)
+
+    assert archived is True
+    assert "UPDATE public.grupper SET aktiv=false" in captured["sql"]
+    assert "aktiv_til_og_med=CASE WHEN (public.grupper.aktiv_til_og_med > 20261) THEN 20261" in captured["sql"]
+    assert "WHERE public.grupper.id = 7" in captured["sql"]
 
 
 @pytest.mark.asyncio
