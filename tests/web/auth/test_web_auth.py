@@ -19,7 +19,7 @@ from app.dependencies import (
 from app.main import create_app
 from app.runtime import build_application_container
 from app.domain.volunteers.service import VolunteerListItem, VolunteerListPage
-from tests.support.helpers import make_authenticated_user
+from tests.support.helpers import csrf_headers, make_authenticated_user, prime_csrf
 
 
 class FakeMobileCardAprilStateService:
@@ -366,12 +366,15 @@ def test_stop_impersonation_restores_admin_session() -> None:
     container.session_store = session_store
     app = create_app(container=container)
     client = TestClient(app)
+    session_cookie = container.session_cookie_signer.sign_session_id("session-123")
+    prime_csrf(
+        client,
+        cookies={container.settings.session_cookie_name: session_cookie},
+    )
 
     response = client.post(
         "/impersonation/stop",
-        cookies={
-            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id("session-123"),
-        },
+        headers=csrf_headers(client),
         follow_redirects=False,
     )
 
@@ -387,6 +390,47 @@ def test_stop_impersonation_restores_admin_session() -> None:
         }
     ]
     assert session_store.deleted_sessions == ["session-123"]
+
+
+def test_logout_rejects_missing_csrf_when_session_cookie_is_present() -> None:
+    user = make_authenticated_user(UserRole.ADMIN)
+    container = build_application_container()
+    container.session_store = MiddlewareSessionStore(user)
+    app = create_app(container=container)
+    client = TestClient(app)
+
+    response = client.post(
+        "/logout",
+        cookies={
+            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id("session-123"),
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+
+
+def test_logout_accepts_valid_csrf_token_when_session_cookie_is_present() -> None:
+    user = make_authenticated_user(UserRole.ADMIN)
+    container = build_application_container()
+    container.session_store = MiddlewareSessionStore(user)
+    app = create_app(container=container)
+    client = TestClient(app)
+    prime_csrf(
+        client,
+        cookies={
+            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id("session-123"),
+        },
+    )
+
+    response = client.post(
+        "/logout",
+        headers=csrf_headers(client),
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
 
 
 def test_protected_web_page_redirects_to_login_when_unauthenticated() -> None:

@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta content="{{ request.state.csrf_token }}" name="csrf-token">
     <meta content="width=device-width, initial-scale=1" name="viewport">
     <title>{{ title }}</title>
     <link href="{{ url_for('static', path='css/output.css') }}" rel="stylesheet">
@@ -39,12 +40,45 @@
           }
         }
 
-        document.addEventListener("DOMContentLoaded", () => applyDefaultLinkPreload(document.body));
+        function currentCsrfToken() {
+          return document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+        }
+
+        function applyCsrfFields(root) {
+          const csrfToken = currentCsrfToken();
+          if (!root || !csrfToken) return;
+          const forms = root.matches?.('form[method="post"]') ? [root] : root.querySelectorAll?.('form[method="post"]');
+          if (!forms) return;
+          for (const form of forms) {
+            let field = form.querySelector('input[name="csrf_token"]');
+            if (!field) {
+              field = document.createElement("input");
+              field.type = "hidden";
+              field.name = "csrf_token";
+              form.prepend(field);
+            }
+            field.value = csrfToken;
+          }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+          applyDefaultLinkPreload(document.body);
+          applyCsrfFields(document.body);
+        });
         document.addEventListener("htmx:load", (event) => {
           const root = event.detail?.elt;
           applyDefaultLinkPreload(root);
+          applyCsrfFields(root);
           if (window.Alpine?.initTree && root) {
             window.Alpine.initTree(root);
+          }
+        });
+        document.addEventListener("htmx:configRequest", (event) => {
+          const method = (event.detail?.verb || "").toLowerCase();
+          if (!["post", "put", "patch", "delete"].includes(method)) return;
+          const csrfToken = currentCsrfToken();
+          if (csrfToken) {
+            event.detail.headers["X-CSRF-Token"] = csrfToken;
           }
         });
       })();
