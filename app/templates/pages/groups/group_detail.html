@@ -44,6 +44,11 @@
           </form>
           {% if can_manage_group %}
             <div class="mt-3 flex flex-wrap gap-3">
+              {% if group.active %}
+                <form action="/groups/{{ group.group_id }}/archive" method="post" onsubmit="return window.confirm('Arkivere denne gruppen?');">
+                  <button class="app-button-secondary" type="submit">Arkiver gruppe</button>
+                </form>
+              {% endif %}
               <form action="/groups/{{ group.group_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne gruppen?');">
                 <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-md hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {% if group.delete_blockers %}disabled{% endif %}>Slett gruppe</button>
               </form>

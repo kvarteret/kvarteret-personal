@@ -109,6 +109,26 @@ async def groups_delete(
     )
 
 
+@router.post("/groups/{group_id}/archive")
+async def groups_archive(
+    request: Request,
+    group_id: int,
+    current_user=Depends(require_management_user),
+    groups_service: GroupsService = Depends(get_groups_service),
+):
+    archived = await groups_service.archive_group(group_id)
+    if not archived:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+    return log_and_redirect(
+        request=request,
+        user=current_user,
+        action="group.archive",
+        subject_type="group",
+        subject_id=group_id,
+        redirect_path=f"/groups/{group_id}",
+    )
+
+
 @router.post("/groups/{group_id}/roles")
 async def group_roles_create(
     request: Request,
