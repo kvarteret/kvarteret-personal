@@ -18,6 +18,7 @@ from app.db.tables import (
     volunteer_photos,
     volunteer_records,
 )
+from app.infrastructure.formatting.semester import get_current_semester_code
 
 
 class VolunteersRepository(SqlAlchemyRepository):
@@ -113,6 +114,7 @@ class VolunteersRepository(SqlAlchemyRepository):
 
     async def fetch_volunteer_shell_row(self, volunteer_id: int) -> dict[str, Any] | None:
         points = _pingvin_points_subquery()
+        discount_levels = _current_discount_level_subquery()
         stmt = (
             select(
                 volunteer_records.c.id,
@@ -126,6 +128,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_records.c.gateadresse,
                 volunteer_records.c.postnummerid,
                 func.coalesce(points.c.pingvin_points, 0).label("pingvin_points"),
+                discount_levels.c.current_discount_level,
                 volunteer_photos.c.sha1,
                 volunteer_photos.c.filetype,
             )
@@ -136,6 +139,9 @@ class VolunteersRepository(SqlAlchemyRepository):
                 ).outerjoin(
                     points,
                     points.c.id_personal == volunteer_records.c.id,
+                ).outerjoin(
+                    discount_levels,
+                    discount_levels.c.id_personal == volunteer_records.c.id,
                 )
             )
             .where(volunteer_records.c.id == volunteer_id)
@@ -653,6 +659,19 @@ def _last_semester_subquery():
             role_assignments.c.id_personal.label("id_personal"),
             func.max(role_assignments.c.semester).label("last_semester"),
         )
+        .group_by(role_assignments.c.id_personal)
+        .subquery()
+    )
+
+
+def _current_discount_level_subquery():
+    return (
+        select(
+            role_assignments.c.id_personal.label("id_personal"),
+            func.max(groups.c.rabatt_trinn).label("current_discount_level"),
+        )
+        .select_from(role_assignments.join(groups, groups.c.id == role_assignments.c.id_gruppe))
+        .where(role_assignments.c.semester == get_current_semester_code())
         .group_by(role_assignments.c.id_personal)
         .subquery()
     )
