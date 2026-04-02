@@ -1,3 +1,10 @@
+{#
+  Shared Jinja macros for repeated page chrome, feedback states, and interactive form fragments.
+  Keep common UI structure here so page templates stay focused on data and flow-specific markup.
+  Official Jinja macro docs: https://jinja.palletsprojects.com/en/stable/templates/#macros
+#}
+
+{# Render a centered page title block with an optional eyebrow, description, and action slot. #}
 {% macro page_header(label, heading, description=None) -%}
   <header class="grid justify-items-center gap-3 pt-3 text-center">
     {% if label %}
@@ -13,10 +20,12 @@
   </header>
 {%- endmacro %}
 
+{# Render a safe back button that prefers browser history and falls back to a fixed URL. #}
 {% macro history_back_button(fallback_url, label) -%}
   <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '{{ fallback_url }}'; }" type="button">{{ label }}</button>
 {%- endmacro %}
 
+{# Wrap a form control with a shared label layout so fields stay visually consistent. #}
 {% macro form_field(label, classes='') -%}
   <label class="grid gap-1 {{ classes }}">
     <span class="text-sm text-stone-500">{{ label }}</span>
@@ -24,6 +33,7 @@
   </label>
 {%- endmacro %}
 
+{# Render a tone-aware inline notice for neutral, success, or error flash messages. #}
 {% macro flash_notice(message, tone='neutral', classes='mb-5') -%}
   {% if message %}
     {% if tone == 'error' %}
@@ -37,12 +47,14 @@
   {% endif %}
 {%- endmacro %}
 
+{# Render a placeholder panel that lazily swaps itself with server-rendered content via HTMX. #}
 {% macro lazy_panel(url, loading_text="Laster...", trigger="intersect once", panel_id=None) -%}
   <section class="app-panel"{% if panel_id %} id="{{ panel_id }}"{% endif %} hx-disinherit="hx-select hx-target hx-swap" hx-get="{{ url }}" hx-swap="outerHTML" hx-trigger="{{ trigger }}">
     <p class="text-sm text-stone-500">{{ loading_text }}</p>
   </section>
 {%- endmacro %}
 
+{# Render one or more blocking validation or workflow messages in a shared notice container. #}
 {% macro blocker_notice(blockers, classes='mt-4') -%}
   {% if blockers %}
     <div class="{{ classes }} rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
@@ -51,6 +63,10 @@
   {% endif %}
 {%- endmacro %}
 
+{#
+  Render the volunteer search-and-select card used by forms that attach one or more volunteers.
+  The macro owns the Alpine/HTMX picker shell, selected-state rendering, and hidden field submission.
+#}
 {% macro volunteer_picker_card(
   form_action,
   search_url,
@@ -64,7 +80,7 @@
   placeholder='Søk etter frivillig'
 ) -%}
   {% set resolved_selected_heading = selected_heading or ('Valgt frivillig' if selection_mode == 'single' else 'Valgte frivillige') %}
-  <div class="mb-5 border border-kvarteret-ink bg-kvarteret-background p-4">
+  <div class="mb-5 rounded-3xl border-2 border-kvarteret-ink bg-kvarteret-surface/88 p-4 shadow-[0_16px_34px_-28px_rgba(35,43,72,0.18)]">
     <h3 class="text-xl font-medium tracking-tight text-stone-900">{{ title }}</h3>
     {% if error_message %}
       <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -97,7 +113,7 @@
             <div
               x-cloak
               x-show="showDropdown"
-              class="absolute left-0 right-0 top-full z-20 mt-2 border border-kvarteret-ink bg-kvarteret-background shadow-none"
+              class="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-2xl bg-kvarteret-background shadow-[0_18px_36px_-26px_rgba(35,43,72,0.2)]"
             >
               <template x-if="loading">
                 <div class="px-3 py-2 text-sm text-stone-700">Søker...</div>
@@ -115,7 +131,7 @@
                   <template x-for="result in results" :key="result.volunteer_id">
                     <button
                       type="button"
-                      class="flex min-h-12 w-full items-center border-b border-kvarteret-ink px-3 py-2 text-left text-base font-medium text-kvarteret-ink transition last:border-b-0 hover:bg-kvarteret-surface"
+                      class="flex min-h-12 w-full items-center border-b border-stone-200 px-3 py-2 text-left text-base font-medium text-kvarteret-ink transition last:border-b-0 hover:bg-kvarteret-surface"
                       @click="selectVolunteer(result)"
                       x-text="result.full_name"
                     ></button>
@@ -134,14 +150,14 @@
             <span class="text-sm font-medium uppercase tracking-[0.18em] text-stone-900">{{ resolved_selected_heading }}</span>
             <button
               type="button"
-              class="inline-flex min-h-10 items-center border border-kvarteret-ink bg-kvarteret-surface px-3 text-sm font-semibold text-kvarteret-ink shadow-none disabled:cursor-not-allowed disabled:opacity-45"
+              class="inline-flex min-h-10 items-center rounded-full border border-stone-300 bg-kvarteret-surface px-3 text-sm font-semibold text-kvarteret-ink shadow-none disabled:cursor-not-allowed disabled:opacity-45"
               @click="clearSelected()"
               :disabled="selectedVolunteers.length === 0"
             >
               Tøm
             </button>
           </div>
-          <div class="border border-kvarteret-ink bg-kvarteret-background">
+          <div class="overflow-hidden rounded-2xl bg-kvarteret-background shadow-[inset_0_0_0_1px_rgba(120,113,108,0.16)]">
             <template x-if="selectedVolunteers.length === 0">
               <p class="px-3 py-3 text-sm text-stone-700">{{ empty_selected_text }}</p>
             </template>
@@ -154,7 +170,7 @@
                 ></a>
                 <button
                   type="button"
-                  class="inline-flex min-h-10 items-center border border-kvarteret-ink bg-kvarteret-surface px-3 text-sm font-semibold text-kvarteret-ink shadow-none"
+                  class="inline-flex min-h-10 items-center rounded-full border border-stone-300 bg-kvarteret-surface px-3 text-sm font-semibold text-kvarteret-ink shadow-none"
                   @click="removeVolunteer(volunteer.volunteer_id)"
                 >
                   Fjern
