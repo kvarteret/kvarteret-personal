@@ -35,7 +35,7 @@ from app.services.groups import (
     SemesterStats,
 )
 from app.services.semester_transfer import SemesterTransferCandidate, SemesterTransferPreview
-from app.services.volunteer_models import VolunteerListItem, VolunteerSearchOption
+from app.services.volunteer_models import VolunteerSearchOption
 from tests.helpers import make_authenticated_user, override_authenticated_user
 
 
@@ -255,24 +255,6 @@ class FakeVolunteersService:
         self.last_search_option_query = None
         self.last_search_option_limit = None
 
-    async def list_volunteers(self, query: str | None = None, limit: int = 50) -> list[VolunteerListItem]:
-        if not query or "sample" not in query.lower():
-            return []
-        return [
-            VolunteerListItem(
-                volunteer_id=12,
-                first_name="Sample",
-                last_name="Person",
-                full_name="Sample Person",
-                email="sample.person@example.test",
-                phone="12345678",
-                photo_url=None,
-                pingvin_points=4,
-                last_semester_code=20262,
-                last_semester_label="Fall 2026",
-            )
-        ]
-
     async def add_role_assignment(
         self,
         *,
@@ -294,7 +276,6 @@ class FakeVolunteersService:
             VolunteerSearchOption(
                 volunteer_id=12,
                 full_name="Sample Person",
-                profile_url="/volunteers/12",
             )
         ]
 
@@ -436,7 +417,7 @@ def test_group_role_assignment_create_redirects_and_calls_service() -> None:
     response = client.post(
         "/groups/7/role-assignments",
         data={
-            "volunteer_id": "12",
+            "volunteer_ids": ["12"],
             "role_id": "3",
             "year": "2026",
             "term": "2",
@@ -448,6 +429,29 @@ def test_group_role_assignment_create_redirects_and_calls_service() -> None:
     assert response.status_code == 303
     assert response.headers["location"] == "/groups/7"
     assert volunteers_service.created_assignment == (12, 7, 3, 2026, 2, True)
+
+
+def test_group_role_assignment_requires_exactly_one_volunteer() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/groups/7/role-assignments",
+        data={
+            "volunteer_ids": ["12", "13"],
+            "role_id": "3",
+            "year": "2026",
+            "term": "2",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/groups/7?assignment_error=Velg%20n%C3%B8yaktig%20%C3%A9n%20frivillig."
+    assert volunteers_service.created_assignment is None
 
 
 def test_course_completion_volunteer_search_returns_matches() -> None:
@@ -465,7 +469,6 @@ def test_course_completion_volunteer_search_returns_matches() -> None:
             {
                 "volunteer_id": 12,
                 "full_name": "Sample Person",
-                "profile_url": "/volunteers/12",
             }
         ]
     }

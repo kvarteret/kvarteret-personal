@@ -71,7 +71,6 @@ class VolunteerListItem:
 class VolunteerSearchOption:
     volunteer_id: int
     full_name: str
-    profile_url: str
 
 
 @dataclass(slots=True)

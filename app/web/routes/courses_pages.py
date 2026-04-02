@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.auth.roles import UserRole
 from app.dependencies import get_courses_service, require_authenticated_user, require_management_user
 from app.errors import NotConfiguredError
 from app.services.semester import get_current_semester_code
@@ -31,6 +32,7 @@ async def courses_index(
             "title": "Courses",
             "section": "courses",
             "current_user": current_user,
+            "can_manage_course": current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN},
             "courses": courses,
             "query": q or "",
         },
@@ -66,6 +68,7 @@ async def courses_detail(
         raise not_configured_http_exception("Database-backed course views are not configured yet.")
     if course is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+    can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     return templates.TemplateResponse(
         request,
         "pages/course_detail.html",
@@ -73,6 +76,7 @@ async def courses_detail(
             "title": course.name,
             "section": "courses",
             "current_user": current_user,
+            "can_manage_course": can_manage,
             "course": course,
             "default_completion_year": get_current_semester_code() // 10,
             "default_completion_term": get_current_semester_code() % 10,

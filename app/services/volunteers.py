@@ -102,7 +102,6 @@ class VolunteersService:
             VolunteerSearchOption(
                 volunteer_id=item.volunteer_id,
                 full_name=item.full_name,
-                profile_url=f"/volunteers/{item.volunteer_id}",
             )
             for item in sorted(items, key=lambda item: (item.full_name.lower(), item.volunteer_id))[:limit]
         ]

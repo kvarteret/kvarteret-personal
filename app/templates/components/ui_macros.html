@@ -57,14 +57,14 @@
   submit_label,
   error_message=None,
   selection_mode='multiple',
-  selected_heading='Valgte frivillige',
+  selected_heading=None,
   empty_selected_text='Ingen valgt.',
-  hidden_input_name='volunteer_ids',
   title='Legg til frivillig',
   min_query_length=2,
   placeholder='Søk etter frivillig'
 ) -%}
-  <div class="mb-5 rounded-2xl bg-kvarteret-background p-4">
+  {% set resolved_selected_heading = selected_heading or ('Valgt frivillig' if selection_mode == 'single' else 'Valgte frivillige') %}
+  <div class="mb-5 border border-kvarteret-ink bg-kvarteret-background p-4">
     <h3 class="text-xl font-medium tracking-tight text-stone-900">{{ title }}</h3>
     {% if error_message %}
       <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -90,14 +90,14 @@
               @keydown.enter.prevent="handleEnter()"
               @input.debounce.250ms="search()"
               autocomplete="off"
-              class="w-full border-2 border-kvarteret-ink bg-white px-3 py-3 text-lg text-kvarteret-ink placeholder:text-kvarteret-sky/65 focus:border-kvarteret-red focus:outline-none"
+              class="app-input"
               placeholder="{{ placeholder }}"
               type="search"
             >
             <div
               x-cloak
               x-show="showDropdown"
-              class="absolute left-0 right-0 top-full z-20 mt-2 border-2 border-kvarteret-ink bg-white shadow-none"
+              class="absolute left-0 right-0 top-full z-20 mt-2 border border-kvarteret-ink bg-kvarteret-background shadow-none"
             >
               <template x-if="loading">
                 <div class="px-3 py-2 text-sm text-stone-700">Søker...</div>
@@ -115,7 +115,7 @@
                   <template x-for="result in results" :key="result.volunteer_id">
                     <button
                       type="button"
-                      class="flex min-h-12 w-full items-center border-b-2 border-kvarteret-ink px-3 py-2 text-left text-base font-medium text-kvarteret-ink transition last:border-b-0 hover:bg-kvarteret-background"
+                      class="flex min-h-12 w-full items-center border-b border-kvarteret-ink px-3 py-2 text-left text-base font-medium text-kvarteret-ink transition last:border-b-0 hover:bg-kvarteret-surface"
                       @click="selectVolunteer(result)"
                       x-text="result.full_name"
                     ></button>
@@ -131,30 +131,30 @@
 
         <div class="grid gap-2">
           <div class="flex items-center justify-between gap-3">
-            <span class="text-sm font-medium uppercase tracking-[0.18em] text-stone-900">{{ selected_heading }}</span>
+            <span class="text-sm font-medium uppercase tracking-[0.18em] text-stone-900">{{ resolved_selected_heading }}</span>
             <button
               type="button"
-              class="inline-flex min-h-10 items-center border-2 border-kvarteret-ink bg-white px-3 text-sm font-semibold text-kvarteret-ink shadow-none disabled:cursor-not-allowed disabled:opacity-45"
+              class="inline-flex min-h-10 items-center border border-kvarteret-ink bg-kvarteret-surface px-3 text-sm font-semibold text-kvarteret-ink shadow-none disabled:cursor-not-allowed disabled:opacity-45"
               @click="clearSelected()"
               :disabled="selectedVolunteers.length === 0"
             >
               Tøm
             </button>
           </div>
-          <div class="border-2 border-kvarteret-ink bg-white">
+          <div class="border border-kvarteret-ink bg-kvarteret-background">
             <template x-if="selectedVolunteers.length === 0">
               <p class="px-3 py-3 text-sm text-stone-700">{{ empty_selected_text }}</p>
             </template>
             <template x-for="volunteer in selectedVolunteers" :key="volunteer.volunteer_id">
-              <div class="flex items-center justify-between gap-3 border-b-2 border-kvarteret-ink px-3 py-3 last:border-b-0">
+              <div class="flex items-center justify-between gap-3 border-b border-kvarteret-ink px-3 py-3 last:border-b-0">
                 <a
-                  :href="volunteer.profile_url"
+                  :href="'/volunteers/' + volunteer.volunteer_id"
                   class="font-medium text-kvarteret-ink no-underline hover:text-kvarteret-red"
                   x-text="volunteer.full_name"
                 ></a>
                 <button
                   type="button"
-                  class="inline-flex min-h-10 items-center border-2 border-kvarteret-ink bg-white px-3 text-sm font-semibold text-kvarteret-ink shadow-none"
+                  class="inline-flex min-h-10 items-center border border-kvarteret-ink bg-kvarteret-surface px-3 text-sm font-semibold text-kvarteret-ink shadow-none"
                   @click="removeVolunteer(volunteer.volunteer_id)"
                 >
                   Fjern
@@ -163,7 +163,7 @@
             </template>
           </div>
           <template x-for="volunteer in selectedVolunteers" :key="'field-' + volunteer.volunteer_id">
-            <input type="hidden" name="{{ hidden_input_name }}" :value="volunteer.volunteer_id">
+            <input type="hidden" name="volunteer_ids" :value="volunteer.volunteer_id">
           </template>
         </div>
 

@@ -1,64 +1,106 @@
 @import "tailwindcss";
 
 @theme {
-  --color-kvarteret-red: #f54b4b;
-  --color-kvarteret-red-dark: #e03f3f;
-  --color-kvarteret-background: #fff7e4;
-  --color-kvarteret-surface: #fbf2df;
-  --color-kvarteret-sand: #e8d4b2;
-  --color-kvarteret-sand-dark: #d9bf95;
-  --color-kvarteret-night: #232b48;
-  --color-kvarteret-sky: #6d7696;
-  --color-kvarteret-glow: #f7b54a;
-  --color-kvarteret-ink: #171c30;
+  /* ── Amber (primary) ── */
+  --color-amber-500: oklch(60% 0.180 56);
+  --color-amber-600: oklch(50% 0.171 56);
+
+  /* ── Navy (foreground / border) ── */
+  --color-navy-600: oklch(50% 0.095 258);
+  --color-navy-700: oklch(40% 0.085 258);
+  --color-navy-950: oklch(14% 0.035 258);
+
+  /* ── Original warm off-white palette ── */
+  --color-kvarteret-red:        oklch(60% 0.180 56);   /* amber primary */
+  --color-kvarteret-red-dark:   oklch(50% 0.171 56);   /* amber darker */
+  --color-kvarteret-background: #fff7e4;               /* original warm off-white bg */
+  --color-kvarteret-surface:    #fbf2df;               /* original warm panel surface */
+  --color-kvarteret-sand:       #e8d4b2;               /* original sand */
+  --color-kvarteret-sand-dark:  #d9bf95;               /* original sand dark */
+  --color-kvarteret-night:      #232b48;               /* original night */
+  --color-kvarteret-sky:        #6d7696;               /* original sky */
+  --color-kvarteret-glow:       #f7b54a;               /* original glow */
+  --color-kvarteret-ink:        #171c30;               /* original ink */
 }
 
 @layer components {
+  /* Panel: 1px border + offset shadow */
   .app-panel {
-    @apply bg-kvarteret-surface/94 p-5 text-kvarteret-ink shadow-[0_22px_55px_-30px_rgba(245,75,75,0.2)] backdrop-blur-sm;
+    @apply bg-kvarteret-surface p-5;
+    border: 1px solid var(--color-kvarteret-ink);
+    box-shadow: 3px 3px 0 var(--color-kvarteret-ink);
   }
 
+  /* Input: 1px border, off-white bg */
   .app-input {
-    @apply border-0 border-b-2 border-kvarteret-red/45 bg-transparent px-0 py-2 text-lg text-kvarteret-ink placeholder:text-kvarteret-sky/65 focus:border-kvarteret-red;
+    @apply border border-kvarteret-ink px-3 py-3 text-lg text-kvarteret-ink placeholder:text-kvarteret-sky/65 focus:border-kvarteret-red focus:outline-none;
+    background-color: var(--color-kvarteret-background);
+    width: 100%;
   }
 
-  .app-select {
-    @apply bg-kvarteret-surface/95 px-3 py-3 text-sm text-kvarteret-ink shadow-[0_10px_30px_-24px_rgba(35,43,72,0.35)] focus:outline-none focus:ring-2 focus:ring-kvarteret-red/30;
-  }
-
-  select.app-input:not([multiple]),
-  select.app-select:not([multiple]) {
+  /* Select override: 1px border, off-white bg, no radius */
+  select.app-input:not([multiple]) {
     appearance: auto;
     -webkit-appearance: menulist;
-    background-color: var(--color-kvarteret-surface);
+    background-color: var(--color-kvarteret-background);
     color: var(--color-kvarteret-ink);
-    border: 1px solid color-mix(in srgb, var(--color-kvarteret-red) 45%, white);
-    border-radius: 0.75rem;
+    border: 1px solid var(--color-kvarteret-ink);
+    border-radius: 0;
     min-height: 3.5rem;
     padding: 0.75rem 1rem;
     line-height: 1.5;
-    box-shadow: 0 10px 30px -24px rgba(35, 43, 72, 0.35);
   }
 
-  select.app-input:not([multiple]):focus,
-  select.app-select:not([multiple]):focus {
+  select.app-input:not([multiple]):focus {
     outline: none;
     border-color: var(--color-kvarteret-red);
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--color-kvarteret-red) 25%, transparent),
-      0 10px 30px -24px rgba(35, 43, 72, 0.35);
   }
 
+  /* Primary button: amber + off-white text + 1px brutal shadow */
   .app-button {
-    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-kvarteret-surface shadow-[0_18px_36px_-18px_rgba(245,75,75,0.55)] transition hover:bg-kvarteret-red-dark;
+    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold;
+    color: var(--color-kvarteret-surface);
+    border: 1px solid var(--color-kvarteret-ink);
+    box-shadow: 3px 3px 0 var(--color-kvarteret-ink);
+    transition: transform 80ms ease-out, box-shadow 80ms ease-out;
+
+    &:hover:not(:disabled) {
+      transform: translate(-2px, -2px);
+      box-shadow: 5px 5px 0 var(--color-kvarteret-ink);
+    }
+    &:active:not(:disabled) {
+      transform: translate(1px, 1px);
+      box-shadow: 2px 2px 0 var(--color-kvarteret-ink);
+    }
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
   }
 
+  /* Secondary button: sand bg + ink text for clear contrast */
   .app-button-secondary {
-    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-sand px-6 font-semibold text-kvarteret-night shadow-[0_16px_32px_-24px_rgba(35,43,72,0.26)] transition hover:bg-kvarteret-sand-dark;
+    @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-sand px-6 font-semibold;
+    color: var(--color-kvarteret-ink);
+    border: 1px solid var(--color-kvarteret-ink);
+    box-shadow: 3px 3px 0 var(--color-kvarteret-ink);
+    transition: transform 80ms ease-out, box-shadow 80ms ease-out;
+
+    &:hover:not(:disabled) {
+      transform: translate(-2px, -2px);
+      box-shadow: 5px 5px 0 var(--color-kvarteret-ink);
+      background-color: var(--color-kvarteret-sand-dark);
+    }
+    &:active:not(:disabled) {
+      transform: translate(1px, 1px);
+      box-shadow: 2px 2px 0 var(--color-kvarteret-ink);
+    }
   }
 
+  /* Badge: 1px border */
   .app-badge {
-    @apply inline-flex min-h-8 items-center bg-kvarteret-red/12 px-3 text-sm font-medium text-kvarteret-night;
+    @apply inline-flex min-h-8 items-center px-3 text-sm font-semibold text-kvarteret-night;
+    border: 1px solid var(--color-kvarteret-ink);
   }
 }
 
@@ -96,6 +138,6 @@
 
   ::selection {
     background: color-mix(in srgb, var(--color-kvarteret-red) 35%, white);
-    color: var(--color-kvarteret-night);
+    color: var(--color-kvarteret-ink);
   }
 }

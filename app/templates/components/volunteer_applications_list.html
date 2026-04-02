@@ -1,31 +1,31 @@
 <section class="app-panel" id="volunteer-application-list-panel">
   <div class="grid gap-0">
     {% for volunteer_application in volunteer_applications %}
-      <article class="border-b border-stone-300 py-5">
+      <article class="border-b border-kvarteret-ink py-5">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div class="grid gap-1">
             <div class="flex flex-wrap items-center gap-3">
-              <p class="text-sm font-medium text-stone-500">{{ volunteer_application.email }}</p>
-              <a class="inline-flex items-center justify-center rounded-full bg-kvarteret-sand px-3 py-1 text-xs font-semibold text-kvarteret-night shadow-md hover:bg-kvarteret-sand-dark" href="/apply/{{ volunteer_application.token }}">Send inn nå</a>
+              <p class="text-sm font-medium text-kvarteret-sky">{{ volunteer_application.email }}</p>
+              <a class="app-button-secondary inline-flex min-h-8 px-3 text-xs" href="/apply/{{ volunteer_application.token }}">Send inn nå</a>
             </div>
             {% if volunteer_application.initial_group_name and volunteer_application.initial_role_name %}
-              <p class="text-sm text-stone-700">Planlagt verv: {{ volunteer_application.initial_group_name }} · {{ volunteer_application.initial_role_name }}</p>
+              <p class="text-sm text-kvarteret-night">Planlagt verv: {{ volunteer_application.initial_group_name }} · {{ volunteer_application.initial_role_name }}</p>
             {% elif volunteer_application.initial_group_name %}
-              <p class="text-sm text-stone-700">Planlagt gruppe: {{ volunteer_application.initial_group_name }}</p>
+              <p class="text-sm text-kvarteret-night">Planlagt gruppe: {{ volunteer_application.initial_group_name }}</p>
             {% endif %}
             {% if volunteer_application.submitted %}
-              <p class="text-lg font-medium tracking-tight text-stone-900">{{ volunteer_application.first_name or "" }} {{ volunteer_application.last_name or "" }}</p>
-              <p class="text-sm text-stone-700">{{ volunteer_application.phone or "Ingen telefon sendt inn" }}</p>
+              <p class="text-lg font-medium tracking-tight text-kvarteret-ink">{{ volunteer_application.first_name or "" }} {{ volunteer_application.last_name or "" }}</p>
+              <p class="text-sm text-kvarteret-night">{{ volunteer_application.phone or "Ingen telefon sendt inn" }}</p>
             {% else %}
-              <p class="text-sm text-stone-700">Invitasjon sendt. Venter på innsending fra frivillig.</p>
+              <p class="text-sm text-kvarteret-night">Invitasjon sendt. Venter på innsending fra frivillig.</p>
             {% endif %}
           </div>
           <div class="flex flex-wrap gap-3">
             {% if volunteer_application.submitted %}
-              <a class="inline-flex min-h-11 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" href="/volunteer-applications/{{ volunteer_application.registration_id }}">Se søknad</a>
+              <a class="app-button" href="/volunteer-applications/{{ volunteer_application.registration_id }}">Se søknad</a>
             {% else %}
               <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/resend" method="post">
-                <button class="inline-flex min-h-11 items-center justify-center bg-kvarteret-sand px-4 text-sm font-semibold text-kvarteret-night shadow-md hover:bg-kvarteret-sand-dark" type="submit">Send e-post på nytt</button>
+                <button class="app-button-secondary" type="submit">Send e-post på nytt</button>
               </form>
             {% endif %}
             <form
@@ -37,7 +37,7 @@
               method="post"
               onsubmit="return window.confirm('{% if volunteer_application.submitted %}Avvise denne søknaden?{% else %}Avbryte denne invitasjonen?{% endif %}');"
             >
-              <button class="inline-flex min-h-11 items-center justify-center bg-kvarteret-red px-4 text-sm font-semibold text-white shadow-md hover:bg-red-700" type="submit">
+              <button class="app-button" type="submit">
                 {% if volunteer_application.submitted %}Avvis{% else %}Avbryt{% endif %}
               </button>
             </form>
@@ -45,7 +45,7 @@
         </div>
       </article>
     {% else %}
-      <p class="py-6 text-sm text-stone-600">Ingen åpne frivilligsøknader.</p>
+      <p class="py-6 text-sm text-kvarteret-sky">Ingen åpne frivilligsøknader.</p>
     {% endfor %}
   </div>
 </section>
