@@ -10,17 +10,17 @@ from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
 from app.media_tokens import MediaTokenService
 from app.runtime import ApplicationContainer
-from app.services.feedback import FeedbackService
-from app.services.courses import CoursesService
-from app.services.groups import GroupsService
-from app.services.mobile_card import MobileCardService
-from app.services.mobile_card_april_state import MobileCardAprilStateService
-from app.services.now_playing import NowPlayingService
-from app.services.volunteers import VolunteersService
-from app.services.volunteer_applications import VolunteerApplicationsService
-from app.services.search import VolunteerSearchService
-from app.services.semester_transfer import SemesterTransferService
-from app.services.admin_accounts import AdminAccountsService
+from app.domain.feedback.service import FeedbackService
+from app.domain.courses.service import CoursesService
+from app.domain.groups.service import GroupsService
+from app.domain.mobile_card.service import MobileCardService
+from app.domain.mobile_card.april_state import MobileCardAprilStateService
+from app.domain.spotify.now_playing import NowPlayingService
+from app.domain.volunteers.service import VolunteersService
+from app.domain.volunteer_applications.service import VolunteerApplicationsService
+from app.domain.search import VolunteerSearchService
+from app.domain.volunteers.semester_transfer import SemesterTransferService
+from app.domain.admin_accounts.service import AdminAccountsService
 
 
 @dataclass(slots=True)

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.dependencies import get_mobile_card_service
-from app.services.mobile_card import (
+from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardDuplicatePersonError,
     MobileCardInvalidAccessCodeError,

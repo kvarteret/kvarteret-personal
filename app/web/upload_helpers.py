@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import UploadFile
 
-from app.services.photo_processing import PhotoUploadTooLargeError
+from app.infrastructure.media.photo_processing import PhotoUploadTooLargeError
 
 
 async def read_upload_file_limited(
