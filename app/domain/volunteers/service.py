@@ -107,6 +107,7 @@ class VolunteersService:
         query: str | None = None,
         limit: int = 10,
         cursor: str | None = None,
+        only_active: bool = False,
     ) -> VolunteerListPage:
         # Browsing and free-text search need different cursor strategies: browse
         # uses stable name-based cursors, while search falls back to offsets because the query drives ordering.
@@ -115,7 +116,12 @@ class VolunteersService:
         normalized_query = normalize_search_query(query)
         try:
             if normalized_query:
-                page = await self._search_volunteers_page(normalized_query, safe_limit, cursor)
+                page = await self._search_volunteers_page(
+                    normalized_query,
+                    safe_limit,
+                    cursor,
+                    only_active=only_active,
+                )
             else:
                 decoded = _decode_cursor(cursor)
                 rows = await self.repository.list_volunteers_page(
@@ -123,6 +129,7 @@ class VolunteersService:
                     after_last_name=decoded.get("last_name") if decoded.get("mode") == "browse" else None,
                     after_first_name=decoded.get("first_name") if decoded.get("mode") == "browse" else None,
                     after_volunteer_id=decoded.get("volunteer_id") if decoded.get("mode") == "browse" else None,
+                    only_active=only_active,
                 )
                 has_more = len(rows) > safe_limit
                 visible_rows = rows[:safe_limit]
@@ -141,7 +148,7 @@ class VolunteersService:
                 logger,
                 operation="volunteers.search" if normalized_query else "volunteers.list",
                 started_at=started_at,
-                details={"query": normalized_query or "", "limit": safe_limit},
+                details={"query": normalized_query or "", "limit": safe_limit, "only_active": only_active},
             )
 
     async def get_volunteer_detail(self, volunteer_id: int) -> VolunteerDetail | None:
@@ -604,7 +611,14 @@ class VolunteersService:
             raise NotConfiguredError("Storage-backed volunteer writes are not configured yet.")
         return self.storage_service
 
-    async def _search_volunteers_page(self, normalized_query: str, limit: int, cursor: str | None) -> VolunteerListPage:
+    async def _search_volunteers_page(
+        self,
+        normalized_query: str,
+        limit: int,
+        cursor: str | None,
+        *,
+        only_active: bool = False,
+    ) -> VolunteerListPage:
         # Search pagination intentionally uses a bounded offset cursor instead of
         # reusing browse cursors, because query-shaped result sets do not have a stable natural key order.
         decoded = _decode_cursor(cursor)
@@ -613,6 +627,7 @@ class VolunteersService:
             normalized_query=normalized_query,
             limit=limit + 1,
             offset=max(0, min(offset, 10_000)),
+            only_active=only_active,
         )
         has_more = len(rows) > limit
         visible_rows = rows[:limit]

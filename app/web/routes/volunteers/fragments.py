@@ -18,15 +18,27 @@ from app.web.templates import templates
 router = APIRouter()
 
 
+def _to_checkbox_bool(value: str | None, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() == "on"
+
+
 @router.get("/volunteers/list")
 async def volunteers_results(
     request: Request,
     q: str | None = None,
     cursor: str | None = None,
+    only_active: str | None = None,
     current_user=Depends(require_authenticated_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
-    page = await volunteers_service.list_volunteers_page(query=q, limit=20, cursor=cursor)
+    page = await volunteers_service.list_volunteers_page(
+        query=q,
+        limit=20,
+        cursor=cursor,
+        only_active=_to_checkbox_bool(only_active, default=True),
+    )
     return templates.TemplateResponse(
         request,
         "components/volunteers/volunteer_results.html",
