@@ -107,6 +107,7 @@ class RecentVolunteerRegistrationItem:
     latest_role_name: str | None
     latest_semester_code: int | None = None
     latest_semester_label: str | None = None
+    photo_url: str | None = None
 
 
 @dataclass(slots=True)
@@ -274,6 +275,13 @@ class VolunteerApplicationsService:
                 latest_semester_label=(
                     format_semester_code(row["latest_semester_code"])
                     if row["latest_semester_code"] is not None
+                    else None
+                ),
+                photo_url=(
+                    self.repository.media_token_service.build_photo_media_url(
+                        f"{row['photo_sha1']}.{row['photo_filetype']}"
+                    )
+                    if row.get("photo_sha1") and row.get("photo_filetype") and self.repository.media_token_service is not None
                     else None
                 ),
             )

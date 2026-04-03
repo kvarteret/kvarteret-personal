@@ -1,16 +1,23 @@
 {% for registration in recent_registrations %}
   <a class="grid gap-3 border-b border-stone-200 py-4 text-stone-900 no-underline transition hover:bg-stone-50/80" href="/volunteers/{{ registration.volunteer_id }}">
     <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-      <div class="grid gap-1">
-        <div class="flex flex-wrap items-center gap-3">
-          <p class="text-lg font-medium tracking-tight text-stone-900">{{ registration.full_name }}</p>
+      <div class="flex min-w-0 items-start gap-3">
+        <div class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-200 text-sm font-semibold text-stone-600">
+          {% if registration.photo_url %}
+            <img alt="{{ registration.full_name }}" class="h-full w-full object-cover" decoding="async" loading="lazy" src="{{ registration.photo_url }}">
+          {% else %}
+            {{ registration.last_name[:1] }}
+          {% endif %}
         </div>
-        <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-600">
-          <span>{{ registration.email or "Ingen e-post" }}</span>
-          <span>{{ registration.phone or "Ingen telefon" }}</span>
+        <div class="grid gap-1">
+          <p class="text-lg font-medium tracking-tight text-stone-900">{{ registration.full_name }}</p>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-600">
+            <span>{{ registration.email or "Ingen e-post" }}</span>
+            <span>{{ registration.phone or "Ingen telefon" }}</span>
+          </div>
         </div>
       </div>
-      <p class="text-sm font-medium text-stone-500">
+      <p class="text-sm font-medium text-stone-500 shrink-0">
         Registrert {{ registration.created_at.strftime("%d.%m.%Y") }}
       </p>
     </div>
@@ -31,7 +38,7 @@
 
 {% if not recent_registrations and not cursor %}
   <div class="py-10 text-center text-sm text-stone-600">
-    Ingen godkjente registreringer enda.
+    Ingen godkjente frivillige enda.
   </div>
 {% endif %}
 
@@ -45,6 +52,6 @@
     hx-trigger="revealed"
     hx-vals='{"cursor": "{{ next_cursor }}"}'
   >
-    Laster flere registreringer...
+    Laster...
   </div>
 {% endif %}

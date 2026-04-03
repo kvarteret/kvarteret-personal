@@ -155,7 +155,7 @@
                   </a>
                   {% if request.state.show_management_tools %}
                     <a class="inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-medium no-underline {% if section == 'volunteer-applications' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)] hover:bg-kvarteret-red-dark{% else %}bg-kvarteret-red/10 text-kvarteret-night hover:bg-[#e2d0b3]{% endif %}" href="/volunteer-applications">
-                      <span>Registreringer</span>
+                      <span>Nye frivillige</span>
                       {% if request.state.volunteer_application_pending_count %}
                         <span class="inline-flex min-w-6 items-center justify-center rounded-full bg-kvarteret-night px-2 py-0.5 text-xs font-semibold text-kvarteret-surface">{{ request.state.volunteer_application_pending_count }}</span>
                       {% endif %}
