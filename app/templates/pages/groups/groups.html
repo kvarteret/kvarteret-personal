@@ -23,7 +23,7 @@
     {% set inactive_groups = groups | rejectattr("active") | list %}
 
     {% if groups %}
-      <div class="grid gap-6 xl:grid-cols-2">
+      <div class="grid gap-6">
         <section class="app-panel">
           <h2 class="border-b border-stone-300 pb-3 text-2xl font-medium tracking-tight text-stone-900">Aktive grupper</h2>
           <div class="grid gap-0">
