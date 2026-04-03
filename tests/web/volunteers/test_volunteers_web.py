@@ -75,6 +75,9 @@ class FakeVolunteersService:
             next_cursor="cursor-2" if cursor is None else None,
         )
 
+    async def count_volunteers(self, query: str | None = None, only_active: bool = False) -> int:
+        return len((await self.list_volunteers_page(query=query, limit=50, cursor=None, only_active=only_active)).items)
+
     async def get_volunteer_detail(self, volunteer_id: int) -> VolunteerDetail | None:
         if volunteer_id != 12:
             return None
@@ -362,7 +365,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert 'name="only_active"' in list_response.text
     assert 'type="checkbox"' in list_response.text
     assert 'checked' in list_response.text
-    assert "Bare aktive frivillige" in list_response.text
+    assert "Søk bare aktive frivillige" in list_response.text
     assert "Sir Nils Olav III" in list_response.text
     assert 'href="/volunteers/stats"' in list_response.text
     assert 'hx-trigger="keyup changed delay:300ms, search"' in list_response.text
