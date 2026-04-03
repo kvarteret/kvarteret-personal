@@ -154,11 +154,14 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 latest_assignment.c.latest_semester_code,
                 grupper.c.navn.label("latest_group_name"),
                 verv.c.verv.label("latest_role_name"),
+                personal_bilde.c.sha1.label("photo_sha1"),
+                personal_bilde.c.filetype.label("photo_filetype"),
             )
             .select_from(
                 personal.outerjoin(latest_assignment, latest_assignment.c.id_personal == personal.c.id)
                 .outerjoin(grupper, grupper.c.id == latest_assignment.c.latest_group_id)
                 .outerjoin(verv, verv.c.id == latest_assignment.c.latest_role_id)
+                .outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id)
             )
             .order_by(personal.c.id.desc())
             .limit(limit)

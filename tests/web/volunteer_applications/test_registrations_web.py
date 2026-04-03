@@ -284,10 +284,10 @@ def test_volunteer_application_pages_render() -> None:
     submitted_response = client.get("/apply/token-123/submitted")
 
     assert admin_response.status_code == 200
-    assert "Frivilligsøknader" in admin_response.text
+    assert "Nye frivillige" in admin_response.text
     assert "Opprett invitasjon" in admin_response.text
     assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
-    assert "Siste registreringer" in admin_response.text
+    assert "Siste nye frivillige" in admin_response.text
     assert "Ny Frivillig" in admin_response.text
     assert 'hx-get="/volunteer-applications/recent-registrations"' in admin_response.text
     assert public_response.status_code == 200
