@@ -48,13 +48,20 @@
               <label class="inline-flex items-center gap-3 text-sm text-stone-700" for="only_active">
                 <input
                   class="h-4 w-4 accent-kvarteret-red"
+                  hx-disinherit="hx-select hx-target hx-swap"
+                  hx-get="/volunteers/list"
+                  hx-include="#volunteer-search"
+                  hx-push-url="true"
+                  hx-target="#volunteer-results"
+                  hx-trigger="change"
+                  hx-vals='{"cursor": ""}'
                   id="only_active"
                   name="only_active"
                   type="checkbox"
                   value="on"
                   {% if only_active %}checked{% endif %}
                 >
-                <span>Bare aktive frivillige</span>
+                <span>Søk bare aktive frivillige dette semesteret</span>
               </label>
             </div>
             <div class="flex min-h-12 flex-wrap items-center gap-3 lg:justify-end">

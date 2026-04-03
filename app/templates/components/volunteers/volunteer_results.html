@@ -1,3 +1,18 @@
+{% if total_count is not none %}
+  <div class="flex items-center gap-2 border-b border-stone-300 pb-3 mb-1">
+    <span class="text-sm text-stone-600">
+      {% if query and only_active %}
+        {{ total_count }} treff i dette semesteret
+      {% elif query %}
+        {{ total_count }} treff
+      {% elif only_active %}
+        {{ total_count }} aktive frivillige dette semesteret
+      {% else %}
+        {{ total_count }} frivillige
+      {% endif %}
+    </span>
+  </div>
+{% endif %}
 {% for volunteer in volunteers %}
   <a class="grid gap-4 border-b border-stone-300 py-4 text-stone-900 no-underline transition hover:bg-white/60 md:grid-cols-[minmax(0,1.7fr)_minmax(10rem,0.8fr)_minmax(14rem,1fr)_minmax(13rem,1fr)_minmax(10rem,0.8fr)] md:items-center" href="/volunteers/{{ volunteer.volunteer_id }}">
     <div class="flex min-w-0 items-center gap-4">
@@ -9,19 +24,19 @@
         {% endif %}
       </div>
       <div class="min-w-0">
-        <div class="truncate text-[1.15rem] font-normal tracking-[-0.03em]">{{ volunteer.full_name }}</div>
+        <div class="truncate text-[1.15rem] font-medium tracking-[-0.03em]">{{ volunteer.full_name }}</div>
       </div>
     </div>
-    <div class="text-sm text-stone-700">Tlf: {{ volunteer.phone or "-" }}</div>
-    <div class="text-sm text-stone-700">{{ volunteer.email or "Ingen e-post" }}</div>
-    <div class="text-sm text-stone-700">
+    <div class="text-sm text-stone-800">Tlf: {{ volunteer.phone or "-" }}</div>
+    <div class="text-sm text-stone-800">{{ volunteer.email or "Ingen e-post" }}</div>
+    <div class="text-sm text-stone-800">
       {% if volunteer.last_semester_label %}
         Sist registrert {{ volunteer.last_semester_label }}
       {% else %}
         Ingen registrert historikk
       {% endif %}
     </div>
-    <div class="text-sm text-stone-700">{{ volunteer.pingvin_points }} pingvinpoeng</div>
+    <div class="text-sm text-stone-800">{{ volunteer.pingvin_points }} pingvinpoeng</div>
   </a>
 {% endfor %}
 

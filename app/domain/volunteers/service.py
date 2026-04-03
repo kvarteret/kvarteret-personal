@@ -102,6 +102,15 @@ class VolunteersService:
             for item in sorted(items, key=lambda item: (item.full_name.lower(), item.volunteer_id))[:limit]
         ]
 
+    async def count_volunteers(self, query: str | None = None, only_active: bool = False) -> int:
+        normalized_query = normalize_search_query(query)
+        if normalized_query:
+            return await self.repository.count_volunteers_search(
+                normalized_query=normalized_query,
+                only_active=only_active,
+            )
+        return await self.repository.count_volunteers(only_active=only_active)
+
     async def list_volunteers_page(
         self,
         query: str | None = None,

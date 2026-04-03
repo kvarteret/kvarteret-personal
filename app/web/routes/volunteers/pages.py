@@ -69,11 +69,14 @@ async def volunteers_index(
 ):
     only_active_enabled = _to_checkbox_bool(only_active, default=True)
     try:
-        page = await volunteers_service.list_volunteers_page(
-            query=q,
-            limit=VOLUNTEERS_PAGE_SIZE,
-            cursor=cursor,
-            only_active=only_active_enabled,
+        page, total_count = await asyncio.gather(
+            volunteers_service.list_volunteers_page(
+                query=q,
+                limit=VOLUNTEERS_PAGE_SIZE,
+                cursor=cursor,
+                only_active=only_active_enabled,
+            ),
+            volunteers_service.count_volunteers(query=q, only_active=only_active_enabled),
         )
     except NotConfiguredError:
         raise HTTPException(
@@ -92,6 +95,7 @@ async def volunteers_index(
             "cursor": cursor,
             "only_active": only_active_enabled,
             "next_cursor": page.next_cursor,
+            "total_count": total_count,
         },
     )
 

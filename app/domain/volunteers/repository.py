@@ -72,6 +72,20 @@ class VolunteersRepository(SqlAlchemyRepository):
             )
         )
 
+    async def count_volunteers(self, *, only_active: bool = False) -> int:
+        active_volunteers = _current_active_volunteers_subquery() if only_active else None
+        base = select(volunteer_records.c.id)
+        if active_volunteers is not None:
+            base = base.select_from(
+                volunteer_records.join(active_volunteers, active_volunteers.c.id_personal == volunteer_records.c.id)
+            )
+        stmt = select(func.count()).select_from(base.subquery())
+        return await self.fetch_scalar(stmt) or 0
+
+    async def count_volunteers_search(self, *, normalized_query: str, only_active: bool = False) -> int:
+        stmt = _build_volunteer_search_count_stmt(normalized_query=normalized_query, only_active=only_active)
+        return await self.fetch_scalar(stmt) or 0
+
     async def fetch_volunteer_shell_row(self, volunteer_id: int) -> dict[str, Any] | None:
         points = _pingvin_points_subquery()
         discount_levels = _current_discount_level_subquery()
@@ -662,8 +676,8 @@ def _current_active_volunteers_subquery():
     )
 
 
-def _assignment_search_text_subquery():
-    return (
+def _assignment_search_text_subquery(*, only_current_semester: bool = True):
+    base = (
         select(
             role_assignments.c.id_personal.label("id_personal"),
             func.coalesce(func.lower(func.string_agg(func.distinct(groups.c.navn), literal(" "))), "").label("group_names"),
@@ -678,15 +692,17 @@ def _assignment_search_text_subquery():
                 assignment_roles.c.id == role_assignments.c.id_verv,
             )
         )
-        .where(role_assignments.c.semester == get_current_semester_code())
-        .where(role_assignments.c.signert_kontrakt.is_(True))
         .group_by(role_assignments.c.id_personal)
-        .subquery()
     )
+    if only_current_semester:
+        base = base.where(role_assignments.c.semester == get_current_semester_code()).where(
+            role_assignments.c.signert_kontrakt.is_(True)
+        )
+    return base.subquery()
 
 
 def _build_volunteer_search_stmt(*, normalized_query: str, limit: int, offset: int, only_active: bool = False):
-    assignment_search_text = _assignment_search_text_subquery()
+    assignment_search_text = _assignment_search_text_subquery(only_current_semester=only_active)
     active_volunteers = _current_active_volunteers_subquery() if only_active else None
     search = _search_columns(assignment_search_text)
     tokens = normalized_query.split()
@@ -748,3 +764,38 @@ def _build_volunteer_search_stmt(*, normalized_query: str, limit: int, offset: i
         .offset(offset)
     )
     return stmt
+
+
+def _build_volunteer_search_count_stmt(*, normalized_query: str, only_active: bool = False):
+    assignment_search_text = _assignment_search_text_subquery(only_current_semester=only_active)
+    active_volunteers = _current_active_volunteers_subquery() if only_active else None
+    search = _search_columns(assignment_search_text)
+    tokens = normalized_query.split()
+    token_filters = [
+        or_(
+            search.full_name.contains(token),
+            search.first_name.contains(token),
+            search.last_name.contains(token),
+            search.email.contains(token),
+            search.phone.contains(token),
+            search.group_names.contains(token),
+            search.role_names.contains(token),
+            func.word_similarity(search.full_name, token) >= 0.55,
+            func.similarity(search.first_name, token) >= 0.40,
+            func.similarity(search.last_name, token) >= 0.40,
+        )
+        for token in tokens
+    ]
+    subq = (
+        select(volunteer_records.c.id)
+        .select_from(
+            volunteer_records
+            if active_volunteers is None
+            else volunteer_records.join(active_volunteers, active_volunteers.c.id_personal == volunteer_records.c.id)
+        )
+        .outerjoin(volunteer_photos, volunteer_photos.c.id_personal == volunteer_records.c.id)
+        .outerjoin(assignment_search_text, assignment_search_text.c.id_personal == volunteer_records.c.id)
+        .where(and_(*token_filters))
+        .subquery()
+    )
+    return select(func.count()).select_from(subq)

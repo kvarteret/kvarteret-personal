@@ -33,12 +33,16 @@ async def volunteers_results(
     current_user=Depends(require_authenticated_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
+    only_active_bool = _to_checkbox_bool(only_active, default=True)
     page = await volunteers_service.list_volunteers_page(
         query=q,
         limit=20,
         cursor=cursor,
-        only_active=_to_checkbox_bool(only_active, default=True),
+        only_active=only_active_bool,
     )
+    total_count = None
+    if not cursor:
+        total_count = await volunteers_service.count_volunteers(query=q, only_active=only_active_bool)
     return templates.TemplateResponse(
         request,
         "components/volunteers/volunteer_results.html",
@@ -48,6 +52,8 @@ async def volunteers_results(
             "query": q or "",
             "cursor": cursor,
             "next_cursor": page.next_cursor,
+            "total_count": total_count,
+            "only_active": only_active_bool,
         },
     )
 
