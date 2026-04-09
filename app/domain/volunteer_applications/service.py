@@ -12,11 +12,17 @@ from app.config import Settings
 from app.errors import NotConfiguredError
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.infrastructure.media.photo_processing import process_uploaded_photo
-from app.infrastructure.contact.phone_numbers import require_e164_phone_number
+from app.infrastructure.contact.phone_numbers import normalize_phone_number, require_e164_phone_number
 from app.infrastructure.formatting.semester import format_semester_code
 from app.infrastructure.storage.service import StorageService
 
 logger = logging.getLogger(__name__)
+
+PUBLIC_PROSPECT_GROUPS = {
+    "skjenkegruppen": "Skjenkegruppen",
+    "kraft": "Kraftetaten",
+    "vaktetaten": "Vaktetaten",
+}
 
 
 class VolunteerApplicationsError(RuntimeError):
@@ -61,13 +67,25 @@ class VolunteerApplicationListItem:
     email: str
     created_at: datetime
     submitted: bool
+    source: str
+    status: str
+    pending_volunteer_id: int | None
     first_name: str | None
     last_name: str | None
     phone: str | None
+    study_institution: str | None
+    background_details: str | None
     initial_group_id: int | None = None
     initial_group_name: str | None = None
     initial_role_id: int | None = None
     initial_role_name: str | None = None
+    first_choice_group_id: int | None = None
+    first_choice_group_name: str | None = None
+    second_choice_group_id: int | None = None
+    second_choice_group_name: str | None = None
+    trial_shift_attended: bool = False
+    promoted_volunteer_id: int | None = None
+    promoted_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -77,6 +95,8 @@ class VolunteerApplicationDetail:
     email: str
     created_at: datetime
     submitted: bool
+    source: str
+    status: str
     pending_volunteer_id: int | None
     first_name: str | None
     last_name: str | None
@@ -88,10 +108,20 @@ class VolunteerApplicationDetail:
     photo_sha1: str | None
     photo_filetype: str | None
     photo_url: str | None
+    study_institution: str | None
+    background_details: str | None
     initial_group_id: int | None = None
     initial_group_name: str | None = None
     initial_role_id: int | None = None
     initial_role_name: str | None = None
+    first_choice_group_id: int | None = None
+    first_choice_group_name: str | None = None
+    second_choice_group_id: int | None = None
+    second_choice_group_name: str | None = None
+    trial_shift_attended: bool = False
+    trial_shift_marked_at: datetime | None = None
+    promoted_volunteer_id: int | None = None
+    promoted_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -129,7 +159,24 @@ class VolunteerApplicationSubmissionInput:
     postal_code: str | None
 
 
+@dataclass(slots=True)
+class PublicProspectRegistrationInput:
+    full_name: str
+    email: str
+    phone: str
+    study_institution: str
+    background_details: str | None
+    first_choice_group_slug: str
+    second_choice_group_slug: str | None
+
+
 class VolunteerApplicationsServiceProtocol(Protocol):
+    async def create_public_prospect_registration(
+        self,
+        registration: PublicProspectRegistrationInput,
+        *,
+        base_url: str | None = None,
+    ) -> VolunteerApplicationDetail: ...
     async def create_volunteer_application_invitation(
         self,
         email: str,
@@ -157,7 +204,14 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         photo_content: bytes | None = None,
         photo_content_type: str | None = None,
     ) -> VolunteerApplicationDetail: ...
-    async def approve_volunteer_application(self, registration_id: int) -> int: ...
+    async def mark_trial_shift_attended(self, registration_id: int, *, attended: bool) -> VolunteerApplicationDetail: ...
+    async def approve_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None = None,
+        base_url: str | None = None,
+    ) -> int: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...
     async def resend_volunteer_application_invitation(
         self,
@@ -168,6 +222,19 @@ class VolunteerApplicationsServiceProtocol(Protocol):
 
 
 class VolunteerApplicationsRepositoryProtocol(Protocol):
+    async def create_public_prospect_registration(
+        self,
+        *,
+        token: str,
+        email: str,
+        first_name: str | None,
+        last_name: str,
+        phone: str | None,
+        study_institution: str | None,
+        background_details: str | None,
+        first_choice_group_id: int,
+        second_choice_group_id: int | None,
+    ) -> VolunteerApplicationDetail: ...
     async def create_volunteer_application_invitation(
         self,
         *,
@@ -181,6 +248,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
+    async def find_group_ids_by_names(self, names: list[str]) -> dict[str, int]: ...
     async def save_submission(
         self,
         *,
@@ -190,9 +258,15 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         photo_sha1: str | None,
         photo_filetype: str | None,
     ) -> None: ...
+    async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None: ...
     async def list_group_admin_email_recipients(self, group_id: int) -> list[str]: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
-    async def approve_volunteer_application(self, registration: VolunteerApplicationDetail) -> int: ...
+    async def approve_volunteer_application(
+        self,
+        registration: VolunteerApplicationDetail,
+        *,
+        accepted_group_id: int | None,
+    ) -> int: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...
 
 
@@ -213,6 +287,61 @@ class VolunteerApplicationsService:
             ttl_seconds=pending_count_cache_ttl_seconds,
             max_entries=1,
         )
+
+    async def create_public_prospect_registration(
+        self,
+        registration: PublicProspectRegistrationInput,
+        *,
+        base_url: str | None = None,
+    ) -> VolunteerApplicationDetail:
+        normalized_email = registration.email.strip().lower()
+        if not normalized_email:
+            raise VolunteerApplicationValidationError("E-postadresse er påkrevd.")
+        duplicate_volunteer = await self.repository.find_volunteer_id_by_email(normalized_email)
+        if duplicate_volunteer is not None:
+            raise VolunteerAlreadyExistsError(duplicate_volunteer, normalized_email)
+
+        first_choice_slug = registration.first_choice_group_slug.strip().lower()
+        second_choice_slug = (registration.second_choice_group_slug or "").strip().lower()
+        if not first_choice_slug:
+            raise VolunteerApplicationValidationError("Velg et førstevalg.")
+        if second_choice_slug and first_choice_slug == second_choice_slug:
+            raise VolunteerApplicationValidationError("Førstevalg og andrevalg må være ulike grupper.")
+
+        known_choice_names = {
+            slug: PUBLIC_PROSPECT_GROUPS[slug]
+            for slug in [first_choice_slug, second_choice_slug]
+            if slug
+            if slug in PUBLIC_PROSPECT_GROUPS
+        }
+        expected_choice_count = 1 + (1 if second_choice_slug else 0)
+        if len(known_choice_names) != expected_choice_count:
+            raise VolunteerApplicationValidationError("Én eller flere valgte grupper støttes ikke i denne lanseringen.")
+
+        group_ids_by_name = await self.repository.find_group_ids_by_names(list(known_choice_names.values()))
+        if len(group_ids_by_name) != expected_choice_count:
+            raise VolunteerApplicationConflictError("Én eller flere valgte grupper finnes ikke i personaldatabasen.")
+
+        first_name, last_name = _split_full_name(registration.full_name)
+        token = token_urlsafe(24)
+        detail = await self.repository.create_public_prospect_registration(
+            token=token,
+            email=normalized_email,
+            first_name=first_name,
+            last_name=last_name,
+            phone=normalize_phone_number(registration.phone),
+            study_institution=_normalize_optional_text(registration.study_institution),
+            background_details=_normalize_optional_text(registration.background_details),
+            first_choice_group_id=group_ids_by_name[known_choice_names[first_choice_slug]],
+            second_choice_group_id=(
+                group_ids_by_name[known_choice_names[second_choice_slug]]
+                if second_choice_slug
+                else None
+            ),
+        )
+        self._invalidate_pending_count_cache()
+        await self._notify_group_admins_of_prospect(detail, base_url=base_url)
+        return detail
 
     async def create_volunteer_application_invitation(
         self,
@@ -383,20 +512,58 @@ class VolunteerApplicationsService:
         detail = await self.get_volunteer_application_by_token(token)
         if detail is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
-        await self._notify_group_admins_of_submission(detail, base_url=base_url)
+        if detail.promoted_volunteer_id is None and detail.submitted:
+            await self._notify_group_admins_of_submission(detail, base_url=base_url)
         return detail
 
-    async def approve_volunteer_application(self, registration_id: int) -> int:
+    async def mark_trial_shift_attended(
+        self,
+        registration_id: int,
+        *,
+        attended: bool,
+    ) -> VolunteerApplicationDetail:
+        detail = await self.get_volunteer_application_detail(registration_id)
+        if detail is None:
+            raise VolunteerApplicationNotFoundError("Registration was not found.")
+        await self.repository.set_trial_shift_attended(registration_id, attended=attended)
+        refreshed = await self.get_volunteer_application_detail(registration_id)
+        if refreshed is None:
+            raise VolunteerApplicationNotFoundError("Registration was not found.")
+        return refreshed
+
+    async def approve_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None = None,
+        base_url: str | None = None,
+    ) -> int:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError("Registration was not found.")
         if detail.pending_volunteer_id is None:
-            raise VolunteerApplicationConflictError("Registration has not been submitted yet.")
+            raise VolunteerApplicationConflictError("Registration is missing prospect details.")
+        if detail.promoted_volunteer_id is not None:
+            raise VolunteerApplicationConflictError("Registration has already been promoted.")
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(detail.email)
         if duplicate_volunteer is not None:
             raise VolunteerAlreadyExistsError(duplicate_volunteer, detail.email)
-        volunteer_id = await self.repository.approve_volunteer_application(detail)
+        resolved_group_id = accepted_group_id or detail.initial_group_id or detail.first_choice_group_id
+        allowed_group_ids = {
+            group_id
+            for group_id in [detail.initial_group_id, detail.first_choice_group_id, detail.second_choice_group_id]
+            if group_id is not None
+        }
+        if resolved_group_id is None:
+            raise VolunteerApplicationConflictError("Choose a group before promoting this prospect.")
+        if allowed_group_ids and resolved_group_id not in allowed_group_ids:
+            raise VolunteerApplicationConflictError("The chosen group is not one of the registered committee choices.")
+        volunteer_id = await self.repository.approve_volunteer_application(
+            detail,
+            accepted_group_id=resolved_group_id,
+        )
         self._invalidate_pending_count_cache()
+        await self._send_profile_completion_email(email=detail.email, token=detail.token, base_url=base_url)
         return volunteer_id
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
@@ -449,6 +616,23 @@ class VolunteerApplicationsService:
             ),
         )
 
+    async def _send_profile_completion_email(self, *, email: str, token: str, base_url: str | None = None) -> None:
+        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
+        if not resolved_base_url:
+            raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send profile completion emails.")
+        invitation_url = f"{resolved_base_url}/apply/{token}"
+        await self.email_sender.send_email(
+            recipient_email=email,
+            subject="Velkommen som ny frivillig på Kvarteret!",
+            html_body=(
+                "Du er nå registrert som frivillig i Det Akademiske Kvarter."
+                "<br><br>"
+                f"Åpne denne lenken for å fylle inn resten av profilen din:<br><a href=\"{invitation_url}\">{invitation_url}</a>"
+                "<br><br>"
+                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
+            ),
+        )
+
     async def _notify_group_admins_of_submission(
         self,
         registration: VolunteerApplicationDetail,
@@ -496,6 +680,63 @@ class VolunteerApplicationsService:
                     recipient,
                 )
 
+    async def _notify_group_admins_of_prospect(
+        self,
+        registration: VolunteerApplicationDetail,
+        *,
+        base_url: str | None = None,
+    ) -> None:
+        group_pairs = [
+            (registration.first_choice_group_id, registration.first_choice_group_name),
+            (registration.second_choice_group_id, registration.second_choice_group_name),
+        ]
+        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
+        if not resolved_base_url:
+            logger.warning(
+                "Skipped group-admin notification for public prospect %s because no base URL was configured.",
+                registration.registration_id,
+            )
+            return
+        review_url = f"{resolved_base_url}/volunteer-applications/{registration.registration_id}"
+        applicant_name = " ".join(
+            part for part in [registration.first_name or "", registration.last_name or ""] if part.strip()
+        ).strip() or registration.email
+        choices_summary = " / ".join(
+            name for _, name in group_pairs if name
+        )
+        for group_id, group_name in group_pairs:
+            if group_id is None or not group_name:
+                continue
+            recipients = await self.repository.list_group_admin_email_recipients(group_id)
+            if not recipients:
+                continue
+            subject = f"Ny frivilliginteresse for {group_name}"
+            html_body = (
+                f"En ny frivilligregistrering har kommet inn for {group_name}."
+                "<br><br>"
+                f"Søker: {applicant_name}<br>"
+                f"E-post: {registration.email}<br>"
+                f"Telefon: {registration.phone or 'Ikke oppgitt'}<br>"
+                f"Studiested: {registration.study_institution or 'Ikke oppgitt'}<br>"
+                f"Komitéønsker: {choices_summary or group_name}"
+                "<br><br>"
+                f"Åpne registreringen for å følge opp prøvedugnad og eventuell promotering:<br>"
+                f"<a href=\"{review_url}\">{review_url}</a>"
+            )
+            for recipient in recipients:
+                try:
+                    await self.email_sender.send_email(
+                        recipient_email=recipient,
+                        subject=subject,
+                        html_body=html_body,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to send public prospect notification for registration %s to %s",
+                        registration.registration_id,
+                        recipient,
+                    )
+
 
 def _parse_recent_registration_cursor(cursor: str | None) -> int | None:
     if cursor is None:
@@ -512,6 +753,22 @@ def _parse_recent_registration_cursor(cursor: str | None) -> int | None:
 
 def _build_full_name(first_name: str | None, last_name: str) -> str:
     return " ".join(part for part in [first_name or "", last_name] if part.strip()).strip() or last_name
+
+
+def _split_full_name(full_name: str) -> tuple[str | None, str]:
+    parts = [part for part in full_name.strip().split() if part]
+    if not parts:
+        raise VolunteerApplicationValidationError("Navn er påkrevd.")
+    if len(parts) == 1:
+        return None, parts[0]
+    return " ".join(parts[:-1]), parts[-1]
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def _sanitize_filename(filename: str) -> str:

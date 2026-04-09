@@ -80,11 +80,17 @@ async def volunteer_applications_create_invite(
 async def volunteer_application_approve(
     request: Request,
     application_id: int,
+    accepted_group_id: str | None = Form(default=None),
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
+    parsed_group_id = int(accepted_group_id) if accepted_group_id and accepted_group_id.strip() else None
     try:
-        volunteer_id = await volunteer_applications_service.approve_volunteer_application(application_id)
+        volunteer_id = await volunteer_applications_service.approve_volunteer_application(
+            application_id,
+            accepted_group_id=parsed_group_id,
+            base_url=str(request.base_url).rstrip("/"),
+        )
     except VolunteerAlreadyExistsError as exc:
         return RedirectResponse(
             url=f"/volunteers/{exc.volunteer_id}?duplicate_application_id={application_id}",
@@ -101,6 +107,35 @@ async def volunteer_application_approve(
         details={"volunteer_id": volunteer_id},
     )
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/volunteer-applications/{application_id}/trial-attendance")
+async def volunteer_application_mark_trial_attendance(
+    request: Request,
+    application_id: int,
+    attended: str = Form(...),
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+):
+    try:
+        detail = await volunteer_applications_service.mark_trial_shift_attended(
+            application_id,
+            attended=attended == "true",
+        )
+    except VolunteerApplicationNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer_application.mark_trial_attendance",
+        subject_type="volunteer_application",
+        subject_id=application_id,
+        details={"attended": detail.trial_shift_attended},
+    )
+    return RedirectResponse(
+        url=f"/volunteer-applications/{application_id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.delete("/volunteer-applications/{application_id}")

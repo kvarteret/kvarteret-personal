@@ -181,5 +181,21 @@ async def volunteer_application_detail(
             "current_user": current_user,
             "volunteer_application": volunteer_application,
             "gender_label": gender_label,
+            "promotion_group_options": _build_promotion_group_options(volunteer_application),
         },
     )
+
+
+def _build_promotion_group_options(volunteer_application):
+    options: list[dict[str, object]] = []
+    seen_group_ids: set[int] = set()
+    for group_id, name in [
+        (volunteer_application.initial_group_id, volunteer_application.initial_group_name),
+        (volunteer_application.first_choice_group_id, volunteer_application.first_choice_group_name),
+        (volunteer_application.second_choice_group_id, volunteer_application.second_choice_group_name),
+    ]:
+        if group_id is None or not name or group_id in seen_group_ids:
+            continue
+        seen_group_ids.add(group_id)
+        options.append({"group_id": group_id, "name": name})
+    return options

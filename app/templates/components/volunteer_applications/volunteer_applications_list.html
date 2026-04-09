@@ -6,22 +6,38 @@
           <div class="grid gap-1">
             <div class="flex flex-wrap items-center gap-3">
               <p class="text-sm font-medium text-kvarteret-ink">{{ volunteer_application.email }}</p>
-              <a class="app-button-secondary inline-flex min-h-8 px-3 text-xs" href="/apply/{{ volunteer_application.token }}">Send inn nå</a>
+              {% if volunteer_application.source == "invite" and not volunteer_application.submitted %}
+                <a class="app-button-secondary inline-flex min-h-8 px-3 text-xs" href="/apply/{{ volunteer_application.token }}">Send inn nå</a>
+              {% endif %}
             </div>
+            {% if volunteer_application.first_choice_group_name %}
+              <p class="text-sm text-kvarteret-ink">
+                Komitéønsker:
+                {{ volunteer_application.first_choice_group_name }}
+                {% if volunteer_application.second_choice_group_name %} / {{ volunteer_application.second_choice_group_name }}{% endif %}
+              </p>
+            {% endif %}
             {% if volunteer_application.initial_group_name and volunteer_application.initial_role_name %}
               <p class="text-sm text-kvarteret-ink">Planlagt verv: {{ volunteer_application.initial_group_name }} · {{ volunteer_application.initial_role_name }}</p>
             {% elif volunteer_application.initial_group_name %}
-              <p class="text-sm text-kvarteret-ink">Planlagt gruppe: {{ volunteer_application.initial_group_name }}</p>
+              <p class="text-sm text-kvarteret-ink">Valgt ved promotering: {{ volunteer_application.initial_group_name }}</p>
             {% endif %}
-            {% if volunteer_application.submitted %}
+            {% if volunteer_application.pending_volunteer_id %}
               <p class="text-lg font-medium tracking-tight text-kvarteret-ink">{{ volunteer_application.first_name or "" }} {{ volunteer_application.last_name or "" }}</p>
               <p class="text-sm text-kvarteret-ink">{{ volunteer_application.phone or "Ingen telefon sendt inn" }}</p>
+              {% if volunteer_application.study_institution %}
+                <p class="text-sm text-kvarteret-ink">{{ volunteer_application.study_institution }}</p>
+              {% endif %}
+              <p class="text-sm text-kvarteret-ink">
+                Prøvedugnad:
+                {% if volunteer_application.trial_shift_attended %}Møtt{% else %}Ikke registrert{% endif %}
+              </p>
             {% else %}
               <p class="text-sm text-kvarteret-ink">Invitasjon sendt. Venter på innsending fra frivillig.</p>
             {% endif %}
           </div>
           <div class="flex flex-wrap gap-3">
-            {% if volunteer_application.submitted %}
+            {% if volunteer_application.pending_volunteer_id %}
               <a class="app-button" href="/volunteer-applications/{{ volunteer_application.registration_id }}">Se søknad</a>
             {% else %}
               <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/resend" method="post">
@@ -35,10 +51,10 @@
               hx-swap="outerHTML"
               hx-target="#volunteer-application-list-panel"
               method="post"
-              onsubmit="return window.confirm('{% if volunteer_application.submitted %}Avvise denne søknaden?{% else %}Avbryte denne invitasjonen?{% endif %}');"
+              onsubmit="return window.confirm('{% if volunteer_application.pending_volunteer_id %}Avvise denne registreringen?{% else %}Avbryte denne invitasjonen?{% endif %}');"
             >
               <button class="app-button-secondary" type="submit">
-                {% if volunteer_application.submitted %}Avvis{% else %}Avbryt{% endif %}
+                {% if volunteer_application.pending_volunteer_id %}Avvis{% else %}Avbryt{% endif %}
               </button>
             </form>
           </div>

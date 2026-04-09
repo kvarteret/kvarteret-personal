@@ -8,6 +8,7 @@ from app.auth.roles import UserRole
 from app.dependencies import get_volunteer_applications_service, get_volunteers_service
 from app.main import create_app
 from app.domain.volunteer_applications.service import (
+    PublicProspectRegistrationInput,
     RecentVolunteerRegistrationItem,
     RecentVolunteerRegistrationPage,
     VolunteerAlreadyExistsError,
@@ -23,6 +24,7 @@ class FakeVolunteerApplicationsService:
     def __init__(self) -> None:
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, int | str | None]] = []
+        self.public_prospect_calls: list[dict[str, object | None]] = []
         self.resent_registration_ids: list[int] = []
         self.recent_registration_calls: list[dict[str, object | None]] = []
         self.submission_calls: list[dict[str, object | None]] = []
@@ -33,9 +35,14 @@ class FakeVolunteerApplicationsService:
                 email="registrant@example.com",
                 created_at=datetime(2026, 3, 13, tzinfo=UTC),
                 submitted=True,
+                source="invite",
+                status="submitted",
+                pending_volunteer_id=8,
                 first_name="Sample",
                 last_name="Registrant",
                 phone="00000000",
+                study_institution=None,
+                background_details=None,
                 initial_group_id=3,
                 initial_group_name="Bar",
                 initial_role_id=9,
@@ -112,6 +119,49 @@ class FakeVolunteerApplicationsService:
             initial_role_name="Skiftleder" if initial_role_id else None,
         )
 
+    async def create_public_prospect_registration(
+        self,
+        registration: PublicProspectRegistrationInput,
+        *,
+        base_url: str | None = None,
+    ) -> VolunteerApplicationDetail:
+        self.public_prospect_calls.append(
+            {
+                "full_name": registration.full_name,
+                "email": registration.email,
+                "phone": registration.phone,
+                "study_institution": registration.study_institution,
+                "background_details": registration.background_details,
+                "first_choice_group_slug": registration.first_choice_group_slug,
+                "second_choice_group_slug": registration.second_choice_group_slug,
+                "base_url": base_url,
+            }
+        )
+        return VolunteerApplicationDetail(
+            registration_id=55,
+            token="prospect-token",
+            email=registration.email,
+            created_at=datetime(2026, 4, 9, tzinfo=UTC),
+            submitted=True,
+            source="public_signup",
+            status="prospect",
+            pending_volunteer_id=17,
+            first_name="Test",
+            last_name="Person",
+            phone=registration.phone,
+            birth_date=None,
+            gender=None,
+            address=None,
+            postal_code=None,
+            photo_sha1=None,
+            photo_filetype=None,
+            photo_url=None,
+            study_institution=registration.study_institution,
+            background_details=registration.background_details,
+            first_choice_group_name="Skjenkegruppen",
+            second_choice_group_name=None,
+        )
+
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
         return list(self.volunteer_applications)
 
@@ -138,6 +188,8 @@ class FakeVolunteerApplicationsService:
             email="registrant@example.com",
             created_at=datetime(2026, 3, 13, tzinfo=UTC),
             submitted=True,
+            source="invite",
+            status="submitted",
             pending_volunteer_id=8,
             first_name="Sample",
             last_name="Registrant",
@@ -149,6 +201,8 @@ class FakeVolunteerApplicationsService:
             photo_sha1="abc123",
             photo_filetype="jpg",
             photo_url="/media/photos/abc123.jpg?token=test",
+            study_institution=None,
+            background_details=None,
             initial_group_id=3,
             initial_group_name="Bar",
             initial_role_id=9,
@@ -176,7 +230,13 @@ class FakeVolunteerApplicationsService:
         )
         return await self.get_volunteer_application_by_token(token)
 
-    async def approve_volunteer_application(self, registration_id: int) -> int:
+    async def approve_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None = None,
+        base_url: str | None = None,
+    ) -> int:
         return 12
 
     async def resend_volunteer_application_invitation(
@@ -213,7 +273,13 @@ class FakeVolunteersService:
 
 
 class DuplicateApprovalVolunteerApplicationsService(FakeVolunteerApplicationsService):
-    async def approve_volunteer_application(self, registration_id: int) -> int:
+    async def approve_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None = None,
+        base_url: str | None = None,
+    ) -> int:
         raise VolunteerAlreadyExistsError(10017, "sebbesgh@gmail.com")
 
 
@@ -331,10 +397,10 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
 
     assert response.status_code == 200
     assert "Søkerprofil" in response.text
-    assert "Invitasjon" in response.text
+    assert "Registrering" in response.text
     assert "registrant@example.com" in response.text
-    assert "Godkjenn søknad" in response.text
-    assert "Avvis søknad" in response.text
+    assert "Promoter til frivillig" in response.text
+    assert "Prøvedugnad" in response.text
     assert "Lenke" not in response.text
 
 
@@ -630,9 +696,14 @@ def test_volunteer_application_resend_redirects_and_calls_service() -> None:
             email="registrant@example.com",
             created_at=datetime(2026, 3, 13, tzinfo=UTC),
             submitted=False,
+            source="invite",
+            status="invited",
+            pending_volunteer_id=None,
             first_name=None,
             last_name=None,
             phone=None,
+            study_institution=None,
+            background_details=None,
             initial_group_id=3,
             initial_group_name="Bar",
             initial_role_id=9,
@@ -664,6 +735,8 @@ def test_group_admin_can_manage_any_registration() -> None:
                 email="other@example.com",
                 created_at=datetime(2026, 3, 14, tzinfo=UTC),
                 submitted=True,
+                source="public_signup",
+                status="prospect",
                 pending_volunteer_id=9,
                 first_name="Other",
                 last_name="Person",
@@ -675,6 +748,8 @@ def test_group_admin_can_manage_any_registration() -> None:
                 photo_sha1=None,
                 photo_filetype=None,
                 photo_url=None,
+                study_institution="UiB",
+                background_details=None,
                 initial_group_id=8,
                 initial_group_name="Ukjent",
                 initial_role_id=None,
@@ -691,9 +766,14 @@ def test_group_admin_can_manage_any_registration() -> None:
             email="other@example.com",
             created_at=datetime(2026, 3, 14, tzinfo=UTC),
             submitted=True,
+            source="public_signup",
+            status="prospect",
+            pending_volunteer_id=9,
             first_name="Other",
             last_name="Person",
             phone="11111111",
+            study_institution="UiB",
+            background_details=None,
             initial_group_id=8,
             initial_group_name="Ukjent",
             initial_role_id=None,
@@ -711,3 +791,37 @@ def test_group_admin_can_manage_any_registration() -> None:
     assert "other@example.com" in list_response.text
     assert delete_response.status_code == 200
     assert volunteer_applications_service.deleted_registration_ids == [8]
+
+
+def test_public_prospect_api_accepts_missing_second_choice() -> None:
+    app = create_app()
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/volunteer-prospects",
+        json={
+            "full_name": "Test Person",
+            "email": "prospect@example.com",
+            "phone": "12345678",
+            "study_institution": "UiB",
+            "background_details": None,
+            "first_choice_group_slug": "skjenkegruppen",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json() == {"registrationId": 55}
+    assert volunteer_applications_service.public_prospect_calls == [
+        {
+            "full_name": "Test Person",
+            "email": "prospect@example.com",
+            "phone": "12345678",
+            "study_institution": "UiB",
+            "background_details": None,
+            "first_choice_group_slug": "skjenkegruppen",
+            "second_choice_group_slug": None,
+            "base_url": "http://testserver",
+        }
+    ]

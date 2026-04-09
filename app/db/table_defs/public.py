@@ -66,8 +66,17 @@ registrering = Table(
     Column("id", BigInteger, primary_key=True),
     Column("token", Text, nullable=False),
     Column("epost", Text, nullable=False),
+    Column("source", Text, nullable=False),
+    Column("status", Text, nullable=False),
     Column("initial_group_id", BigInteger),
     Column("initial_role_id", BigInteger),
+    Column("first_choice_group_id", BigInteger),
+    Column("second_choice_group_id", BigInteger),
+    Column("trial_shift_attended", Boolean, nullable=False),
+    Column("trial_shift_marked_at", DateTime(timezone=True)),
+    Column("full_profile_submitted_at", DateTime(timezone=True)),
+    Column("promoted_volunteer_id", BigInteger, ForeignKey("public.personal.id")),
+    Column("promoted_at", DateTime(timezone=True)),
     Column("opprettet", DateTime(timezone=True), nullable=False),
     UniqueConstraint("token", name="uq_registrering_token"),
 )
@@ -88,6 +97,8 @@ nytt_personal = Table(
     Column("internkortaccesstoken", Text),
     Column("photo_sha1", Text),
     Column("photo_filetype", Text),
+    Column("studiested", Text),
+    Column("bakgrunn", Text),
     Column("opprettet", DateTime(timezone=True), nullable=False),
 )
 

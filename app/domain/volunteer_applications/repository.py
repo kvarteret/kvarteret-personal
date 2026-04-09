@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import group_admin_memberships, grupper, historie, nytt_personal, personal, personal_bilde, registrering, user_accounts, verv
-from app.media_tokens import MediaTokenService
-from app.infrastructure.contact.phone_numbers import normalize_phone_number
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.db.tables import (
+    group_admin_memberships,
+    grupper,
+    historie,
+    nytt_personal,
+    personal,
+    personal_bilde,
+    registrering,
+    user_accounts,
+    verv,
+)
 from app.domain.volunteer_applications.service import (
     VolunteerApplicationConflictError,
     VolunteerApplicationDetail,
@@ -16,6 +24,9 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationInvite,
     VolunteerApplicationSubmissionInput,
 )
+from app.infrastructure.contact.phone_numbers import normalize_phone_number
+from app.infrastructure.formatting.semester import get_current_semester_code
+from app.media_tokens import MediaTokenService
 
 
 class VolunteerApplicationsRepository(SqlAlchemyRepository):
@@ -26,6 +37,52 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
     ) -> None:
         super().__init__(session_factory=session_factory)
         self.media_token_service = media_token_service
+
+    async def create_public_prospect_registration(
+        self,
+        *,
+        token: str,
+        email: str,
+        first_name: str | None,
+        last_name: str,
+        phone: str | None,
+        study_institution: str | None,
+        background_details: str | None,
+        first_choice_group_id: int,
+        second_choice_group_id: int | None,
+    ) -> VolunteerApplicationDetail:
+        async with self.session_factory() as session:
+            async with session.begin():
+                inserted = (
+                    await session.execute(
+                        insert(registrering)
+                        .values(
+                            token=token,
+                            epost=email,
+                            source="public_signup",
+                            status="prospect",
+                            first_choice_group_id=first_choice_group_id,
+                            second_choice_group_id=second_choice_group_id,
+                            trial_shift_attended=False,
+                        )
+                        .returning(registrering.c.id)
+                    )
+                ).mappings().one()
+                await session.execute(
+                    insert(nytt_personal).values(
+                        registrering_id=inserted["id"],
+                        fornavn=first_name,
+                        etternavn=last_name,
+                        epost=email,
+                        telefon=normalize_phone_number(phone),
+                        kjonn="A",
+                        studiested=study_institution,
+                        bakgrunn=background_details,
+                    )
+                )
+        detail = await self.get_volunteer_application_detail(inserted["id"])
+        assert detail is not None
+        return detail
 
     async def create_volunteer_application_invitation(
         self,
@@ -43,8 +100,11 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         .values(
                             token=token,
                             epost=email,
+                            source="invite",
+                            status="invited",
                             initial_group_id=initial_group_id,
                             initial_role_id=initial_role_id,
+                            trial_shift_attended=False,
                         )
                         .returning(
                             registrering.c.id,
@@ -73,26 +133,45 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         )
 
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
+        accepted_group = grupper.alias("accepted_group")
+        first_choice_group = grupper.alias("first_choice_group")
+        second_choice_group = grupper.alias("second_choice_group")
+        accepted_role = verv.alias("accepted_role")
         stmt = (
             select(
                 registrering.c.id,
                 registrering.c.token,
                 registrering.c.epost,
                 registrering.c.opprettet,
+                registrering.c.source,
+                registrering.c.status,
                 registrering.c.initial_group_id,
                 registrering.c.initial_role_id,
+                registrering.c.first_choice_group_id,
+                registrering.c.second_choice_group_id,
+                registrering.c.trial_shift_attended,
+                registrering.c.full_profile_submitted_at,
+                registrering.c.promoted_volunteer_id,
+                registrering.c.promoted_at,
                 nytt_personal.c.id.label("pending_volunteer_id"),
                 nytt_personal.c.fornavn,
                 nytt_personal.c.etternavn,
                 nytt_personal.c.telefon,
-                grupper.c.navn.label("initial_group_name"),
-                verv.c.verv.label("initial_role_name"),
+                nytt_personal.c.studiested,
+                nytt_personal.c.bakgrunn,
+                accepted_group.c.navn.label("initial_group_name"),
+                accepted_role.c.verv.label("initial_role_name"),
+                first_choice_group.c.navn.label("first_choice_group_name"),
+                second_choice_group.c.navn.label("second_choice_group_name"),
             )
             .select_from(
                 registrering.outerjoin(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id)
-                .outerjoin(grupper, grupper.c.id == registrering.c.initial_group_id)
-                .outerjoin(verv, verv.c.id == registrering.c.initial_role_id)
+                .outerjoin(accepted_group, accepted_group.c.id == registrering.c.initial_group_id)
+                .outerjoin(accepted_role, accepted_role.c.id == registrering.c.initial_role_id)
+                .outerjoin(first_choice_group, first_choice_group.c.id == registrering.c.first_choice_group_id)
+                .outerjoin(second_choice_group, second_choice_group.c.id == registrering.c.second_choice_group_id)
             )
+            .where(registrering.c.promoted_volunteer_id.is_(None))
             .order_by(registrering.c.opprettet.desc(), registrering.c.id.desc())
         )
         async with self.session_factory() as session:
@@ -103,14 +182,26 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 token=row["token"],
                 email=row["epost"],
                 created_at=row["opprettet"],
-                submitted=row["pending_volunteer_id"] is not None,
+                submitted=row["full_profile_submitted_at"] is not None,
+                source=row["source"],
+                status=row["status"],
+                pending_volunteer_id=row["pending_volunteer_id"],
                 first_name=row["fornavn"],
                 last_name=row["etternavn"],
                 phone=row["telefon"],
+                study_institution=row["studiested"],
+                background_details=row["bakgrunn"],
                 initial_group_id=row["initial_group_id"],
                 initial_group_name=row["initial_group_name"],
                 initial_role_id=row["initial_role_id"],
                 initial_role_name=row["initial_role_name"],
+                first_choice_group_id=row["first_choice_group_id"],
+                first_choice_group_name=row["first_choice_group_name"],
+                second_choice_group_id=row["second_choice_group_id"],
+                second_choice_group_name=row["second_choice_group_name"],
+                trial_shift_attended=bool(row["trial_shift_attended"]),
+                promoted_volunteer_id=row["promoted_volunteer_id"],
+                promoted_at=row["promoted_at"],
             )
             for row in rows
         ]
@@ -173,7 +264,11 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         return [dict(row) for row in rows]
 
     async def count_pending_volunteer_applications(self) -> int:
-        stmt = select(func.count()).select_from(registrering.join(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id))
+        stmt = (
+            select(func.count())
+            .select_from(registrering.join(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id))
+            .where(registrering.c.promoted_volunteer_id.is_(None))
+        )
         async with self.session_factory() as session:
             count = await session.scalar(stmt)
         return int(count or 0)
@@ -184,6 +279,14 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None:
         return await self._get_detail(select(registrering.c.id).where(registrering.c.token == token))
 
+    async def find_group_ids_by_names(self, names: list[str]) -> dict[str, int]:
+        if not names:
+            return {}
+        stmt = select(grupper.c.id, grupper.c.navn).where(grupper.c.navn.in_(names))
+        async with self.session_factory() as session:
+            rows = (await session.execute(stmt)).mappings().all()
+        return {row["navn"]: row["id"] for row in rows}
+
     async def save_submission(
         self,
         *,
@@ -193,25 +296,84 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         photo_sha1: str | None,
         photo_filetype: str | None,
     ) -> None:
-        payload = {
-            "fornavn": submission.first_name,
-            "etternavn": submission.last_name,
-            "epost": email,
-            "kjonn": submission.gender,
-            "fodselsdato": submission.birth_date,
-            "gateadresse": submission.address,
-            "postnummerid": submission.postal_code,
-            "telefon": normalize_phone_number(submission.phone),
-            "photo_sha1": photo_sha1,
-            "photo_filetype": photo_filetype,
-        }
         async with self.session_factory() as session:
             async with session.begin():
-                existing_row = (
+                registration_row = (
                     await session.execute(
-                        select(nytt_personal.c.id).where(nytt_personal.c.registrering_id == registration_id).limit(1)
+                        select(registrering.c.promoted_volunteer_id)
+                        .where(registrering.c.id == registration_id)
+                        .limit(1)
                     )
                 ).mappings().first()
+                if registration_row is None:
+                    return
+
+                volunteer_id = registration_row["promoted_volunteer_id"]
+                if volunteer_id is not None:
+                    await session.execute(
+                        update(personal)
+                        .where(personal.c.id == volunteer_id)
+                        .values(
+                            fornavn=submission.first_name,
+                            etternavn=submission.last_name,
+                            epost=email,
+                            kjonn=submission.gender,
+                            fodselsdato=submission.birth_date,
+                            gateadresse=submission.address,
+                            postnummerid=submission.postal_code,
+                            telefon=normalize_phone_number(submission.phone),
+                        )
+                    )
+                    if photo_sha1 and photo_filetype:
+                        existing_photo = (
+                            await session.execute(
+                                select(personal_bilde.c.id_personal)
+                                .where(personal_bilde.c.id_personal == volunteer_id)
+                                .limit(1)
+                            )
+                        ).mappings().first()
+                        if existing_photo:
+                            await session.execute(
+                                update(personal_bilde)
+                                .where(personal_bilde.c.id_personal == volunteer_id)
+                                .values(sha1=photo_sha1, filetype=photo_filetype)
+                            )
+                        else:
+                            await session.execute(
+                                insert(personal_bilde).values(
+                                    id_personal=volunteer_id,
+                                    sha1=photo_sha1,
+                                    filetype=photo_filetype,
+                                )
+                            )
+                    await session.execute(
+                        update(registrering)
+                        .where(registrering.c.id == registration_id)
+                        .values(full_profile_submitted_at=func.now())
+                    )
+                    return
+
+                existing_row = (
+                    await session.execute(
+                        select(nytt_personal.c.id, nytt_personal.c.studiested, nytt_personal.c.bakgrunn)
+                        .where(nytt_personal.c.registrering_id == registration_id)
+                        .limit(1)
+                    )
+                ).mappings().first()
+                payload = {
+                    "fornavn": submission.first_name,
+                    "etternavn": submission.last_name,
+                    "epost": email,
+                    "kjonn": submission.gender,
+                    "fodselsdato": submission.birth_date,
+                    "gateadresse": submission.address,
+                    "postnummerid": submission.postal_code,
+                    "telefon": normalize_phone_number(submission.phone),
+                    "photo_sha1": photo_sha1,
+                    "photo_filetype": photo_filetype,
+                    "studiested": existing_row["studiested"] if existing_row else None,
+                    "bakgrunn": existing_row["bakgrunn"] if existing_row else None,
+                }
                 if existing_row:
                     await session.execute(
                         update(nytt_personal)
@@ -225,6 +387,23 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             **payload,
                         )
                     )
+                await session.execute(
+                    update(registrering)
+                    .where(registrering.c.id == registration_id)
+                    .values(status="submitted", full_profile_submitted_at=func.now())
+                )
+
+    async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None:
+        async with self.session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    update(registrering)
+                    .where(registrering.c.id == registration_id)
+                    .values(
+                        trial_shift_attended=attended,
+                        trial_shift_marked_at=datetime.now(UTC) if attended else None,
+                    )
+                )
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         async with self.session_factory() as session:
@@ -254,15 +433,20 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         async with self.session_factory() as session:
             return [row for row in await session.scalars(stmt)]
 
-    async def approve_volunteer_application(self, registration: VolunteerApplicationDetail) -> int:
+    async def approve_volunteer_application(
+        self,
+        registration: VolunteerApplicationDetail,
+        *,
+        accepted_group_id: int | None,
+    ) -> int:
         async with self.session_factory() as session:
             async with session.begin():
-                if registration.initial_group_id is not None and registration.initial_role_id is not None:
+                if registration.initial_role_id is not None and accepted_group_id is not None:
                     role_match = await session.scalar(
                         select(
                             exists().where(
                                 verv.c.id == registration.initial_role_id,
-                                verv.c.id_gruppe == registration.initial_group_id,
+                                verv.c.id_gruppe == accepted_group_id,
                             )
                         )
                     )
@@ -294,18 +478,26 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             filetype=registration.photo_filetype,
                         )
                     )
-                if registration.initial_group_id is not None and registration.initial_role_id is not None:
+                if accepted_group_id is not None:
                     await session.execute(
                         insert(historie).values(
                             id_personal=inserted["id"],
-                            id_gruppe=registration.initial_group_id,
+                            id_gruppe=accepted_group_id,
                             id_verv=registration.initial_role_id,
                             semester=get_current_semester_code(),
                             signert_kontrakt=False,
                         )
                     )
-                await session.execute(delete(nytt_personal).where(nytt_personal.c.registrering_id == registration.registration_id))
-                await session.execute(delete(registrering).where(registrering.c.id == registration.registration_id))
+                await session.execute(
+                    update(registrering)
+                    .where(registrering.c.id == registration.registration_id)
+                    .values(
+                        promoted_volunteer_id=inserted["id"],
+                        promoted_at=func.now(),
+                        status="promoted",
+                        initial_group_id=accepted_group_id,
+                    )
+                )
         return inserted["id"]
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
@@ -315,14 +507,27 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 await session.execute(delete(registrering).where(registrering.c.id == registration_id))
 
     async def _get_detail(self, id_query) -> VolunteerApplicationDetail | None:
+        accepted_group = grupper.alias("accepted_group")
+        first_choice_group = grupper.alias("first_choice_group")
+        second_choice_group = grupper.alias("second_choice_group")
+        accepted_role = verv.alias("accepted_role")
         detail_stmt = (
             select(
                 registrering.c.id,
                 registrering.c.token,
                 registrering.c.epost,
                 registrering.c.opprettet,
+                registrering.c.source,
+                registrering.c.status,
                 registrering.c.initial_group_id,
                 registrering.c.initial_role_id,
+                registrering.c.first_choice_group_id,
+                registrering.c.second_choice_group_id,
+                registrering.c.trial_shift_attended,
+                registrering.c.trial_shift_marked_at,
+                registrering.c.full_profile_submitted_at,
+                registrering.c.promoted_volunteer_id,
+                registrering.c.promoted_at,
                 nytt_personal.c.id.label("pending_volunteer_id"),
                 nytt_personal.c.fornavn,
                 nytt_personal.c.etternavn,
@@ -333,13 +538,19 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 nytt_personal.c.postnummerid,
                 nytt_personal.c.photo_sha1,
                 nytt_personal.c.photo_filetype,
-                grupper.c.navn.label("initial_group_name"),
-                verv.c.verv.label("initial_role_name"),
+                nytt_personal.c.studiested,
+                nytt_personal.c.bakgrunn,
+                accepted_group.c.navn.label("initial_group_name"),
+                accepted_role.c.verv.label("initial_role_name"),
+                first_choice_group.c.navn.label("first_choice_group_name"),
+                second_choice_group.c.navn.label("second_choice_group_name"),
             )
             .select_from(
                 registrering.outerjoin(nytt_personal, nytt_personal.c.registrering_id == registrering.c.id)
-                .outerjoin(grupper, grupper.c.id == registrering.c.initial_group_id)
-                .outerjoin(verv, verv.c.id == registrering.c.initial_role_id)
+                .outerjoin(accepted_group, accepted_group.c.id == registrering.c.initial_group_id)
+                .outerjoin(accepted_role, accepted_role.c.id == registrering.c.initial_role_id)
+                .outerjoin(first_choice_group, first_choice_group.c.id == registrering.c.first_choice_group_id)
+                .outerjoin(second_choice_group, second_choice_group.c.id == registrering.c.second_choice_group_id)
             )
             .where(registrering.c.id.in_(id_query))
             .limit(1)
@@ -353,7 +564,9 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             token=row["token"],
             email=row["epost"],
             created_at=row["opprettet"],
-            submitted=row["pending_volunteer_id"] is not None,
+            submitted=row["full_profile_submitted_at"] is not None,
+            source=row["source"],
+            status=row["status"],
             pending_volunteer_id=row["pending_volunteer_id"],
             first_name=row["fornavn"],
             last_name=row["etternavn"],
@@ -369,10 +582,20 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 if row["photo_sha1"] and row["photo_filetype"] and self.media_token_service is not None
                 else None
             ),
+            study_institution=row["studiested"],
+            background_details=row["bakgrunn"],
             initial_group_id=row["initial_group_id"],
             initial_group_name=row["initial_group_name"],
             initial_role_id=row["initial_role_id"],
             initial_role_name=row["initial_role_name"],
+            first_choice_group_id=row["first_choice_group_id"],
+            first_choice_group_name=row["first_choice_group_name"],
+            second_choice_group_id=row["second_choice_group_id"],
+            second_choice_group_name=row["second_choice_group_name"],
+            trial_shift_attended=bool(row["trial_shift_attended"]),
+            trial_shift_marked_at=row["trial_shift_marked_at"],
+            promoted_volunteer_id=row["promoted_volunteer_id"],
+            promoted_at=row["promoted_at"],
         )
 
     async def _fetch_assignment_names(
