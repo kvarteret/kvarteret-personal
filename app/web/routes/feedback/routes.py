@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from posthog import capture, new_context
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
@@ -67,6 +69,8 @@ async def feedback_submit(
             feedback_message=message,
         )
 
+    with new_context():
+        capture("feedback_submitted", properties={"category": category, "message_length": len(message), "is_authenticated": name is not None})
     return _render_feedback_panel(
         request,
         page=page,

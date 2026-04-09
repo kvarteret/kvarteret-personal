@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+from posthog import capture, identify_context, new_context
+
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature
@@ -128,6 +130,9 @@ async def login_submit(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    with new_context():
+        identify_context(str(result.user.auth_user_id))
+        capture("user_logged_in", properties={"role": result.user.role.value, "migrated_from_legacy": result.migrated_from_legacy})
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     _set_session_cookie(
         response,
@@ -164,6 +169,10 @@ async def logout(
             subject_type="session",
             subject_id=getattr(getattr(request.state, "session", None), "session_id", None),
         )
+    if current_user is not None:
+        with new_context():
+            identify_context(str(current_user.auth_user_id))
+            capture("user_logged_out")
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(settings.session_cookie_name)
     return response

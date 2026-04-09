@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
 from fastapi import FastAPI
+import posthog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.cookies import SessionCookieSigner
@@ -172,9 +173,13 @@ def build_application_container(settings: Settings | None = None) -> Application
 async def app_lifespan(app: FastAPI):
     if not hasattr(app.state, "container"):
         app.state.container = build_application_container()
+    settings = app.state.container.settings
+    posthog.api_key = settings.posthog_project_token
+    posthog.host = settings.posthog_host
     try:
         yield
     finally:
+        posthog.flush()
         await app.state.container.aclose()
 
 

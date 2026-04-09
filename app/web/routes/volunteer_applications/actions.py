@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from posthog import capture, identify_context, new_context
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
@@ -73,6 +75,11 @@ async def volunteer_applications_create_invite(
             "initial_role_id": invite.initial_role_id,
         },
     )
+    with new_context():
+        identify_context(str(current_user.auth_user_id))
+        capture("volunteer_application_invite_created", properties={
+            "has_initial_group": invite.initial_group_id is not None,
+        })
     return RedirectResponse(url="/volunteer-applications", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -106,6 +113,9 @@ async def volunteer_application_approve(
         subject_id=application_id,
         details={"volunteer_id": volunteer_id},
     )
+    with new_context():
+        identify_context(str(current_user.auth_user_id))
+        capture("volunteer_application_approved", properties={"has_accepted_group": parsed_group_id is not None})
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -156,6 +166,9 @@ async def volunteer_application_delete(
         subject_type="volunteer_application",
         subject_id=application_id,
     )
+    with new_context():
+        identify_context(str(current_user.auth_user_id))
+        capture("volunteer_application_deleted")
     if request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") != "true":
         volunteer_applications = await volunteer_applications_service.list_volunteer_applications()
         return templates.TemplateResponse(
@@ -248,4 +261,6 @@ async def volunteer_application_submit(
     finally:
         if profile_photo is not None:
             await profile_photo.close()
+    with new_context():
+        capture("volunteer_application_submitted", properties={"has_photo": profile_photo is not None and bool(profile_photo.filename)})
     return RedirectResponse(url=f"/apply/{token}/submitted", status_code=status.HTTP_303_SEE_OTHER)

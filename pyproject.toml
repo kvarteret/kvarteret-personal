@@ -19,6 +19,7 @@ dependencies = [
     "phonenumbers>=9.0.26",
     "pydantic-settings>=2.13.1",
     "python-multipart>=0.0.22",
+    "posthog>=3.0.0",
     "sqlalchemy>=2.0.48",
 ]
 

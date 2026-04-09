@@ -91,6 +91,8 @@ class Settings(BaseSettings):
     mobile_card_session_attempt_window_seconds: int = Field(default=600)
     mobile_card_session_ttl_days: int = Field(default=90)
     mobile_card_session_renewal_threshold_days: int = Field(default=30)
+    posthog_project_token: str = Field(default="<ph_project_token>")
+    posthog_host: str = Field(default="https://us.i.posthog.com")
 
     @field_validator(
         "app_env",
