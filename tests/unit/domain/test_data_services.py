@@ -48,6 +48,7 @@ class FakeVolunteersRepository:
         after_last_name: str | None = None,
         after_first_name: str | None = None,
         after_volunteer_id: int | None = None,
+        only_active: bool = False,
     ):
         self.calls.append(
             {
@@ -126,6 +127,8 @@ class FakeVolunteerApplicationsRepository:
             email="registrant@example.com",
             created_at=datetime.fromisoformat("2026-03-13T12:00:00+00:00"),
             submitted=True,
+            source="invite",
+            status="submitted",
             pending_volunteer_id=8,
             first_name="Sample",
             last_name="Registrant",
@@ -137,6 +140,8 @@ class FakeVolunteerApplicationsRepository:
             photo_sha1=self.application_photo_sha1,
             photo_filetype=self.application_photo_filetype,
             photo_url=self.application_photo_url,
+            study_institution=None,
+            background_details=None,
             initial_group_id=3,
             initial_group_name="Bar",
             initial_role_id=9,
@@ -162,7 +167,10 @@ class FakeVolunteerApplicationsRepository:
         return list(self.group_admin_email_recipients.get(group_id, []))
 
     async def approve_volunteer_application(
-        self, registration: VolunteerApplicationDetail
+        self,
+        registration: VolunteerApplicationDetail,
+        *,
+        accepted_group_id: int | None,
     ) -> int:
         self.approved_registration_ids.append(registration.registration_id)
         return 12
@@ -580,7 +588,13 @@ async def test_volunteers_service_search_queries_use_ranked_database_path(
 ) -> None:
     service = VolunteersService()
 
-    async def fake_search(normalized_query: str, limit: int, cursor: str | None):
+    async def fake_search(
+        normalized_query: str,
+        limit: int,
+        cursor: str | None,
+        *,
+        only_active: bool = False,
+    ):
         assert normalized_query == "martin kleiven"
         assert limit == 10
         assert cursor is None
@@ -599,7 +613,10 @@ async def test_volunteers_service_search_queries_use_ranked_database_path(
 async def test_volunteer_applications_pending_count_is_cached() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
-        settings=Settings(app_secret_key="test-secret"),
+        settings=Settings(
+            app_secret_key="test-secret",
+            app_public_base_url="https://personal.kvarteret.no",
+        ),
         repository=repository,
         email_sender=FakeEmailSender(),
         pending_count_cache_ttl_seconds=60,
@@ -804,7 +821,10 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
 async def test_volunteer_applications_approve_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
-        settings=Settings(app_secret_key="test-secret"),
+        settings=Settings(
+            app_secret_key="test-secret",
+            app_public_base_url="https://personal.kvarteret.no",
+        ),
         repository=repository,
         email_sender=FakeEmailSender(),
         pending_count_cache_ttl_seconds=60,

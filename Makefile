@@ -1,6 +1,6 @@
 -include .env
 
-.PHONY: help install css assets css-watch run test smoke-auth upload-legacy-images empty-supabase-storage
+.PHONY: help install css assets css-watch run test migrate smoke-auth upload-legacy-images empty-supabase-storage
 
 help:
 	@printf "Targets:\n"
@@ -10,6 +10,7 @@ help:
 	@printf "  make css-watch  Watch and rebuild Tailwind CSS\n"
 	@printf "  make run        Build CSS and start the FastAPI app\n"
 	@printf "  make test       Run the test suite\n"
+	@printf "  make migrate    Apply Alembic migrations to the configured database\n"
 	@printf "  make smoke-auth Run a live auth create-login-cleanup smoke test\n"
 	@printf "  make upload-legacy-images Upload recovered Azure images into Supabase Storage\n"
 	@printf "  make empty-supabase-storage Empty every bucket in Supabase Storage for the configured project\n"
@@ -32,6 +33,9 @@ run: assets
 
 test:
 	uv run pytest
+
+migrate:
+	uv run alembic upgrade head
 
 smoke-auth:
 	uv run python scripts/live_auth_smoke.py

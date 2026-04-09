@@ -7,13 +7,19 @@
         ✓
       </div>
       <div class="grid gap-2">
-        <p class="text-lg font-medium tracking-tight text-stone-900">Søknaden din er mottatt</p>
+        <p class="text-lg font-medium tracking-tight text-stone-900">
+          {% if volunteer_application.promoted_volunteer_id %}Profilen din er oppdatert{% else %}Søknaden din er mottatt{% endif %}
+        </p>
         <p class="text-sm leading-6 text-stone-700">
-          En gruppeleder må godkjenne søknaden før du blir opprettet i personaldatabasen. Du trenger ikke sende inn på nytt.
+          {% if volunteer_application.promoted_volunteer_id %}
+            Takk. Resten av profilen din er lagret i personaldatabasen, og du trenger ikke sende inn på nytt.
+          {% else %}
+            En gruppeleder må godkjenne søknaden før du blir opprettet i personaldatabasen. Du trenger ikke sende inn på nytt.
+          {% endif %}
         </p>
       </div>
       <div class="rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
-        Status: Venter på godkjenning
+        Status: {% if volunteer_application.promoted_volunteer_id %}Profil oppdatert{% else %}Venter på godkjenning{% endif %}
       </div>
     </section>
   </section>
