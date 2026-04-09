@@ -733,7 +733,7 @@ async def test_volunteer_applications_submit_notifies_group_admins_with_review_l
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_submit_preserves_valid_e164_phone_number() -> (
+async def test_volunteer_applications_submit_normalizes_local_phone_number() -> (
     None
 ):
     repository = FakeVolunteerApplicationsRepository()
@@ -752,7 +752,7 @@ async def test_volunteer_applications_submit_preserves_valid_e164_phone_number()
         VolunteerApplicationSubmissionInput(
             first_name="Ada",
             last_name="Lovelace",
-            phone="+4799999998",
+            phone="95230903",
             birth_date=None,
             gender="K",
             address=None,
@@ -760,11 +760,11 @@ async def test_volunteer_applications_submit_preserves_valid_e164_phone_number()
         ),
     )
 
-    assert repository.saved_submission_phones == ["+4799999998"]
+    assert repository.saved_submission_phones == ["+4795230903"]
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_submit_requires_e164_phone_number() -> None:
+async def test_volunteer_applications_submit_rejects_invalid_phone_number() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
         settings=Settings(app_secret_key="test-secret"),
@@ -779,7 +779,7 @@ async def test_volunteer_applications_submit_requires_e164_phone_number() -> Non
             VolunteerApplicationSubmissionInput(
                 first_name="Ada",
                 last_name="Lovelace",
-                phone="99999999",
+                phone="123",
                 birth_date=None,
                 gender="K",
                 address=None,

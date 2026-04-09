@@ -33,6 +33,19 @@ def normalize_phone_number(value: str | None, *, default_region: str = DEFAULT_P
     return result.normalized or result.cleaned
 
 
+def normalize_required_phone_number(
+    value: str | None,
+    *,
+    default_region: str = DEFAULT_PHONE_REGION,
+) -> str:
+    result = analyze_phone_number(value, default_region=default_region)
+    if result.cleaned is None:
+        raise ValueError("Telefonnummer er påkrevd.")
+    if result.normalized is None:
+        raise ValueError("Skriv inn et gyldig telefonnummer.")
+    return result.normalized
+
+
 def require_e164_phone_number(value: str | None, *, default_region: str = DEFAULT_PHONE_REGION) -> str:
     result = analyze_phone_number(value, default_region=default_region)
     if result.cleaned is None:

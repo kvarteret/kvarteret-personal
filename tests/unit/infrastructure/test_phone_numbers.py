@@ -6,6 +6,7 @@ from app.infrastructure.contact.phone_numbers import (
     analyze_phone_number,
     is_obviously_false_phone_number,
     normalize_phone_number,
+    normalize_required_phone_number,
     require_e164_phone_number,
 )
 
@@ -45,3 +46,12 @@ def test_require_e164_phone_number_accepts_canonical_e164() -> None:
 def test_require_e164_phone_number_rejects_non_e164_input() -> None:
     with pytest.raises(ValueError):
         require_e164_phone_number("95230903")
+
+
+def test_normalize_required_phone_number_accepts_local_norwegian_number() -> None:
+    assert normalize_required_phone_number("95230903") == "+4795230903"
+
+
+def test_normalize_required_phone_number_rejects_invalid_phone() -> None:
+    with pytest.raises(ValueError, match="gyldig telefonnummer"):
+        normalize_required_phone_number("123")
