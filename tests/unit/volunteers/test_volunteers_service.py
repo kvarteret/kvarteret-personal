@@ -119,7 +119,7 @@ async def test_search_cursor_offset_is_clamped(monkeypatch):
     service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
     seen: dict[str, int] = {}
 
-    async def fake_search(*, normalized_query: str, limit: int, offset: int):
+    async def fake_search(*, normalized_query: str, limit: int, offset: int, only_active: bool = False):
         seen["offset"] = offset
         return []
 

@@ -1,0 +1,118 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: nb\n"
+
+msgid "Volunteer registration"
+msgstr "Frivilligregistrering"
+
+msgid "Application submitted"
+msgstr "Søknad sendt inn"
+
+msgid "Complete your details"
+msgstr "Fullfør dine detaljer"
+
+msgid "Invitation for %(email)s"
+msgstr "Invitasjon for %(email)s"
+
+msgid "Your details have been submitted. A group manager can now approve you in the personnel database."
+msgstr "Detaljene dine er sendt inn. En gruppeleder kan nå godkjenne deg i personaldatabasen."
+
+msgid "First name"
+msgstr "Fornavn"
+
+msgid "Last name"
+msgstr "Etternavn"
+
+msgid "Phone"
+msgstr "Telefon"
+
+msgid "Birth date"
+msgstr "Fødselsdato"
+
+msgid "Gender"
+msgstr "Kjønn"
+
+msgid "Man"
+msgstr "Mann"
+
+msgid "Woman"
+msgstr "Kvinne"
+
+msgid "Other"
+msgstr "Annet"
+
+msgid "Address"
+msgstr "Adresse"
+
+msgid "Postal code"
+msgstr "Postnummer"
+
+msgid "Profile photo preview"
+msgstr "Forhåndsvisning av profilbilde"
+
+msgid "Choose a photo to preview it here."
+msgstr "Velg et bilde for å se forhåndsvisning her."
+
+msgid "Profile photo"
+msgstr "Profilbilde"
+
+msgid "You can upload and review the photo before you submit."
+msgstr "Du kan laste opp og kontrollere bildet før du sender inn."
+
+msgid "Submit registration"
+msgstr "Send inn registrering"
+
+msgid "Your profile has been updated"
+msgstr "Profilen din er oppdatert"
+
+msgid "Your application has been received"
+msgstr "Søknaden din er mottatt"
+
+msgid "Thank you. The rest of your profile is saved in the personnel database, and you do not need to submit again."
+msgstr "Takk. Resten av profilen din er lagret i personaldatabasen, og du trenger ikke sende inn på nytt."
+
+msgid "A group manager must approve your application before you are created in the personnel database. You do not need to submit again."
+msgstr "En gruppeleder må godkjenne søknaden før du blir opprettet i personaldatabasen. Du trenger ikke sende inn på nytt."
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Profile updated"
+msgstr "Profil oppdatert"
+
+msgid "Pending approval"
+msgstr "Venter på godkjenning"
+
+msgid "Made with 💛 by E-tjenesten"
+msgstr "Med 💛 fra E-tjenesten"
+
+msgid "Feedback"
+msgstr "Ris / Ros / Forslag"
+
+msgid "Enter a valid phone number."
+msgstr "Skriv inn et gyldig telefonnummer."
+
+msgid "Profile photo is required."
+msgstr "Profilbilde er påkrevd."
+
+msgid "Registration token was not found."
+msgstr "Registreringstokenet ble ikke funnet."
+
+msgid "Volunteer application not found."
+msgstr "Frivilligregistreringen ble ikke funnet."
+
+msgid "Photos must be jpg, jpeg, png, or webp."
+msgstr "Bilder må være jpg, jpeg, png eller webp."
+
+msgid "Photos must be 40 MB or smaller."
+msgstr "Bilder må være 40 MB eller mindre."
+
+msgid "Uploaded file is not a valid image."
+msgstr "Den opplastede filen er ikke et gyldig bilde."
+
+msgid "Photo size must be at least 32 pixels."
+msgstr "Bildestørrelsen må være minst 32 piksler."
+
+msgid "Supabase credentials are required for storage integration."
+msgstr "Supabase-legitimasjon er påkrevd for lagringsintegrasjon."

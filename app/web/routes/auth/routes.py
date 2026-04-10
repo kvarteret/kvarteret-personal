@@ -127,7 +127,6 @@ async def login_submit(
             },
             status_code=status.HTTP_400_BAD_REQUEST,
         )
-
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     _set_session_cookie(
         response,

@@ -23,6 +23,11 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationsService,
 )
 from app.domain.volunteers.service import VolunteersService
+from app.web.i18n import resolve_public_locale, translate_public
+from app.web.routes.volunteer_applications.pages import (
+    _localized_gender_options,
+    _render_public_apply_template,
+)
 from app.web.upload_helpers import read_upload_file_limited
 from app.web.templates import templates
 
@@ -211,6 +216,16 @@ async def volunteer_application_submit(
     settings=Depends(get_settings),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
+    locale = resolve_public_locale(request.headers.get("Accept-Language"))
+    form_values = {
+        "first_name": first_name or "",
+        "last_name": last_name,
+        "phone": phone,
+        "birth_date": birth_date or "",
+        "gender": gender,
+        "address": address or "",
+        "postal_code": postal_code or "",
+    }
     try:
         photo_content = (
             await read_upload_file_limited(profile_photo, max_bytes=settings.photo_upload_max_bytes)
@@ -234,18 +249,92 @@ async def volunteer_application_submit(
             photo_content_type=profile_photo.content_type if profile_photo is not None else None,
         )
     except VolunteerApplicationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=translate_public(locale, str(exc)),
+        ) from exc
     except VolunteerApplicationValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return await _render_public_apply_error_response(
+            request,
+            locale=locale,
+            token=token,
+            volunteer_applications_service=volunteer_applications_service,
+            form_values=form_values,
+            error_message=translate_public(locale, str(exc)),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     except VolunteerApplicationConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return await _render_public_apply_error_response(
+            request,
+            locale=locale,
+            token=token,
+            volunteer_applications_service=volunteer_applications_service,
+            form_values=form_values,
+            error_message=translate_public(locale, str(exc)),
+            status_code=status.HTTP_409_CONFLICT,
+        )
     except PhotoUploadTooLargeError as exc:
-        raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
+        return await _render_public_apply_error_response(
+            request,
+            locale=locale,
+            token=token,
+            volunteer_applications_service=volunteer_applications_service,
+            form_values=form_values,
+            error_message=translate_public(locale, str(exc)),
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+        )
     except InvalidPhotoError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return await _render_public_apply_error_response(
+            request,
+            locale=locale,
+            token=token,
+            volunteer_applications_service=volunteer_applications_service,
+            form_values=form_values,
+            error_message=translate_public(locale, str(exc)),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     except NotConfiguredError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        return await _render_public_apply_error_response(
+            request,
+            locale=locale,
+            token=token,
+            volunteer_applications_service=volunteer_applications_service,
+            form_values=form_values,
+            error_message=translate_public(locale, str(exc)),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     finally:
         if profile_photo is not None:
             await profile_photo.close()
     return RedirectResponse(url=f"/apply/{token}/submitted", status_code=status.HTTP_303_SEE_OTHER)
+
+
+async def _render_public_apply_error_response(
+    request: Request,
+    *,
+    locale: str,
+    token: str,
+    volunteer_applications_service: VolunteerApplicationsService,
+    form_values: dict[str, str],
+    error_message: str,
+    status_code: int,
+):
+    volunteer_application = await volunteer_applications_service.get_volunteer_application_by_token(token)
+    if volunteer_application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=translate_public(locale, "Volunteer application not found."),
+        )
+    return _render_public_apply_template(
+        request,
+        "pages/volunteer_applications/volunteer_application_form.html",
+        locale=locale,
+        current_user=None,
+        title=translate_public(locale, "Volunteer registration"),
+        volunteer_application=volunteer_application,
+        gender_options=_localized_gender_options(locale),
+        submitted=False,
+        form_error=error_message,
+        form_values=form_values,
+        status_code=status_code,
+    )
