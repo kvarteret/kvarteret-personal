@@ -3,8 +3,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
+
 from fastapi import FastAPI
-import posthog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.cookies import SessionCookieSigner
@@ -17,6 +17,7 @@ from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
 from app.infrastructure.email.smtp import SmtpEmailSender
+from app.infrastructure.email.applicant_templates import ApplicantEmailTemplateRenderer
 from app.domain.feedback.service import FeedbackService
 from app.domain.mobile_card.repository import MobileCardRepository
 from app.domain.mobile_card.april_state import (
@@ -108,6 +109,7 @@ def build_application_container(settings: Settings | None = None) -> Application
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
     email_sender = SmtpEmailSender(resolved_settings)
+    applicant_email_renderer = ApplicantEmailTemplateRenderer()
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository(session_factory=session_factory)
     )
@@ -161,6 +163,7 @@ def build_application_container(settings: Settings | None = None) -> Application
                 media_token_service=media_token_service,
             ),
             email_sender=email_sender,
+            applicant_email_renderer=applicant_email_renderer,
             storage_service=storage_service,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),
@@ -173,13 +176,9 @@ def build_application_container(settings: Settings | None = None) -> Application
 async def app_lifespan(app: FastAPI):
     if not hasattr(app.state, "container"):
         app.state.container = build_application_container()
-    settings = app.state.container.settings
-    posthog.api_key = settings.posthog_project_token
-    posthog.host = settings.posthog_host
     try:
         yield
     finally:
-        posthog.flush()
         await app.state.container.aclose()
 
 

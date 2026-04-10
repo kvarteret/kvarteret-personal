@@ -1,0 +1,118 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+msgid "Volunteer registration"
+msgstr "Volunteer registration"
+
+msgid "Application submitted"
+msgstr "Application submitted"
+
+msgid "Complete your details"
+msgstr "Complete your details"
+
+msgid "Invitation for %(email)s"
+msgstr "Invitation for %(email)s"
+
+msgid "Your details have been submitted. A group manager can now approve you in the personnel database."
+msgstr "Your details have been submitted. A group manager can now approve you in the personnel database."
+
+msgid "First name"
+msgstr "First name"
+
+msgid "Last name"
+msgstr "Last name"
+
+msgid "Phone"
+msgstr "Phone"
+
+msgid "Birth date"
+msgstr "Birth date"
+
+msgid "Gender"
+msgstr "Gender"
+
+msgid "Man"
+msgstr "Man"
+
+msgid "Woman"
+msgstr "Woman"
+
+msgid "Other"
+msgstr "Other"
+
+msgid "Address"
+msgstr "Address"
+
+msgid "Postal code"
+msgstr "Postal code"
+
+msgid "Profile photo preview"
+msgstr "Profile photo preview"
+
+msgid "Choose a photo to preview it here."
+msgstr "Choose a photo to preview it here."
+
+msgid "Profile photo"
+msgstr "Profile photo"
+
+msgid "You can upload and review the photo before you submit."
+msgstr "You can upload and review the photo before you submit."
+
+msgid "Submit registration"
+msgstr "Submit registration"
+
+msgid "Your profile has been updated"
+msgstr "Your profile has been updated"
+
+msgid "Your application has been received"
+msgstr "Your application has been received"
+
+msgid "Thank you. The rest of your profile is saved in the personnel database, and you do not need to submit again."
+msgstr "Thank you. The rest of your profile is saved in the personnel database, and you do not need to submit again."
+
+msgid "A group manager must approve your application before you are created in the personnel database. You do not need to submit again."
+msgstr "A group manager must approve your application before you are created in the personnel database. You do not need to submit again."
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Profile updated"
+msgstr "Profile updated"
+
+msgid "Pending approval"
+msgstr "Pending approval"
+
+msgid "Made with 💛 by E-tjenesten"
+msgstr "Made with 💛 by E-tjenesten"
+
+msgid "Feedback"
+msgstr "Feedback"
+
+msgid "Enter a valid phone number."
+msgstr "Enter a valid phone number."
+
+msgid "Profile photo is required."
+msgstr "Profile photo is required."
+
+msgid "Registration token was not found."
+msgstr "Registration token was not found."
+
+msgid "Volunteer application not found."
+msgstr "Volunteer application not found."
+
+msgid "Photos must be jpg, jpeg, png, or webp."
+msgstr "Photos must be jpg, jpeg, png, or webp."
+
+msgid "Photos must be 40 MB or smaller."
+msgstr "Photos must be 40 MB or smaller."
+
+msgid "Uploaded file is not a valid image."
+msgstr "Uploaded file is not a valid image."
+
+msgid "Photo size must be at least 32 pixels."
+msgstr "Photo size must be at least 32 pixels."
+
+msgid "Supabase credentials are required for storage integration."
+msgstr "Supabase credentials are required for storage integration."

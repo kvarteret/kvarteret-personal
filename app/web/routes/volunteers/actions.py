@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-from posthog import capture, identify_context, new_context
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
@@ -139,9 +137,6 @@ async def volunteer_delete(
         subject_type="volunteer",
         subject_id=volunteer_id,
     )
-    with new_context():
-        identify_context(str(current_user.auth_user_id))
-        capture("volunteer_deleted")
     return RedirectResponse(url="/volunteers", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -175,9 +170,6 @@ async def volunteer_add_course_completion(
         subject_id=volunteer_id,
         details={"course_id": course_id, "year": year, "term": term},
     )
-    with new_context():
-        identify_context(str(current_user.auth_user_id))
-        capture("volunteer_course_completion_added", properties={"year": year, "term": term})
     if request.headers.get("HX-Request") == "true":
         volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
         return await render_course_completions_panel(
@@ -256,9 +248,6 @@ async def volunteer_add_role_assignment(
         subject_id=volunteer_id,
         details={"group_id": group_id, "role_id": role_id, "year": year, "term": term},
     )
-    with new_context():
-        identify_context(str(current_user.auth_user_id))
-        capture("volunteer_role_assignment_added", properties={"year": year, "term": term, "contract_signed": contract_signed})
     if request.headers.get("HX-Request") == "true":
         volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
         return await render_role_assignments_panel(

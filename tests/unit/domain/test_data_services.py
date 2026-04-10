@@ -224,6 +224,24 @@ class FakeEmailSender:
         )
 
 
+def assert_applicant_email_contains(
+    payload: dict[str, str],
+    *,
+    recipient_email: str,
+    subject: str,
+    invitation_url: str,
+    english_phrase: str,
+    norwegian_phrase: str,
+) -> None:
+    assert payload["recipient_email"] == recipient_email
+    assert payload["subject"] == subject
+    assert english_phrase in payload["html_body"]
+    assert norwegian_phrase in payload["html_body"]
+    assert invitation_url in payload["html_body"]
+    assert "Made with" in payload["html_body"]
+    assert "Med" in payload["html_body"]
+
+
 class FakeMediaTokenService:
     def build_photo_media_url(self, path: str) -> str:
         return f"/media/photos/{path}?token=test"
@@ -820,13 +838,14 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
 @pytest.mark.asyncio
 async def test_volunteer_applications_approve_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
+    email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_sender=email_sender,
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -839,6 +858,14 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
     assert refreshed == 2
     assert repository.approved_registration_ids == [7]
     assert repository.count_calls == 2
+    assert_applicant_email_contains(
+        email_sender.sent_emails[0],
+        recipient_email="registrant@example.com",
+        subject="Complete your Kvarteret profile / Fullfør Kvarteret-profilen din",
+        invitation_url="https://personal.kvarteret.no/apply/token-123",
+        english_phrase="You are now registered as a volunteer at Det Akademiske Kvarter.",
+        norwegian_phrase="Du er nå registrert som frivillig i Det Akademiske Kvarter.",
+    )
 
 
 @pytest.mark.asyncio
@@ -884,19 +911,14 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
 
     assert invite.email == "new@example.test"
     assert repository.created_invites[0]["email"] == "new@example.test"
-    assert email_sender.sent_emails == [
-        {
-            "recipient_email": "new@example.test",
-            "subject": "Velkommen som ny frivillig på Kvarteret!",
-            "html_body": (
-                "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
-                "<br><br>"
-                f'Åpne denne lenken for å fylle inn detaljene dine:<br><a href="https://personal.kvarteret.no/apply/{invite.token}">https://personal.kvarteret.no/apply/{invite.token}</a>'
-                "<br><br>"
-                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
-            ),
-        }
-    ]
+    assert_applicant_email_contains(
+        email_sender.sent_emails[0],
+        recipient_email="new@example.test",
+        subject="Complete your Kvarteret registration / Fullfør registreringen din hos Kvarteret",
+        invitation_url=f"https://personal.kvarteret.no/apply/{invite.token}",
+        english_phrase="You have been invited to complete your volunteer registration for Det Akademiske Kvarter.",
+        norwegian_phrase="Du er invitert til å fullføre frivilligregistreringen din for Det Akademiske Kvarter.",
+    )
 
 
 @pytest.mark.asyncio
@@ -916,19 +938,14 @@ async def test_volunteer_applications_service_can_resend_invitation_email() -> N
     detail = await service.resend_volunteer_application_invitation(7)
 
     assert detail.registration_id == 7
-    assert email_sender.sent_emails == [
-        {
-            "recipient_email": "registrant@example.com",
-            "subject": "Velkommen som ny frivillig på Kvarteret!",
-            "html_body": (
-                "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
-                "<br><br>"
-                'Åpne denne lenken for å fylle inn detaljene dine:<br><a href="https://personal.kvarteret.no/apply/token-123">https://personal.kvarteret.no/apply/token-123</a>'
-                "<br><br>"
-                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
-            ),
-        }
-    ]
+    assert_applicant_email_contains(
+        email_sender.sent_emails[0],
+        recipient_email="registrant@example.com",
+        subject="Complete your Kvarteret registration / Fullfør registreringen din hos Kvarteret",
+        invitation_url="https://personal.kvarteret.no/apply/token-123",
+        english_phrase="You have been invited to complete your volunteer registration for Det Akademiske Kvarter.",
+        norwegian_phrase="Du er invitert til å fullføre frivilligregistreringen din for Det Akademiske Kvarter.",
+    )
 
 
 @pytest.mark.asyncio

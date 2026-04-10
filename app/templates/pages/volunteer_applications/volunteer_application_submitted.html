@@ -8,18 +8,18 @@
       </div>
       <div class="grid gap-2">
         <p class="text-lg font-medium tracking-tight text-stone-900">
-          {% if volunteer_application.promoted_volunteer_id %}Profilen din er oppdatert{% else %}Søknaden din er mottatt{% endif %}
+          {% if volunteer_application.promoted_volunteer_id %}{{ _("Your profile has been updated") }}{% else %}{{ _("Your application has been received") }}{% endif %}
         </p>
         <p class="text-sm leading-6 text-stone-700">
           {% if volunteer_application.promoted_volunteer_id %}
-            Takk. Resten av profilen din er lagret i personaldatabasen, og du trenger ikke sende inn på nytt.
+            {{ _("Thank you. The rest of your profile is saved in the personnel database, and you do not need to submit again.") }}
           {% else %}
-            En gruppeleder må godkjenne søknaden før du blir opprettet i personaldatabasen. Du trenger ikke sende inn på nytt.
+            {{ _("A group manager must approve your application before you are created in the personnel database. You do not need to submit again.") }}
           {% endif %}
         </p>
       </div>
       <div class="rounded-2xl bg-stone-100 px-4 py-3 text-sm text-stone-700">
-        Status: {% if volunteer_application.promoted_volunteer_id %}Profil oppdatert{% else %}Venter på godkjenning{% endif %}
+        {{ _("Status") }}: {% if volunteer_application.promoted_volunteer_id %}{{ _("Profile updated") }}{% else %}{{ _("Pending approval") }}{% endif %}
       </div>
     </section>
   </section>

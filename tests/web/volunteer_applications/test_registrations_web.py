@@ -357,10 +357,13 @@ def test_volunteer_application_pages_render() -> None:
     assert "Ny Frivillig" in admin_response.text
     assert 'hx-get="/volunteer-applications/recent-registrations"' in admin_response.text
     assert public_response.status_code == 200
-    assert "Fullfør dine detaljer" in public_response.text
+    assert "Complete your details" in public_response.text
+    assert 'lang="en"' in public_response.text
+    assert "Woman" in public_response.text
+    assert "Accept-Language" in public_response.headers.get("vary", "")
     assert submitted_response.status_code == 200
-    assert "Søknaden din er mottatt" in submitted_response.text
-    assert "Du trenger ikke sende inn på nytt." in submitted_response.text
+    assert "Your application has been received" in submitted_response.text
+    assert "do not need to submit again" in submitted_response.text
     assert 'enctype="multipart/form-data"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
     assert 'data-photo-input' in public_response.text
@@ -370,6 +373,35 @@ def test_volunteer_application_pages_render() -> None:
     assert 'pattern="\\+[1-9][0-9]{7,14}"' not in public_response.text
     assert 'placeholder="91234567"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
+
+
+def test_volunteer_application_pages_render_in_norwegian_when_browser_prefers_norwegian() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/apply/token-123", headers={"Accept-Language": "nb-NO,nb;q=0.9,en;q=0.8"})
+
+    assert response.status_code == 200
+    assert "Fullfør dine detaljer" in response.text
+    assert 'lang="nb"' in response.text
+    assert "Kvinne" in response.text
+
+
+def test_volunteer_application_pages_fallback_to_english_for_non_norwegian_browsers() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/apply/token-123", headers={"Accept-Language": "fr-FR,fr;q=0.9"})
+
+    assert response.status_code == 200
+    assert "Complete your details" in response.text
+    assert 'lang="en"' in response.text
 
 
 def test_volunteer_application_form_requires_photo_when_none_exists() -> None:
@@ -598,7 +630,7 @@ def test_volunteer_application_submit_rejects_profile_photo_over_40mb() -> None:
     )
 
     assert response.status_code == 413
-    assert response.json() == {"detail": "Photos must be 40 MB or smaller."}
+    assert "Photos must be 40 MB or smaller." in response.text
     assert volunteer_applications_service.submission_calls == []
 
 
@@ -623,7 +655,7 @@ def test_volunteer_application_submit_rejects_invalid_phone() -> None:
     )
 
     assert response.status_code == 400
-    assert "gyldig telefonnummer" in response.text
+    assert "Enter a valid phone number." in response.text
 
 
 def test_volunteer_application_submit_rejects_missing_profile_photo() -> None:
@@ -647,7 +679,32 @@ def test_volunteer_application_submit_rejects_missing_profile_photo() -> None:
     )
 
     assert response.status_code == 400
-    assert "Profilbilde er påkrevd." in response.text
+    assert "Profile photo is required." in response.text
+
+
+def test_volunteer_application_submit_errors_render_in_norwegian_for_norwegian_browser() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: InvalidPhoneVolunteerApplicationsService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/apply/token-123",
+        data={
+            "first_name": "Sample",
+            "last_name": "Registrant",
+            "phone": "00000000",
+            "birth_date": "1815-12-10",
+            "gender": "K",
+            "address": "Example address",
+            "postal_code": "0000",
+        },
+        headers={"Accept-Language": "no,en;q=0.8"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Skriv inn et gyldig telefonnummer." in response.text
 
 
 def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
