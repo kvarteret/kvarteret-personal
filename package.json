@@ -6,7 +6,8 @@
   "scripts": {
     "build:css": "bunx @tailwindcss/cli -i ./app/static/css/input.css -o ./app/static/css/output.css",
     "build:js": "bun build ./app/static/js/vercel-observability.ts --outfile ./app/static/js/vercel-observability.js --format esm --target browser --define process.env.NODE_ENV='\"production\"'",
-    "build:emails": "bun run ./scripts/compile_mjml_templates.mjs",
+    "build:email-previews": "python ./scripts/render_email_previews.py",
+    "build:emails": "bun run ./scripts/compile_mjml_templates.mjs && bun run build:email-previews",
     "build:i18n": "python ./scripts/compile_gettext_catalogs.py",
     "build:assets": "bun run build:css && bun run build:js && bun run build:emails && bun run build:i18n",
     "watch:css": "bunx @tailwindcss/cli -i ./app/static/css/input.css -o ./app/static/css/output.css --watch"

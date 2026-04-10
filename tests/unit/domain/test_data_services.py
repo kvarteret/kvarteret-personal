@@ -238,8 +238,7 @@ def assert_applicant_email_contains(
     assert english_phrase in payload["html_body"]
     assert norwegian_phrase in payload["html_body"]
     assert invitation_url in payload["html_body"]
-    assert "Made with" in payload["html_body"]
-    assert "Med" in payload["html_body"]
+    assert "Direct link / Direkte lenke" in payload["html_body"]
 
 
 class FakeMediaTokenService:
