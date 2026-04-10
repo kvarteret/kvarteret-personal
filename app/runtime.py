@@ -16,6 +16,7 @@ from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
 from app.infrastructure.email.smtp import SmtpEmailSender
+from app.infrastructure.email.mobile_card_templates import MobileCardEmailTemplateRenderer
 from app.domain.feedback.service import FeedbackService
 from app.domain.mobile_card.repository import MobileCardRepository
 from app.domain.mobile_card.april_state import (
@@ -107,6 +108,7 @@ def build_application_container(settings: Settings | None = None) -> Application
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
     email_sender = SmtpEmailSender(resolved_settings)
+    mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository(session_factory=session_factory)
     )
@@ -148,6 +150,7 @@ def build_application_container(settings: Settings | None = None) -> Application
             email_sender=email_sender,
             media_token_service=media_token_service,
             april_state_service=mobile_card_april_state_service,
+            email_template_renderer=mobile_card_email_renderer,
         ),
         now_playing_service=NowPlayingService(
             resolved_settings,
