@@ -66,7 +66,6 @@ async def feedback_submit(
             email=email,
             feedback_message=message,
         )
-
     return _render_feedback_panel(
         request,
         page=page,

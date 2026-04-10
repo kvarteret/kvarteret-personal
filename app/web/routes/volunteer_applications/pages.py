@@ -10,8 +10,14 @@ from app.dependencies import (
 )
 from app.observability import log_admin_activity
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
-from app.domain.volunteers.options import GENDER_OPTIONS, gender_label
+from app.domain.volunteers.options import gender_label
 from app.domain.volunteers.service import VolunteersService
+from app.web.i18n import (
+    activate_public_locale,
+    apply_locale_vary_header,
+    resolve_public_locale,
+    translate_public,
+)
 from app.web.templates import templates
 
 router = APIRouter()
@@ -104,19 +110,24 @@ async def volunteer_application_form(
     current_user=Depends(get_current_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
+    locale = resolve_public_locale(request.headers.get("Accept-Language"))
     volunteer_application = await volunteer_applications_service.get_volunteer_application_by_token(token)
     if volunteer_application is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer application not found.")
-    return templates.TemplateResponse(
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=translate_public(locale, "Volunteer application not found."),
+        )
+    return _render_public_apply_template(
         request,
         "pages/volunteer_applications/volunteer_application_form.html",
-        {
-            "title": "Volunteer registration",
-            "section": "apply",
-            "current_user": current_user,
-            "volunteer_application": volunteer_application,
-            "gender_options": GENDER_OPTIONS,
-        },
+        locale=locale,
+        current_user=current_user,
+        title=translate_public(locale, "Volunteer registration"),
+        volunteer_application=volunteer_application,
+        gender_options=_localized_gender_options(locale),
+        submitted=False,
+        form_error=None,
+        form_values={},
     )
 
 
@@ -127,30 +138,33 @@ async def volunteer_application_submitted(
     current_user=Depends(get_current_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
+    locale = resolve_public_locale(request.headers.get("Accept-Language"))
     volunteer_application = await volunteer_applications_service.get_volunteer_application_by_token(token)
     if volunteer_application is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer application not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=translate_public(locale, "Volunteer application not found."),
+        )
     if not volunteer_application.submitted:
-        return templates.TemplateResponse(
+        return _render_public_apply_template(
             request,
             "pages/volunteer_applications/volunteer_application_form.html",
-            {
-                "title": "Volunteer registration",
-                "section": "apply",
-                "current_user": current_user,
-                "volunteer_application": volunteer_application,
-                "gender_options": GENDER_OPTIONS,
-            },
+            locale=locale,
+            current_user=current_user,
+            title=translate_public(locale, "Volunteer registration"),
+            volunteer_application=volunteer_application,
+            gender_options=_localized_gender_options(locale),
+            submitted=False,
+            form_error=None,
+            form_values={},
         )
-    return templates.TemplateResponse(
+    return _render_public_apply_template(
         request,
         "pages/volunteer_applications/volunteer_application_submitted.html",
-        {
-            "title": "Application submitted",
-            "section": "apply",
-            "current_user": current_user,
-            "volunteer_application": volunteer_application,
-        },
+        locale=locale,
+        current_user=current_user,
+        title=translate_public(locale, "Application submitted"),
+        volunteer_application=volunteer_application,
     )
 
 
@@ -199,3 +213,40 @@ def _build_promotion_group_options(volunteer_application):
         seen_group_ids.add(group_id)
         options.append({"group_id": group_id, "name": name})
     return options
+
+
+def _render_public_apply_template(
+    request: Request,
+    template_name: str,
+    *,
+    locale: str,
+    current_user,
+    title: str,
+    volunteer_application,
+    status_code: int = 200,
+    **context,
+):
+    with activate_public_locale(locale):
+        response = templates.TemplateResponse(
+            request,
+            template_name,
+            {
+                "title": title,
+                "section": "apply",
+                "current_user": current_user,
+                "page_lang": locale,
+                "volunteer_application": volunteer_application,
+                **context,
+            },
+            status_code=status_code,
+        )
+    apply_locale_vary_header(response)
+    return response
+
+
+def _localized_gender_options(locale: str) -> tuple[dict[str, str], ...]:
+    return (
+        {"code": "M", "label": translate_public(locale, "Man")},
+        {"code": "K", "label": translate_public(locale, "Woman")},
+        {"code": "A", "label": translate_public(locale, "Other")},
+    )

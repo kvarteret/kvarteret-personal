@@ -10,6 +10,10 @@ from typing import Protocol
 from app.cache import TTLCache
 from app.config import Settings
 from app.errors import NotConfiguredError
+from app.infrastructure.email.applicant_templates import (
+    ApplicantEmailTemplateRenderer,
+    ApplicantEmailTemplateRendererProtocol,
+)
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number, normalize_required_phone_number
@@ -276,12 +280,14 @@ class VolunteerApplicationsService:
         settings: Settings,
         repository: VolunteerApplicationsRepositoryProtocol,
         email_sender: EmailSenderProtocol,
+        applicant_email_renderer: ApplicantEmailTemplateRendererProtocol | None = None,
         storage_service: StorageService | None = None,
         pending_count_cache_ttl_seconds: int = 30,
     ) -> None:
         self.settings = settings
         self.repository = repository
         self.email_sender = email_sender
+        self.applicant_email_renderer = applicant_email_renderer or ApplicantEmailTemplateRenderer()
         self.storage_service = storage_service
         self._pending_count_cache: TTLCache[str, int] = TTLCache(
             ttl_seconds=pending_count_cache_ttl_seconds,
@@ -604,16 +610,11 @@ class VolunteerApplicationsService:
         if not resolved_base_url:
             raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send registration invitation emails.")
         invitation_url = f"{resolved_base_url}/apply/{token}"
+        rendered_email = self.applicant_email_renderer.render_invitation_email(invitation_url=invitation_url)
         await self.email_sender.send_email(
             recipient_email=email,
-            subject="Velkommen som ny frivillig på Kvarteret!",
-            html_body=(
-                "Du er invitert til å fullføre registreringen din i Det Akademiske Kvarter."
-                "<br><br>"
-                f"Åpne denne lenken for å fylle inn detaljene dine:<br><a href=\"{invitation_url}\">{invitation_url}</a>"
-                "<br><br>"
-                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
-            ),
+            subject=rendered_email.subject,
+            html_body=rendered_email.html_body,
         )
 
     async def _send_profile_completion_email(self, *, email: str, token: str, base_url: str | None = None) -> None:
@@ -621,16 +622,11 @@ class VolunteerApplicationsService:
         if not resolved_base_url:
             raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send profile completion emails.")
         invitation_url = f"{resolved_base_url}/apply/{token}"
+        rendered_email = self.applicant_email_renderer.render_profile_completion_email(invitation_url=invitation_url)
         await self.email_sender.send_email(
             recipient_email=email,
-            subject="Velkommen som ny frivillig på Kvarteret!",
-            html_body=(
-                "Du er nå registrert som frivillig i Det Akademiske Kvarter."
-                "<br><br>"
-                f"Åpne denne lenken for å fylle inn resten av profilen din:<br><a href=\"{invitation_url}\">{invitation_url}</a>"
-                "<br><br>"
-                "Hvis du ikke forventet denne invitasjonen, kan du se bort fra e-posten."
-            ),
+            subject=rendered_email.subject,
+            html_body=rendered_email.html_body,
         )
 
     async def _notify_group_admins_of_submission(
