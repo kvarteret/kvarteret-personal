@@ -1,18 +1,18 @@
 <mjml>
   <mj-head>
     <mj-attributes>
-      <mj-all font-family="Verdana, Geneva, sans-serif" color="#172033" />
-      <mj-body background-color="#fff7e4" />
+      <mj-all font-family="Helvetica, Arial, sans-serif" color="#111111" />
+      <mj-body background-color="#ffffff" />
       <mj-column padding="0" />
-      <mj-text font-size="16px" line-height="26px" padding="0" />
+      <mj-text font-size="16px" line-height="24px" padding="0" />
       <mj-button
-        background-color="#d7852f"
-        color="#172033"
-        border="2px solid #172033"
+        background-color="#f54b4b"
+        color="#ffffff"
+        border="0"
         border-radius="0"
         font-size="16px"
         font-weight="700"
-        inner-padding="16px 24px"
+        inner-padding="14px 20px"
         padding="0"
       />
     </mj-attributes>
@@ -20,33 +20,20 @@
     <mj-preview>Finish the rest of your profile in Det Akademiske Kvarter.</mj-preview>
   </mj-head>
   <mj-body>
-    <mj-section padding="24px 16px 0" background-color="#fff7e4" border="2px solid #172033">
+    <mj-section padding="0" background-color="#f54b4b">
       <mj-column>
         <mj-text
-          font-size="11px"
-          line-height="18px"
+          font-size="24px"
+          line-height="32px"
           font-weight="700"
-          letter-spacing="2px"
-          text-transform="uppercase"
-          color="#3c4d6f"
-        >
-          Det Akademiske Kvarter
-        </mj-text>
-        <mj-text
-          font-size="32px"
-          line-height="36px"
-          font-weight="700"
-          padding-top="12px"
+          color="#ffffff"
+          padding="20px 24px"
         >
           Complete your profile
         </mj-text>
-        <mj-text font-size="22px" line-height="30px" font-weight="700" padding-top="16px">
-          Fullfør profilen din
-        </mj-text>
       </mj-column>
     </mj-section>
-
-    <mj-section padding="0 16px" background-color="#fffdf7" border-left="2px solid #172033" border-right="2px solid #172033" border-bottom="2px solid #172033">
+    <mj-section padding="0" background-color="#ffffff">
       <mj-column>
         <mj-text padding="24px 24px 0">
           You are now registered as a volunteer at Det Akademiske Kvarter. Use the link below to complete the rest of your profile.
@@ -57,28 +44,11 @@
         <mj-button href="{{ invitation_url }}" padding="24px 24px 0">
           Complete your profile / Fullfør profilen din
         </mj-button>
-        <mj-text padding="24px 24px 0" font-size="14px" line-height="22px">
-          If the button does not work, open this link:
+        <mj-text padding="20px 24px 6px" font-size="14px" line-height="22px">
+          Direct link / Direkte lenke
         </mj-text>
-        <mj-text padding="6px 24px 0" font-size="14px" line-height="22px">
-          Hvis knappen ikke virker, åpne denne lenken:
-        </mj-text>
-        <mj-text padding="8px 24px 24px" font-size="14px" line-height="22px">
-          <a href="{{ invitation_url }}" style="color:#172033; word-break:break-word;">{{ invitation_url }}</a>
-        </mj-text>
-      </mj-column>
-    </mj-section>
-
-    <mj-section padding="0 16px 24px" background-color="#f4efe3" border="2px solid #172033">
-      <mj-column>
-        <mj-text padding="20px 24px 0" font-size="13px" line-height="20px" color="#3c4d6f">
-          If you did not expect this email, you can safely ignore it.
-        </mj-text>
-        <mj-text padding="8px 24px 0" font-size="13px" line-height="20px" color="#3c4d6f">
-          Hvis du ikke forventet denne e-posten, kan du trygt se bort fra den.
-        </mj-text>
-        <mj-text padding="16px 24px 20px" font-size="12px" line-height="18px" color="#3c4d6f">
-          Made with 💛 by E-tjenesten / Med 💛 fra E-tjenesten
+        <mj-text padding="0 24px 24px" font-size="14px" line-height="22px">
+          <a href="{{ invitation_url }}" style="color:#f54b4b; word-break:break-word;">{{ invitation_url }}</a>
         </mj-text>
       </mj-column>
     </mj-section>
