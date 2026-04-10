@@ -1037,19 +1037,15 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
     assert volunteer_id == 12
     assert created_at.tzinfo == UTC
     assert len(access_code) == 6
-    assert email_sender.sent_emails == [
-        {
-            "recipient_email": "person@example.com",
-            "subject": "Kvarteret Internkort is ready for you",
-            "html_body": (
-                "Your Kvarteret verification code is:"
-                f"<br><br>{access_code}<br><br>"
-                "This code expires in 10 minutes."
-                "<br><br>"
-                "If you didn't request this code, you can ignore this email."
-            ),
-        }
-    ]
+    assert email_sender.sent_emails[0]["recipient_email"] == "person@example.com"
+    assert (
+        email_sender.sent_emails[0]["subject"]
+        == "Kvarteret Internkort is ready for you"
+    )
+    assert "Your verification code" in email_sender.sent_emails[0]["html_body"]
+    assert access_code in email_sender.sent_emails[0]["html_body"]
+    assert "This code expires in 10 minutes." in email_sender.sent_emails[0]["html_body"]
+    assert "If you did not request this code" in email_sender.sent_emails[0]["html_body"]
 
 
 @pytest.mark.asyncio

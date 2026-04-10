@@ -12,6 +12,10 @@ from pydantic import BaseModel, ConfigDict
 
 from app.cache import TTLCache
 from app.config import Settings
+from app.infrastructure.email.mobile_card_templates import (
+    MobileCardEmailTemplateRenderer,
+    MobileCardEmailTemplateRendererProtocol,
+)
 from app.media_tokens import MediaTokenService
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -203,12 +207,16 @@ class MobileCardService:
         email_sender: EmailSenderProtocol,
         media_token_service: MediaTokenService | None = None,
         april_state_service: MobileCardAprilStateService | None = None,
+        email_template_renderer: MobileCardEmailTemplateRendererProtocol | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
         self.email_sender = email_sender
         self.media_token_service = media_token_service
         self.april_state_service = april_state_service
+        self.email_template_renderer = (
+            email_template_renderer or MobileCardEmailTemplateRenderer()
+        )
         self.serializer = URLSafeTimedSerializer(
             settings.app_secret_key, salt="kvarteret-mobile-card"
         )
@@ -273,13 +281,14 @@ class MobileCardService:
                 volunteer_row["id"],
             )
 
+        rendered_email = self.email_template_renderer.render_access_code_email(
+            access_code=access_code,
+            expires_in_minutes=self.settings.mobile_card_access_code_ttl_minutes,
+        )
         await self.email_sender.send_email(
             recipient_email=email.strip(),
-            subject="Kvarteret Internkort is ready for you",
-            html_body=_build_access_code_email_body(
-                access_code=access_code,
-                expires_in_minutes=self.settings.mobile_card_access_code_ttl_minutes,
-            ),
+            subject=rendered_email.subject,
+            html_body=rendered_email.html_body,
         )
         logger.info(
             "Sent mobile-card access code email for volunteer %s", volunteer_row["id"]
@@ -551,18 +560,6 @@ class MobileCardService:
 def _generate_access_code(length: int = 6) -> str:
     digits = "0123456789"
     return "".join(choice(digits) for _ in range(length))
-
-
-def _build_access_code_email_body(*, access_code: str, expires_in_minutes: int) -> str:
-    return (
-        "Your Kvarteret verification code is:"
-        "<br><br>"
-        f"{access_code}"
-        "<br><br>"
-        f"This code expires in {expires_in_minutes} minutes."
-        "<br><br>"
-        "If you didn't request this code, you can ignore this email."
-    )
 
 
 def _build_rate_limit_keys(email: str, source_key: str | None) -> tuple[str, ...]:
