@@ -15,8 +15,8 @@
     <header class="grid justify-items-center gap-4 pt-3 text-center">
       {% if can_manage_volunteer_photo %}
         <div class="grid justify-items-center gap-3">
-        <form action="/volunteers/{{ volunteer.volunteer_id }}/photo" enctype="multipart/form-data" method="post">
-          <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="sr-only" id="volunteer-photo-input" name="photo" onchange="this.form.submit()" required type="file">
+        <form action="/volunteers/{{ volunteer.volunteer_id }}/photo" enctype="multipart/form-data" hx-encoding="multipart/form-data" method="post">
+          <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="sr-only" id="volunteer-photo-input" name="photo" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" required type="file">
           <label class="grid h-52 w-52 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md transition hover:shadow-lg" for="volunteer-photo-input" title="Klikk for å endre profilbilde">
             {% if volunteer.photo_url %}
               <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ volunteer.photo_url }}">
