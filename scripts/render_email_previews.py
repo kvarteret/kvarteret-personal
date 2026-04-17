@@ -12,6 +12,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.infrastructure.email.applicant_templates import (
     ApplicantEmailTemplateRenderer,
 )
+from app.infrastructure.email.admin_account_templates import (
+    AdminAccountEmailTemplateRenderer,
+)
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
 )
@@ -30,6 +33,7 @@ PREVIEWS_DIR = PROJECT_ROOT / "app" / "templates" / "emails" / "previews"
 
 def build_previews() -> list[EmailPreview]:
     applicant_renderer = ApplicantEmailTemplateRenderer()
+    admin_account_renderer = AdminAccountEmailTemplateRenderer()
     mobile_card_renderer = MobileCardEmailTemplateRenderer()
 
     applicant_invitation_email = applicant_renderer.render_invitation_email(
@@ -41,6 +45,12 @@ def build_previews() -> list[EmailPreview]:
     mobile_card_email = mobile_card_renderer.render_access_code_email(
         access_code="483921",
         expires_in_minutes=10,
+    )
+    admin_account_email = admin_account_renderer.render_onboarding_email(
+        setup_url="https://personal.kvarteret.no/set-password#access_token=preview-token",
+        display_name="New Admin",
+        username="new.admin",
+        role_name="Admin",
     )
 
     return [
@@ -55,6 +65,12 @@ def build_previews() -> list[EmailPreview]:
             title="Applicant Profile Completion",
             subject=applicant_profile_email.subject,
             html_body=applicant_profile_email.html_body,
+        ),
+        EmailPreview(
+            slug="admin_account_onboarding",
+            title="Admin Account Onboarding",
+            subject=admin_account_email.subject,
+            html_body=admin_account_email.html_body,
         ),
         EmailPreview(
             slug="mobile_card_access_code",

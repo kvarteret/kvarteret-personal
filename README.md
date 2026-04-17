@@ -104,3 +104,7 @@ To create a direct auth-backed admin user in the new system, run:
       --password 'choose-a-password' \
       --display-name '<display-name>' \
       --role admin
+
+The web admin-account form sends a password-setup email instead. That flow
+requires working SMTP settings (`SMTP_*`) and a public base URL
+(`APP_PUBLIC_BASE_URL`, or a correct request host in local development).

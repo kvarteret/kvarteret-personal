@@ -9,7 +9,7 @@
 
     <section class="app-panel">
       {{ flash_notice(error_message, 'error') }}
-      <p class="mb-5 text-sm text-stone-500">Det sendes en invitasjonslenke på e-post slik at den nye admin-brukeren kan sette sitt eget passord.</p>
+      <p class="mb-5 text-sm text-stone-500">Det sendes en oppsettslenke på e-post slik at den nye brukeren kan aktivere kontoen og sette sitt eget passord.</p>
       <form action="/admin-accounts" class="grid gap-6" method="post">
         <div class="grid gap-5 md:grid-cols-2">
           {% call form_field("Brukernavn") %}
@@ -31,7 +31,7 @@
         </div>
 
         <div>
-          <button class="app-button" type="submit">Send invitasjon</button>
+          <button class="app-button" type="submit">Send oppsettslenke</button>
         </div>
       </form>
     </section>

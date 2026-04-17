@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kvarteret admin account</title>
+  </head>
+  <body style="margin:0;background:#f5f2eb;color:#1f1a17;font-family:Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f2eb;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;">
+            <tr>
+              <td style="background:#f54b4b;padding:28px 32px;color:#ffffff;">
+                <h1 style="margin:0;font-size:32px;line-height:1.1;font-weight:700;">Kvarteret admin</h1>
+                <p style="margin:12px 0 0;font-size:16px;line-height:1.5;">A new admin account has been prepared for you.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;">
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">
+                  Hei{% if display_name %} {{ display_name }}{% endif %},
+                </p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">
+                  Your Kvarteret account is ready. Use the button below to set your password and activate access.
+                </p>
+                <p style="margin:0 0 16px;font-size:16px;line-height:1.6;">
+                  Kontoen din hos Kvarteret er klar. Bruk knappen under for å sette passord og aktivere tilgangen.
+                </p>
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px 0;">
+                  <tr>
+                    <td style="background:#f54b4b;">
+                      <a
+                        href="{{ setup_url }}"
+                        style="display:inline-block;padding:14px 22px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;"
+                      >
+                        Set password / Sett passord
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
+                  Username: <strong>{{ username }}</strong><br>
+                  Role: <strong>{{ role_name }}</strong>
+                </p>
+                <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">
+                  If the button does not work, open this link directly:
+                </p>
+                <p style="margin:0;font-size:14px;line-height:1.6;word-break:break-word;">
+                  <a href="{{ setup_url }}" style="color:#f54b4b;">{{ setup_url }}</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -18,7 +18,16 @@ class SupabaseAuthGatewayProtocol(Protocol):
     async def create_user_from_legacy(self, legacy_user: LegacyUser, password: str) -> UUID: ...
     async def create_user(self, *, email: str, password: str, metadata: dict | None = None) -> UUID: ...
     async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None) -> UUID: ...
+    async def generate_link(
+        self,
+        *,
+        link_type: str,
+        email: str,
+        redirect_to: str | None = None,
+        metadata: dict | None = None,
+    ) -> str: ...
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None: ...
+    async def update_password_with_access_token(self, access_token: str, password: str) -> None: ...
     async def delete_user(self, auth_user_id: UUID) -> None: ...
     async def aclose(self) -> None: ...
 
@@ -95,11 +104,41 @@ class SupabaseAuthGateway:
             raise NotConfiguredError("Supabase did not return a user id during auth invite.")
         return auth_user_id
 
+    async def generate_link(
+        self,
+        *,
+        link_type: str,
+        email: str,
+        redirect_to: str | None = None,
+        metadata: dict | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {
+            "type": link_type,
+            "email": email,
+        }
+        if redirect_to:
+            payload["redirect_to"] = redirect_to
+        if metadata:
+            payload["data"] = metadata
+        response = await self._request("POST", "admin/generate_link", json=payload)
+        action_link = response.json().get("action_link")
+        if not isinstance(action_link, str) or not action_link:
+            raise NotConfiguredError("Supabase did not return an email action link.")
+        return action_link
+
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None:
         await self._request(
             "PUT",
             f"admin/users/{auth_user_id}",
             json={"password": password},
+        )
+
+    async def update_password_with_access_token(self, access_token: str, password: str) -> None:
+        await self._request(
+            "PUT",
+            "user",
+            json={"password": password},
+            headers={"Authorization": f"Bearer {access_token}"},
         )
 
     async def delete_user(self, auth_user_id: UUID) -> None:
@@ -119,11 +158,12 @@ class SupabaseAuthGateway:
         *,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         response = await self._client.request(
             method,
             f"{self._base_url}/{path.lstrip('/')}",
-            headers=self._headers,
+            headers={**self._headers, **(headers or {})},
             params=params,
             json=json,
         )

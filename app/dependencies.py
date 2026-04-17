@@ -99,6 +99,10 @@ def get_supabase_auth_gateway(request: Request):
     return get_container(request).supabase_auth_gateway
 
 
+def get_email_sender(request: Request):
+    return get_container(request).email_sender
+
+
 def get_volunteers_service(request: Request) -> VolunteersService:
     return get_container(request).volunteers_service
 

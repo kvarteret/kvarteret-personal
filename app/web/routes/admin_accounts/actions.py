@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -9,6 +10,7 @@ from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
 from app.dependencies import (
     get_admin_accounts_service,
+    get_email_sender,
     get_mobile_card_april_state_service,
     get_session_cookie_signer,
     get_session_store,
@@ -20,11 +22,14 @@ from app.dependencies import (
 from app.observability import log_admin_activity
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
+from app.errors import NotConfiguredError
+from app.infrastructure.email.admin_account_templates import AdminAccountEmailTemplateRenderer
 from app.web.route_helpers import redirect_to
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 logger = logging.getLogger(__name__)
+admin_account_email_renderer = AdminAccountEmailTemplateRenderer()
 
 
 def _redirect_with_error(path: str, message: str):
@@ -41,6 +46,24 @@ async def _best_effort_delete_auth_user(auth_gateway, auth_user_id, *, context: 
         await auth_gateway.delete_user(auth_user_id)
     except Exception:
         logger.exception("Failed to clean up auth user after %s.", context)
+
+
+async def _best_effort_delete_admin_account(admin_accounts_service, *, user_account_id: int, auth_user_id, context: str) -> None:
+    try:
+        await admin_accounts_service.delete_admin_account(
+            user_account_id=user_account_id,
+            auth_user_id=auth_user_id,
+        )
+    except Exception:
+        logger.exception("Failed to clean up admin account after %s.", context)
+
+
+def _build_onboarding_redirect_url(request: Request, base_url: str | None) -> str:
+    if base_url:
+        origin = base_url.rstrip("/")
+    else:
+        origin = str(request.base_url).rstrip("/")
+    return f"{origin}/set-password"
 
 
 def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
@@ -134,6 +157,8 @@ async def admin_account_create(
     role: str = Form(...),
     current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
+    email_sender=Depends(get_email_sender),
+    settings=Depends(get_settings),
     supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
     try:
@@ -142,12 +167,17 @@ async def admin_account_create(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.") from exc
 
     auth_user_id = None
+    admin_account = None
+    setup_url = None
     try:
-        auth_user_id = await supabase_auth_gateway.invite_user(
+        normalized_username = username.strip()
+        normalized_display_name = display_name.strip() if display_name and display_name.strip() else None
+        auth_user_id = await supabase_auth_gateway.create_user(
             email=email.strip(),
+            password=secrets.token_urlsafe(24),
             metadata={
-                "username": username.strip(),
-                "display_name": display_name.strip() if display_name and display_name.strip() else None,
+                "username": normalized_username,
+                "display_name": normalized_display_name,
                 "role": role_value.value,
             },
         )
@@ -158,7 +188,45 @@ async def admin_account_create(
             display_name=display_name,
             role=role_value,
         )
+        setup_url = await supabase_auth_gateway.generate_link(
+            link_type="recovery",
+            email=email.strip(),
+            redirect_to=_build_onboarding_redirect_url(request, settings.app_public_base_url),
+        )
+        rendered_email = admin_account_email_renderer.render_onboarding_email(
+            setup_url=setup_url,
+            display_name=normalized_display_name,
+            username=normalized_username,
+            role_name=role_value.value,
+        )
+        await email_sender.send_email(
+            recipient_email=email.strip(),
+            subject=rendered_email.subject,
+            html_body=rendered_email.html_body,
+        )
+    except NotConfiguredError as exc:
+        if admin_account is not None:
+            await _best_effort_delete_admin_account(
+                admin_accounts_service,
+                user_account_id=admin_account.user_account_id,
+                auth_user_id=admin_account.auth_user_id,
+                context="admin onboarding configuration failure",
+            )
+        if auth_user_id is not None:
+            await _best_effort_delete_auth_user(
+                supabase_auth_gateway,
+                auth_user_id,
+                context="admin onboarding configuration failure",
+            )
+        return _redirect_with_error("/admin-accounts/new", str(exc))
     except ValueError as exc:
+        if admin_account is not None:
+            await _best_effort_delete_admin_account(
+                admin_accounts_service,
+                user_account_id=admin_account.user_account_id,
+                auth_user_id=admin_account.auth_user_id,
+                context="admin-account validation failure",
+            )
         if auth_user_id is not None:
             await _best_effort_delete_auth_user(
                 supabase_auth_gateway,
@@ -167,6 +235,13 @@ async def admin_account_create(
             )
         return _redirect_with_error("/admin-accounts/new", str(exc))
     except Exception:
+        if admin_account is not None:
+            await _best_effort_delete_admin_account(
+                admin_accounts_service,
+                user_account_id=admin_account.user_account_id,
+                auth_user_id=admin_account.auth_user_id,
+                context="admin-account creation failure",
+            )
         if auth_user_id is not None:
             await _best_effort_delete_auth_user(
                 supabase_auth_gateway,
@@ -185,7 +260,7 @@ async def admin_account_create(
         action="admin_account.create",
         subject_type="admin_account",
         subject_id=admin_account.user_account_id,
-        details={"role": admin_account.role.value, "delivery": "invite_email"},
+        details={"role": admin_account.role.value, "delivery": "smtp_onboarding_email", "setup_url": bool(setup_url)},
     )
     return redirect_to(f"/admin-accounts/{admin_account.user_account_id}")
 
