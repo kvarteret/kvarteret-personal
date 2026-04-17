@@ -57,14 +57,15 @@ async def main() -> None:
                     f"Expected 303 from /login, got {login_response.status_code}: {login_response.text}"
                 )
 
-            auth_response = await client.get("/api/v1/auth/me")
+            auth_response = await client.get("/my-account")
             if auth_response.status_code != 200:
                 raise RuntimeError(
-                    f"Expected 200 from /api/v1/auth/me, got {auth_response.status_code}: {auth_response.text}"
+                    f"Expected 200 from /my-account, got {auth_response.status_code}: {auth_response.text}"
                 )
+            if email not in auth_response.text:
+                raise RuntimeError("Expected authenticated account details to render on /my-account.")
 
-            payload = auth_response.json()
-            print("LOGIN_OK", payload["email"], payload["role"], account.id)
+            print("LOGIN_OK", email, account.role.value, account.id)
     finally:
         async with container.session_factory() as session:
             await session.execute(delete(web_sessions).where(web_sessions.c.auth_user_id == auth_user_id))

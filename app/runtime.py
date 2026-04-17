@@ -19,6 +19,7 @@ from app.media_tokens import MediaTokenService
 from app.infrastructure.email.applicant_templates import ApplicantEmailTemplateRenderer
 from app.infrastructure.email.mobile_card_templates import MobileCardEmailTemplateRenderer
 from app.infrastructure.email.smtp import SmtpEmailSender
+from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.domain.feedback.service import FeedbackService
 from app.domain.mobile_card.repository import MobileCardRepository
 from app.domain.mobile_card.april_state import (
@@ -55,7 +56,20 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None):
         raise NotConfiguredError("Supabase credentials are required for authentication.")
 
+    async def generate_link(
+        self,
+        *,
+        link_type: str,
+        email: str,
+        redirect_to: str | None = None,
+        metadata: dict | None = None,
+    ):
+        raise NotConfiguredError("Supabase credentials are required for authentication.")
+
     async def update_user_password(self, auth_user_id, password: str):
+        raise NotConfiguredError("Supabase credentials are required for authentication.")
+
+    async def update_password_with_access_token(self, access_token: str, password: str):
         raise NotConfiguredError("Supabase credentials are required for authentication.")
 
     async def delete_user(self, auth_user_id):
@@ -75,6 +89,7 @@ class ApplicationContainer:
     auth_repository: DatabaseAuthRepository
     session_store: SessionStoreProtocol
     storage_service: StorageService | None
+    email_sender: EmailSenderProtocol
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
     volunteers_service: VolunteersService
@@ -125,6 +140,7 @@ def build_application_container(settings: Settings | None = None) -> Application
         auth_repository=auth_repository,
         session_store=session_store,
         storage_service=storage_service,
+        email_sender=email_sender,
         supabase_auth_gateway=supabase_auth_gateway,
         login_service=LoginService(
             repository=auth_repository,

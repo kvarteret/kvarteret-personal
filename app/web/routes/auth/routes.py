@@ -16,6 +16,7 @@ from app.dependencies import (
     get_session_cookie_signer,
     get_session_store,
     get_settings,
+    get_supabase_auth_gateway,
     require_authenticated_user,
 )
 from app.errors import NotConfiguredError
@@ -74,6 +75,7 @@ async def dashboard(
 @router.get("/login")
 async def login_page(
     request: Request,
+    message: str | None = None,
     current_user=Depends(get_current_user),
 ):
     if current_user is not None:
@@ -85,6 +87,7 @@ async def login_page(
             "title": "Login",
             "section": "login",
             "error_message": None,
+            "message": message,
         },
     )
 
@@ -113,6 +116,7 @@ async def login_submit(
                 "title": "Login",
                 "section": "login",
                 "error_message": "Login is not configured yet.",
+                "message": None,
             },
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
@@ -124,6 +128,7 @@ async def login_submit(
                 "title": "Login",
                 "section": "login",
                 "error_message": "Invalid credentials.",
+                "message": None,
             },
             status_code=status.HTTP_400_BAD_REQUEST,
         )
@@ -166,6 +171,63 @@ async def logout(
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(settings.session_cookie_name)
     return response
+
+
+@router.get("/set-password")
+async def set_password_page(
+    request: Request,
+    error: str | None = None,
+):
+    return templates.TemplateResponse(
+        request,
+        "pages/auth/set_password.html",
+        {
+            "title": "Set Password",
+            "section": "set-password",
+            "error_message": error,
+            "access_token": None,
+        },
+    )
+
+
+@router.post("/set-password")
+async def set_password_submit(
+    request: Request,
+    access_token: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...),
+    supabase_auth_gateway=Depends(get_supabase_auth_gateway),
+):
+    error_message = None
+    normalized_access_token = access_token.strip()
+    if not normalized_access_token:
+        error_message = "Password setup link is missing or invalid."
+    elif len(password) < 8:
+        error_message = "Passordet må være minst 8 tegn."
+    elif password != confirm_password:
+        error_message = "Passordene må være like."
+    else:
+        try:
+            await supabase_auth_gateway.update_password_with_access_token(normalized_access_token, password)
+        except Exception:
+            logger.exception("Failed to set password from onboarding link.")
+            error_message = "Kunne ikke sette passordet akkurat nå."
+    if error_message is not None:
+        return templates.TemplateResponse(
+            request,
+            "pages/auth/set_password.html",
+            {
+                "title": "Set Password",
+                "section": "set-password",
+                "error_message": error_message,
+                "access_token": normalized_access_token,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return RedirectResponse(
+        url="/login?message=Passordet+er+satt.+Du+kan+logge+inn+na.",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/impersonation/stop")

@@ -17,6 +17,11 @@
           {{ error_message }}
         </div>
       {% endif %}
+      {% if message %}
+        <div class="mt-6 bg-emerald-100 px-4 py-3 text-sm text-kvarteret-night" role="status">
+          {{ message }}
+        </div>
+      {% endif %}
 
       <form action="/login" class="mt-8 grid gap-6" method="post">
         <label class="grid gap-1">
