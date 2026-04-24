@@ -258,6 +258,7 @@ event_types = Table(
     Column("slug", Text, nullable=False, unique=True),
     Column("name", Text, nullable=False),
     Column("description", Text),
+    Column("taxonomy_group", Text, nullable=False),
     Column("sort_order", Integer, nullable=False),
     Column("is_active", Boolean, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),

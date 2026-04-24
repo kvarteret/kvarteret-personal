@@ -61,29 +61,44 @@ class MobileCardSessionLogoutEventRequest(BaseModel):
     update_id: str | None = None
 
 
+class AcceptedStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["accepted"]
+
+
 router = APIRouter()
 
 
-@router.post("/access-codes", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/access-codes",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AcceptedStatusResponse,
+    operation_id="requestMobileCardAccessCode",
+)
 async def request_access_code(
     request: Request,
     payload: AccessCodeRequest,
     service: MobileCardService = Depends(get_mobile_card_service),
-) -> dict[str, str]:
+) -> AcceptedStatusResponse:
     try:
         await service.request_access_code(
             str(payload.email), source_key=client_ip_from_request(request)
         )
     except (MobileCardPersonNotFoundError, MobileCardDuplicatePersonError):
-        return {"status": "accepted"}
+        return AcceptedStatusResponse(status="accepted")
     except MobileCardRateLimitedError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
         ) from exc
-    return {"status": "accepted"}
+    return AcceptedStatusResponse(status="accepted")
 
 
-@router.post("/sessions", response_model=MobileCardSessionResponse)
+@router.post(
+    "/sessions",
+    response_model=MobileCardSessionResponse,
+    operation_id="createMobileCardSession",
+)
 async def create_session(
     request: Request,
     payload: MobileCardSessionCreateRequest,
@@ -114,7 +129,11 @@ async def create_session(
     )
 
 
-@router.get("/me", response_model=MobileCardResponse)
+@router.get(
+    "/me",
+    response_model=MobileCardResponse,
+    operation_id="getCurrentMobileCard",
+)
 async def get_current_card(
     response: Response,
     authorization: str | None = Header(default=None),
@@ -138,11 +157,16 @@ async def get_current_card(
     return card_result.card
 
 
-@router.post("/client-events/session-logout", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/client-events/session-logout",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AcceptedStatusResponse,
+    operation_id="logMobileCardSessionLogoutEvent",
+)
 async def log_client_session_logout_event(
     request: Request,
     payload: MobileCardSessionLogoutEventRequest,
-) -> dict[str, str]:
+) -> AcceptedStatusResponse:
     logger.info(
         "mobile-card client session logout event",
         extra={
@@ -154,4 +178,4 @@ async def log_client_session_logout_event(
             },
         },
     )
-    return {"status": "accepted"}
+    return AcceptedStatusResponse(status="accepted")
