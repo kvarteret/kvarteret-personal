@@ -13,6 +13,7 @@ from app.media_tokens import MediaTokenService
 from app.runtime import ApplicationContainer
 from app.domain.feedback.service import FeedbackService
 from app.domain.courses.service import CoursesService
+from app.domain.events import EventsService
 from app.domain.groups.service import GroupsService
 from app.domain.mobile_card.service import MobileCardService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -67,7 +68,9 @@ def require_authenticated_user(
     current_user: AuthenticatedUser | None = Depends(get_current_user),
 ) -> AuthenticatedUser:
     if current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required."
+        )
     return current_user
 
 
@@ -81,11 +84,15 @@ def require_management_user(
     current_user: AuthenticatedUser = Depends(require_authenticated_user),
 ) -> AuthenticatedUser:
     if current_user.role not in {UserRole.ADMIN, UserRole.GROUP_ADMIN}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required."
+        )
     return current_user
 
 
-def _require_admin_user(current_user: AuthenticatedUser, *, detail) -> AuthenticatedUser:
+def _require_admin_user(
+    current_user: AuthenticatedUser, *, detail
+) -> AuthenticatedUser:
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
     return current_user
@@ -127,6 +134,10 @@ def get_mobile_card_service(request: Request) -> MobileCardService:
     return get_container(request).mobile_card_service
 
 
+def get_events_service(request: Request) -> EventsService:
+    return get_container(request).events_service
+
+
 def get_mobile_card_april_state_service(
     request: Request,
 ) -> MobileCardAprilStateService:
@@ -137,7 +148,9 @@ def get_now_playing_service(request: Request) -> NowPlayingService:
     return get_container(request).now_playing_service
 
 
-def get_volunteer_applications_service(request: Request) -> VolunteerApplicationsService:
+def get_volunteer_applications_service(
+    request: Request,
+) -> VolunteerApplicationsService:
     return get_container(request).volunteer_applications_service
 
 
@@ -152,7 +165,9 @@ def get_feedback_service(request: Request) -> FeedbackService:
 async def load_web_navigation_state(
     request: Request,
     current_user: AuthenticatedUser | None = Depends(get_current_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ) -> None:
     request.state.show_admin_tools = False
     request.state.show_management_tools = False
@@ -173,4 +188,7 @@ async def load_web_navigation_state(
 
 
 def _is_fragment_request(request: Request) -> bool:
-    return request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") != "true"
+    return (
+        request.headers.get("HX-Request") == "true"
+        and request.headers.get("HX-Boosted") != "true"
+    )

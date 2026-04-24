@@ -10,17 +10,24 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
 from app.auth.repository import DatabaseAuthRepository
-from app.auth.session_store import SessionRepositoryProtocol, SessionStore, SessionStoreProtocol
+from app.auth.session_store import (
+    SessionRepositoryProtocol,
+    SessionStore,
+    SessionStoreProtocol,
+)
 from app.auth.supabase_auth import SupabaseAuthGateway, SupabaseAuthGatewayProtocol
 from app.config import Settings, get_settings, validate_production_secrets
 from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
 from app.infrastructure.email.applicant_templates import ApplicantEmailTemplateRenderer
-from app.infrastructure.email.mobile_card_templates import MobileCardEmailTemplateRenderer
+from app.infrastructure.email.mobile_card_templates import (
+    MobileCardEmailTemplateRenderer,
+)
 from app.infrastructure.email.smtp import SmtpEmailSender
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.domain.feedback.service import FeedbackService
+from app.domain.events import EventsRepository, EventsService
 from app.domain.mobile_card.repository import MobileCardRepository
 from app.domain.mobile_card.april_state import (
     MobileCardAprilStateRepository,
@@ -45,16 +52,32 @@ from app.domain.admin_accounts.service import AdminAccountsService
 # Supabase credentials, while still failing fast once a protected auth path is used.
 class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def sign_in_with_password(self, email: str, password: str):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
     async def create_user_from_legacy(self, legacy_user, password: str):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
-    async def create_user(self, *, email: str, password: str, metadata: dict | None = None):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+    async def create_user(
+        self, *, email: str, password: str, metadata: dict | None = None
+    ):
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
-    async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+    async def invite_user(
+        self,
+        *,
+        email: str,
+        metadata: dict | None = None,
+        redirect_to: str | None = None,
+    ):
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
     async def generate_link(
         self,
@@ -64,16 +87,24 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
         redirect_to: str | None = None,
         metadata: dict | None = None,
     ):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
     async def update_user_password(self, auth_user_id, password: str):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
     async def update_password_with_access_token(self, access_token: str, password: str):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
     async def delete_user(self, auth_user_id):
-        raise NotConfiguredError("Supabase credentials are required for authentication.")
+        raise NotConfiguredError(
+            "Supabase credentials are required for authentication."
+        )
 
     async def aclose(self) -> None:
         return None
@@ -97,6 +128,7 @@ class ApplicationContainer:
     courses_service: CoursesService
     volunteer_search_service: VolunteerSearchService
     admin_accounts_service: AdminAccountsService
+    events_service: EventsService
     mobile_card_service: MobileCardService
     mobile_card_april_state_service: MobileCardAprilStateService
     now_playing_service: NowPlayingService
@@ -114,14 +146,18 @@ class ApplicationContainer:
 
 # Centralize the object graph here so the app, tests, and one-off scripts can
 # swap an entire runtime configuration by replacing a single container object.
-def build_application_container(settings: Settings | None = None) -> ApplicationContainer:
+def build_application_container(
+    settings: Settings | None = None,
+) -> ApplicationContainer:
     resolved_settings = validate_production_secrets(settings or get_settings())
     database_runtime_manager = DatabaseRuntimeManager(resolved_settings)
     session_factory = database_runtime_manager.get_session_factory()
     session_cookie_signer = SessionCookieSigner(resolved_settings)
     media_token_service = MediaTokenService(resolved_settings)
     auth_repository = DatabaseAuthRepository(session_factory=session_factory)
-    session_store = SessionStore(cast(SessionRepositoryProtocol, auth_repository), resolved_settings)
+    session_store = SessionStore(
+        cast(SessionRepositoryProtocol, auth_repository), resolved_settings
+    )
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
     email_sender = SmtpEmailSender(resolved_settings)
@@ -157,10 +193,15 @@ def build_application_container(settings: Settings | None = None) -> Application
         ),
         groups_service=GroupsService(session_factory=session_factory),
         courses_service=CoursesService(session_factory=session_factory),
-        volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository(session_factory=session_factory)),
+        volunteer_search_service=VolunteerSearchService(
+            VolunteerSearchRepository(session_factory=session_factory)
+        ),
         admin_accounts_service=AdminAccountsService(
             session_factory=session_factory,
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
+        ),
+        events_service=EventsService(
+            repository=EventsRepository(session_factory=session_factory),
         ),
         mobile_card_april_state_service=mobile_card_april_state_service,
         mobile_card_service=MobileCardService(
@@ -186,7 +227,9 @@ def build_application_container(settings: Settings | None = None) -> Application
             storage_service=storage_service,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),
-        semester_transfer_service=SemesterTransferService(session_factory=session_factory),
+        semester_transfer_service=SemesterTransferService(
+            session_factory=session_factory
+        ),
         feedback_service=FeedbackService(resolved_settings),
     )
 
@@ -204,7 +247,9 @@ async def app_lifespan(app: FastAPI):
 # Photos and documents can be configured independently, so only create the
 # storage adapter when at least one side of the split storage setup is usable.
 def _build_storage_service(settings: Settings) -> StorageService | None:
-    has_supabase_documents = bool(settings.supabase_url and settings.supabase_secret_key)
+    has_supabase_documents = bool(
+        settings.supabase_url and settings.supabase_secret_key
+    )
     has_azure_photos = bool(settings.azure_blob_connection_string)
     if not has_supabase_documents and not has_azure_photos:
         return None

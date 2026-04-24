@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.dependencies import get_volunteer_applications_service
 from app.domain.volunteer_applications.service import (
@@ -16,6 +16,8 @@ router = APIRouter()
 
 
 class PublicVolunteerProspectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     full_name: str
     email: EmailStr
     phone: str
@@ -25,24 +27,39 @@ class PublicVolunteerProspectRequest(BaseModel):
     second_choice_group_slug: str | None = None
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+class PublicVolunteerProspectResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    registrationId: int
+
+
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    response_model=PublicVolunteerProspectResponse,
+    operation_id="createPublicVolunteerProspect",
+)
 async def create_public_volunteer_prospect(
     payload: PublicVolunteerProspectRequest,
     request: Request,
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
     try:
-        detail = await volunteer_applications_service.create_public_prospect_registration(
-            PublicProspectRegistrationInput(
-                full_name=payload.full_name,
-                email=str(payload.email),
-                phone=payload.phone,
-                study_institution=payload.study_institution,
-                background_details=payload.background_details,
-                first_choice_group_slug=payload.first_choice_group_slug,
-                second_choice_group_slug=payload.second_choice_group_slug,
-            ),
-            base_url=str(request.base_url).rstrip("/"),
+        detail = (
+            await volunteer_applications_service.create_public_prospect_registration(
+                PublicProspectRegistrationInput(
+                    full_name=payload.full_name,
+                    email=str(payload.email),
+                    phone=payload.phone,
+                    study_institution=payload.study_institution,
+                    background_details=payload.background_details,
+                    first_choice_group_slug=payload.first_choice_group_slug,
+                    second_choice_group_slug=payload.second_choice_group_slug,
+                ),
+                base_url=str(request.base_url).rstrip("/"),
+            )
         )
     except VolunteerAlreadyExistsError as exc:
         raise HTTPException(
@@ -50,7 +67,11 @@ async def create_public_volunteer_prospect(
             detail=f"En frivillig med denne e-postadressen finnes allerede (id={exc.volunteer_id}).",
         ) from exc
     except VolunteerApplicationValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     except VolunteerApplicationConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return {"registrationId": detail.registration_id}
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    return PublicVolunteerProspectResponse(registrationId=detail.registration_id)
