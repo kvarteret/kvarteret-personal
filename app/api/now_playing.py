@@ -27,7 +27,11 @@ class NowPlayingStateResponse(BaseModel):
 router = APIRouter()
 
 
-@router.get("/now-playing", response_model=NowPlayingStateResponse)
+@router.get(
+    "/now-playing",
+    response_model=NowPlayingStateResponse,
+    operation_id="getNowPlaying",
+)
 async def get_now_playing(
     service: NowPlayingService = Depends(get_now_playing_service),
 ) -> JSONResponse:

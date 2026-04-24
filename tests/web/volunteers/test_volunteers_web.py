@@ -25,7 +25,7 @@ from app.domain.volunteers.models import (
     VolunteerRelations,
     AssignmentRoleOption,
 )
-from tests.support.helpers import make_authenticated_user, override_authenticated_user
+from tests.support.helpers import csrf_headers, make_authenticated_user, override_authenticated_user, prime_csrf
 
 
 class FakeVolunteersService:
@@ -433,6 +433,74 @@ def test_group_admin_can_upload_photo_for_volunteer_in_their_group() -> None:
     assert detail_response.status_code == 200
     assert 'type="file"' in detail_response.text
     assert 'title="Klikk for å endre profilbilde"' in detail_response.text
+    assert upload_response.status_code == 303
+    assert upload_response.headers["location"] == "/volunteers/12"
+    assert volunteers_service.uploaded_photo_calls == [
+        {
+            "volunteer_id": 12,
+            "filename": "avatar.png",
+            "content_type": "image/png",
+            "content_length": 10,
+        }
+    ]
+
+
+def test_group_admin_can_upload_photo_with_csrf_token_inside_multipart_form() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+    session_cookie_name = app.state.container.settings.session_cookie_name
+    session_cookie_value = "test-session"
+
+    csrf_token = prime_csrf(
+        client,
+        path="/volunteers/12",
+        cookies={session_cookie_name: session_cookie_value},
+    )
+
+    upload_response = client.post(
+        "/volunteers/12/photo",
+        data={"csrf_token": csrf_token},
+        files={"photo": ("avatar.png", b"fake-image", "image/png")},
+        follow_redirects=False,
+    )
+
+    assert upload_response.status_code == 303
+    assert upload_response.headers["location"] == "/volunteers/12"
+    assert volunteers_service.uploaded_photo_calls == [
+        {
+            "volunteer_id": 12,
+            "filename": "avatar.png",
+            "content_type": "image/png",
+            "content_length": 10,
+        }
+    ]
+
+
+def test_group_admin_can_upload_photo_with_csrf_header_and_multipart_form() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+    session_cookie_name = app.state.container.settings.session_cookie_name
+    session_cookie_value = "test-session"
+
+    prime_csrf(
+        client,
+        path="/volunteers/12",
+        cookies={session_cookie_name: session_cookie_value},
+    )
+
+    upload_response = client.post(
+        "/volunteers/12/photo",
+        headers=csrf_headers(client),
+        files={"photo": ("avatar.png", b"fake-image", "image/png")},
+        follow_redirects=False,
+    )
+
     assert upload_response.status_code == 303
     assert upload_response.headers["location"] == "/volunteers/12"
     assert volunteers_service.uploaded_photo_calls == [

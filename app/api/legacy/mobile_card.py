@@ -23,22 +23,36 @@ class LegacyDigitalInternKortRequest(BaseModel):
 router = APIRouter()
 
 
-@router.post("/RequestAccessTokenOnEmail", response_model=None)
+@router.post(
+    "/RequestAccessTokenOnEmail",
+    response_model=None,
+    operation_id="legacyRequestMobileCardAccessTokenOnEmail",
+    deprecated=True,
+)
 async def request_access_token_on_email(
     request: Request,
     payload: LegacyDigitalInternKortRequest,
     service: MobileCardService = Depends(get_mobile_card_service),
 ) -> dict[str, str] | PlainTextResponse:
     try:
-        await service.request_access_code(payload.email, source_key=client_ip_from_request(request))
+        await service.request_access_code(
+            payload.email, source_key=client_ip_from_request(request)
+        )
     except (MobileCardPersonNotFoundError, MobileCardDuplicatePersonError):
         return {"status": "ok"}
     except MobileCardRateLimitedError as exc:
-        return PlainTextResponse(str(exc), status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+        return PlainTextResponse(
+            str(exc), status_code=status.HTTP_429_TOO_MANY_REQUESTS
+        )
     return {"status": "ok"}
 
 
-@router.post("/GetInternkortInformation", response_model=None)
+@router.post(
+    "/GetInternkortInformation",
+    response_model=None,
+    operation_id="legacyGetMobileCardInformation",
+    deprecated=True,
+)
 async def get_internkort_information(
     request: Request,
     payload: LegacyDigitalInternKortRequest,
@@ -51,9 +65,15 @@ async def get_internkort_information(
             source_key=client_ip_from_request(request),
         )
     except MobileCardInvalidAccessCodeError:
-        return PlainTextResponse("Invalid email or access code.", status_code=status.HTTP_401_UNAUTHORIZED)
+        return PlainTextResponse(
+            "Invalid email or access code.", status_code=status.HTTP_401_UNAUTHORIZED
+        )
     except MobileCardPersonNotFoundError:
-        return PlainTextResponse("Invalid email or access code.", status_code=status.HTTP_401_UNAUTHORIZED)
+        return PlainTextResponse(
+            "Invalid email or access code.", status_code=status.HTTP_401_UNAUTHORIZED
+        )
     except MobileCardRateLimitedError as exc:
-        return PlainTextResponse(str(exc), status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+        return PlainTextResponse(
+            str(exc), status_code=status.HTTP_429_TOO_MANY_REQUESTS
+        )
     return session.card.to_legacy_dict()

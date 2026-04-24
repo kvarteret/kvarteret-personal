@@ -6,6 +6,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature
+from starlette.types import Message
 
 from app.api.router import api_router
 from app.media.router import router as media_router
@@ -165,8 +166,26 @@ async def _load_submitted_csrf_token(request: Request) -> str | None:
     if header_token:
         return header_token
     try:
+        body = await request.body()
+    except Exception:
+        return None
+    _restore_request_body(request, body)
+    try:
         form = await request.form()
     except Exception:
         return None
     value = form.get(CSRF_FIELD_NAME)
     return value if isinstance(value, str) else None
+
+
+def _restore_request_body(request: Request, body: bytes) -> None:
+    sent = False
+
+    async def receive() -> Message:
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request._receive = receive  # type: ignore[attr-defined]

@@ -17,8 +17,23 @@ Useful targets:
     make install
     make css-watch
     make test
+    make openapi
+    make openapi-check
     make smoke-auth
     make upload-legacy-images
+
+### OpenAPI contract
+
+FastAPI is the source of truth for the API contract, and `openapi.json` is a
+checked-in artifact so frontend clients can generate stable types from git
+history. After changing API routes, request models, response models, or
+operation IDs, run:
+
+    make openapi
+
+Before committing, verify the artifact is current with:
+
+    make openapi-check
 
 ### Vercel deployment
 
