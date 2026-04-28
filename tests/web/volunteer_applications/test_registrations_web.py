@@ -366,6 +366,7 @@ def test_volunteer_application_pages_render() -> None:
     assert "Your application has been received" in submitted_response.text
     assert "do not need to submit again" in submitted_response.text
     assert 'enctype="multipart/form-data"' in public_response.text
+    assert 'hx-boost="false"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
     assert 'data-photo-input' in public_response.text
     assert 'data-photo-preview' in public_response.text
