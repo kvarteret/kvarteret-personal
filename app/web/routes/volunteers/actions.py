@@ -340,13 +340,13 @@ async def volunteer_delete_role_assignment(
 async def volunteer_upload_photo(
     request: Request,
     volunteer_id: int,
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(default=None),
     settings=Depends(get_settings),
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     try:
-        if not photo.filename:
+        if photo is None or not photo.filename:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a photo to upload.")
         photo_content = await read_upload_file_limited(photo, max_bytes=settings.photo_upload_max_bytes)
         await volunteers_service.upload_photo(
@@ -364,7 +364,8 @@ async def volunteer_upload_photo(
     except UnsupportedUploadError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     finally:
-        await photo.close()
+        if photo is not None:
+            await photo.close()
     log_admin_activity(
         request=request,
         user=current_user,

@@ -379,7 +379,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "name=\"gender\"" in detail_response.text
     assert 'type="file"' in detail_response.text
     assert 'enctype="multipart/form-data"' in detail_response.text
-    assert 'hx-encoding="multipart/form-data"' in detail_response.text
+    assert 'hx-boost="false"' in detail_response.text
     assert 'id="volunteer-photo-input"' in detail_response.text
     assert 'onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"' in detail_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in detail_response.text
@@ -597,6 +597,20 @@ def test_group_admin_photo_upload_rejects_files_over_40mb() -> None:
 
     assert response.status_code == 413
     assert response.json() == {"detail": "Photos must be 40 MB or smaller."}
+    assert volunteers_service.uploaded_photo_calls == []
+
+
+def test_group_admin_photo_upload_rejects_missing_file_without_422() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.post("/volunteers/12/photo", follow_redirects=False)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Choose a photo to upload."}
     assert volunteers_service.uploaded_photo_calls == []
 
 
