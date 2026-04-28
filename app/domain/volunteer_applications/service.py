@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from asyncio import to_thread
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -19,8 +18,6 @@ from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number, normalize_required_phone_number
 from app.infrastructure.formatting.semester import format_semester_code
 from app.infrastructure.storage.service import StorageService
-
-logger = logging.getLogger(__name__)
 
 PUBLIC_PROSPECT_GROUPS = {
     "skjenkegruppen": "Skjenkegruppen",
@@ -263,7 +260,6 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         photo_filetype: str | None,
     ) -> None: ...
     async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None: ...
-    async def list_group_admin_email_recipients(self, group_id: int) -> list[str]: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
     async def approve_volunteer_application(
         self,
@@ -346,7 +342,6 @@ class VolunteerApplicationsService:
             ),
         )
         self._invalidate_pending_count_cache()
-        await self._notify_group_admins_of_prospect(detail, base_url=base_url)
         return detail
 
     async def create_volunteer_application_invitation(
@@ -518,8 +513,6 @@ class VolunteerApplicationsService:
         detail = await self.get_volunteer_application_by_token(token)
         if detail is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
-        if detail.promoted_volunteer_id is None and detail.submitted:
-            await self._notify_group_admins_of_submission(detail, base_url=base_url)
         return detail
 
     async def mark_trial_shift_attended(
@@ -628,110 +621,6 @@ class VolunteerApplicationsService:
             subject=rendered_email.subject,
             html_body=rendered_email.html_body,
         )
-
-    async def _notify_group_admins_of_submission(
-        self,
-        registration: VolunteerApplicationDetail,
-        *,
-        base_url: str | None = None,
-    ) -> None:
-        if registration.initial_group_id is None:
-            return
-        recipients = await self.repository.list_group_admin_email_recipients(registration.initial_group_id)
-        if not recipients:
-            return
-        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
-        if not resolved_base_url:
-            logger.warning(
-                "Skipped group-admin notification for registration %s because no base URL was configured.",
-                registration.registration_id,
-            )
-            return
-        review_url = f"{resolved_base_url}/volunteer-applications/{registration.registration_id}"
-        group_name = registration.initial_group_name or f"gruppe {registration.initial_group_id}"
-        applicant_name = " ".join(
-            part for part in [registration.first_name or "", registration.last_name or ""] if part.strip()
-        ).strip() or registration.email
-        subject = f"Ny frivilligregistrering for {group_name}"
-        html_body = (
-            f"En ny frivilligregistrering er sendt inn for {group_name}."
-            "<br><br>"
-            f"Søker: {applicant_name}<br>"
-            f"E-post: {registration.email}"
-            "<br><br>"
-            f"Åpne søknaden for å gå gjennom hele profilen før du godkjenner eller avviser den:<br>"
-            f"<a href=\"{review_url}\">{review_url}</a>"
-        )
-        for recipient in recipients:
-            try:
-                await self.email_sender.send_email(
-                    recipient_email=recipient,
-                    subject=subject,
-                    html_body=html_body,
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to send volunteer application notification for registration %s to %s",
-                    registration.registration_id,
-                    recipient,
-                )
-
-    async def _notify_group_admins_of_prospect(
-        self,
-        registration: VolunteerApplicationDetail,
-        *,
-        base_url: str | None = None,
-    ) -> None:
-        group_pairs = [
-            (registration.first_choice_group_id, registration.first_choice_group_name),
-            (registration.second_choice_group_id, registration.second_choice_group_name),
-        ]
-        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
-        if not resolved_base_url:
-            logger.warning(
-                "Skipped group-admin notification for public prospect %s because no base URL was configured.",
-                registration.registration_id,
-            )
-            return
-        review_url = f"{resolved_base_url}/volunteer-applications/{registration.registration_id}"
-        applicant_name = " ".join(
-            part for part in [registration.first_name or "", registration.last_name or ""] if part.strip()
-        ).strip() or registration.email
-        choices_summary = " / ".join(
-            name for _, name in group_pairs if name
-        )
-        for group_id, group_name in group_pairs:
-            if group_id is None or not group_name:
-                continue
-            recipients = await self.repository.list_group_admin_email_recipients(group_id)
-            if not recipients:
-                continue
-            subject = f"Ny frivilliginteresse for {group_name}"
-            html_body = (
-                f"En ny frivilligregistrering har kommet inn for {group_name}."
-                "<br><br>"
-                f"Søker: {applicant_name}<br>"
-                f"E-post: {registration.email}<br>"
-                f"Telefon: {registration.phone or 'Ikke oppgitt'}<br>"
-                f"Studiested: {registration.study_institution or 'Ikke oppgitt'}<br>"
-                f"Komitéønsker: {choices_summary or group_name}"
-                "<br><br>"
-                f"Åpne registreringen for å følge opp prøvedugnad og eventuell promotering:<br>"
-                f"<a href=\"{review_url}\">{review_url}</a>"
-            )
-            for recipient in recipients:
-                try:
-                    await self.email_sender.send_email(
-                        recipient_email=recipient,
-                        subject=subject,
-                        html_body=html_body,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to send public prospect notification for registration %s to %s",
-                        registration.registration_id,
-                        recipient,
-                    )
 
 
 def _parse_recent_registration_cursor(cursor: str | None) -> int | None:
