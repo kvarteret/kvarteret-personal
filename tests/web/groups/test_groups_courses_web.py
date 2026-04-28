@@ -531,6 +531,31 @@ def test_group_role_assignment_requires_exactly_one_volunteer() -> None:
     assert volunteers_service.created_assignment is None
 
 
+def test_group_role_assignment_missing_semester_redirects_with_inline_error() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteers_service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/groups/7/role-assignments",
+        data={
+            "volunteer_ids": ["12"],
+            "role_id": "3",
+            "year": "2026",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert (
+        response.headers["location"]
+        == "/groups/7?assignment_error=Velg%20frivillig%2C%20verv%20og%20semester%20f%C3%B8r%20du%20legger%20til%20i%20gruppen."
+    )
+    assert volunteers_service.created_assignment is None
+
+
 def test_course_completion_volunteer_search_returns_matches() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
