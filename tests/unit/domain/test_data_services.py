@@ -72,6 +72,7 @@ class FakeVolunteerApplicationsRepository:
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, object | None]] = []
         self.group_admin_email_recipients: dict[int, list[str]] = {}
+        self.group_admin_recipient_lookup_group_ids: list[int] = []
         self.existing_volunteer_ids_by_email: dict[str, int] = {}
         self.application_photo_sha1: str | None = None
         self.application_photo_filetype: str | None = None
@@ -164,6 +165,7 @@ class FakeVolunteerApplicationsRepository:
         return self.existing_volunteer_ids_by_email.get(email.lower())
 
     async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
+        self.group_admin_recipient_lookup_group_ids.append(group_id)
         return list(self.group_admin_email_recipients.get(group_id, []))
 
     async def approve_volunteer_application(
@@ -684,7 +686,7 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_submit_notifies_group_admins_with_review_link() -> (
+async def test_volunteer_applications_submit_does_not_notify_group_admins() -> (
     None
 ):
     repository = FakeVolunteerApplicationsRepository()
@@ -719,34 +721,8 @@ async def test_volunteer_applications_submit_notifies_group_admins_with_review_l
         base_url="https://personal.kvarteret.no",
     )
 
-    assert email_sender.sent_emails == [
-        {
-            "recipient_email": "leader@example.test",
-            "subject": "Ny frivilligregistrering for Bar",
-            "html_body": (
-                "En ny frivilligregistrering er sendt inn for Bar."
-                "<br><br>"
-                "Søker: Sample Registrant<br>"
-                "E-post: registrant@example.com"
-                "<br><br>"
-                "Åpne søknaden for å gå gjennom hele profilen før du godkjenner eller avviser den:<br>"
-                '<a href="https://personal.kvarteret.no/volunteer-applications/7">https://personal.kvarteret.no/volunteer-applications/7</a>'
-            ),
-        },
-        {
-            "recipient_email": "second@example.test",
-            "subject": "Ny frivilligregistrering for Bar",
-            "html_body": (
-                "En ny frivilligregistrering er sendt inn for Bar."
-                "<br><br>"
-                "Søker: Sample Registrant<br>"
-                "E-post: registrant@example.com"
-                "<br><br>"
-                "Åpne søknaden for å gå gjennom hele profilen før du godkjenner eller avviser den:<br>"
-                '<a href="https://personal.kvarteret.no/volunteer-applications/7">https://personal.kvarteret.no/volunteer-applications/7</a>'
-            ),
-        },
-    ]
+    assert repository.group_admin_recipient_lookup_group_ids == []
+    assert email_sender.sent_emails == []
 
 
 @pytest.mark.asyncio
