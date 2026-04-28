@@ -226,12 +226,26 @@
             "type": "boolean"
           },
           "role_id": {
-            "title": "Role Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Id"
           },
           "term": {
-            "title": "Term",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term"
           },
           "volunteer_ids": {
             "default": [],
@@ -242,15 +256,17 @@
             "type": "array"
           },
           "year": {
-            "title": "Year",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
           }
         },
-        "required": [
-          "role_id",
-          "year",
-          "term"
-        ],
         "title": "Body_group_role_assignments_create_groups__group_id__role_assignments_post",
         "type": "object"
       },
@@ -395,8 +411,15 @@
             "title": "Active"
           },
           "active_until_semester": {
-            "title": "Active Until Semester",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Until Semester"
           },
           "description": {
             "anyOf": [
@@ -437,8 +460,7 @@
           }
         },
         "required": [
-          "name",
-          "active_until_semester"
+          "name"
         ],
         "title": "Body_groups_update_groups__group_id__patch",
         "type": "object"
@@ -874,14 +896,18 @@
       "Body_volunteer_upload_photo_volunteers__volunteer_id__photo_post": {
         "properties": {
           "photo": {
-            "contentMediaType": "application/octet-stream",
-            "title": "Photo",
-            "type": "string"
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo"
           }
         },
-        "required": [
-          "photo"
-        ],
         "title": "Body_volunteer_upload_photo_volunteers__volunteer_id__photo_post",
         "type": "object"
       },
@@ -3651,8 +3677,7 @@
                 "$ref": "#/components/schemas/Body_group_role_assignments_create_groups__group_id__role_assignments_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -5922,8 +5947,7 @@
                 "$ref": "#/components/schemas/Body_volunteer_upload_photo_volunteers__volunteer_id__photo_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
