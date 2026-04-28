@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
@@ -167,45 +168,60 @@ async def group_role_assignments_create(
     request: Request,
     group_id: int,
     volunteer_ids: list[int] = Form(default=[]),
-    role_id: int = Form(...),
-    year: int = Form(...),
-    term: int = Form(...),
+    role_id: str | None = Form(default=None),
+    year: str | None = Form(default=None),
+    term: str | None = Form(default=None),
     contract_signed: bool = Form(default=False),
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
+    parsed_role_id = _parse_required_int(role_id)
+    parsed_year = _parse_required_int(year)
+    parsed_term = _parse_required_int(term)
+    if parsed_role_id is None or parsed_year is None or parsed_term is None:
+        return _redirect_group_assignment_error(group_id, "Velg frivillig, verv og semester før du legger til i gruppen.")
     if not volunteer_ids:
-        return RedirectResponse(
-            url=f"/groups/{group_id}?assignment_error=Velg%20en%20frivillig%20for%20du%20legger%20til%20i%20gruppen.",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+        return _redirect_group_assignment_error(group_id, "Velg en frivillig før du legger til i gruppen.")
     if len(volunteer_ids) != 1:
-        return RedirectResponse(
-            url=f"/groups/{group_id}?assignment_error=Velg%20n%C3%B8yaktig%20%C3%A9n%20frivillig.",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+        return _redirect_group_assignment_error(group_id, "Velg nøyaktig én frivillig.")
     parsed_volunteer_id = volunteer_ids[0]
     try:
         await volunteers_service.add_role_assignment(
             volunteer_id=parsed_volunteer_id,
             group_id=group_id,
-            role_id=role_id,
-            year=year,
-            term=term,
+            role_id=parsed_role_id,
+            year=parsed_year,
+            term=parsed_term,
             contract_signed=contract_signed,
         )
     except VolunteerNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (DuplicateRoleAssignmentError, InvalidRoleAssignmentError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        return _redirect_group_assignment_error(group_id, str(exc))
     return log_and_redirect(
         request=request,
         user=current_user,
         action="group_role_assignment.create",
         subject_type="group",
         subject_id=group_id,
-        details={"volunteer_id": parsed_volunteer_id, "role_id": role_id, "year": year, "term": term},
+        details={"volunteer_id": parsed_volunteer_id, "role_id": parsed_role_id, "year": parsed_year, "term": parsed_term},
         redirect_path=f"/groups/{group_id}",
+    )
+
+
+def _parse_required_int(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _redirect_group_assignment_error(group_id: int, message: str) -> RedirectResponse:
+    return RedirectResponse(
+        url=f"/groups/{group_id}?assignment_error={quote(message)}",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 
