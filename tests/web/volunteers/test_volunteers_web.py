@@ -664,7 +664,7 @@ def test_volunteer_list_fragment_renders_with_fake_service() -> None:
     assert "<!DOCTYPE html>" not in response.text
 
 
-def test_volunteer_html_responses_are_browser_cacheable_for_htmx_preload() -> None:
+def test_volunteer_html_responses_revalidate_after_preload() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
@@ -674,8 +674,8 @@ def test_volunteer_html_responses_are_browser_cacheable_for_htmx_preload() -> No
     page_response = client.get("/volunteers")
     partial_response = client.get("/volunteers/list?q=sample")
 
-    assert page_response.headers["cache-control"] == "private, max-age=60"
-    assert partial_response.headers["cache-control"] == "private, max-age=60"
+    assert page_response.headers["cache-control"] == "private, no-cache"
+    assert partial_response.headers["cache-control"] == "private, no-cache"
     assert page_response.headers["vary"] == "Cookie, HX-Boosted, HX-Request"
     assert partial_response.headers["vary"] == "Cookie, HX-Boosted, HX-Request"
 
