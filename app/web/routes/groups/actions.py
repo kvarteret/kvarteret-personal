@@ -56,19 +56,25 @@ async def groups_update(
     group_id: int,
     name: str = Form(...),
     description: str | None = Form(default=None),
-    active_until_semester: int = Form(...),
+    active_until_semester: int | None = Form(default=None),
     parent_group_id: str | None = Form(default=None),
     discount_step: str | None = Form(default=None),
     active: str | None = Form(default=None),
     current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
+    resolved_active_until_semester = active_until_semester
+    if resolved_active_until_semester is None:
+        group = await groups_service.get_group_detail(group_id)
+        if group is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+        resolved_active_until_semester = group.active_until_semester
     updated = await groups_service.update_group(
         group_id,
         name=name,
         description=description,
         active=active == "true",
-        active_until_semester=active_until_semester,
+        active_until_semester=resolved_active_until_semester,
         parent_group_id=(
             int(parent_group_id) if parent_group_id and parent_group_id.strip() and int(parent_group_id) != group_id else None
         ),

@@ -43,6 +43,7 @@ class FakeGroupsService:
     def __init__(self) -> None:
         self.created_role = None
         self.updated_role = None
+        self.updated_group = None
         self.deleted_role = None
         self.deleted_history = None
         self.archived_group = None
@@ -91,6 +92,28 @@ class FakeGroupsService:
     async def create_group_role(self, group_id: int, *, role_name: str, pingvin_points: int) -> int | None:
         self.created_role = (group_id, role_name, pingvin_points)
         return 14
+
+    async def update_group(
+        self,
+        group_id: int,
+        *,
+        name: str,
+        description: str | None,
+        active: bool,
+        active_until_semester: int,
+        parent_group_id: int | None,
+        discount_step: int | None,
+    ) -> bool:
+        self.updated_group = (
+            group_id,
+            name,
+            description,
+            active,
+            active_until_semester,
+            parent_group_id,
+            discount_step,
+        )
+        return True
 
     async def update_group_role(self, group_id: int, role_id: int, *, role_name: str, pingvin_points: int) -> bool:
         self.updated_role = (group_id, role_id, role_name, pingvin_points)
@@ -326,6 +349,7 @@ def test_groups_and_courses_pages_render() -> None:
     assert 'action="/groups/7/role-assignments"' in group_detail_response.text
     assert "Flytt til nytt semester" in group_detail_response.text
     assert "Aktiv til semester" not in group_detail_response.text
+    assert 'name="active_until_semester"' in group_detail_response.text
     assert "Vervet har medlemmer og kan ikke slettes." in group_detail_response.text
     assert "disabled" in group_detail_response.text
     assert 'hx-boost="true"' in group_detail_response.text
@@ -376,6 +400,36 @@ def test_groups_and_courses_pages_render() -> None:
     assert 'href="/volunteers/12"' in course_detail_response.text
     assert "cdn.jsdelivr.net/npm/alpinejs" in course_detail_response.text
     assert "Legg til</button>" in course_detail_response.text
+
+
+def test_group_update_preserves_active_until_when_hidden_field_is_missing() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    groups_service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: groups_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/groups/7?_method=PATCH",
+        data={
+            "name": "Oppdatert Bar",
+            "description": "Ny beskrivelse",
+            "active": "true",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/groups/7"
+    assert groups_service.updated_group == (
+        7,
+        "Oppdatert Bar",
+        "Ny beskrivelse",
+        True,
+        20262,
+        None,
+        None,
+    )
 
 
 def test_group_role_actions_redirect_and_call_service() -> None:
