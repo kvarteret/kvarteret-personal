@@ -46,12 +46,12 @@
             {% endif %}
             <form
               action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=DELETE"
+              hx-confirm="{% if volunteer_application.pending_volunteer_id %}Avvise denne registreringen?{% else %}Avbryte denne invitasjonen?{% endif %}"
               hx-delete="/volunteer-applications/{{ volunteer_application.registration_id }}"
               hx-disinherit="hx-select hx-target hx-swap"
               hx-swap="outerHTML"
               hx-target="#volunteer-application-list-panel"
               method="post"
-              onsubmit="return window.confirm('{% if volunteer_application.pending_volunteer_id %}Avvise denne registreringen?{% else %}Avbryte denne invitasjonen?{% endif %}');"
             >
               <button class="app-button-secondary" type="submit">
                 {% if volunteer_application.pending_volunteer_id %}Avvis{% else %}Avbryt{% endif %}

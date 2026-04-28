@@ -353,6 +353,7 @@ def test_volunteer_application_pages_render() -> None:
     assert "Nye frivillige" in admin_response.text
     assert "Opprett invitasjon" in admin_response.text
     assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
+    assert 'hx-confirm="Avvise denne registreringen?"' in admin_response.text
     assert "Siste nye frivillige" in admin_response.text
     assert "Ny Frivillig" in admin_response.text
     assert 'hx-get="/volunteer-applications/recent-registrations"' in admin_response.text
@@ -776,6 +777,7 @@ def test_volunteer_application_resend_redirects_and_calls_service() -> None:
 
     assert page_response.status_code == 200
     assert "Send e-post på nytt" in page_response.text
+    assert 'hx-confirm="Avbryte denne invitasjonen?"' in page_response.text
     assert resend_response.status_code == 303
     assert resend_response.headers["location"] == "/volunteer-applications"
     assert volunteer_applications_service.resent_registration_ids == [7]
