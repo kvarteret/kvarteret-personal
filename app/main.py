@@ -136,7 +136,7 @@ def _apply_html_preload_cache_headers(request: Request, response) -> None:
     if response.headers.get("Cache-Control"):
         _merge_vary_headers(response, "Cookie", "HX-Boosted", "HX-Request")
         return
-    response.headers["Cache-Control"] = "private, max-age=60"
+    response.headers["Cache-Control"] = "private, no-cache"
     _merge_vary_headers(response, "Cookie", "HX-Boosted", "HX-Request")
 
 
