@@ -28,13 +28,6 @@ from app.web.router import web_router
 
 logger = logging.getLogger(__name__)
 
-_API_CORS_ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-_API_CORS_ALLOW_HEADERS = (
-    "Accept, Authorization, Content-Type, X-Mobile-Card-Session-Token, X-Requested-With"
-)
-_API_CORS_EXPOSE_HEADERS = "X-Mobile-Card-Session-Token, X-Request-ID"
-_API_CORS_MAX_AGE_SECONDS = "600"
-
 
 def create_app(container=None) -> FastAPI:
     resolved_container = container or build_application_container()
@@ -43,16 +36,6 @@ def create_app(container=None) -> FastAPI:
     app = FastAPI(title="Kvarteret Personal", lifespan=app_lifespan)
     app.state.container = resolved_container
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-    @app.middleware("http")
-    async def api_cors_middleware(request: Request, call_next):
-        if _is_api_cors_request(request) and request.method.upper() == "OPTIONS":
-            return Response(status_code=204, headers=_build_api_cors_headers())
-
-        response = await call_next(request)
-        if _is_api_cors_request(request):
-            _apply_api_cors_headers(response)
-        return response
 
     @app.middleware("http")
     async def method_override(request: Request, call_next):
@@ -162,25 +145,6 @@ def _merge_vary_headers(response, *values: str) -> None:
     merged = {value.strip() for value in existing.split(",") if value.strip()}
     merged.update(values)
     response.headers["Vary"] = ", ".join(sorted(merged))
-
-
-def _is_api_cors_request(request: Request) -> bool:
-    return request.url.path.startswith("/api/") and bool(request.headers.get("origin"))
-
-
-def _build_api_cors_headers() -> dict[str, str]:
-    return {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": _API_CORS_ALLOW_METHODS,
-        "Access-Control-Allow-Headers": _API_CORS_ALLOW_HEADERS,
-        "Access-Control-Expose-Headers": _API_CORS_EXPOSE_HEADERS,
-        "Access-Control-Max-Age": _API_CORS_MAX_AGE_SECONDS,
-    }
-
-
-def _apply_api_cors_headers(response: Response) -> None:
-    for header, value in _build_api_cors_headers().items():
-        response.headers[header] = value
 
 
 def _is_web_navigation_request(request: Request) -> bool:

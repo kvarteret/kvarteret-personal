@@ -256,41 +256,6 @@ def test_mobile_card_access_code_request_does_not_expose_whether_email_exists() 
     assert response.json() == {"status": "accepted"}
 
 
-def test_mobile_card_access_code_preflight_allows_browser_clients() -> None:
-    client = _make_client()
-
-    response = client.options(
-        "/api/v1/mobile-card/access-codes",
-        headers={
-            "Origin": "https://app.example.test",
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "content-type",
-        },
-    )
-
-    assert response.status_code == 204
-    assert response.headers["Access-Control-Allow-Origin"] == "*"
-    assert "POST" in response.headers["Access-Control-Allow-Methods"]
-    assert "Content-Type" in response.headers["Access-Control-Allow-Headers"]
-
-
-def test_mobile_card_access_code_response_allows_browser_clients() -> None:
-    client = _make_client()
-
-    response = client.post(
-        "/api/v1/mobile-card/access-codes",
-        json={"email": "person.one@example.com"},
-        headers={"Origin": "https://app.example.test"},
-    )
-
-    assert response.status_code == 202
-    assert response.headers["Access-Control-Allow-Origin"] == "*"
-    assert (
-        "X-Mobile-Card-Session-Token"
-        in response.headers["Access-Control-Expose-Headers"]
-    )
-
-
 def test_mobile_card_session_returns_generic_invalid_credentials() -> None:
     client = _make_client()
 
