@@ -141,6 +141,20 @@ class MobileCardRole(BaseModel):
     signed_contract: bool = False
 
 
+class MobileCardRoleHistory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    group: str
+    discount_level: int | None = None
+    pingvin_points: int = 0
+    signed_contract: bool = False
+    year: int
+    term: int
+    semester: str
+    is_active: bool = False
+
+
 class MobileCardResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -153,10 +167,11 @@ class MobileCardResponse(BaseModel):
     photo_url: str | None = None
     pingvin_points: int
     active_roles: list[MobileCardRole]
+    role_history: list[MobileCardRoleHistory] | None = None
     word_of_the_day: str
 
     def to_legacy_dict(self) -> dict:
-        return {
+        payload = {
             "id": self.person_id,
             "fornavn": self.first_name,
             "etternavn": self.last_name,
@@ -177,6 +192,25 @@ class MobileCardResponse(BaseModel):
             ],
             "dagensOrd": self.word_of_the_day,
         }
+
+        if self.role_history is not None:
+            payload["vervHistorikk"] = [
+                {
+                    "navn": role.name,
+                    "gruppe": role.group,
+                    "rabattTrinn": role.discount_level,
+                    "pingvinPoeng": role.pingvin_points,
+                    "signertKontrakt": role.signed_contract,
+                    "ar": role.year,
+                    "semester": role.semester,
+                    "aktiv": role.is_active,
+                    "startet": None,
+                    "sluttet": None,
+                }
+                for role in self.role_history
+            ]
+
+        return payload
 
 
 @dataclass(slots=True)
@@ -296,12 +330,17 @@ class MobileCardService:
         return None
 
     async def create_session(
-        self, email: str, access_code: str, *, source_key: str | None = None
+        self,
+        email: str,
+        access_code: str,
+        *,
+        include_role_history: bool = False,
+        source_key: str | None = None,
     ) -> MobileCardSession:
         normalized_email = email.strip().lower()
         normalized_access_code = access_code.strip()
         if self._is_review_request(normalized_email, normalized_access_code):
-            card = self._build_review_card()
+            card = self._build_review_card(include_role_history=include_role_history)
             token = self._build_session_token({"person_id": 0, "review": True})
             return MobileCardSession(session_token=token, card=card)
         attempt_keys = _build_rate_limit_keys(normalized_email, source_key)
@@ -323,16 +362,22 @@ class MobileCardService:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         self._clear_rate_limit(self._session_attempt_counts, attempt_keys)
         token = self._build_session_token({"person_id": volunteer_row["id"]})
-        card = await self._build_card(volunteer_row["id"])
+        card = await self._build_card(
+            volunteer_row["id"], include_role_history=include_role_history
+        )
         return MobileCardSession(session_token=token, card=card)
 
-    async def get_current_card(self, session_token: str) -> MobileCardCurrentCardResult:
+    async def get_current_card(
+        self, session_token: str, *, include_role_history: bool = False
+    ) -> MobileCardCurrentCardResult:
         decoded = self._decode_session_token(session_token)
 
         if decoded.is_review:
-            card = self._build_review_card()
+            card = self._build_review_card(include_role_history=include_role_history)
         else:
-            card = await self._build_card(decoded.person_id or 0)
+            card = await self._build_card(
+                decoded.person_id or 0, include_role_history=include_role_history
+            )
 
         renewed_session_token = self._maybe_renew_session_token(decoded)
         return MobileCardCurrentCardResult(
@@ -340,19 +385,25 @@ class MobileCardService:
             renewed_session_token=renewed_session_token,
         )
 
-    async def _build_card(self, volunteer_id: int) -> MobileCardResponse:
+    async def _build_card(
+        self, volunteer_id: int, *, include_role_history: bool = False
+    ) -> MobileCardResponse:
         current_semester = get_current_semester_code()
         snapshot = await self.repository.fetch_card_snapshot(
-            volunteer_id=volunteer_id, semester_code=current_semester
+            volunteer_id=volunteer_id,
+            semester_code=current_semester,
+            include_role_history=include_role_history,
         )
         if snapshot is None:
             raise MobileCardPersonNotFoundError(
                 f"Volunteer {volunteer_id} was not found."
             )
-        return await self._build_card_response(snapshot)
+        return await self._build_card_response(
+            snapshot, include_role_history=include_role_history
+        )
 
     async def _build_card_response(
-        self, snapshot: MobileCardSnapshot
+        self, snapshot: MobileCardSnapshot, *, include_role_history: bool = False
     ) -> MobileCardResponse:
         photo_url = (
             self.media_token_service.build_photo_media_url(snapshot.photo_path)
@@ -384,6 +435,24 @@ class MobileCardService:
                 )
                 for role in snapshot.active_roles
             ],
+            role_history=(
+                [
+                    MobileCardRoleHistory(
+                        name=role.name,
+                        group=role.group,
+                        discount_level=role.discount_level,
+                        pingvin_points=role.pingvin_points,
+                        signed_contract=role.signed_contract,
+                        year=role.semester // 10,
+                        term=role.semester % 10,
+                        semester=_semester_label(role.semester),
+                        is_active=role.is_active,
+                    )
+                    for role in snapshot.role_history
+                ]
+                if include_role_history
+                else None
+            ),
             word_of_the_day=_word_of_the_day(),
         )
 
@@ -509,7 +578,7 @@ class MobileCardService:
             access_code is None or access_code == self.settings.review_bypass_token
         )
 
-    def _build_review_card(self) -> MobileCardResponse:
+    def _build_review_card(self, *, include_role_history: bool = False) -> MobileCardResponse:
         return MobileCardResponse(
             person_id=0,
             first_name="Review",
@@ -528,6 +597,23 @@ class MobileCardService:
                     signed_contract=True,
                 )
             ],
+            role_history=(
+                [
+                    MobileCardRoleHistory(
+                        name="Guest",
+                        group="Kvarteret",
+                        discount_level=0,
+                        pingvin_points=0,
+                        signed_contract=True,
+                        year=datetime.now(UTC).year,
+                        term=1 if datetime.now(UTC).month <= 6 else 2,
+                        semester="Review",
+                        is_active=True,
+                    )
+                ]
+                if include_role_history
+                else None
+            ),
             word_of_the_day=_word_of_the_day(),
         )
 
@@ -581,6 +667,15 @@ def _word_of_the_day(now: datetime | None = None) -> str:
         current_day -= timedelta(days=1)
     word_index = _daily_word_index(current_day)
     return f"{_LEGACY_PENGUIN_WORD_PREFIXES[word_index]}pingvin"
+
+
+def _semester_label(semester_code: int) -> str:
+    term = semester_code % 10
+    if term == 1:
+        return "Vår"
+    if term == 2:
+        return "Høst"
+    return str(semester_code)
 
 
 def _daily_word_index(current_day: date) -> int:

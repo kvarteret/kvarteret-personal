@@ -97,17 +97,21 @@ async def request_access_code(
 @router.post(
     "/sessions",
     response_model=MobileCardSessionResponse,
+    response_model_exclude_none=True,
     operation_id="createMobileCardSession",
 )
 async def create_session(
     request: Request,
     payload: MobileCardSessionCreateRequest,
+    # TODO(mobile-card-compat): Remove include_role_history compatibility gate once all supported mobile app versions use lenient backend-response Zod schemas. Additive backend fields must never be default-blocked after that.
+    include_role_history: bool = False,
     service: MobileCardService = Depends(get_mobile_card_service),
 ) -> MobileCardSessionResponse:
     try:
         session = await service.create_session(
             str(payload.email),
             payload.access_code,
+            include_role_history=include_role_history,
             source_key=client_ip_from_request(request),
         )
     except MobileCardInvalidAccessCodeError as exc:
@@ -132,11 +136,14 @@ async def create_session(
 @router.get(
     "/me",
     response_model=MobileCardResponse,
+    response_model_exclude_none=True,
     operation_id="getCurrentMobileCard",
 )
 async def get_current_card(
     response: Response,
     authorization: str | None = Header(default=None),
+    # TODO(mobile-card-compat): Remove include_role_history compatibility gate once all supported mobile app versions use lenient backend-response Zod schemas. Additive backend fields must never be default-blocked after that.
+    include_role_history: bool = False,
     service: MobileCardService = Depends(get_mobile_card_service),
 ) -> MobileCardResponse:
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -145,7 +152,9 @@ async def get_current_card(
         )
     token = authorization.split(" ", 1)[1]
     try:
-        card_result: MobileCardCurrentCardResult = await service.get_current_card(token)
+        card_result: MobileCardCurrentCardResult = await service.get_current_card(
+            token, include_role_history=include_role_history
+        )
     except MobileCardInvalidAccessCodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)

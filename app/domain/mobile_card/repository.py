@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 import logging
 from time import perf_counter
@@ -26,6 +26,18 @@ class MobileCardRoleSnapshot:
 
 
 @dataclass(slots=True)
+class MobileCardRoleHistorySnapshot:
+    name: str
+    group: str
+    group_id: int
+    discount_level: int | None
+    pingvin_points: int
+    signed_contract: bool
+    semester: int
+    is_active: bool
+
+
+@dataclass(slots=True)
 class MobileCardSnapshot:
     volunteer_id: int
     first_name: str
@@ -35,6 +47,7 @@ class MobileCardSnapshot:
     photo_path: str | None
     pingvin_points: int
     active_roles: list[MobileCardRoleSnapshot]
+    role_history: list[MobileCardRoleHistorySnapshot] = field(default_factory=list)
 
 
 class MobileCardRepository(SqlAlchemyRepository):
@@ -98,7 +111,13 @@ class MobileCardRepository(SqlAlchemyRepository):
                 )
                 return dict(row)
 
-    async def fetch_card_snapshot(self, *, volunteer_id: int, semester_code: int) -> MobileCardSnapshot | None:
+    async def fetch_card_snapshot(
+        self,
+        *,
+        volunteer_id: int,
+        semester_code: int,
+        include_role_history: bool = False,
+    ) -> MobileCardSnapshot | None:
         started_at = perf_counter()
         points_stmt = (
             select(func.coalesce(func.sum(verv.c.pingvinpoeng), 0))
@@ -135,8 +154,33 @@ class MobileCardRepository(SqlAlchemyRepository):
             .where(personal.c.id == volunteer_id)
             .order_by(grupper.c.navn.asc().nullslast(), verv.c.verv.asc().nullslast())
         )
+        history_stmt = (
+            select(
+                historie.c.id,
+                historie.c.semester,
+                historie.c.id_gruppe.label("gruppe_id"),
+                grupper.c.navn.label("gruppe_navn"),
+                verv.c.verv.label("verv_navn"),
+                grupper.c.rabatt_trinn,
+                verv.c.pingvinpoeng.label("pingvin_poeng"),
+                historie.c.signert_kontrakt,
+            )
+            .select_from(
+                historie.join(grupper, grupper.c.id == historie.c.id_gruppe).outerjoin(
+                    verv,
+                    verv.c.id == historie.c.id_verv,
+                )
+            )
+            .where(historie.c.id_personal == volunteer_id)
+            .order_by(historie.c.semester.desc(), historie.c.id.desc())
+        )
         async with self.session_factory() as session:
             rows = list((await session.execute(snapshot_stmt)).mappings().all())
+            history_rows = (
+                list((await session.execute(history_stmt)).mappings().all())
+                if include_role_history
+                else []
+            )
             log_operation_timing(
                 logger,
                 operation="mobile_card.snapshot",
@@ -170,5 +214,19 @@ class MobileCardRepository(SqlAlchemyRepository):
                 )
                 for row in rows
                 if row["verv_navn"] is not None and row["gruppe_navn"] is not None
+            ],
+            role_history=[
+                MobileCardRoleHistorySnapshot(
+                    name=row["verv_navn"] or "",
+                    group=row["gruppe_navn"],
+                    group_id=row["gruppe_id"],
+                    discount_level=row["rabatt_trinn"],
+                    pingvin_points=int(row["pingvin_poeng"] or 0),
+                    signed_contract=row["signert_kontrakt"],
+                    semester=int(row["semester"]),
+                    is_active=int(row["semester"]) == semester_code,
+                )
+                for row in history_rows
+                if row["gruppe_navn"] is not None
             ],
         )
