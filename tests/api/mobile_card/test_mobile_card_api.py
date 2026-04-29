@@ -5,11 +5,14 @@ from fastapi.testclient import TestClient
 from app.dependencies import get_mobile_card_service
 from app.main import create_app
 from app.domain.mobile_card.service import MobileCardPersonNotFoundError
+from pydantic import BaseModel, ConfigDict
+
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardInvalidAccessCodeError,
     MobileCardResponse,
     MobileCardRole,
+    MobileCardRoleHistory,
     MobileCardRateLimitedError,
     MobileCardSession,
 )
@@ -29,7 +32,12 @@ class FakeMobileCardService:
             )
 
     async def create_session(
-        self, email: str, access_code: str, *, source_key: str | None = None
+        self,
+        email: str,
+        access_code: str,
+        *,
+        include_role_history: bool = False,
+        source_key: str | None = None,
     ) -> MobileCardSession:
         if email == "missing@example.com":
             raise MobileCardPersonNotFoundError(
@@ -41,6 +49,30 @@ class FakeMobileCardService:
             )
         if access_code != "123456":
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
+        role_history = [
+            MobileCardRoleHistory(
+                name="Shift lead",
+                group="Bar",
+                discount_level=2,
+                pingvin_points=4,
+                signed_contract=True,
+                year=2026,
+                term=1,
+                semester="Vår",
+                is_active=True,
+            ),
+            MobileCardRoleHistory(
+                name="Member",
+                group="PR",
+                discount_level=1,
+                pingvin_points=2,
+                signed_contract=True,
+                year=2025,
+                term=2,
+                semester="Høst",
+                is_active=False,
+            ),
+        ]
         card = MobileCardResponse(
             person_id=12,
             first_name="Sample",
@@ -59,23 +91,68 @@ class FakeMobileCardService:
                     signed_contract=True,
                 )
             ],
+            role_history=role_history if include_role_history else None,
             word_of_the_day="pingvin",
         )
         return MobileCardSession(session_token="token-123", card=card)
 
-    async def get_current_card(self, session_token: str) -> MobileCardCurrentCardResult:
+    async def get_current_card(
+        self, session_token: str, *, include_role_history: bool = False
+    ) -> MobileCardCurrentCardResult:
         if session_token != "token-123":
             if session_token == "renew-me":
                 return MobileCardCurrentCardResult(
                     card=(
-                        await self.create_session("person.one@example.com", "123456")
+                        await self.create_session(
+                            "person.one@example.com",
+                            "123456",
+                            include_role_history=include_role_history,
+                        )
                     ).card,
                     renewed_session_token="token-456",
                 )
             raise MobileCardInvalidAccessCodeError("Unknown session token.")
         return MobileCardCurrentCardResult(
-            card=(await self.create_session("person.one@example.com", "123456")).card,
+            card=(
+                await self.create_session(
+                    "person.one@example.com",
+                    "123456",
+                    include_role_history=include_role_history,
+                )
+            ).card,
         )
+
+
+class OldStrictMobileCardRole(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    group: str
+    discount_level: int | None = None
+    pingvin_points: int = 0
+    signed_contract: bool = False
+
+
+class OldStrictMobileCardResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    person_id: int
+    first_name: str
+    last_name: str
+    birth_date: str | None = None
+    created_at: str
+    valid_until: str
+    photo_url: str | None = None
+    pingvin_points: int
+    active_roles: list[OldStrictMobileCardRole]
+    word_of_the_day: str
+
+
+class OldStrictMobileCardSessionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_token: str
+    card: OldStrictMobileCardResponse
 
 
 def _make_client() -> TestClient:
@@ -105,6 +182,26 @@ def test_new_mobile_card_session_flow_returns_english_contract() -> None:
     assert payload["card"]["first_name"] == "Sample"
     assert payload["card"]["active_roles"][0]["name"] == "Shift lead"
     assert payload["card"]["active_roles"][0]["pingvin_points"] == 4
+    assert "role_history" not in payload["card"]
+    OldStrictMobileCardSessionResponse.model_validate(payload)
+
+    opt_in_session_response = client.post(
+        "/api/v1/mobile-card/sessions?include_role_history=true",
+        json={"email": "person.one@example.com", "access_code": "123456"},
+    )
+    opt_in_payload = opt_in_session_response.json()
+    assert opt_in_session_response.status_code == 200
+    assert opt_in_payload["card"]["role_history"][0] == {
+        "name": "Shift lead",
+        "group": "Bar",
+        "discount_level": 2,
+        "pingvin_points": 4,
+        "signed_contract": True,
+        "year": 2026,
+        "term": 1,
+        "semester": "Vår",
+        "is_active": True,
+    }
 
     me_response = client.get(
         "/api/v1/mobile-card/me",
@@ -113,7 +210,16 @@ def test_new_mobile_card_session_flow_returns_english_contract() -> None:
 
     assert me_response.status_code == 200
     assert me_response.json()["person_id"] == 12
+    assert "role_history" not in me_response.json()
+    OldStrictMobileCardResponse.model_validate(me_response.json())
     assert "x-mobile-card-session-token" not in me_response.headers
+
+    opt_in_me_response = client.get(
+        "/api/v1/mobile-card/me?include_role_history=true",
+        headers={"Authorization": f"Bearer {payload['session_token']}"},
+    )
+    assert opt_in_me_response.status_code == 200
+    assert opt_in_me_response.json()["role_history"][1]["name"] == "Member"
 
 
 def test_new_mobile_card_me_returns_renewed_token_header_when_available() -> None:
@@ -176,6 +282,7 @@ def test_legacy_mobile_card_adapter_returns_legacy_contract() -> None:
     assert payload["fornavn"] == "Sample"
     assert payload["aktiveVerv"][0]["navn"] == "Shift lead"
     assert payload["aktiveVerv"][0]["pingvinPoeng"] == 4
+    assert "vervHistorikk" not in payload
     assert "pingvinPoengSum" in payload
 
 

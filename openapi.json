@@ -1499,6 +1499,20 @@
             "title": "Pingvin Points",
             "type": "integer"
           },
+          "role_history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MobileCardRoleHistory"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role History"
+          },
           "valid_until": {
             "format": "date-time",
             "title": "Valid Until",
@@ -1560,6 +1574,66 @@
           "group"
         ],
         "title": "MobileCardRole",
+        "type": "object"
+      },
+      "MobileCardRoleHistory": {
+        "additionalProperties": false,
+        "properties": {
+          "discount_level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Level"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "is_active": {
+            "default": false,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pingvin_points": {
+            "default": 0,
+            "title": "Pingvin Points",
+            "type": "integer"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          },
+          "signed_contract": {
+            "default": false,
+            "title": "Signed Contract",
+            "type": "boolean"
+          },
+          "term": {
+            "title": "Term",
+            "type": "integer"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "group",
+          "year",
+          "term",
+          "semester"
+        ],
+        "title": "MobileCardRoleHistory",
         "type": "object"
       },
       "MobileCardSessionCreateRequest": {
@@ -2674,6 +2748,16 @@
         "operationId": "getCurrentMobileCard",
         "parameters": [
           {
+            "in": "query",
+            "name": "include_role_history",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Role History",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "header",
             "name": "authorization",
             "required": false,
@@ -2721,6 +2805,18 @@
     "/api/v1/mobile-card/sessions": {
       "post": {
         "operationId": "createMobileCardSession",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_role_history",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Role History",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

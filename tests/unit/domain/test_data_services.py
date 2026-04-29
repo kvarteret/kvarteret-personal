@@ -29,6 +29,7 @@ from app.domain.mobile_card.service import (
     _word_of_the_day,
 )
 from app.domain.mobile_card.repository import (
+    MobileCardRoleHistorySnapshot,
     MobileCardRoleSnapshot,
     MobileCardSnapshot,
 )
@@ -206,7 +207,15 @@ class FakeMobileCardRepository:
     ) -> dict | None:
         return self.volunteer_by_email_and_code
 
-    async def fetch_card_snapshot(self, *, volunteer_id: int, semester_code: int):
+    async def fetch_card_snapshot(
+        self,
+        *,
+        volunteer_id: int,
+        semester_code: int,
+        include_role_history: bool = False,
+    ):
+        if self.card_snapshot is not None and not include_role_history:
+            self.card_snapshot.role_history = []
         return self.card_snapshot
 
 
@@ -274,6 +283,28 @@ def _build_mobile_card_snapshot() -> MobileCardSnapshot:
                 pingvin_points=4,
                 signed_contract=True,
             )
+        ],
+        role_history=[
+            MobileCardRoleHistorySnapshot(
+                name="Shift lead",
+                group="Bar",
+                group_id=253,
+                discount_level=2,
+                pingvin_points=4,
+                signed_contract=True,
+                semester=20261,
+                is_active=True,
+            ),
+            MobileCardRoleHistorySnapshot(
+                name="Member",
+                group="PR",
+                group_id=270,
+                discount_level=1,
+                pingvin_points=2,
+                signed_contract=True,
+                semester=20252,
+                is_active=False,
+            ),
         ],
     )
 
@@ -1089,7 +1120,27 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
 
     assert isinstance(result, MobileCardCurrentCardResult)
     assert result.card.person_id == 12
+    assert result.card.role_history is None
     assert result.renewed_session_token is None
+
+
+@pytest.mark.asyncio
+async def test_mobile_card_service_includes_role_history_when_requested() -> None:
+    repository = FakeMobileCardRepository(card_snapshot=_build_mobile_card_snapshot())
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+    )
+
+    token = service.serializer.dumps({"person_id": 12})
+
+    result = await service.get_current_card(token, include_role_history=True)
+
+    assert result.card.role_history is not None
+    assert [role.name for role in result.card.role_history] == ["Shift lead", "Member"]
+    assert result.card.role_history[0].semester == "Vår"
+    assert result.card.role_history[1].semester == "Høst"
 
 
 @pytest.mark.asyncio
