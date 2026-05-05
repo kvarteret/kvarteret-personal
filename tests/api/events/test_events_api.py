@@ -183,6 +183,10 @@ def test_public_event_list_uses_public_non_ended_query_and_api_field_names() -> 
     )
 
     assert response.status_code == 200
+    assert (
+        response.headers["cache-control"]
+        == "public, max-age=30, s-maxage=300, stale-while-revalidate=600"
+    )
     assert response.headers["content-language"] == "no"
     assert response.headers["vary"] == "Accept-Language, Authorization"
     payload = response.json()
@@ -210,6 +214,7 @@ def test_valid_mobile_session_can_include_internal_events() -> None:
     )
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
     assert len(response.json()["events"]) == 2
     assert repository.list_calls[0]["include_internal"] is True
 
@@ -287,6 +292,10 @@ def test_event_taxonomy_groups_active_types_with_metadata() -> None:
     response = client.get("/api/v1/events/taxonomy")
 
     assert response.status_code == 200
+    assert (
+        response.headers["cache-control"]
+        == "public, max-age=30, s-maxage=300, stale-while-revalidate=600"
+    )
     payload = response.json()
     assert [group["name"] for group in payload["event_type_groups"]] == [
         "Musikk",
