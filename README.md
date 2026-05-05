@@ -1,20 +1,45 @@
-## Kvarteret Personal
+# Kvarteret Personal
 
-This repository contains the in-progress FastAPI, HTMX, Tailwind, Supabase, and PostgREST replacement for the old Kvarteret personal system.
+`kvarteret-personal` is the current FastAPI backend and server-rendered admin UI for Kvarteret personnel workflows.
 
-The living execution plan for the rewrite is in [plans/fastapi-rewrite.md](plans/fastapi-rewrite.md). Repository-local planning rules are in [PLANS.md](PLANS.md).
+It owns:
 
-### Quick start
+- the personnel admin UI at `personal.kvarteret.no`
+- Supabase Postgres migrations for personnel, auth-support, registration, and event tables
+- the mobile-card API used by `kvarteret-internbevis-rn`
+- public event read APIs used by `samfunnetibergen` and the mobile app
+- public volunteer prospect intake used by `blifrivillig.no`
+- media proxy routes for private personnel photos and documents
+- the Spotify-backed now-playing API
+- the checked-in OpenAPI contract in `openapi.json`
 
-Install Python dependencies with `uv sync`, install frontend tooling with `bun install`, then run:
+The documentation home is [docs/README.md](docs/README.md).
+
+## Quick Start
+
+Install dependencies:
+
+    uv sync
+    bun install
+
+Run the app:
 
     make run
 
-When the scaffold is present, `http://127.0.0.1:8000/health` should return `{"status":"ok"}`.
+Check health:
 
-Useful targets:
+    curl http://127.0.0.1:8000/health
+
+Expected body:
+
+    {"status":"ok"}
+
+The root web page redirects to `/login` when there is no admin session.
+
+## Common Commands
 
     make install
+    make run
     make css-watch
     make test
     make openapi
@@ -22,104 +47,48 @@ Useful targets:
     make smoke-auth
     make upload-legacy-images
 
-### OpenAPI contract
+Use [Local development](docs/how-to/local-development.md) for daily workflows.
 
-FastAPI is the source of truth for the API contract, and `openapi.json` is a
-checked-in artifact so frontend clients can generate stable types from git
-history. After changing API routes, request models, response models, or
-operation IDs, run:
+## API Contract
+
+FastAPI is the source of truth for the API contract. `openapi.json` is checked in so sibling clients can generate stable types from git history.
+
+After changing API routes, request models, response models, or operation IDs:
 
     make openapi
 
-Before committing, verify the artifact is current with:
+Before committing API changes:
 
     make openapi-check
 
-### Vercel deployment
+Consumer boundaries and client regeneration are documented in [API boundaries](docs/reference/api-boundaries.md) and [Update OpenAPI clients](docs/how-to/update-openapi-clients.md).
 
-This repository includes a Vercel entrypoint at `api/index.py` and a checked-in
-`vercel.json`. The Vercel build runs:
+## System Boundaries
 
-    bun run build:css
-    python scripts/prepare_vercel_static.py
+The important sibling boundaries are:
 
-That copies `app/static/` into `public/static/` so `/static/...` assets can be
-served by Vercel directly, while all non-static routes are rewritten to the
-FastAPI app.
+- `kvarteret-internbevis-rn` calls mobile-card, event, and now-playing APIs.
+- `samfunnetibergen` calls public event APIs and proxies volunteer prospect submissions.
+- `frontend-eventside` currently writes event tables directly through Supabase, while this repo owns the event schema migrations and public read API.
 
-`api/index.py` is intentionally tiny:
+See [Kvarteret system map](docs/explanation/kvarteret-system-map.md) for the full diagram.
 
-    from app.main import create_app
-    app = create_app()
+## External Systems
 
-Vercel's Python runtime expects a module-level ASGI app object at that path.
-Local development does not use this file; locally we run `app.main:create_app`
-as a factory through Uvicorn. If Vercel deployment is ever removed, `api/index.py`
-and `vercel.json` should be deleted together.
+Direct runtime dependencies include Supabase Postgres, Supabase Auth, Supabase Storage, Azure Blob Storage, Spotify, SMTP, Slack Incoming Webhooks, and Vercel.
 
-`.vercelignore` excludes local-only directories such as `data/` so recovered
-media archives are not uploaded during deployment.
+See [External systems](docs/reference/external-systems.md) and [Configuration](docs/reference/configuration.md).
 
-Implemented slices now include:
+## Deployment Shape
 
-    /people
-    /groups and /groups/{id}/semester-transfer
-    /courses
-    /users
-    /registrations and /register/{token}
-    /api/v1/mobile-card and /api/DigitalInternkort
-    backend media proxy routes for private photos and documents
+Vercel loads `api/index.py`, which exposes a module-level ASGI app from `app.main:create_app`.
 
-The current hosted Supabase project also expects these additive structures to exist:
+The Vercel build runs the CSS/static preparation steps so `/static/...` assets are served from `public/static`, while non-static routes are rewritten to FastAPI.
 
-    public.registrering
-    public.nytt_personal
-    public.personal.internkort_access_token_created_at
-    storage buckets personnel-photos and personnel-documents
+Operational checks are documented in [Deploy and runtime checks](docs/how-to/deploy-and-runtime-checks.md).
 
-### Migration authority
+## Historical Migration Notes
 
-Supabase Postgres schema changes are authored in Alembic from this repository.
-That includes the event schema used by `frontend-eventside`, such as:
+The old one-time rewrite and migration plan is preserved in [plans/fastapi-rewrite.md](plans/fastapi-rewrite.md). Treat it as history and implementation evidence, not as the current architecture entry point.
 
-    public.events
-    public.event_types
-    public.event_organizer_groups
-    public.event_organizer_group_memberships
-
-Use the Supabase CLI for inspection, linking, and applying the database behind
-this repository, but do not treat `frontend-eventside/supabase/migrations` as
-the schema source of truth. `frontend-eventside` consumes the event schema and
-may keep historical migration files for reference only.
-
-Legacy Azure media recovery is scripted in `scripts/download_legacy_azure_media.sh`.
-It downloads the old Azure Blob `images` container into `data/legacy-images/`
-and pulls the old App Service `files/` tree for `personal_fil` into
-`data/legacy-personal-fil/`. The current live App Service directory exists but is
-empty, so the `personal_fil` archive will only contain data if the old site still
-has it when the script is run.
-
-Recovered Azure images can be uploaded into the private Supabase
-`personnel-photos` bucket with:
-
-    make upload-legacy-images
-
-The uploader is resumable. It compares the local archive in
-`data/legacy-images/images/` with `storage.objects` and only uploads missing
-object names. To restrict the upload to files referenced by `public.personal_bilde`,
-run:
-
-    uv run python scripts/upload_legacy_images_to_supabase.py --db-backed-only
-
-To create a direct auth-backed admin user in the new system, run:
-
-    uv run python scripts/bootstrap_auth_user.py \
-      --email <email> \
-      --username <username> \
-      --password 'choose-a-password' \
-      --display-name '<display-name>' \
-      --role admin
-
-The web admin-account form sends a password-setup email instead. That flow
-requires working SMTP settings (`SMTP_*`) and a public base URL
-(`APP_PUBLIC_BASE_URL`, or a correct request host in local development).
+Current documentation issues are tracked in [docs/issues/current-documentation-issues.md](docs/issues/current-documentation-issues.md).
