@@ -43,6 +43,9 @@ async def list_events(
         mobile_card_service=mobile_card_service,
     )
     _set_localized_headers(response, locale)
+    _set_events_cache_headers(
+        response, is_public_request=not authorization and not include_internal
+    )
     return await events_service.list_events(
         authorization=auth,
         locale=locale,
@@ -57,8 +60,10 @@ async def list_events(
     operation_id="getEventTaxonomy",
 )
 async def get_event_taxonomy(
+    response: Response,
     events_service: EventsService = Depends(get_events_service),
 ) -> EventTaxonomy:
+    _set_events_cache_headers(response, is_public_request=True)
     return await events_service.get_taxonomy()
 
 
@@ -93,6 +98,7 @@ async def get_event(
             detail="Event not found.",
         ) from exc
     _set_localized_headers(response, event.language)
+    _set_events_cache_headers(response, is_public_request=not authorization)
     return event
 
 
@@ -135,3 +141,12 @@ async def _resolve_event_authorization(
 def _set_localized_headers(response: Response, locale: str) -> None:
     response.headers["Content-Language"] = locale
     response.headers["Vary"] = "Accept-Language, Authorization"
+
+
+def _set_events_cache_headers(response: Response, *, is_public_request: bool) -> None:
+    if not is_public_request:
+        response.headers["Cache-Control"] = "private, no-store"
+        return
+    response.headers["Cache-Control"] = (
+        "public, max-age=30, s-maxage=300, stale-while-revalidate=600"
+    )
