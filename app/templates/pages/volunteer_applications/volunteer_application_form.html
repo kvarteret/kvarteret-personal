@@ -51,7 +51,7 @@
         </label>
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">{{ _("Postal code") }}</span>
-          <input class="app-input" name="postal_code" type="text" value="{{ form_values.get('postal_code', volunteer_application.postal_code or '') }}">
+          <input class="app-input" name="postal_code" type="text" pattern="\d{4}" maxlength="4" inputmode="numeric" value="{{ form_values.get('postal_code', volunteer_application.postal_code or '') }}">
         </label>
         <section class="grid gap-4 rounded-3xl border border-stone-200 bg-stone-50/80 p-4 md:col-span-2 md:grid-cols-[9rem_minmax(0,1fr)] md:items-start">
           <div class="flex justify-center md:justify-start">
