@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from asyncio import to_thread
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -455,6 +456,10 @@ class VolunteerApplicationsService:
             submission.phone = normalize_required_phone_number(submission.phone)
         except ValueError as exc:
             raise VolunteerApplicationValidationError(str(exc)) from exc
+
+        if submission.postal_code is not None:
+            if not re.fullmatch(r"\d{4}", submission.postal_code):
+                raise VolunteerApplicationValidationError("Postal code must be exactly 4 digits (e.g. 5011).")
 
         photo_sha1 = existing.photo_sha1
         photo_filetype = existing.photo_filetype
