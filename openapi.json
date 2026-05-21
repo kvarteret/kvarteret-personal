@@ -2030,6 +2030,20 @@
             "title": "First Choice Group Slug",
             "type": "string"
           },
+          "friend_emails": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Friend Emails"
+          },
           "full_name": {
             "title": "Full Name",
             "type": "string"
