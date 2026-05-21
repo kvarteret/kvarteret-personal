@@ -1,12 +1,59 @@
 <section class="app-panel" id="volunteer-application-list-panel">
   <div class="grid gap-0">
     {% for volunteer_application in volunteer_applications %}
+      {% if not volunteer_application.group_id or volunteer_application.group_role == "inviter" %}
       <article class="border-b border-kvarteret-ink py-5">
+        {% if volunteer_application.group_id and volunteer_application.group_members %}
+          <div class="grid gap-4">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">Grupperegistrering</p>
+                <p class="text-sm text-kvarteret-ink">
+                  Komitéønsker:
+                  {{ volunteer_application.first_choice_group_name }}
+                  {% if volunteer_application.second_choice_group_name %} / {{ volunteer_application.second_choice_group_name }}{% endif %}
+                </p>
+              </div>
+              <form action="/volunteer-applications/groups/{{ volunteer_application.group_id }}/approval" class="flex flex-wrap gap-3" method="post">
+                <select class="app-input" name="accepted_group_id">
+                  {% if volunteer_application.first_choice_group_id and volunteer_application.first_choice_group_name %}
+                    <option value="{{ volunteer_application.first_choice_group_id }}">{{ volunteer_application.first_choice_group_name }}</option>
+                  {% endif %}
+                  {% if volunteer_application.second_choice_group_id and volunteer_application.second_choice_group_name %}
+                    <option value="{{ volunteer_application.second_choice_group_id }}">{{ volunteer_application.second_choice_group_name }}</option>
+                  {% endif %}
+                </select>
+                <button class="app-button" type="submit" {% if volunteer_application.group_members | selectattr("active") | selectattr("submitted", "equalto", false) | list %}disabled{% endif %}>Godkjenn alle</button>
+              </form>
+            </div>
+            <div class="grid gap-3">
+              {% for member in volunteer_application.group_members %}
+                <div class="flex flex-col gap-3 border border-stone-300 p-3 lg:flex-row lg:items-center lg:justify-between {% if not member.active %}opacity-60{% endif %}">
+                  <div class="grid gap-1">
+                    <p class="text-sm font-medium text-kvarteret-ink">
+                      {{ member.display_name }}
+                      {% if member.role == "inviter" %}<span class="text-stone-500">(inviterer)</span>{% endif %}
+                      {% if not member.active %}<span class="text-stone-500">(fjernet)</span>{% endif %}
+                    </p>
+                    <p class="text-sm text-stone-600">{{ member.email }}</p>
+                    <p class="text-sm text-kvarteret-ink">
+                      {% if member.submitted %}Søkt inn ✓{% else %}Venter på innsending{% endif %}
+                      · Prøvedugnad: {% if member.trial_shift_attended %}Møtt{% else %}Ikke registrert{% endif %}
+                    </p>
+                  </div>
+                  {% if member.registration_id %}
+                    <a class="app-button" href="/volunteer-applications/{{ member.registration_id }}">Se søknad</a>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% else %}
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div class="grid gap-1">
             <div class="flex flex-wrap items-center gap-3">
               <p class="text-sm font-medium text-kvarteret-ink">{{ volunteer_application.email }}</p>
-              {% if volunteer_application.source == "invite" and not volunteer_application.submitted %}
+              {% if volunteer_application.source in ["invite", "group_invite"] and not volunteer_application.submitted %}
                 <a class="app-button-secondary inline-flex min-h-8 px-3 text-xs" href="/apply/{{ volunteer_application.token }}">Send inn nå</a>
               {% endif %}
             </div>
@@ -59,7 +106,9 @@
             </form>
           </div>
         </div>
+        {% endif %}
       </article>
+      {% endif %}
     {% else %}
       <p class="py-6 text-sm text-kvarteret-sky">Ingen åpne frivilligsøknader.</p>
     {% endfor %}

@@ -6,6 +6,14 @@
       <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">{{ _("Volunteer registration") }}</p>
       <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ _("Complete your details") }}</h1>
       <p class="max-w-3xl text-base leading-7 text-stone-700">{{ _("Invitation for %(email)s", email=volunteer_application.email) }}</p>
+      {% if volunteer_application.group_id and volunteer_application.group_role == "invitee" and volunteer_application.group_members %}
+        {% set inviter = volunteer_application.group_members | selectattr("role", "equalto", "inviter") | first %}
+        {% if inviter %}
+          <p class="max-w-3xl text-base leading-7 text-stone-700">
+            {{ inviter.display_name }} inviterte deg til å søke sammen. Dere er meldt opp mot {{ volunteer_application.first_choice_group_name or "gruppen" }}.
+          </p>
+        {% endif %}
+      {% endif %}
     </header>
 
     <section class="app-panel">
