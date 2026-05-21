@@ -16,6 +16,14 @@ class ApplicantEmail:
 class ApplicantEmailTemplateRendererProtocol(Protocol):
     def render_invitation_email(self, *, invitation_url: str) -> ApplicantEmail: ...
 
+    def render_friend_invitation_email(
+        self,
+        *,
+        invitation_url: str,
+        inviter_name: str,
+        first_choice_group_name: str,
+    ) -> ApplicantEmail: ...
+
     def render_profile_completion_email(self, *, invitation_url: str) -> ApplicantEmail: ...
 
 
@@ -33,6 +41,23 @@ class ApplicantEmailTemplateRenderer:
             html_body=self._render(
                 "applicant_invitation.html",
                 invitation_url=invitation_url,
+            ),
+        )
+
+    def render_friend_invitation_email(
+        self,
+        *,
+        invitation_url: str,
+        inviter_name: str,
+        first_choice_group_name: str,
+    ) -> ApplicantEmail:
+        return ApplicantEmail(
+            subject="Complete your Kvarteret registration / Fullfør registreringen din hos Kvarteret",
+            html_body=self._render(
+                "applicant_friend_invitation.html",
+                invitation_url=invitation_url,
+                inviter_name=inviter_name,
+                first_choice_group_name=first_choice_group_name,
             ),
         )
 
