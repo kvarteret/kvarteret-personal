@@ -75,6 +75,7 @@ class FakeVolunteerApplicationsRepository:
         self.group_admin_email_recipients: dict[int, list[str]] = {}
         self.group_admin_recipient_lookup_group_ids: list[int] = []
         self.existing_volunteer_ids_by_email: dict[str, int] = {}
+        self.active_registration_ids_by_email: dict[str, int] = {}
         self.application_photo_sha1: str | None = None
         self.application_photo_filetype: str | None = None
         self.application_photo_url: str | None = None
@@ -164,6 +165,15 @@ class FakeVolunteerApplicationsRepository:
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return self.existing_volunteer_ids_by_email.get(email.lower())
+
+    async def find_active_registration_id_by_email(self, email: str) -> int | None:
+        return self.active_registration_ids_by_email.get(email.lower())
+
+    async def list_group_members(self, group_id: int, *, include_dropped: bool = True):
+        return []
+
+    async def drop_group_invitee(self, registration_id: int, *, dropped_by_user_id: int | None = None) -> None:
+        pass
 
     async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
         self.group_admin_recipient_lookup_group_ids.append(group_id)
