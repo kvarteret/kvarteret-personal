@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, MetaData, String, Table, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, JSON, MetaData, String, Table, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 
 public_metadata = MetaData(schema="public")
@@ -79,6 +79,30 @@ registrering = Table(
     Column("promoted_at", DateTime(timezone=True)),
     Column("opprettet", DateTime(timezone=True), nullable=False),
     UniqueConstraint("token", name="uq_registrering_token"),
+)
+
+registrering_gruppe = Table(
+    "registrering_gruppe",
+    public_metadata,
+    Column("id", BigInteger, primary_key=True),
+    Column("opprettet", DateTime(timezone=True), nullable=False),
+)
+
+registrering_gruppe_medlem = Table(
+    "registrering_gruppe_medlem",
+    public_metadata,
+    Column("id", BigInteger, primary_key=True),
+    Column("gruppe_id", BigInteger, ForeignKey("public.registrering_gruppe.id"), nullable=False),
+    Column("registrering_id", BigInteger, ForeignKey("public.registrering.id", ondelete="SET NULL")),
+    Column("registrering_epost", Text, nullable=False),
+    Column("rolle", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("opprettet", DateTime(timezone=True), nullable=False),
+    Column("droppet", DateTime(timezone=True)),
+    Column("droppet_av_user_id", BigInteger),
+    CheckConstraint("rolle in ('inviter', 'invitee')", name="ck_registrering_gruppe_medlem_rolle"),
+    CheckConstraint("status in ('active', 'dropped')", name="ck_registrering_gruppe_medlem_status"),
+    UniqueConstraint("gruppe_id", "registrering_id", name="uq_registrering_gruppe_medlem_registrering"),
 )
 
 nytt_personal = Table(

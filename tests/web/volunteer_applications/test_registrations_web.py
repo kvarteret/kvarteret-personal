@@ -134,6 +134,7 @@ class FakeVolunteerApplicationsService:
                 "background_details": registration.background_details,
                 "first_choice_group_slug": registration.first_choice_group_slug,
                 "second_choice_group_slug": registration.second_choice_group_slug,
+                "friend_emails": registration.friend_emails,
                 "base_url": base_url,
             }
         )
@@ -882,6 +883,33 @@ def test_public_prospect_api_accepts_missing_second_choice() -> None:
             "background_details": None,
             "first_choice_group_slug": "skjenkegruppen",
             "second_choice_group_slug": None,
+            "friend_emails": [],
             "base_url": "http://testserver",
         }
+    ]
+
+
+def test_public_prospect_api_forwards_friend_emails() -> None:
+    app = create_app()
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/volunteer-prospects",
+        json={
+            "full_name": "Test Person",
+            "email": "prospect@example.com",
+            "phone": "12345678",
+            "study_institution": "UiB",
+            "background_details": None,
+            "first_choice_group_slug": "skjenkegruppen",
+            "friend_emails": ["Friend@example.com", "second@example.com"],
+        },
+    )
+
+    assert response.status_code == 201
+    assert volunteer_applications_service.public_prospect_calls[0]["friend_emails"] == [
+        "Friend@example.com",
+        "second@example.com",
     ]
