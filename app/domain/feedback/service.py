@@ -29,24 +29,6 @@ mutation CreateIssue($input: IssueCreateInput!) {
 }
 """
 
-_CUSTOMER_UPSERT_MUTATION = """
-mutation CustomerUpsert($input: CustomerUpsertInput!) {
-  customerUpsert(input: $input) {
-    success
-    customer { id }
-  }
-}
-"""
-
-_CUSTOMER_NEED_CREATE_MUTATION = """
-mutation CustomerNeedCreate($input: CustomerNeedCreateInput!) {
-  customerNeedCreate(input: $input) {
-    success
-    need { id }
-  }
-}
-"""
-
 _CATEGORY_TO_TYPE = {
     "ris": "bug",
     "forslag": "feature",
@@ -196,37 +178,6 @@ def _build_description(submission: FeedbackSubmission) -> str:
     return "\n".join(lines)
 
 
-def _build_customer_request_body(submission: FeedbackSubmission) -> str:
-    _, source_label = _SOURCE_PROJECT.get(submission.source, ("", "ukjent"))
-    lines = [
-        submission.message,
-        "",
-        "---",
-        "",
-        f"Source: {source_label}",
-        f"Page: {submission.page}",
-        f"Platform: {submission.platform or 'web'}",
-        f"Submitted: {submission.submitted_at}",
-    ]
-    if submission.email:
-        lines.append(f"Email: {submission.email}")
-    if submission.name:
-        lines.append(f"Name: {submission.name}")
-    if submission.user_id:
-        lines.append(f"User ID: {submission.user_id}")
-    return "\n".join(lines)
-
-
-def _customer_external_id(email: str) -> str:
-    return f"kvarteret-feedback-email:{email.lower()}"
-
-
-def _customer_name(submission: FeedbackSubmission) -> str:
-    if submission.name and submission.email:
-        return f"{submission.name} <{submission.email}>"
-    return submission.name or submission.email or "Unknown feedback sender"
-
-
 def _linear_graphql(api_key: str, query: str, variables: dict[str, object]) -> dict[str, object]:
     body = json.dumps({"query": query, "variables": variables}).encode("utf-8")
     req = urllib_request.Request(
@@ -301,69 +252,3 @@ def _create_linear_issue(submission: FeedbackSubmission, settings: Settings) -> 
             "feedback_source": submission.source,
         },
     )
-    _create_customer_request(api_key, submission, issue)
-
-
-def _create_customer_request(
-    api_key: str,
-    submission: FeedbackSubmission,
-    issue: dict[str, object],
-) -> None:
-    if not submission.email:
-        return
-
-    issue_id = issue.get("id")
-    if not isinstance(issue_id, str) or not issue_id:
-        logger.warning("[linear] Skipping customer request because issue id is missing")
-        return
-
-    external_id = _customer_external_id(submission.email)
-    try:
-        customer_result = _linear_graphql(
-            api_key,
-            _CUSTOMER_UPSERT_MUTATION,
-            {
-                "input": {
-                    "name": _customer_name(submission),
-                    "externalId": external_id,
-                }
-            },
-        )
-        customer_upsert = customer_result.get("data", {}).get("customerUpsert", {})
-        if not customer_upsert.get("success"):
-            logger.error("[linear] customerUpsert returned success=false")
-            return
-
-        customer = customer_upsert.get("customer") or {}
-        customer_id = customer.get("id")
-        if not isinstance(customer_id, str) or not customer_id:
-            logger.warning("[linear] Skipping customer request because customer id is missing")
-            return
-
-        need_result = _linear_graphql(
-            api_key,
-            _CUSTOMER_NEED_CREATE_MUTATION,
-            {
-                "input": {
-                    "issueId": issue_id,
-                    "body": _build_customer_request_body(submission),
-                    "customerId": customer_id,
-                }
-            },
-        )
-        customer_need_create = need_result.get("data", {}).get("customerNeedCreate", {})
-        if not customer_need_create.get("success"):
-            logger.error("[linear] customerNeedCreate returned success=false")
-            return
-
-        need = customer_need_create.get("need") or {}
-        logger.info(
-            "[linear] Created customer request",
-            extra={
-                "linear_customer_need_id": need.get("id"),
-                "linear_issue_identifier": issue.get("identifier"),
-                "feedback_source": submission.source,
-            },
-        )
-    except FeedbackDeliveryError:
-        logger.exception("[linear] Failed to create customer request")
