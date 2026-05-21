@@ -334,6 +334,12 @@ def _create_customer_request(
             logger.error("[linear] customerUpsert returned success=false")
             return
 
+        customer = customer_upsert.get("customer") or {}
+        customer_id = customer.get("id")
+        if not isinstance(customer_id, str) or not customer_id:
+            logger.warning("[linear] Skipping customer request because customer id is missing")
+            return
+
         need_result = _linear_graphql(
             api_key,
             _CUSTOMER_NEED_CREATE_MUTATION,
@@ -341,7 +347,7 @@ def _create_customer_request(
                 "input": {
                     "issueId": issue_id,
                     "body": _build_customer_request_body(submission),
-                    "customerExternalId": external_id,
+                    "customerId": customer_id,
                 }
             },
         )

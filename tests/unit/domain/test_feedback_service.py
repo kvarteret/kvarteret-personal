@@ -73,5 +73,6 @@ def test_create_linear_issue_lets_linear_assign_triage_state_and_customer_reques
 
     need_input = captured[2]["payload"]["variables"]["input"]
     assert need_input["issueId"] == "issue-id"
-    assert need_input["customerExternalId"] == "kvarteret-feedback-email:admin.user@example.test"
+    assert need_input["customerId"] == "customer-id"
+    assert "customerExternalId" not in need_input
     assert "Email: admin.user@example.test" in need_input["body"]
