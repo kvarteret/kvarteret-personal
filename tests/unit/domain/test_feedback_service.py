@@ -4,13 +4,11 @@ from app.config import Settings
 from app.domain.feedback.service import FeedbackSubmission, _create_linear_issue
 
 
-def test_create_linear_issue_lets_linear_assign_triage_state_and_customer_request(monkeypatch) -> None:
+def test_create_linear_issue_lets_linear_assign_triage_state_and_includes_email(monkeypatch) -> None:
     captured: list[dict[str, object]] = []
     responses = [
         b'{"data":{"issueCreate":{"success":true,'
         b'"issue":{"id":"issue-id","identifier":"DAK-123","url":"https://linear.app/kvarteret/issue/DAK-123/test"}}}}',
-        b'{"data":{"customerUpsert":{"success":true,"customer":{"id":"customer-id"}}}}',
-        b'{"data":{"customerNeedCreate":{"success":true,"need":{"id":"need-id"}}}}',
     ]
 
     class FakeResponse:
@@ -63,16 +61,6 @@ def test_create_linear_issue_lets_linear_assign_triage_state_and_customer_reques
     assert issue_input["teamId"] == "team-id"
     assert issue_input["projectId"] == "project-id"
     assert "stateId" not in issue_input
+    assert "E-post:** admin.user@example.test" in issue_input["description"]
     assert captured[0]["authorization"] == "lin_api_example"
-
-    customer_input = captured[1]["payload"]["variables"]["input"]
-    assert customer_input == {
-        "name": "System User <admin.user@example.test>",
-        "externalId": "kvarteret-feedback-email:admin.user@example.test",
-    }
-
-    need_input = captured[2]["payload"]["variables"]["input"]
-    assert need_input["issueId"] == "issue-id"
-    assert need_input["customerId"] == "customer-id"
-    assert "customerExternalId" not in need_input
-    assert "Email: admin.user@example.test" in need_input["body"]
+    assert len(captured) == 1
