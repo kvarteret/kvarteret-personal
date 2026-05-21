@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from app.dependencies import get_current_user, get_feedback_service
-from app.errors import NotConfiguredError
 from app.domain.feedback.service import FeedbackService, FeedbackValidationError
 from app.web.templates import templates
 
@@ -55,7 +54,7 @@ async def feedback_submit(
             message=message,
             page=page,
         )
-    except (FeedbackValidationError, NotConfiguredError) as exc:
+    except FeedbackValidationError as exc:
         return _render_feedback_panel(
             request,
             page=page,

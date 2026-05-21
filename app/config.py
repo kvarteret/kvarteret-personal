@@ -29,7 +29,14 @@ class Settings(BaseSettings):
     database_pool_recycle_seconds: int = Field(default=1800)
     photo_bucket: str = Field(default="personnel-photos")
     document_bucket: str = Field(default="personnel-documents")
-    slack_feedback_webhook_url: str | None = Field(default=None)
+    # Linear feedback integration — all products route through this backend
+    linear_api_key: str | None = Field(default=None)
+    linear_team_id: str | None = Field(default=None)
+    linear_project_id_personal: str | None = Field(default=None)
+    linear_project_id_internbevis: str | None = Field(default=None)
+    linear_project_id_nettside: str | None = Field(default=None)
+    linear_state_id_triage: str | None = Field(default=None)
+    # slack_feedback_webhook_url: str | None = Field(default=None)
     smtp_server: str | None = Field(
         default=None,
         validation_alias=AliasChoices("SMTP_SERVER", "EMAIL_SERVER", "Email__Server"),
@@ -104,7 +111,12 @@ class Settings(BaseSettings):
         "database_url",
         "photo_bucket",
         "document_bucket",
-        "slack_feedback_webhook_url",
+        "linear_api_key",
+        "linear_team_id",
+        "linear_project_id_personal",
+        "linear_project_id_internbevis",
+        "linear_project_id_nettside",
+        "linear_state_id_triage",
         "smtp_server",
         "smtp_sender_name",
         "smtp_sender_email",
