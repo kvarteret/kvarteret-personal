@@ -12,7 +12,7 @@ This page documents third-party systems used by `kvarteret-personal` and related
 | Azure Blob Storage | Legacy-compatible personnel photo storage when configured | `app/infrastructure/storage/service.py` | read/write and signed read URLs |
 | Spotify Web API | Shared now-playing state and OAuth refresh token exchange | `app/domain/spotify/now_playing.py` | OAuth and read |
 | SMTP provider | Mobile-card access codes and onboarding/application email | `app/infrastructure/email/smtp.py` | outbound email |
-| Slack Incoming Webhook | Feedback submissions from the admin UI | `app/domain/feedback/service.py` | outbound webhook |
+| Linear | Feedback submissions from the admin UI and public feedback API | `app/domain/feedback/service.py` | outbound GraphQL API |
 | Vercel | Runtime for the FastAPI ASGI app and static asset serving | `api/index.py`, `vercel.json` | deployment/runtime |
 
 ## Supabase
@@ -45,9 +45,11 @@ SMTP is required for flows that send email:
 
 If SMTP is not configured, email-sending paths fail with a configuration error. The access-code API still avoids email enumeration by returning accepted for unknown or duplicate people.
 
-## Slack Incoming Webhooks
+## Linear
 
-The feedback panel posts to a Slack Incoming Webhook configured by `SLACK_FEEDBACK_WEBHOOK_URL`. The service validates category, email, message length, and page length before posting.
+The feedback panel and `POST /api/v1/feedback/` create Linear issues through the GraphQL API. The service validates category, email, message length, and page length before creating an issue.
+
+New issues require `LINEAR_API_KEY`, `LINEAR_TEAM_ID`, and the relevant `LINEAR_PROJECT_ID_*`. The service does not force a workflow state; Linear assigns triage/default state for the target team. If any required value is missing or Linear rejects the request, the form reports a delivery error instead of showing a false success message.
 
 ## Vercel
 

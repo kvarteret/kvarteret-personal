@@ -87,7 +87,12 @@ The app accepts both current `SMTP_*` names and legacy `EMAIL_*` or `Email__*` a
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `SLACK_FEEDBACK_WEBHOOK_URL` | unset | Slack Incoming Webhook for admin feedback submissions. |
+| `LINEAR_API_KEY` | unset | Linear API key used to create feedback issues. |
+| `LINEAR_TEAM_ID` | unset | Linear team where feedback issues are created. |
+| `LINEAR_PROJECT_ID_PERSONAL` | unset | Linear project for Personalplattformen feedback. |
+| `LINEAR_PROJECT_ID_INTERNBEVIS` | unset | Linear project for internbevis app feedback. |
+| `LINEAR_PROJECT_ID_NETTSIDE` | unset | Linear project for kvarteret.no feedback. |
+| `LINEAR_STATE_ID_TRIAGE` | unset | Legacy Linear triage state setting. New feedback issues let Linear assign triage/default state. |
 | `REVIEW_BYPASS_ENABLED` | `false` | Enables the app-store review bypass path for mobile-card review. |
 | `REVIEW_BYPASS_EMAIL` | unset | Review bypass email. |
 | `REVIEW_BYPASS_TOKEN` | unset | Review bypass token. |
