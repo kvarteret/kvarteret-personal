@@ -11,7 +11,10 @@ from app.db.tables import (
     course_completions,
     courses,
     groups,
+    grupper,
     role_assignments,
+    registrering,
+    registrering_gruppe_medlem,
     volunteer_cards,
     volunteer_documents,
     volunteer_next_of_kin,
@@ -89,6 +92,8 @@ class VolunteersRepository(SqlAlchemyRepository):
     async def fetch_volunteer_shell_row(self, volunteer_id: int) -> dict[str, Any] | None:
         points = _pingvin_points_subquery()
         discount_levels = _current_discount_level_subquery()
+        first_choice_group = grupper.alias("first_choice_group")
+        second_choice_group = grupper.alias("second_choice_group")
         stmt = (
             select(
                 volunteer_records.c.id,
@@ -105,6 +110,15 @@ class VolunteersRepository(SqlAlchemyRepository):
                 discount_levels.c.current_discount_level,
                 volunteer_photos.c.sha1,
                 volunteer_photos.c.filetype,
+                registrering.c.id.label("registration_id"),
+                registrering.c.opprettet.label("registration_created_at"),
+                registrering.c.source.label("registration_source"),
+                registrering.c.status.label("registration_status"),
+                first_choice_group.c.navn.label("first_choice_group_name"),
+                second_choice_group.c.navn.label("second_choice_group_name"),
+                registrering_gruppe_medlem.c.gruppe_id.label("registration_group_id"),
+                registrering_gruppe_medlem.c.rolle.label("registration_group_role"),
+                registrering_gruppe_medlem.c.status.label("registration_group_status"),
             )
             .select_from(
                 volunteer_records.outerjoin(
@@ -116,6 +130,18 @@ class VolunteersRepository(SqlAlchemyRepository):
                 ).outerjoin(
                     discount_levels,
                     discount_levels.c.id_personal == volunteer_records.c.id,
+                ).outerjoin(
+                    registrering,
+                    registrering.c.promoted_volunteer_id == volunteer_records.c.id,
+                ).outerjoin(
+                    first_choice_group,
+                    first_choice_group.c.id == registrering.c.first_choice_group_id,
+                ).outerjoin(
+                    second_choice_group,
+                    second_choice_group.c.id == registrering.c.second_choice_group_id,
+                ).outerjoin(
+                    registrering_gruppe_medlem,
+                    registrering_gruppe_medlem.c.registrering_id == registrering.c.id,
                 )
             )
             .where(volunteer_records.c.id == volunteer_id)

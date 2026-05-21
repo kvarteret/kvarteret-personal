@@ -79,6 +79,9 @@ class FakeVolunteerApplicationsRepository:
         self.application_photo_sha1: str | None = None
         self.application_photo_filetype: str | None = None
         self.application_photo_url: str | None = None
+        self.media_token_service = None
+        self.recent_registration_rows: list[dict] = []
+        self.recent_registration_group_rows: dict[int, list[dict]] = {}
 
     async def create_volunteer_application_invitation(
         self,
@@ -113,6 +116,13 @@ class FakeVolunteerApplicationsRepository:
 
     async def list_volunteer_applications(self):
         raise NotImplementedError
+
+    async def list_recent_volunteer_registrations(self, *, limit: int, before_volunteer_id: int | None = None):
+        rows = [row for row in self.recent_registration_rows if before_volunteer_id is None or row["id"] < before_volunteer_id]
+        return rows[:limit]
+
+    async def list_recent_registration_group_members(self, group_id: int):
+        return list(self.recent_registration_group_rows.get(group_id, []))
 
     async def count_pending_volunteer_applications(self) -> int:
         self.count_calls += 1
@@ -688,6 +698,63 @@ async def test_volunteer_applications_pending_count_is_cached() -> None:
     assert first == 3
     assert second == 3
     assert repository.count_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_volunteer_applications_recent_registrations_attach_group_members() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    inviter_row = {
+        "id": 21,
+        "fornavn": "Inviter",
+        "etternavn": "Person",
+        "epost": "inviter@example.com",
+        "telefon": "11111111",
+        "opprettet": datetime(2026, 5, 21, tzinfo=UTC),
+        "latest_group_name": "Skjenkegruppen",
+        "latest_role_name": None,
+        "latest_semester_code": 20261,
+        "photo_sha1": None,
+        "photo_filetype": None,
+        "registration_id": 31,
+        "group_id": 9,
+        "group_role": "inviter",
+        "group_status": "active",
+    }
+    invitee_row = {
+        "id": 22,
+        "fornavn": "Invitee",
+        "etternavn": "Person",
+        "epost": "invitee@example.com",
+        "telefon": "22222222",
+        "opprettet": datetime(2026, 5, 21, tzinfo=UTC),
+        "latest_group_name": "Skjenkegruppen",
+        "latest_role_name": None,
+        "latest_semester_code": 20261,
+        "photo_sha1": None,
+        "photo_filetype": None,
+        "registration_id": 32,
+        "group_id": 9,
+        "group_role": "invitee",
+        "group_status": "active",
+    }
+    repository.recent_registration_rows = [invitee_row, inviter_row]
+    repository.recent_registration_group_rows = {9: [inviter_row, invitee_row]}
+    service = VolunteerApplicationsService(
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+        pending_count_cache_ttl_seconds=60,
+    )
+
+    page = await service.list_recent_volunteer_registrations_page()
+
+    assert page.items[0].group_id == 9
+    assert page.items[0].renders_group is True
+    assert page.items[1].renders_group is False
+    assert [member.full_name for member in page.items[0].group_members or []] == [
+        "Inviter Person",
+        "Invitee Person",
+    ]
 
 
 @pytest.mark.asyncio

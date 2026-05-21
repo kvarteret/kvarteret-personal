@@ -22,6 +22,7 @@ from app.domain.volunteers.models import (
     VolunteerDetail,
     VolunteerListItem,
     VolunteerListPage,
+    VolunteerRegistrationLogEntry,
     VolunteerRelations,
     AssignmentRoleOption,
 )
@@ -97,6 +98,17 @@ class FakeVolunteersService:
             pingvin_points=8,
             photo_url="/media/photos/abc123.jpg?token=test",
             current_discount_level=2,
+            registration_log_entry=VolunteerRegistrationLogEntry(
+                registration_id=44,
+                created_at=datetime(2026, 5, 21, tzinfo=UTC),
+                source="public_signup",
+                status="promoted",
+                first_choice_group_name="Skjenkegruppen",
+                second_choice_group_name=None,
+                group_id=3,
+                group_role="invitee",
+                group_status="active",
+            ),
         )
 
     async def list_role_assignments(self, volunteer_id: int, limit: int = 12) -> list[RoleAssignmentItem]:
@@ -386,6 +398,10 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert 'class="grid h-52 w-52 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md transition hover:shadow-lg"' in detail_response.text
     assert 'hx-trigger="intersect once"' in detail_response.text
     assert "Slett frivillig" in detail_response.text
+    assert "Registreringslogg" in detail_response.text
+    assert "#44" in detail_response.text
+    assert "Skjenkegruppen" in detail_response.text
+    assert "invitee · active" in detail_response.text
     assert service.list_page_calls[0]["only_active"] is True
 
 

@@ -455,6 +455,68 @@ def test_recent_registrations_fragment_renders_next_page() -> None:
     assert volunteer_applications_service.recent_registration_calls == [{"limit": 20, "cursor": "12"}]
 
 
+def test_recent_registrations_groups_people_from_same_signup() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    inviter = RecentVolunteerRegistrationItem(
+        volunteer_id=21,
+        first_name="Inviter",
+        last_name="Person",
+        full_name="Inviter Person",
+        email="inviter@example.com",
+        phone="11111111",
+        created_at=datetime(2026, 5, 21, tzinfo=UTC),
+        latest_group_name="Skjenkegruppen",
+        latest_role_name=None,
+        latest_semester_code=20261,
+        latest_semester_label="Spring 2026",
+        registration_id=31,
+        group_id=9,
+        group_role="inviter",
+        group_status="active",
+        renders_group=True,
+    )
+    invitee = RecentVolunteerRegistrationItem(
+        volunteer_id=22,
+        first_name="Invitee",
+        last_name="Person",
+        full_name="Invitee Person",
+        email="invitee@example.com",
+        phone="22222222",
+        created_at=datetime(2026, 5, 21, tzinfo=UTC),
+        latest_group_name="Skjenkegruppen",
+        latest_role_name=None,
+        latest_semester_code=20261,
+        latest_semester_label="Spring 2026",
+        registration_id=32,
+        group_id=9,
+        group_role="invitee",
+        group_status="active",
+    )
+    inviter.group_members = [inviter, invitee]
+    invitee.group_members = [inviter, invitee]
+    volunteer_applications_service.recent_registration_pages = {
+        None: RecentVolunteerRegistrationPage(
+            items=[inviter, invitee],
+            limit=20,
+            cursor=None,
+            next_cursor=None,
+        )
+    }
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications")
+
+    assert response.status_code == 200
+    assert "Grupperegistrering" in response.text
+    assert response.text.count("Inviter Person") == 1
+    assert response.text.count("Invitee Person") == 1
+    assert "(inviterer)" in response.text
+
+
 def test_group_admin_can_open_new_volunteer_page_with_all_groups() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))

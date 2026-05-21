@@ -12,6 +12,7 @@ from app.domain.volunteers.models import (
     VolunteerCourseCompletionItem,
     VolunteerDetail,
     VolunteerListItem,
+    VolunteerRegistrationLogEntry,
     VolunteerRelations,
 )
 from app.domain.volunteers.options import gender_label, normalize_gender_code
@@ -56,6 +57,21 @@ def map_volunteer_detail(row: dict) -> VolunteerDetail:
         pingvin_points=int(row.get("pingvin_points") or 0),
         photo_url=None,
         current_discount_level=int(row["current_discount_level"]) if row.get("current_discount_level") is not None else None,
+        registration_log_entry=(
+            VolunteerRegistrationLogEntry(
+                registration_id=int(row["registration_id"]),
+                created_at=require_datetime(row["registration_created_at"]),
+                source=row["registration_source"],
+                status=row["registration_status"],
+                first_choice_group_name=row.get("first_choice_group_name"),
+                second_choice_group_name=row.get("second_choice_group_name"),
+                group_id=row.get("registration_group_id"),
+                group_role=row.get("registration_group_role"),
+                group_status=row.get("registration_group_status"),
+            )
+            if row.get("registration_id") is not None
+            else None
+        ),
     )
 
 
