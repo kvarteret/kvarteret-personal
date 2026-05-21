@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from asyncio import to_thread
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ PUBLIC_PROSPECT_GROUPS = {
     "vaktetaten": "Vaktetaten",
 }
 
+logger = logging.getLogger(__name__)
+
 
 class VolunteerApplicationsError(RuntimeError):
     pass
@@ -50,6 +53,25 @@ class VolunteerAlreadyExistsError(VolunteerApplicationConflictError):
         super().__init__(f"A volunteer with this email already exists (id={volunteer_id}).")
 
 
+class VolunteerApplicationFieldValidationError(VolunteerApplicationValidationError):
+    def __init__(self, message: str, field_errors: dict[str, object]) -> None:
+        self.field_errors = field_errors
+        super().__init__(message)
+
+
+class VolunteerApplicationFieldConflictError(VolunteerApplicationConflictError):
+    def __init__(self, message: str, field_errors: dict[str, object]) -> None:
+        self.field_errors = field_errors
+        super().__init__(message)
+
+
+class ActiveVolunteerRegistrationExistsError(VolunteerApplicationConflictError):
+    def __init__(self, registration_id: int, email: str) -> None:
+        self.registration_id = registration_id
+        self.email = email
+        super().__init__(f"An active volunteer application with this email already exists (id={registration_id}).")
+
+
 @dataclass(slots=True)
 class VolunteerApplicationInvite:
     registration_id: int
@@ -60,6 +82,45 @@ class VolunteerApplicationInvite:
     initial_group_name: str | None = None
     initial_role_id: int | None = None
     initial_role_name: str | None = None
+
+
+@dataclass(slots=True)
+class VolunteerApplicationFriendInvite:
+    registration_id: int
+    token: str
+    email: str
+    inviter_name: str
+    first_choice_group_name: str
+
+
+@dataclass(slots=True)
+class PublicProspectRegistrationResult:
+    detail: "VolunteerApplicationDetail"
+    friend_invites: list[VolunteerApplicationFriendInvite]
+
+
+@dataclass(slots=True)
+class VolunteerApplicationGroupMember:
+    group_id: int
+    registration_id: int | None
+    email: str
+    role: str
+    status: str
+    submitted: bool
+    pending_volunteer_id: int | None
+    first_name: str | None
+    last_name: str | None
+    trial_shift_attended: bool
+    promoted_volunteer_id: int | None
+    dropped_at: datetime | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.status == "active"
+
+    @property
+    def display_name(self) -> str:
+        return _build_full_name(self.first_name, self.last_name or "") or self.email
 
 
 @dataclass(slots=True)
@@ -88,6 +149,10 @@ class VolunteerApplicationListItem:
     trial_shift_attended: bool = False
     promoted_volunteer_id: int | None = None
     promoted_at: datetime | None = None
+    group_id: int | None = None
+    group_role: str | None = None
+    group_status: str | None = None
+    group_members: list[VolunteerApplicationGroupMember] | None = None
 
 
 @dataclass(slots=True)
@@ -124,6 +189,10 @@ class VolunteerApplicationDetail:
     trial_shift_marked_at: datetime | None = None
     promoted_volunteer_id: int | None = None
     promoted_at: datetime | None = None
+    group_id: int | None = None
+    group_role: str | None = None
+    group_status: str | None = None
+    group_members: list[VolunteerApplicationGroupMember] | None = None
 
 
 @dataclass(slots=True)
@@ -170,6 +239,7 @@ class PublicProspectRegistrationInput:
     background_details: str | None
     first_choice_group_slug: str
     second_choice_group_slug: str | None
+    friend_emails: list[str] | None = None
 
 
 class VolunteerApplicationsServiceProtocol(Protocol):
@@ -236,7 +306,10 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         background_details: str | None,
         first_choice_group_id: int,
         second_choice_group_id: int | None,
-    ) -> VolunteerApplicationDetail: ...
+        friend_invites: list[tuple[str, str]] | None = None,
+        inviter_name: str | None = None,
+        first_choice_group_name: str | None = None,
+    ) -> PublicProspectRegistrationResult: ...
     async def create_volunteer_application_invitation(
         self,
         *,
@@ -262,6 +335,9 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     ) -> None: ...
     async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
+    async def find_active_registration_id_by_email(self, email: str) -> int | None: ...
+    async def list_group_members(self, group_id: int, *, include_dropped: bool = True) -> list[VolunteerApplicationGroupMember]: ...
+    async def drop_group_invitee(self, registration_id: int, *, dropped_by_user_id: int | None = None) -> None: ...
     async def approve_volunteer_application(
         self,
         registration: VolunteerApplicationDetail,
@@ -303,6 +379,9 @@ class VolunteerApplicationsService:
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(normalized_email)
         if duplicate_volunteer is not None:
             raise VolunteerAlreadyExistsError(duplicate_volunteer, normalized_email)
+        duplicate_registration = await self.repository.find_active_registration_id_by_email(normalized_email)
+        if duplicate_registration is not None:
+            raise ActiveVolunteerRegistrationExistsError(duplicate_registration, normalized_email)
 
         first_choice_slug = registration.first_choice_group_slug.strip().lower()
         second_choice_slug = (registration.second_choice_group_slug or "").strip().lower()
@@ -326,8 +405,26 @@ class VolunteerApplicationsService:
             raise VolunteerApplicationConflictError("Én eller flere valgte grupper finnes ikke i personaldatabasen.")
 
         first_name, last_name = _split_full_name(registration.full_name)
+        friend_emails = self._normalize_friend_emails(
+            registration.friend_emails,
+            inviter_email=normalized_email,
+        )
+        for index, friend_email in enumerate(friend_emails):
+            duplicate_friend_volunteer = await self.repository.find_volunteer_id_by_email(friend_email)
+            if duplicate_friend_volunteer is not None:
+                raise VolunteerApplicationFieldConflictError(
+                    "Én av vennene er allerede frivillig.",
+                    {"friendEmails": {str(index): "Denne e-postadressen tilhører allerede en frivillig."}},
+                )
+            duplicate_friend_registration = await self.repository.find_active_registration_id_by_email(friend_email)
+            if duplicate_friend_registration is not None:
+                raise VolunteerApplicationFieldConflictError(
+                    "Én av vennene har allerede en aktiv søknad.",
+                    {"friendEmails": {str(index): "Denne e-postadressen har allerede en aktiv søknad."}},
+                )
+
         token = token_urlsafe(24)
-        detail = await self.repository.create_public_prospect_registration(
+        result = await self.repository.create_public_prospect_registration(
             token=token,
             email=normalized_email,
             first_name=first_name,
@@ -341,9 +438,25 @@ class VolunteerApplicationsService:
                 if second_choice_slug
                 else None
             ),
+            friend_invites=[(friend_email, token_urlsafe(24)) for friend_email in friend_emails],
+            inviter_name=_build_full_name(first_name, last_name),
+            first_choice_group_name=known_choice_names[first_choice_slug],
         )
         self._invalidate_pending_count_cache()
-        return detail
+        for invite in result.friend_invites:
+            try:
+                await self._send_friend_invitation_email(
+                    email=invite.email,
+                    token=invite.token,
+                    inviter_name=invite.inviter_name,
+                    first_choice_group_name=invite.first_choice_group_name,
+                    base_url=base_url,
+                )
+            except Exception:
+                # The registration is already persisted so admins can resend the invitation.
+                logger.exception("Failed to send group volunteer invitation email for registration %s", invite.registration_id)
+                pass
+        return result.detail
 
     async def create_volunteer_application_invitation(
         self,
@@ -549,6 +662,7 @@ class VolunteerApplicationsService:
             raise VolunteerApplicationConflictError("Registration is missing prospect details.")
         if detail.promoted_volunteer_id is not None:
             raise VolunteerApplicationConflictError("Registration has already been promoted.")
+        self._ensure_group_members_ready_for_promotion(detail)
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(detail.email)
         if duplicate_volunteer is not None:
             raise VolunteerAlreadyExistsError(duplicate_volunteer, detail.email)
@@ -569,6 +683,50 @@ class VolunteerApplicationsService:
         self._invalidate_pending_count_cache()
         await self._send_profile_completion_email(email=detail.email, token=detail.token, base_url=base_url)
         return volunteer_id
+
+    async def approve_volunteer_application_group(
+        self,
+        group_id: int,
+        *,
+        accepted_group_id: int,
+        base_url: str | None = None,
+    ) -> list[int]:
+        members = await self.repository.list_group_members(group_id, include_dropped=False)
+        active_registration_ids = [
+            member.registration_id
+            for member in members
+            if member.registration_id is not None and member.active
+        ]
+        if not active_registration_ids:
+            raise VolunteerApplicationNotFoundError("Group registration was not found.")
+        if any(not member.submitted for member in members if member.active):
+            raise VolunteerApplicationConflictError(
+                "Kan ikke godkjenne før alle gruppemedlemmer har sendt inn sin søknad."
+            )
+        volunteer_ids: list[int] = []
+        for registration_id in active_registration_ids:
+            volunteer_ids.append(
+                await self.approve_volunteer_application(
+                    registration_id,
+                    accepted_group_id=accepted_group_id,
+                    base_url=base_url,
+                )
+            )
+        return volunteer_ids
+
+    async def drop_group_invitee(
+        self,
+        registration_id: int,
+        *,
+        dropped_by_user_id: int | None = None,
+    ) -> None:
+        detail = await self.get_volunteer_application_detail(registration_id)
+        if detail is None:
+            raise VolunteerApplicationNotFoundError("Registration was not found.")
+        if detail.group_role != "invitee" or detail.group_status != "active":
+            raise VolunteerApplicationConflictError("Only active group invitees can be removed from a group.")
+        await self.repository.drop_group_invitee(registration_id, dropped_by_user_id=dropped_by_user_id)
+        self._invalidate_pending_count_cache()
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         detail = await self.get_volunteer_application_detail(registration_id)
@@ -595,6 +753,44 @@ class VolunteerApplicationsService:
         await self._send_invitation_email(email=detail.email, token=detail.token, base_url=base_url)
         return detail
 
+    def _normalize_friend_emails(
+        self,
+        friend_emails: list[str] | None,
+        *,
+        inviter_email: str,
+    ) -> list[str]:
+        normalized = [email.strip().lower() for email in friend_emails or [] if email and email.strip()]
+        if len(normalized) > 2:
+            raise VolunteerApplicationFieldValidationError(
+                "Du kan legge til maks to venner.",
+                {"friendEmails": "Du kan legge til maks to venner."},
+            )
+        seen: set[str] = {inviter_email}
+        field_errors: dict[str, str] = {}
+        for index, email in enumerate(normalized):
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                field_errors[str(index)] = "Skriv inn en gyldig e-postadresse."
+            elif email in seen:
+                field_errors[str(index)] = "E-postadressene må være ulike."
+            seen.add(email)
+        if field_errors:
+            raise VolunteerApplicationFieldValidationError(
+                "Én eller flere venneadresser er ugyldige.",
+                {"friendEmails": field_errors},
+            )
+        return normalized
+
+    def _ensure_group_members_ready_for_promotion(self, detail: VolunteerApplicationDetail) -> None:
+        if not detail.group_id or detail.group_status != "active":
+            return
+        for member in detail.group_members or []:
+            if member.registration_id == detail.registration_id or not member.active:
+                continue
+            if not member.submitted:
+                raise VolunteerApplicationConflictError(
+                    "Kan ikke godkjenne før alle gruppemedlemmer har sendt inn sin søknad."
+                )
+
     def _require_storage_service(self) -> StorageService:
         if self.storage_service is None:
             raise NotConfiguredError("Supabase credentials are required for storage integration.")
@@ -609,6 +805,30 @@ class VolunteerApplicationsService:
             raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send registration invitation emails.")
         invitation_url = f"{resolved_base_url}/apply/{token}"
         rendered_email = self.applicant_email_renderer.render_invitation_email(invitation_url=invitation_url)
+        await self.email_sender.send_email(
+            recipient_email=email,
+            subject=rendered_email.subject,
+            html_body=rendered_email.html_body,
+        )
+
+    async def _send_friend_invitation_email(
+        self,
+        *,
+        email: str,
+        token: str,
+        inviter_name: str,
+        first_choice_group_name: str,
+        base_url: str | None = None,
+    ) -> None:
+        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
+        if not resolved_base_url:
+            raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send registration invitation emails.")
+        invitation_url = f"{resolved_base_url}/apply/{token}"
+        rendered_email = self.applicant_email_renderer.render_friend_invitation_email(
+            invitation_url=invitation_url,
+            inviter_name=inviter_name,
+            first_choice_group_name=first_choice_group_name,
+        )
         await self.email_sender.send_email(
             recipient_email=email,
             subject=rendered_email.subject,
