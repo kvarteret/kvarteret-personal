@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <body style="font-family: Helvetica, Arial, sans-serif; color: #111111;">
+    <div style="background: #f54b4b; color: #ffffff; padding: 20px 24px; font-size: 24px; font-weight: 700;">
+      Complete your registration
+    </div>
+    <div style="padding: 24px;">
+      <p>{{ inviter_name }} invited you to register as a volunteer for Det Akademiske Kvarter.</p>
+      <p>{{ inviter_name }} har invitert deg til å registrere deg som frivillig hos Det Akademiske Kvarter.</p>
+      <p>You were invited to apply for {{ first_choice_group_name }} together. You are under no obligation to participate.</p>
+      <p>Dere er meldt opp mot {{ first_choice_group_name }} sammen. Du er ikke forpliktet til å bli med.</p>
+      <p>
+        <a href="{{ invitation_url }}" style="display: inline-block; background: #f54b4b; color: #ffffff; padding: 14px 20px; text-decoration: none; font-weight: 700;">
+          Complete your details / Fullfør detaljene dine
+        </a>
+      </p>
+      <p style="font-size: 14px;">Direct link / Direkte lenke</p>
+      <p style="font-size: 14px;"><a href="{{ invitation_url }}" style="color:#f54b4b; word-break:break-word;">{{ invitation_url }}</a></p>
+    </div>
+  </body>
+</html>
