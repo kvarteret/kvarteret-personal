@@ -21,6 +21,7 @@ The docs are organized by purpose:
 - [Configuration](reference/configuration.md)
 - [Kvarteret system map](explanation/kvarteret-system-map.md)
 - [Kvarteret Personal architecture](explanation/kvarteret-personal-architecture.md)
+- [ADR: Group volunteer registration](explanation/group-volunteer-registration-adr.md)
 - [Current documentation issues](issues/current-documentation-issues.md)
 
 ## Canonical Ownership

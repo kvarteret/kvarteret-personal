@@ -327,18 +327,83 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 verv.c.verv.label("latest_role_name"),
                 personal_bilde.c.sha1.label("photo_sha1"),
                 personal_bilde.c.filetype.label("photo_filetype"),
+                registrering.c.id.label("registration_id"),
+                registrering_gruppe_medlem.c.gruppe_id.label("group_id"),
+                registrering_gruppe_medlem.c.rolle.label("group_role"),
+                registrering_gruppe_medlem.c.status.label("group_status"),
             )
             .select_from(
                 personal.outerjoin(latest_assignment, latest_assignment.c.id_personal == personal.c.id)
                 .outerjoin(grupper, grupper.c.id == latest_assignment.c.latest_group_id)
                 .outerjoin(verv, verv.c.id == latest_assignment.c.latest_role_id)
                 .outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id)
+                .outerjoin(registrering, registrering.c.promoted_volunteer_id == personal.c.id)
+                .outerjoin(registrering_gruppe_medlem, registrering_gruppe_medlem.c.registrering_id == registrering.c.id)
             )
             .order_by(personal.c.id.desc())
             .limit(limit)
         )
         if before_volunteer_id is not None:
             stmt = stmt.where(personal.c.id < before_volunteer_id)
+        async with self.session_factory() as session:
+            rows = (await session.execute(stmt)).mappings().all()
+        return [dict(row) for row in rows]
+
+    async def list_recent_registration_group_members(self, group_id: int) -> list[dict]:
+        latest_assignment_rank = func.row_number().over(
+            partition_by=historie.c.id_personal,
+            order_by=(historie.c.id.desc(),),
+        ).label("assignment_rank")
+        latest_assignment_rows = (
+            select(
+                historie.c.id_personal.label("id_personal"),
+                historie.c.id_gruppe.label("latest_group_id"),
+                historie.c.id_verv.label("latest_role_id"),
+                historie.c.semester.label("latest_semester_code"),
+                latest_assignment_rank,
+            )
+        ).subquery()
+        latest_assignment = (
+            select(
+                latest_assignment_rows.c.id_personal,
+                latest_assignment_rows.c.latest_group_id,
+                latest_assignment_rows.c.latest_role_id,
+                latest_assignment_rows.c.latest_semester_code,
+            )
+            .where(latest_assignment_rows.c.assignment_rank == 1)
+        ).subquery()
+        stmt = (
+            select(
+                personal.c.id,
+                personal.c.fornavn,
+                personal.c.etternavn,
+                personal.c.epost,
+                personal.c.telefon,
+                personal.c.opprettet,
+                latest_assignment.c.latest_semester_code,
+                grupper.c.navn.label("latest_group_name"),
+                verv.c.verv.label("latest_role_name"),
+                personal_bilde.c.sha1.label("photo_sha1"),
+                personal_bilde.c.filetype.label("photo_filetype"),
+                registrering.c.id.label("registration_id"),
+                registrering_gruppe_medlem.c.gruppe_id.label("group_id"),
+                registrering_gruppe_medlem.c.rolle.label("group_role"),
+                registrering_gruppe_medlem.c.status.label("group_status"),
+            )
+            .select_from(
+                registrering_gruppe_medlem.join(
+                    registrering,
+                    registrering.c.id == registrering_gruppe_medlem.c.registrering_id,
+                )
+                .join(personal, personal.c.id == registrering.c.promoted_volunteer_id)
+                .outerjoin(latest_assignment, latest_assignment.c.id_personal == personal.c.id)
+                .outerjoin(grupper, grupper.c.id == latest_assignment.c.latest_group_id)
+                .outerjoin(verv, verv.c.id == latest_assignment.c.latest_role_id)
+                .outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id)
+            )
+            .where(registrering_gruppe_medlem.c.gruppe_id == group_id)
+            .order_by(registrering_gruppe_medlem.c.id.asc())
+        )
         async with self.session_factory() as session:
             rows = (await session.execute(stmt)).mappings().all()
         return [dict(row) for row in rows]

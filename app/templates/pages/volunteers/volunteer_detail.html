@@ -140,6 +140,46 @@
           {% endif %}
         </section>
 
+        {% if volunteer.registration_log_entry %}
+          <section class="app-panel">
+            <div class="mb-5 flex items-center justify-between gap-3">
+              <h2 class="text-2xl font-medium tracking-tight text-stone-900">Registreringslogg</h2>
+              <span class="text-sm text-stone-500">#{{ volunteer.registration_log_entry.registration_id }}</span>
+            </div>
+            <dl class="grid gap-5 md:grid-cols-2">
+              <div class="border-b border-stone-300 pb-3">
+                <dt class="text-sm text-stone-500">Registrert</dt>
+                <dd class="mt-1 text-stone-900">{{ volunteer.registration_log_entry.created_at.strftime("%Y-%m-%d") }}</dd>
+              </div>
+              <div class="border-b border-stone-300 pb-3">
+                <dt class="text-sm text-stone-500">Status</dt>
+                <dd class="mt-1 text-stone-900">{{ volunteer.registration_log_entry.status }}</dd>
+              </div>
+              <div class="border-b border-stone-300 pb-3">
+                <dt class="text-sm text-stone-500">Kilde</dt>
+                <dd class="mt-1 text-stone-900">{{ volunteer.registration_log_entry.source }}</dd>
+              </div>
+              <div class="border-b border-stone-300 pb-3">
+                <dt class="text-sm text-stone-500">Grupperegistrering</dt>
+                <dd class="mt-1 text-stone-900">
+                  {% if volunteer.registration_log_entry.group_id %}
+                    {{ volunteer.registration_log_entry.group_role or "medlem" }} · {{ volunteer.registration_log_entry.group_status or "ukjent" }}
+                  {% else %}
+                    Nei
+                  {% endif %}
+                </dd>
+              </div>
+              <div class="border-b border-stone-300 pb-3 md:col-span-2">
+                <dt class="text-sm text-stone-500">Komitéønsker</dt>
+                <dd class="mt-1 text-stone-900">
+                  {{ volunteer.registration_log_entry.first_choice_group_name or "Ikke registrert" }}
+                  {% if volunteer.registration_log_entry.second_choice_group_name %} / {{ volunteer.registration_log_entry.second_choice_group_name }}{% endif %}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        {% endif %}
+
         {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/relations/panel', 'Laster kort og pårørende...') }}
       </div>
 

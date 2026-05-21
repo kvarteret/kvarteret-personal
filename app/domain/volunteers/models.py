@@ -129,6 +129,19 @@ class RoleAssignmentItem:
 
 
 @dataclass(slots=True)
+class VolunteerRegistrationLogEntry:
+    registration_id: int
+    created_at: datetime
+    source: str
+    status: str
+    first_choice_group_name: str | None
+    second_choice_group_name: str | None
+    group_id: int | None = None
+    group_role: str | None = None
+    group_status: str | None = None
+
+
+@dataclass(slots=True)
 class VolunteerCourseCompletionItem:
     completion_id: int
     course_id: int
@@ -169,6 +182,7 @@ class VolunteerDetail:
     pingvin_points: int
     photo_url: str | None
     current_discount_level: int | None = None
+    registration_log_entry: VolunteerRegistrationLogEntry | None = None
 
     @property
     def discount_level_label(self) -> str | None:

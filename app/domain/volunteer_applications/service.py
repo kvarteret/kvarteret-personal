@@ -209,6 +209,12 @@ class RecentVolunteerRegistrationItem:
     latest_semester_code: int | None = None
     latest_semester_label: str | None = None
     photo_url: str | None = None
+    registration_id: int | None = None
+    group_id: int | None = None
+    group_role: str | None = None
+    group_status: str | None = None
+    group_members: list[RecentVolunteerRegistrationItem] | None = None
+    renders_group: bool = False
 
 
 @dataclass(slots=True)
@@ -320,6 +326,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     ) -> VolunteerApplicationInvite: ...
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]: ...
     async def list_recent_volunteer_registrations(self, *, limit: int, before_volunteer_id: int | None = None) -> list[dict]: ...
+    async def list_recent_registration_group_members(self, group_id: int) -> list[dict]: ...
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
@@ -504,38 +511,57 @@ class VolunteerApplicationsService:
         )
         has_more = len(rows) > safe_limit
         visible_rows = rows[:safe_limit]
-        items = [
-            RecentVolunteerRegistrationItem(
-                volunteer_id=row["id"],
-                first_name=row["fornavn"],
-                last_name=row["etternavn"],
-                full_name=_build_full_name(row["fornavn"], row["etternavn"]),
-                email=row["epost"],
-                phone=row["telefon"],
-                created_at=row["opprettet"],
-                latest_group_name=row["latest_group_name"],
-                latest_role_name=row["latest_role_name"],
-                latest_semester_code=row["latest_semester_code"],
-                latest_semester_label=(
-                    format_semester_code(row["latest_semester_code"])
-                    if row["latest_semester_code"] is not None
-                    else None
-                ),
-                photo_url=(
-                    self.repository.media_token_service.build_photo_media_url(
-                        f"{row['photo_sha1']}.{row['photo_filetype']}"
-                    )
-                    if row.get("photo_sha1") and row.get("photo_filetype") and self.repository.media_token_service is not None
-                    else None
-                ),
-            )
-            for row in visible_rows
-        ]
+        items = [self._map_recent_registration_row(row) for row in visible_rows]
+        group_ids = sorted({item.group_id for item in items if item.group_id is not None})
+        group_members_by_id: dict[int, list[RecentVolunteerRegistrationItem]] = {}
+        for group_id in group_ids:
+            group_members_by_id[group_id] = [
+                self._map_recent_registration_row(row)
+                for row in await self.repository.list_recent_registration_group_members(group_id)
+            ]
+        for item in items:
+            if item.group_id is not None:
+                item.group_members = group_members_by_id.get(item.group_id, [])
+        seen_group_ids: set[int] = set()
+        for item in items:
+            if item.group_id is not None and item.group_id not in seen_group_ids:
+                item.renders_group = True
+                seen_group_ids.add(item.group_id)
         return RecentVolunteerRegistrationPage(
             items=items,
             limit=safe_limit,
             cursor=cursor,
             next_cursor=str(visible_rows[-1]["id"]) if has_more and visible_rows else None,
+        )
+
+    def _map_recent_registration_row(self, row: dict) -> RecentVolunteerRegistrationItem:
+        return RecentVolunteerRegistrationItem(
+            volunteer_id=row["id"],
+            first_name=row["fornavn"],
+            last_name=row["etternavn"],
+            full_name=_build_full_name(row["fornavn"], row["etternavn"]),
+            email=row["epost"],
+            phone=row["telefon"],
+            created_at=row["opprettet"],
+            latest_group_name=row["latest_group_name"],
+            latest_role_name=row["latest_role_name"],
+            latest_semester_code=row["latest_semester_code"],
+            latest_semester_label=(
+                format_semester_code(row["latest_semester_code"])
+                if row["latest_semester_code"] is not None
+                else None
+            ),
+            photo_url=(
+                self.repository.media_token_service.build_photo_media_url(
+                    f"{row['photo_sha1']}.{row['photo_filetype']}"
+                )
+                if row.get("photo_sha1") and row.get("photo_filetype") and self.repository.media_token_service is not None
+                else None
+            ),
+            registration_id=row.get("registration_id"),
+            group_id=row.get("group_id"),
+            group_role=row.get("group_role"),
+            group_status=row.get("group_status"),
         )
 
     async def count_pending_volunteer_applications(self) -> int:
