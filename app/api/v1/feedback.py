@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.dependencies import get_feedback_service
-from app.domain.feedback.service import FeedbackService, FeedbackValidationError
+from app.domain.feedback.service import FeedbackDeliveryError, FeedbackService, FeedbackValidationError
 
 router = APIRouter()
 
@@ -46,5 +46,7 @@ async def submit_feedback(
         )
     except FeedbackValidationError as exc:
         return {"ok": False, "detail": str(exc)}
+    except FeedbackDeliveryError:
+        return {"ok": False, "detail": "Feedback could not be sent right now."}
 
     return {"ok": True}

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from app.dependencies import get_current_user, get_feedback_service
-from app.domain.feedback.service import FeedbackService, FeedbackValidationError
+from app.domain.feedback.service import FeedbackDeliveryError, FeedbackService, FeedbackValidationError
 from app.web.templates import templates
 
 router = APIRouter()
@@ -60,6 +60,17 @@ async def feedback_submit(
             page=page,
             status="error",
             message_text=str(exc),
+            category=category,
+            name=name,
+            email=email,
+            feedback_message=message,
+        )
+    except FeedbackDeliveryError:
+        return _render_feedback_panel(
+            request,
+            page=page,
+            status="error",
+            message_text="Kunne ikke sende melding akkurat nå.",
             category=category,
             name=name,
             email=email,
