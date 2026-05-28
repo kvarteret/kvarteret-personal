@@ -20,8 +20,8 @@ Consumers that generate typed clients should regenerate from `openapi.json`, pre
 
 | Consumer | Depends on | Boundary | Current state |
 | --- | --- | --- | --- |
-| `kvarteret-internbevis-rn` | `kvarteret-personal` | Mobile-card, events, now-playing | Current and generated from OpenAPI for most endpoints |
-| `samfunnetibergen` | `kvarteret-personal` | Public events and volunteer prospects | Server-side fetch/proxy |
+| `kvarteret-internbevis-rn` | `kvarteret-personal` and Sanity | Mobile-card, now-playing, generated personal API client, Sanity dashboard events | Mobile-card and now-playing are runtime API calls; current dashboard event reads are Sanity-backed |
+| `samfunnetibergen` | `kvarteret-personal` and Sanity | Volunteer prospects, Sanity public arrangements | Server-side volunteer prospect proxy; public arrangement pages and feeds are Sanity-backed |
 | `frontend-eventside` | Supabase event tables owned by `kvarteret-personal` migrations | Event editing | Direct Supabase reads/writes, not yet routed through `kvarteret-personal` APIs |
 | `kvarteret-personal` | Supabase, Azure, Spotify, SMTP, Slack | Third-party services | Runtime adapters documented in [External systems](external-systems.md) |
 
@@ -56,7 +56,10 @@ Accepts diagnostics when the mobile app logs a user out due to missing or invali
 
 `GET /api/v1/events`
 
-The app calls this with `limit=100` and `include_internal=true` when it has a mobile-card token. Without a bearer token, internal events are not returned.
+The endpoint is present in `openapi.json` and in the generated mobile client.
+Current dashboard event reads in `kvarteret-internbevis-rn` are Sanity-backed in
+`src/features/dashboard/data/eventsRepository.ts`, so verify runtime usage before
+treating this endpoint as an active mobile display dependency.
 
 `GET /api/v1/events/taxonomy`
 
@@ -78,10 +81,13 @@ The app derives the personal base URL from the configured mobile-card base URL a
 
 The site defaults to:
 
-    KVARTERET_PERSONAL_API_BASE_URL=https://personal.kvarteret.no/api/v1
     PERSONAL_APP_BASE_URL=https://personal.kvarteret.no
 
-`lib/events.ts` fetches public events and taxonomy from `kvarteret-personal`. It uses Next.js revalidation with the tag `kvarteret-personal-events`.
+Current public arrangement pages and feeds read from Sanity, not from
+`kvarteret-personal`. Verified sibling paths include
+`lib/sanity/fetch/events.ts`, `lib/sanity/queries/events.ts`,
+`app/[locale]/arrangementer/page.tsx`, `app/api/events/feed/route.ts`, and
+`app/api/ical/route.ts`.
 
 `app/api/volunteer-prospects/route.ts` validates the public recruitment form, then posts to `POST /api/v1/volunteer-prospects`. It returns upstream validation errors to the browser and records PostHog server-side events when a PostHog distinct id is provided by the client.
 

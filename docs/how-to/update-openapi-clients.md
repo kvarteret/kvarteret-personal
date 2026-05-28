@@ -27,7 +27,7 @@ From `/Users/kluvin/dev/kvarteret/samfunnetibergen`:
 
     npm run api:sync
 
-This runs `make -C ../kvarteret-personal openapi` and regenerates the generated client/snapshot. The public events code currently has hand-written fetch types in `lib/events.ts`, so verify those types too when event fields change.
+This runs `make -C ../kvarteret-personal openapi` and regenerates the generated client/snapshot. Current public arrangement pages and feeds in `samfunnetibergen` are Sanity-backed, so only treat personal event API changes as a runtime `samfunnetibergen` dependency after verifying an active import or route call in that repo.
 
 ## 4. Check `frontend-eventside`
 

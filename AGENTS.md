@@ -1,4 +1,11 @@
 <!-- VERCEL BEST PRACTICES START -->
+## Shared Agent Guidance
+
+Read `.agents/README.md` before making repository claims, changing cross-repo
+boundaries, or documenting implementation behavior. Generic guidance for
+Claude, Codex, and Pi lives under `.agents/`; tool-specific folders should only
+contain adapters or runtime wiring.
+
 ## Best practices for developing on Vercel
 
 These defaults are optimized for AI coding agents (and humans) working on apps that deploy to Vercel.

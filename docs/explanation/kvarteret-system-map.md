@@ -2,11 +2,11 @@
 
 This page explains how the Kvarteret repositories in scope relate to each other. It focuses on current production and preview boundaries, not old migration history.
 
-`kvarteret-personal` is the central backend for personnel data, mobile-card data, event read APIs, and volunteer prospect intake. It stores most application state in Supabase Postgres and exposes a checked-in OpenAPI contract for generated clients.
+`kvarteret-personal` is the central backend for personnel data, mobile-card data, event API routes, and volunteer prospect intake. It stores most application state in Supabase Postgres and exposes a checked-in OpenAPI contract for generated clients.
 
-`kvarteret-internbevis-rn` is the Expo React Native app used by volunteers. It depends on `kvarteret-personal` for mobile-card login/profile data, internal and public event reads, and the now-playing endpoint.
+`kvarteret-internbevis-rn` is the Expo React Native app used by volunteers. It depends on `kvarteret-personal` for mobile-card login/profile data and the now-playing endpoint. Its current dashboard event reads are Sanity-backed, while generated personal event operations still exist in the checked-in client.
 
-`samfunnetibergen` is the Next.js site for recruitment and public event display. The production site is `blifrivillig.no`, released from the `main` branch through a manual release. The next/preview site is `neste.samfunnetibergen`, deployed from the `develop` branch in the Vercel Preview environment. It calls `kvarteret-personal` server-side for public event reads and volunteer prospect submissions.
+`samfunnetibergen` is the Next.js site for recruitment and public event display. The production site is `blifrivillig.no`, released from the `main` branch through a manual release. The next/preview site is `neste.samfunnetibergen`, deployed from the `develop` branch in the Vercel Preview environment. It reads public arrangement content from Sanity and calls `kvarteret-personal` server-side for volunteer prospect submissions.
 
 `frontend-eventside` is the internal event editor at `event.kvarteret.no`. It currently reads and writes event rows directly through Supabase. The schema for those event tables is owned by Alembic migrations in `kvarteret-personal`.
 
@@ -28,8 +28,9 @@ flowchart LR
     posthog["PostHog\nanalytics in sibling apps"]
     sanity["Sanity\ncontent for samfunnetibergen"]
 
-    internbevis -->|"mobile-card, events, now-playing API"| personal
-    samfunnet -->|"events and volunteer prospects API"| personal
+    internbevis -->|"mobile-card and now-playing API"| personal
+    internbevis -->|"dashboard arrangement reads"| sanity
+    samfunnet -->|"volunteer prospects API"| personal
     eventside -->|"direct event CRUD"| supabase
     personal -->|"owns migrations and runtime reads/writes"| supabase
     personal -->|"photo fallback or legacy photo storage"| azure
@@ -45,7 +46,7 @@ flowchart LR
 
 ## Data Direction
 
-The event boundary is split today. `kvarteret-personal` owns the schema and public read API. `frontend-eventside` owns the editing UI and currently writes directly to Supabase. Public consumers should use `kvarteret-personal` APIs instead of direct table access.
+The event boundary is split today. `kvarteret-personal` owns event table migrations and still exposes event API routes in `openapi.json`. `frontend-eventside` owns the editing UI and currently writes directly to Supabase. Current public arrangement display in `samfunnetibergen` and the mobile dashboard reads from Sanity, so verify the active consumer before changing event API docs or contracts.
 
 The volunteer recruitment boundary is cleaner. `samfunnetibergen` validates the public form and proxies submissions to `kvarteret-personal`, which creates the registration records and sends any follow-up email through its configured email adapter.
 
