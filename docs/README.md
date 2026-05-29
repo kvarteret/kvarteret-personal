@@ -33,7 +33,7 @@ The docs are organized by purpose:
 - Supabase Postgres migrations under `migrations/`
 - the personnel admin UI
 - the mobile-card API used by the volunteer app
-- public event read APIs
+- event read APIs exposed in `openapi.json`
 - public volunteer prospect registration
 - media proxy routes for private personnel photos and documents
 - the Spotify-backed now-playing API
