@@ -46,27 +46,20 @@ from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
 from app.domain.volunteers.semester_transfer import SemesterTransferService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
-
+from app.events import SimpleEventBus
 
 # Keep the app bootable in local and test environments that do not have live
 # Supabase credentials, while still failing fast once a protected auth path is used.
 class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
-    async def sign_in_with_password(self, email: str, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+    _MISSING_CREDENTIALS = "Supabase credentials are required for authentication."
 
-    async def create_user_from_legacy(self, legacy_user, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+    async def sign_in_with_password(self, email: str, password: str):
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
     ):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def invite_user(
         self,
@@ -75,9 +68,7 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
         metadata: dict | None = None,
         redirect_to: str | None = None,
     ):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def generate_link(
         self,
@@ -87,24 +78,16 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
         redirect_to: str | None = None,
         metadata: dict | None = None,
     ):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def update_user_password(self, auth_user_id, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def update_password_with_access_token(self, access_token: str, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def delete_user(self, auth_user_id):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def aclose(self) -> None:
         return None
@@ -135,6 +118,7 @@ class ApplicationContainer:
     volunteer_applications_service: VolunteerApplicationsService
     semester_transfer_service: SemesterTransferService
     feedback_service: FeedbackService
+    event_bus: SimpleEventBus
 
     async def aclose(self) -> None:
         if self.storage_service is not None:
@@ -163,11 +147,12 @@ def build_application_container(
     email_sender = SmtpEmailSender(resolved_settings)
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
+    event_bus = SimpleEventBus()
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository(session_factory=session_factory)
     )
 
-    return ApplicationContainer(
+    container = ApplicationContainer(
         settings=resolved_settings,
         database_runtime_manager=database_runtime_manager,
         session_factory=session_factory,
@@ -231,7 +216,10 @@ def build_application_container(
             session_factory=session_factory
         ),
         feedback_service=FeedbackService(resolved_settings),
+        event_bus=event_bus,
     )
+
+    return container
 
 
 @asynccontextmanager
@@ -244,14 +232,8 @@ async def app_lifespan(app: FastAPI):
         await app.state.container.aclose()
 
 
-# Photos and documents can be configured independently, so only create the
-# storage adapter when at least one side of the split storage setup is usable.
 def _build_storage_service(settings: Settings) -> StorageService | None:
-    has_supabase_documents = bool(
-        settings.supabase_url and settings.supabase_secret_key
-    )
-    has_azure_photos = bool(settings.azure_blob_connection_string)
-    if not has_supabase_documents and not has_azure_photos:
+    if not settings.azure_blob_connection_string:
         return None
     return StorageService(settings)
 

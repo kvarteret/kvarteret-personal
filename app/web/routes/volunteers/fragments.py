@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.dependencies import get_courses_service, get_volunteers_service, require_authenticated_user, require_management_user
+from app.dependencies import (
+    get_courses_service,
+    get_volunteers_service,
+    require_authenticated_user,
+    require_management_user,
+)
 from app.domain.courses.service import CoursesService
 from app.infrastructure.formatting.semester import get_current_semester_code
 from app.domain.volunteers.options import SEMESTER_TERM_OPTIONS
@@ -42,7 +47,9 @@ async def volunteers_results(
     )
     total_count = None
     if not cursor:
-        total_count = await volunteers_service.count_volunteers(query=q, only_active=only_active_bool)
+        total_count = await volunteers_service.count_volunteers(
+            query=q, only_active=only_active_bool
+        )
     return templates.TemplateResponse(
         request,
         "components/volunteers/volunteer_results.html",
@@ -90,8 +97,14 @@ async def volunteer_role_assignment_role_field(
     volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
     groups = await volunteers_service.list_assignment_groups()
     selected_group_id = group_id if group_id is not None else None
-    roles = await volunteers_service.list_assignment_roles(selected_group_id) if selected_group_id is not None else []
-    selected_role_id = next((candidate.role_id for candidate in roles if candidate.role_id == role_id), None)
+    roles = (
+        await volunteers_service.list_assignment_roles(selected_group_id)
+        if selected_group_id is not None
+        else []
+    )
+    selected_role_id = next(
+        (candidate.role_id for candidate in roles if candidate.role_id == role_id), None
+    )
     current_semester_code = get_current_semester_code()
     return templates.TemplateResponse(
         request,
@@ -127,25 +140,6 @@ async def volunteer_course_completions_panel(
         volunteer=volunteer,
     )
 
-
-@router.get("/volunteers/{volunteer_id}/documents/panel")
-async def volunteer_documents_panel(
-    request: Request,
-    volunteer_id: int,
-    current_user=Depends(require_authenticated_user),
-    volunteers_service: VolunteersService = Depends(get_volunteers_service),
-):
-    volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
-    documents = await volunteers_service.list_volunteer_documents(volunteer_id)
-    return templates.TemplateResponse(
-        request,
-        "components/volunteers/volunteer_documents_panel.html",
-        {
-            "current_user": current_user,
-            "volunteer": volunteer,
-            "documents": documents,
-        },
-    )
 
 
 @router.get("/volunteers/{volunteer_id}/relations/panel")

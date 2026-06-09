@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.engine import RowMapping
 
+
 class SqlAlchemyRepository:
     def __init__(
         self,
@@ -16,7 +17,9 @@ class SqlAlchemyRepository:
     @property
     def session_factory(self) -> async_sessionmaker[AsyncSession]:
         if self._session_factory is None:
-            raise RuntimeError("A session factory must be configured before using this repository.")
+            raise RuntimeError(
+                "A session factory must be configured before using this repository."
+            )
         return self._session_factory
 
     async def fetch_all_mappings(self, stmt) -> list[dict[str, Any]]:

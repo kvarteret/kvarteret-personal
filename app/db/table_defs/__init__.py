@@ -1,4 +1,10 @@
-from app.db.table_defs.auth import auth_identities, auth_metadata, auth_refresh_tokens, auth_sessions, auth_users
+from app.db.table_defs.auth import (
+    auth_identities,
+    auth_metadata,
+    auth_refresh_tokens,
+    auth_sessions,
+    auth_users,
+)
 from app.db.table_defs.public import (
     aspnetroles,
     aspnetuserroles,

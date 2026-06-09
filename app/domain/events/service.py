@@ -20,6 +20,7 @@ from app.domain.events.models import (
 from app.domain.events.repository import EventsRepository
 
 TAXONOMY_GROUP_ORDER = ["Musikk", "Scenekunst", "Faglig", "Sosialt", "Organisasjon"]
+_EVENT_NOT_FOUND = "Event not found."
 
 
 class EventNotFoundError(RuntimeError):
@@ -69,16 +70,11 @@ class EventsService:
     ) -> EventDetail:
         row = await self.repository.get_event(event_id)
         if row is None:
-            raise EventNotFoundError("Event not found.")
-        if row["status"] != "published":
-            raise EventNotFoundError("Event not found.")
-        if row["is_internal"] and not authorization.can_view_internal:
-            raise EventNotFoundError("Event not found.")
-        if row["event_end"] is not None and row["event_end"] < datetime.now(UTC):
-            raise EventNotFoundError("Event not found.")
+            raise EventNotFoundError(_EVENT_NOT_FOUND)
+        _validate_event_visible(row, authorization)
         event = _map_event_row(row, locale=locale)
         if event is None:
-            raise EventNotFoundError("Event not found.")
+            raise EventNotFoundError(_EVENT_NOT_FOUND)
         return event
 
     async def get_taxonomy(self) -> EventTaxonomy:
@@ -109,11 +105,27 @@ class EventsService:
         )
 
 
+def _validate_event_visible(
+    row: dict[str, Any], authorization: EventAuthorization
+) -> None:
+    if row["status"] != "published":
+        raise EventNotFoundError(_EVENT_NOT_FOUND)
+    if row["is_internal"] and not authorization.can_view_internal:
+        raise EventNotFoundError(_EVENT_NOT_FOUND)
+    if row["event_end"] is not None and row["event_end"] < datetime.now(UTC):
+        raise EventNotFoundError(_EVENT_NOT_FOUND)
+
+
 def resolve_event_locale(accept_language: str | None) -> EventLanguage:
     if not accept_language:
         return "no"
+    parsed = _parse_accept_language(accept_language)
+    return _pick_locale_from_parsed(parsed)
+
+
+def _parse_accept_language(header: str) -> list[tuple[str, float, int]]:
     preferences: list[tuple[str, float, int]] = []
-    for index, part in enumerate(accept_language.split(",")):
+    for index, part in enumerate(header.split(",")):
         token = part.strip()
         if not token:
             continue
@@ -127,6 +139,12 @@ def resolve_event_locale(accept_language: str | None) -> EventLanguage:
             except ValueError:
                 quality = 0.0
         preferences.append((language_range.lower(), quality, index))
+    return preferences
+
+
+def _pick_locale_from_parsed(
+    preferences: list[tuple[str, float, int]],
+) -> EventLanguage:
     for language_range, _quality, _index in sorted(
         preferences, key=lambda item: (-item[1], item[2])
     ):

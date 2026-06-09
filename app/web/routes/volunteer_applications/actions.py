@@ -31,6 +31,8 @@ from app.web.routes.volunteer_applications.pages import (
 from app.web.upload_helpers import read_upload_file_limited
 from app.web.templates import templates
 
+_VOLUNTEER_APPS_PATH = "/volunteer-applications"
+
 router = APIRouter()
 
 
@@ -78,7 +80,7 @@ async def volunteer_applications_create_invite(
             "initial_role_id": invite.initial_role_id,
         },
     )
-    return RedirectResponse(url="/volunteer-applications", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/volunteer-applications/{application_id}/approval")
@@ -141,7 +143,7 @@ async def volunteer_application_group_approve(
         subject_id=group_id,
         details={"volunteer_ids": volunteer_ids},
     )
-    return RedirectResponse(url="/volunteer-applications", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/volunteer-applications/{application_id}/trial-attendance")
@@ -230,7 +232,7 @@ async def volunteer_application_delete(
                 "volunteer_applications": volunteer_applications,
             },
     )
-    return RedirectResponse(url="/volunteer-applications", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/volunteer-applications/{application_id}/resend")
@@ -257,7 +259,7 @@ async def volunteer_application_resend(
         subject_id=application_id,
         details={"email": detail.email},
     )
-    return RedirectResponse(url="/volunteer-applications", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/apply/{token}")
@@ -276,6 +278,17 @@ async def volunteer_application_submit(
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     locale = resolve_public_locale(request.headers.get("Accept-Language"))
+    has_photo = profile_photo is not None and bool(profile_photo.filename)
+    parsed_birth_date = date.fromisoformat(birth_date) if birth_date else None
+    submission_input = VolunteerApplicationSubmissionInput(
+        first_name=first_name,
+        last_name=last_name,
+        phone=phone,
+        birth_date=parsed_birth_date,
+        gender=gender,
+        address=address,
+        postal_code=postal_code,
+    )
     form_values = {
         "first_name": first_name or "",
         "last_name": last_name,
@@ -286,33 +299,26 @@ async def volunteer_application_submit(
         "postal_code": postal_code or "",
     }
     try:
-        photo_content = (
-            await read_upload_file_limited(profile_photo, max_bytes=settings.photo_upload_max_bytes)
-            if profile_photo is not None and profile_photo.filename
-            else None
-        )
+        photo_content = await _read_optional_upload(profile_photo, max_bytes=settings.photo_upload_max_bytes) if has_photo else None
+        photo_filename = profile_photo.filename if has_photo else None
+        photo_content_type = profile_photo.content_type if has_photo else None
         await volunteer_applications_service.submit_volunteer_application(
             token,
-            VolunteerApplicationSubmissionInput(
-                first_name=first_name,
-                last_name=last_name,
-                phone=phone,
-                birth_date=date.fromisoformat(birth_date) if birth_date else None,
-                gender=gender,
-                address=address,
-                postal_code=postal_code,
-            ),
+            submission_input,
             base_url=str(request.base_url).rstrip("/"),
-            photo_filename=profile_photo.filename if profile_photo is not None else None,
+            photo_filename=photo_filename,
             photo_content=photo_content,
-            photo_content_type=profile_photo.content_type if profile_photo is not None else None,
+            photo_content_type=photo_content_type,
         )
     except VolunteerApplicationNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=translate_public(locale, str(exc)),
         ) from exc
-    except VolunteerApplicationValidationError as exc:
+    except Exception as exc:
+        status_code = _apply_error_status(exc)
+        if status_code is None:
+            raise
         return await _render_public_apply_error_response(
             request,
             locale=locale,
@@ -320,52 +326,33 @@ async def volunteer_application_submit(
             volunteer_applications_service=volunteer_applications_service,
             form_values=form_values,
             error_message=translate_public(locale, str(exc)),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-    except VolunteerApplicationConflictError as exc:
-        return await _render_public_apply_error_response(
-            request,
-            locale=locale,
-            token=token,
-            volunteer_applications_service=volunteer_applications_service,
-            form_values=form_values,
-            error_message=translate_public(locale, str(exc)),
-            status_code=status.HTTP_409_CONFLICT,
-        )
-    except PhotoUploadTooLargeError as exc:
-        return await _render_public_apply_error_response(
-            request,
-            locale=locale,
-            token=token,
-            volunteer_applications_service=volunteer_applications_service,
-            form_values=form_values,
-            error_message=translate_public(locale, str(exc)),
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-        )
-    except InvalidPhotoError as exc:
-        return await _render_public_apply_error_response(
-            request,
-            locale=locale,
-            token=token,
-            volunteer_applications_service=volunteer_applications_service,
-            form_values=form_values,
-            error_message=translate_public(locale, str(exc)),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-    except NotConfiguredError as exc:
-        return await _render_public_apply_error_response(
-            request,
-            locale=locale,
-            token=token,
-            volunteer_applications_service=volunteer_applications_service,
-            form_values=form_values,
-            error_message=translate_public(locale, str(exc)),
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status_code,
         )
     finally:
         if profile_photo is not None:
             await profile_photo.close()
     return RedirectResponse(url=f"/apply/{token}/submitted", status_code=status.HTTP_303_SEE_OTHER)
+
+
+async def _read_optional_upload(upload: UploadFile | None, *, max_bytes: int) -> bytes | None:
+    if upload is None or not upload.filename:
+        return None
+    return await read_upload_file_limited(upload, max_bytes=max_bytes)
+
+
+def _apply_error_status(exc: Exception) -> int | None:
+    """Map known application errors to HTTP status codes. Returns None to re-raise."""
+    if isinstance(exc, VolunteerApplicationValidationError):
+        return status.HTTP_400_BAD_REQUEST
+    if isinstance(exc, VolunteerApplicationConflictError):
+        return status.HTTP_409_CONFLICT
+    if isinstance(exc, PhotoUploadTooLargeError):
+        return status.HTTP_413_CONTENT_TOO_LARGE
+    if isinstance(exc, InvalidPhotoError):
+        return status.HTTP_400_BAD_REQUEST
+    if isinstance(exc, NotConfiguredError):
+        return status.HTTP_503_SERVICE_UNAVAILABLE
+    return None
 
 
 async def _render_public_apply_error_response(

@@ -23,16 +23,14 @@ Do not commit real secrets. The checked-in `.env.example` should contain names a
 | `DATABASE_MAX_OVERFLOW` | `5` | Extra local pooled connections. |
 | `DATABASE_POOL_TIMEOUT_SECONDS` | `10` | How long to wait for a pooled connection. |
 | `DATABASE_POOL_RECYCLE_SECONDS` | `1800` | Connection recycle interval. |
-| `SUPABASE_URL` | unset | Supabase project URL for Auth and Storage APIs. |
-| `SUPABASE_SECRET_KEY` | unset | Supabase secret/service key for backend Auth and Storage operations. |
+| `SUPABASE_URL` | unset | Supabase project URL for Auth APIs. |
+| `SUPABASE_SECRET_KEY` | unset | Supabase secret/service key for backend Auth operations. |
 
 ## Storage
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `PHOTO_BUCKET` | `personnel-photos` | Supabase Storage bucket for personnel photos when Azure is not configured. |
-| `DOCUMENT_BUCKET` | `personnel-documents` | Supabase Storage bucket for personnel documents. |
-| `AZURE_BLOB_CONNECTION_STRING` | unset | Enables Azure Blob photo storage and signed URLs. |
+| `AZURE_BLOB_CONNECTION_STRING` | unset | Enables Azure Blob photo storage and signed URLs. Required for media storage. |
 | `AZURE_BLOB_ACCOUNT_NAME` | unset | Optional explicit account name for Azure photo SAS generation. |
 | `AZURE_BLOB_ACCOUNT_KEY` | unset | Optional explicit account key for Azure photo SAS generation. |
 | `AZURE_PHOTO_CONTAINER` | `images` | Azure Blob container for photos. |

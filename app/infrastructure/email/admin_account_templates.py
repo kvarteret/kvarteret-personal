@@ -26,7 +26,9 @@ class AdminAccountEmailTemplateRendererProtocol(Protocol):
 
 class AdminAccountEmailTemplateRenderer:
     def __init__(self, template_dir: Path | None = None) -> None:
-        resolved_dir = template_dir or (Path(__file__).resolve().parents[2] / "templates" / "emails" / "compiled")
+        resolved_dir = template_dir or (
+            Path(__file__).resolve().parents[2] / "templates" / "emails" / "compiled"
+        )
         self._environment = Environment(
             loader=FileSystemLoader(str(resolved_dir)),
             autoescape=select_autoescape(["html", "xml"]),

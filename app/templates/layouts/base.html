@@ -23,7 +23,7 @@
             href &&
               href.startsWith("/") &&
               !href.startsWith("//") &&
-              !link.hasAttribute("data-no-preload") &&
+              !link.dataset.noPreload &&
               !link.hasAttribute("download") &&
               !link.hasAttribute("target")
           );

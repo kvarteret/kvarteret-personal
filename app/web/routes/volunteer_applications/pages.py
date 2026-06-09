@@ -20,6 +20,8 @@ from app.web.i18n import (
 )
 from app.web.templates import templates
 
+_APP_NOT_FOUND = "Volunteer application not found."
+
 router = APIRouter()
 
 
@@ -27,11 +29,19 @@ router = APIRouter()
 async def volunteer_applications_index(
     request: Request,
     current_user=Depends(require_management_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
-    volunteer_applications = await volunteer_applications_service.list_volunteer_applications()
-    recent_registrations_page = await volunteer_applications_service.list_recent_volunteer_registrations_page(limit=20)
+    volunteer_applications = (
+        await volunteer_applications_service.list_volunteer_applications()
+    )
+    recent_registrations_page = (
+        await volunteer_applications_service.list_recent_volunteer_registrations_page(
+            limit=20
+        )
+    )
     group_options = await volunteers_service.list_assignment_groups()
     log_admin_activity(
         request=request,
@@ -67,7 +77,11 @@ async def volunteer_application_assignment_fields(
 ):
     group_options = await volunteers_service.list_assignment_groups()
     selected_group_id = group_id if group_id is not None else None
-    role_options = await volunteers_service.list_assignment_roles(selected_group_id) if selected_group_id is not None else []
+    role_options = (
+        await volunteers_service.list_assignment_roles(selected_group_id)
+        if selected_group_id is not None
+        else []
+    )
     return templates.TemplateResponse(
         request,
         "components/volunteer_applications/volunteer_application_assignment_fields.html",
@@ -85,11 +99,15 @@ async def volunteer_recent_registrations(
     request: Request,
     cursor: str | None = None,
     current_user=Depends(require_management_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
-    recent_registrations_page = await volunteer_applications_service.list_recent_volunteer_registrations_page(
-        limit=20,
-        cursor=cursor,
+    recent_registrations_page = (
+        await volunteer_applications_service.list_recent_volunteer_registrations_page(
+            limit=20,
+            cursor=cursor,
+        )
     )
     return templates.TemplateResponse(
         request,
@@ -108,14 +126,18 @@ async def volunteer_application_form(
     request: Request,
     token: str,
     current_user=Depends(get_current_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
     locale = resolve_public_locale(request.headers.get("Accept-Language"))
-    volunteer_application = await volunteer_applications_service.get_volunteer_application_by_token(token)
+    volunteer_application = (
+        await volunteer_applications_service.get_volunteer_application_by_token(token)
+    )
     if volunteer_application is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=translate_public(locale, "Volunteer application not found."),
+            detail=translate_public(locale, _APP_NOT_FOUND),
         )
     return _render_public_apply_template(
         request,
@@ -136,14 +158,18 @@ async def volunteer_application_submitted(
     request: Request,
     token: str,
     current_user=Depends(get_current_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
     locale = resolve_public_locale(request.headers.get("Accept-Language"))
-    volunteer_application = await volunteer_applications_service.get_volunteer_application_by_token(token)
+    volunteer_application = (
+        await volunteer_applications_service.get_volunteer_application_by_token(token)
+    )
     if volunteer_application is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=translate_public(locale, "Volunteer application not found."),
+            detail=translate_public(locale, _APP_NOT_FOUND),
         )
     if not volunteer_application.submitted:
         return _render_public_apply_template(
@@ -173,11 +199,19 @@ async def volunteer_application_detail(
     request: Request,
     application_id: int,
     current_user=Depends(require_management_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
-    volunteer_application = await volunteer_applications_service.get_volunteer_application_detail(application_id)
+    volunteer_application = (
+        await volunteer_applications_service.get_volunteer_application_detail(
+            application_id
+        )
+    )
     if volunteer_application is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer application not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_APP_NOT_FOUND
+        )
     log_admin_activity(
         request=request,
         user=current_user,
@@ -195,7 +229,9 @@ async def volunteer_application_detail(
             "current_user": current_user,
             "volunteer_application": volunteer_application,
             "gender_label": gender_label,
-            "promotion_group_options": _build_promotion_group_options(volunteer_application),
+            "promotion_group_options": _build_promotion_group_options(
+                volunteer_application
+            ),
         },
     )
 
@@ -204,9 +240,18 @@ def _build_promotion_group_options(volunteer_application):
     options: list[dict[str, object]] = []
     seen_group_ids: set[int] = set()
     for group_id, name in [
-        (volunteer_application.initial_group_id, volunteer_application.initial_group_name),
-        (volunteer_application.first_choice_group_id, volunteer_application.first_choice_group_name),
-        (volunteer_application.second_choice_group_id, volunteer_application.second_choice_group_name),
+        (
+            volunteer_application.initial_group_id,
+            volunteer_application.initial_group_name,
+        ),
+        (
+            volunteer_application.first_choice_group_id,
+            volunteer_application.first_choice_group_name,
+        ),
+        (
+            volunteer_application.second_choice_group_id,
+            volunteer_application.second_choice_group_name,
+        ),
     ]:
         if group_id is None or not name or group_id in seen_group_ids:
             continue

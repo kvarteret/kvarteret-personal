@@ -14,12 +14,12 @@ def test_settings_strip_string_whitespace() -> None:
     settings = Settings.model_validate(
         {
             "app_public_base_url": " https://example.com/ \n",
-            "photo_bucket": " personnel-photos \n",
+            "azure_photo_container": " images \n",
         }
     )
 
     assert settings.app_public_base_url == "https://example.com/"
-    assert settings.photo_bucket == "personnel-photos"
+    assert settings.azure_photo_container == "images"
 
 
 def test_validate_production_secrets_rejects_default_secret() -> None:

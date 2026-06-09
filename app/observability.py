@@ -15,7 +15,9 @@ from fastapi import Request
 from app.auth.models import AuthenticatedUser
 from app.config import Settings
 
-_request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
+_request_context: ContextVar[dict[str, Any]] = ContextVar(
+    "request_context", default=None
+)
 
 # The root logger stays at settings.log_level, so application logs still emit at INFO by default.
 # Only these specific third-party loggers are overridden to WARNING to reduce Vercel noise.
@@ -49,7 +51,7 @@ class JsonLogFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        payload.update(_request_context.get())
+        payload.update(_request_context.get({}))
         event = getattr(record, "event", None)
         if event is not None:
             payload["event"] = event
@@ -73,7 +75,7 @@ def configure_logging(settings: Settings) -> None:
 
 
 def bind_request_context(**values: Any):
-    current = dict(_request_context.get())
+    current = dict(_request_context.get({}))
     for key, value in values.items():
         if value is None:
             continue
@@ -111,7 +113,9 @@ def request_context_for_user(user: AuthenticatedUser | None) -> dict[str, Any]:
     }
 
 
-def log_request(logger: logging.Logger, *, request: Request, status_code: int, started_at: float) -> None:
+def log_request(
+    logger: logging.Logger, *, request: Request, status_code: int, started_at: float
+) -> None:
     logger.info(
         "request completed",
         extra={
@@ -125,7 +129,9 @@ def log_request(logger: logging.Logger, *, request: Request, status_code: int, s
     )
 
 
-def log_request_exception(logger: logging.Logger, *, request: Request, started_at: float) -> None:
+def log_request_exception(
+    logger: logging.Logger, *, request: Request, started_at: float
+) -> None:
     logger.exception(
         "request failed",
         extra={

@@ -4,7 +4,11 @@ import logging
 from time import perf_counter
 
 from app.observability import log_operation_timing
-from app.domain.search.models import SearchQuery, SearchRepositoryProtocol, SearchResultItem
+from app.domain.search.models import (
+    SearchQuery,
+    SearchRepositoryProtocol,
+    SearchResultItem,
+)
 
 logger = logging.getLogger("app.performance")
 
@@ -18,4 +22,6 @@ class VolunteerSearchService:
         try:
             return await self.repository.search_volunteers(query)
         finally:
-            log_operation_timing(logger, operation="search.execute", started_at=started_at)
+            log_operation_timing(
+                logger, operation="search.execute", started_at=started_at
+            )

@@ -11,7 +11,6 @@ from app.dependencies import (
 )
 from app.main import create_app
 from app.media_tokens import (
-    build_document_media_url,
     build_photo_media_url,
     sign_media_token,
 )
@@ -36,12 +35,6 @@ class FakeStorageService:
         if path != "abc123.jpg":
             raise FileNotFoundError(path)
         return JPEG_BYTES
-
-    def download_document(self, path: str) -> bytes:
-        if path != "12/certificate.pdf":
-            raise FileNotFoundError(path)
-        return b"%PDF-1.7 fake"
-
 
 class FakeVolunteersService:
     async def get_photo_storage_path(self, volunteer_id: int) -> str | None:
@@ -86,24 +79,6 @@ def test_media_photo_route_returns_backend_bytes(monkeypatch) -> None:
     assert response.headers["etag"] == '"photo-abc123-512"'
 
 
-def test_media_document_route_returns_backend_bytes(monkeypatch) -> None:
-    from app.media import router as media_module
-
-    monkeypatch.setattr(
-        media_module, "_get_storage_service", lambda request: FakeStorageService()
-    )
-    client = TestClient(create_app())
-
-    response = client.get(build_document_media_url("12/certificate.pdf"))
-
-    assert response.status_code == 200
-    assert response.content == b"%PDF-1.7 fake"
-    assert response.headers["content-type"] == "application/pdf"
-    assert response.headers["cache-control"] == "private, no-store"
-    assert response.headers["pragma"] == "no-cache"
-    assert response.headers["x-content-type-options"] == "nosniff"
-
-
 def test_media_route_rejects_invalid_token(monkeypatch) -> None:
     from app.media import router as media_module
 
@@ -116,6 +91,15 @@ def test_media_route_rejects_invalid_token(monkeypatch) -> None:
     response = client.get(f"/media/photos/abc123.jpg?token={token}")
 
     assert response.status_code == 403
+
+
+def test_media_document_route_is_removed() -> None:
+    client = TestClient(create_app())
+    token = sign_media_token(kind="document", path="12/certificate.pdf")
+
+    response = client.get(f"/media/documents/12/certificate.pdf?token={token}")
+
+    assert response.status_code == 404
 
 
 def test_authenticated_image_route_allows_admin_session(monkeypatch) -> None:

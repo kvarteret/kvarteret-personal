@@ -6,9 +6,22 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
-from app.dependencies import get_groups_service, get_semester_transfer_service, get_volunteers_service, require_management_user
-from app.domain.groups.service import GroupDeleteBlockedError, GroupHistoryNotFoundError, GroupRoleDeleteBlockedError, GroupsService
-from app.domain.volunteers.semester_transfer import SemesterTransferEntry, SemesterTransferService
+from app.dependencies import (
+    get_groups_service,
+    get_semester_transfer_service,
+    get_volunteers_service,
+    require_management_user,
+)
+from app.domain.groups.service import (
+    GroupDeleteBlockedError,
+    GroupHistoryNotFoundError,
+    GroupRoleDeleteBlockedError,
+    GroupsService,
+)
+from app.domain.volunteers.semester_transfer import (
+    SemesterTransferEntry,
+    SemesterTransferService,
+)
 from app.domain.volunteers.service import (
     DuplicateRoleAssignmentError,
     InvalidRoleAssignmentError,
@@ -17,6 +30,8 @@ from app.domain.volunteers.service import (
 )
 from app.web.route_helpers import blocked_http_exception, log_and_redirect
 from app.web.templates import templates
+
+_GROUP_NOT_FOUND = "Group not found."
 
 router = APIRouter()
 
@@ -38,8 +53,12 @@ async def groups_create(
         description=description,
         active=active == "true",
         active_until_semester=active_until_semester,
-        parent_group_id=int(parent_group_id) if parent_group_id and parent_group_id.strip() else None,
-        discount_step=int(discount_step) if discount_step and discount_step.strip() else None,
+        parent_group_id=int(parent_group_id)
+        if parent_group_id and parent_group_id.strip()
+        else None,
+        discount_step=int(discount_step)
+        if discount_step and discount_step.strip()
+        else None,
     )
     return log_and_redirect(
         request=request,
@@ -68,7 +87,9 @@ async def groups_update(
     if resolved_active_until_semester is None:
         group = await groups_service.get_group_detail(group_id)
         if group is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
+            )
         resolved_active_until_semester = group.active_until_semester
     updated = await groups_service.update_group(
         group_id,
@@ -77,12 +98,20 @@ async def groups_update(
         active=active == "true",
         active_until_semester=resolved_active_until_semester,
         parent_group_id=(
-            int(parent_group_id) if parent_group_id and parent_group_id.strip() and int(parent_group_id) != group_id else None
+            int(parent_group_id)
+            if parent_group_id
+            and parent_group_id.strip()
+            and int(parent_group_id) != group_id
+            else None
         ),
-        discount_step=int(discount_step) if discount_step and discount_step.strip() else None,
+        discount_step=int(discount_step)
+        if discount_step and discount_step.strip()
+        else None,
     )
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -105,7 +134,9 @@ async def groups_delete(
     except GroupDeleteBlockedError as exc:
         raise blocked_http_exception(exc.blockers) from exc
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -125,7 +156,9 @@ async def groups_archive(
 ):
     archived = await groups_service.archive_group(group_id)
     if not archived:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -151,7 +184,9 @@ async def group_roles_create(
         pingvin_points=pingvin_points,
     )
     if role_id is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -179,9 +214,13 @@ async def group_role_assignments_create(
     parsed_year = _parse_required_int(year)
     parsed_term = _parse_required_int(term)
     if parsed_role_id is None or parsed_year is None or parsed_term is None:
-        return _redirect_group_assignment_error(group_id, "Velg frivillig, verv og semester før du legger til i gruppen.")
+        return _redirect_group_assignment_error(
+            group_id, "Velg frivillig, verv og semester før du legger til i gruppen."
+        )
     if not volunteer_ids:
-        return _redirect_group_assignment_error(group_id, "Velg en frivillig før du legger til i gruppen.")
+        return _redirect_group_assignment_error(
+            group_id, "Velg en frivillig før du legger til i gruppen."
+        )
     if len(volunteer_ids) != 1:
         return _redirect_group_assignment_error(group_id, "Velg nøyaktig én frivillig.")
     parsed_volunteer_id = volunteer_ids[0]
@@ -195,7 +234,9 @@ async def group_role_assignments_create(
             contract_signed=contract_signed,
         )
     except VolunteerNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except (DuplicateRoleAssignmentError, InvalidRoleAssignmentError) as exc:
         return _redirect_group_assignment_error(group_id, str(exc))
     return log_and_redirect(
@@ -204,7 +245,12 @@ async def group_role_assignments_create(
         action="group_role_assignment.create",
         subject_type="group",
         subject_id=group_id,
-        details={"volunteer_id": parsed_volunteer_id, "role_id": parsed_role_id, "year": parsed_year, "term": parsed_term},
+        details={
+            "volunteer_id": parsed_volunteer_id,
+            "role_id": parsed_role_id,
+            "year": parsed_year,
+            "term": parsed_term,
+        },
         redirect_path=f"/groups/{group_id}",
     )
 
@@ -242,7 +288,9 @@ async def group_roles_update(
         pingvin_points=pingvin_points,
     )
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group role not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Group role not found."
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -267,7 +315,9 @@ async def group_roles_delete(
     except GroupRoleDeleteBlockedError as exc:
         raise blocked_http_exception(exc.blockers) from exc
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group role not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Group role not found."
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -290,11 +340,15 @@ async def group_history_delete(
     try:
         await groups_service.delete_group_history_entry(group_id, history_id)
     except GroupHistoryNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     if request.headers.get("HX-Request") == "true":
         group = await groups_service.get_group_detail(group_id)
         if group is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
+            )
         history, stats, retention = await asyncio.gather(
             groups_service.get_group_history_by_semester(group_id),
             groups_service.get_group_semester_stats(group_id),
@@ -338,7 +392,11 @@ async def groups_apply_semester_transfer(
     entries = [
         SemesterTransferEntry(
             volunteer_id=volunteer_id,
-            role_id=(int(role_ids[index]) if index < len(role_ids) and role_ids[index].strip() else None),
+            role_id=(
+                int(role_ids[index])
+                if index < len(role_ids) and role_ids[index].strip()
+                else None
+            ),
         )
         for index, volunteer_id in enumerate(volunteer_ids)
     ]

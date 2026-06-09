@@ -6,7 +6,19 @@ import logging
 from time import perf_counter
 from typing import Protocol
 
-from sqlalchemy import BigInteger, Integer, Text, delete, func, insert, literal, or_, select, union_all, update
+from sqlalchemy import (
+    BigInteger,
+    Integer,
+    Text,
+    delete,
+    func,
+    insert,
+    literal,
+    or_,
+    select,
+    union_all,
+    update,
+)
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import grupper, grupper_kurs_kobling, historie_kurs, kurs, personal
@@ -71,12 +83,18 @@ class CourseDetail:
 
 
 class CoursesServiceProtocol(Protocol):
-    async def list_courses(self, query: str | None = None, limit: int = 100) -> list[CourseListItem]: ...
+    async def list_courses(
+        self, query: str | None = None, limit: int = 100
+    ) -> list[CourseListItem]: ...
     async def get_course_detail(self, course_id: int) -> CourseDetail | None: ...
     async def create_course(self, *, name: str, description: str | None) -> int: ...
-    async def update_course(self, course_id: int, *, name: str, description: str | None) -> bool: ...
+    async def update_course(
+        self, course_id: int, *, name: str, description: str | None
+    ) -> bool: ...
     async def delete_course(self, course_id: int) -> bool: ...
-    async def create_course_completion(self, *, course_id: int, volunteer_id: int, year: int, term: int) -> int: ...
+    async def create_course_completion(
+        self, *, course_id: int, volunteer_id: int, year: int, term: int
+    ) -> int: ...
     async def create_course_completions(
         self,
         *,
@@ -85,11 +103,15 @@ class CoursesServiceProtocol(Protocol):
         year: int,
         term: int,
     ) -> int: ...
-    async def delete_course_completion(self, *, course_id: int, completion_id: int) -> None: ...
+    async def delete_course_completion(
+        self, *, course_id: int, completion_id: int
+    ) -> None: ...
 
 
 class CoursesService(SqlAlchemyRepository):
-    async def list_courses(self, query: str | None = None, limit: int = 100) -> list[CourseListItem]:
+    async def list_courses(
+        self, query: str | None = None, limit: int = 100
+    ) -> list[CourseListItem]:
         stmt = (
             select(kurs.c.id, kurs.c.navn, kurs.c.beskrivelse, kurs.c.opprettet)
             .order_by(kurs.c.navn.asc(), kurs.c.id.asc())
@@ -97,7 +119,9 @@ class CoursesService(SqlAlchemyRepository):
         )
         if query and query.strip():
             pattern = f"%{query.strip()}%"
-            stmt = stmt.where(or_(kurs.c.navn.ilike(pattern), kurs.c.beskrivelse.ilike(pattern)))
+            stmt = stmt.where(
+                or_(kurs.c.navn.ilike(pattern), kurs.c.beskrivelse.ilike(pattern))
+            )
         rows = await self.fetch_all_mappings(stmt)
         return [
             CourseListItem(
@@ -140,7 +164,11 @@ class CoursesService(SqlAlchemyRepository):
                 literal(None, type_=Text()).label("volunteer_last_name"),
                 literal(None, type_=Integer()).label("completed_semester"),
             )
-            .select_from(grupper_kurs_kobling.join(grupper, grupper.c.id == grupper_kurs_kobling.c.id_gruppe))
+            .select_from(
+                grupper_kurs_kobling.join(
+                    grupper, grupper.c.id == grupper_kurs_kobling.c.id_gruppe
+                )
+            )
             .where(grupper_kurs_kobling.c.id_kurs == course_id)
         )
         recent_completions = (
@@ -151,9 +179,15 @@ class CoursesService(SqlAlchemyRepository):
                 personal.c.fornavn,
                 personal.c.etternavn,
             )
-            .select_from(historie_kurs.join(personal, personal.c.id == historie_kurs.c.id_personal))
+            .select_from(
+                historie_kurs.join(
+                    personal, personal.c.id == historie_kurs.c.id_personal
+                )
+            )
             .where(historie_kurs.c.id_kurs == course_id)
-            .order_by(historie_kurs.c.gjennomfort_dato.desc(), historie_kurs.c.id.desc())
+            .order_by(
+                historie_kurs.c.gjennomfort_dato.desc(), historie_kurs.c.id.desc()
+            )
             .limit(20)
             .subquery()
         )
@@ -171,8 +205,15 @@ class CoursesService(SqlAlchemyRepository):
             recent_completions.c.etternavn.label("volunteer_last_name"),
             recent_completions.c.gjennomfort_dato.label("completed_semester"),
         )
-        rows = await self.fetch_all_mappings(union_all(course_select, groups_select, completions_select))
-        log_operation_timing(logger, operation="courses.detail", started_at=started_at, details={"course_id": course_id})
+        rows = await self.fetch_all_mappings(
+            union_all(course_select, groups_select, completions_select)
+        )
+        log_operation_timing(
+            logger,
+            operation="courses.detail",
+            started_at=started_at,
+            details={"course_id": course_id},
+        )
         course_row = next((row for row in rows if row["row_type"] == "course"), None)
         if course_row is None:
             return None
@@ -182,9 +223,17 @@ class CoursesService(SqlAlchemyRepository):
         recent_completion_items: list[CourseCompletionItem] = []
         seen_completion_ids: set[int] = set()
         for row in rows:
-            if row["row_type"] == "group" and row["group_id"] is not None and row["group_id"] not in seen_group_ids:
+            if (
+                row["row_type"] == "group"
+                and row["group_id"] is not None
+                and row["group_id"] not in seen_group_ids
+            ):
                 seen_group_ids.add(row["group_id"])
-                required_groups.append(RequiredGroupItem(group_id=row["group_id"], group_name=row["group_name"]))
+                required_groups.append(
+                    RequiredGroupItem(
+                        group_id=row["group_id"], group_name=row["group_name"]
+                    )
+                )
             if (
                 row["row_type"] == "completion"
                 and row["completion_id"] is not None
@@ -195,9 +244,14 @@ class CoursesService(SqlAlchemyRepository):
                     CourseCompletionItem(
                         completion_id=row["completion_id"],
                         volunteer_id=row["volunteer_id"],
-                        volunteer_name=build_full_name(row.get("volunteer_first_name"), row.get("volunteer_last_name")),
+                        volunteer_name=build_full_name(
+                            row.get("volunteer_first_name"),
+                            row.get("volunteer_last_name"),
+                        ),
                         completed_semester_code=row["completed_semester"],
-                        completed_semester_label=format_semester_code(row["completed_semester"])
+                        completed_semester_label=format_semester_code(
+                            row["completed_semester"]
+                        )
                         or str(row["completed_semester"]),
                     )
                 )
@@ -206,7 +260,10 @@ class CoursesService(SqlAlchemyRepository):
             name=course_row["course_name"],
             description=course_row["course_description"],
             created_at=coerce_datetime(course_row.get("course_created_at")),
-            required_groups=sorted(required_groups, key=lambda item: (item.group_name.lower(), item.group_id)),
+            required_groups=sorted(
+                required_groups,
+                key=lambda item: (item.group_name.lower(), item.group_id),
+            ),
             recent_completions=sorted(
                 recent_completion_items,
                 key=lambda item: (item.completed_semester_code, item.completion_id),
@@ -220,21 +277,29 @@ class CoursesService(SqlAlchemyRepository):
             insert(kurs)
             .values(
                 navn=name.strip(),
-                beskrivelse=(description.strip() if description and description.strip() else None),
+                beskrivelse=(
+                    description.strip() if description and description.strip() else None
+                ),
                 opprettet=datetime.now(UTC),
             )
             .returning(kurs.c.id)
         )
         return row["id"]
 
-    async def update_course(self, course_id: int, *, name: str, description: str | None) -> bool:
+    async def update_course(
+        self, course_id: int, *, name: str, description: str | None
+    ) -> bool:
         async def callback(session):
             result = await session.execute(
                 update(kurs)
                 .where(kurs.c.id == course_id)
                 .values(
                     navn=name.strip(),
-                    beskrivelse=(description.strip() if description and description.strip() else None),
+                    beskrivelse=(
+                        description.strip()
+                        if description and description.strip()
+                        else None
+                    ),
                 )
                 .returning(kurs.c.id)
             )
@@ -250,15 +315,23 @@ class CoursesService(SqlAlchemyRepository):
             raise CourseDeleteBlockedError(blockers)
 
         async def callback(session):
-            await session.execute(delete(grupper_kurs_kobling).where(grupper_kurs_kobling.c.id_kurs == course_id))
-            result = await session.execute(delete(kurs).where(kurs.c.id == course_id).returning(kurs.c.id))
+            await session.execute(
+                delete(grupper_kurs_kobling).where(
+                    grupper_kurs_kobling.c.id_kurs == course_id
+                )
+            )
+            result = await session.execute(
+                delete(kurs).where(kurs.c.id == course_id).returning(kurs.c.id)
+            )
             row = result.first()
             return row[0] if row is not None else None
 
         deleted_course_id = await self.execute_in_transaction(callback)
         return deleted_course_id == course_id
 
-    async def create_course_completion(self, *, course_id: int, volunteer_id: int, year: int, term: int) -> int:
+    async def create_course_completion(
+        self, *, course_id: int, volunteer_id: int, year: int, term: int
+    ) -> int:
         semester_code = _build_semester_code(year=year, term=term)
         if not await self._course_exists(course_id):
             raise InvalidCourseCompletionError("Selected course was not found.")
@@ -269,7 +342,9 @@ class CoursesService(SqlAlchemyRepository):
             volunteer_id=volunteer_id,
             semester_code=semester_code,
         ):
-            raise DuplicateCourseCompletionError("Dette kurset er allerede registrert for valgt semester.")
+            raise DuplicateCourseCompletionError(
+                "Dette kurset er allerede registrert for valgt semester."
+            )
         row = await self.execute_one_mapping(
             insert(historie_kurs)
             .values(
@@ -294,27 +369,38 @@ class CoursesService(SqlAlchemyRepository):
         if not normalized_volunteer_ids:
             raise InvalidCourseCompletionError("Velg minst én frivillig.")
         if len(set(normalized_volunteer_ids)) != len(normalized_volunteer_ids):
-            raise InvalidCourseCompletionError("Den samme frivillige kan ikke velges flere ganger.")
+            raise InvalidCourseCompletionError(
+                "Den samme frivillige kan ikke velges flere ganger."
+            )
         if not await self._course_exists(course_id):
             raise InvalidCourseCompletionError("Selected course was not found.")
 
-        existing_volunteer_ids = await self._list_existing_volunteer_ids(normalized_volunteer_ids)
-        missing_volunteer_ids = [volunteer_id for volunteer_id in normalized_volunteer_ids if volunteer_id not in existing_volunteer_ids]
+        existing_volunteer_ids = await self._list_existing_volunteer_ids(
+            normalized_volunteer_ids
+        )
+        missing_volunteer_ids = [
+            volunteer_id
+            for volunteer_id in normalized_volunteer_ids
+            if volunteer_id not in existing_volunteer_ids
+        ]
         if missing_volunteer_ids:
             raise InvalidCourseCompletionError("Selected volunteer was not found.")
 
-        duplicate_existing_ids = await self._list_existing_course_completion_volunteer_ids(
-            course_id=course_id,
-            volunteer_ids=normalized_volunteer_ids,
-            semester_code=semester_code,
+        duplicate_existing_ids = (
+            await self._list_existing_course_completion_volunteer_ids(
+                course_id=course_id,
+                volunteer_ids=normalized_volunteer_ids,
+                semester_code=semester_code,
+            )
         )
         if duplicate_existing_ids:
-            raise DuplicateCourseCompletionError("Dette kurset er allerede registrert for valgt semester.")
+            raise DuplicateCourseCompletionError(
+                "Dette kurset er allerede registrert for valgt semester."
+            )
 
         async def callback(session):
             result = await session.execute(
-                insert(historie_kurs)
-                .returning(historie_kurs.c.id),
+                insert(historie_kurs).returning(historie_kurs.c.id),
                 [
                     {
                         "id_personal": volunteer_id,
@@ -329,19 +415,27 @@ class CoursesService(SqlAlchemyRepository):
         created_ids = await self.execute_in_transaction(callback)
         return len(created_ids)
 
-    async def delete_course_completion(self, *, course_id: int, completion_id: int) -> None:
+    async def delete_course_completion(
+        self, *, course_id: int, completion_id: int
+    ) -> None:
         row = await self.fetch_first_mapping(
             select(historie_kurs.c.id, historie_kurs.c.id_kurs)
             .where(historie_kurs.c.id == completion_id)
             .limit(1)
         )
         if not row or row["id_kurs"] != course_id:
-            raise CourseCompletionNotFoundError(f"Course completion {completion_id} was not found.")
-        await self.execute(delete(historie_kurs).where(historie_kurs.c.id == completion_id))
+            raise CourseCompletionNotFoundError(
+                f"Course completion {completion_id} was not found."
+            )
+        await self.execute(
+            delete(historie_kurs).where(historie_kurs.c.id == completion_id)
+        )
 
     async def _get_course_delete_blockers(self, course_id: int) -> list[str]:
         completion_count = await self.fetch_scalar(
-            select(func.count()).select_from(historie_kurs).where(historie_kurs.c.id_kurs == course_id)
+            select(func.count())
+            .select_from(historie_kurs)
+            .where(historie_kurs.c.id_kurs == course_id)
         )
         blockers: list[str] = []
         if completion_count:
@@ -349,15 +443,25 @@ class CoursesService(SqlAlchemyRepository):
         return blockers
 
     async def _course_exists(self, course_id: int) -> bool:
-        return bool(await self.fetch_scalar(select(func.count()).select_from(kurs).where(kurs.c.id == course_id)))
+        return bool(
+            await self.fetch_scalar(
+                select(func.count()).select_from(kurs).where(kurs.c.id == course_id)
+            )
+        )
 
     async def _volunteer_exists(self, volunteer_id: int) -> bool:
         return bool(
-            await self.fetch_scalar(select(func.count()).select_from(personal).where(personal.c.id == volunteer_id))
+            await self.fetch_scalar(
+                select(func.count())
+                .select_from(personal)
+                .where(personal.c.id == volunteer_id)
+            )
         )
 
     async def _list_existing_volunteer_ids(self, volunteer_ids: list[int]) -> set[int]:
-        rows = await self.fetch_all_mappings(select(personal.c.id).where(personal.c.id.in_(volunteer_ids)))
+        rows = await self.fetch_all_mappings(
+            select(personal.c.id).where(personal.c.id.in_(volunteer_ids))
+        )
         return {int(row["id"]) for row in rows}
 
     async def _course_completion_exists(

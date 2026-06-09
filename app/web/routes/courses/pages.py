@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.roles import UserRole
-from app.dependencies import get_courses_service, require_authenticated_user, require_management_user
+from app.dependencies import (
+    get_courses_service,
+    require_authenticated_user,
+    require_management_user,
+)
 from app.errors import NotConfiguredError
 from app.infrastructure.formatting.semester import get_current_semester_code
 from app.domain.volunteers.options import SEMESTER_TERM_OPTIONS
@@ -24,7 +28,9 @@ async def courses_index(
     try:
         courses = await courses_service.list_courses(query=q, limit=100)
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed course views are not configured yet.")
+        raise not_configured_http_exception(
+            "Database-backed course views are not configured yet."
+        )
     return templates.TemplateResponse(
         request,
         "pages/courses/courses.html",
@@ -32,7 +38,8 @@ async def courses_index(
             "title": "Courses",
             "section": "courses",
             "current_user": current_user,
-            "can_manage_course": current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN},
+            "can_manage_course": current_user.role
+            in {UserRole.ADMIN, UserRole.GROUP_ADMIN},
             "courses": courses,
             "query": q or "",
         },
@@ -65,9 +72,13 @@ async def courses_detail(
     try:
         course = await courses_service.get_course_detail(course_id)
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed course views are not configured yet.")
+        raise not_configured_http_exception(
+            "Database-backed course views are not configured yet."
+        )
     if course is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found."
+        )
     can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     return templates.TemplateResponse(
         request,
