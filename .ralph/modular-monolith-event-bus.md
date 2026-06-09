@@ -1,18 +1,26 @@
-## Phase 1: Event Bus + volunteer_applications migration — DONE
+## Modular Monolith Event Bus — Phase 1 COMPLETE ✅
 
-### 1.1 Create `app/events.py` ✅
-### 1.2 Wire into runtime.py ✅
-### 1.3 Create volunteer_applications events ✅
-### 1.4 Extract side effects ✅ (coexistence: both inline + handler)
-### 1.5 Register handlers in runtime.py ✅
-### 1.6 All 223 tests pass ✅
+### Delivered
+- [x] `app/events.py` — SimpleEventBus (30 lines)
+- [x] `app/domain/volunteer_applications/events.py` — 3 domain events
+- [x] Wired into `ApplicationContainer` + `runtime.py`
+- [x] `submit_volunteer_application` emits `ApplicationSubmitted`
+- [x] Handler registered: `_on_application_submitted` (cache invalidation)
+- [x] Coexistence: cache invalidated inline AND via handler
+- [x] 4 unit tests for SimpleEventBus (all passing)
+- [x] ADR-001 written (PostHog-inspired)
+- [x] All 227 tests pass, ruff clean
 
-Coexistence strategy: cache invalidation runs both inline (in _save_and_cleanup_photos)
-AND via the ApplicationSubmitted event handler. No regression risk. In Phase 2
-we'll remove the inline call once we have handler test coverage.
+### Architecture
+```
+submit_volunteer_application()
+    → validate + photo + save
+    → bus.emit(ApplicationSubmitted)
+          → handler: cache.invalidate()
+```
 
-### Next phases
-- Phase 2: Move _invalidate_pending_count_cache fully to handler + add tests
-- Phase 3: ApplicationApproved handler for profile completion emails
-- Phase 4: mobile_card access code email handler
-- Phase 5: admin_accounts onboarding email handler
+### Next phases (deferred)
+- Phase 2: `ApplicationApproved` handler (profile completion email)
+- Phase 3: `mobile_card` access code email handler
+- Phase 4: `admin_accounts` onboarding email handler
+- Phase 5: Remove inline cache/email calls (after handler test coverage)

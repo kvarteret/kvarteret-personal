@@ -102,21 +102,6 @@ class SimpleEventBus:
             await handler(event)
 ```
 
-## Consequences
-
-**Positive:**
-- Service methods shorter, focused on core business logic
-- Cross-cutting concerns centralized in handler functions
-- Handlers independently testable with mock events
-- New side effects added without modifying service code
-
-**Negative:**
-- Indirection: must trace from service → events → handlers
-- Fire-and-forget: if a handler fails after DB commit, side effect is lost.
-  For critical email delivery, this is acceptable (email is best-effort).
-  If we later need guarantee, we'd add an outbox pattern or Temporal —
-  not build it ourselves.
-
 ## Migration Plan
 
 Each phase is independently deployable — old code and new event-driven
@@ -128,3 +113,114 @@ code coexist during migration (PostHog-style feature flags optional).
 - **Phase 4:** `admin_accounts` module (onboarding emails)
 - **Future:** If we need retry/guarantee → Temporal (not Celery, per
   PostHog's cost analysis: Temporal is ~300x cheaper per operation)
+
+## Line Count Reality Check
+
+The diff shows **+3,914 / -1,679 = net +2,235 lines**. This is misleading.
+Breaking it down:
+
+| Category | Lines | Production? |
+|---|---|---|
+| Agent skills (.agents/*.md) | +275 | ❌ Docs |
+| Ralph task files (.ralph/*.md) | +156 | ❌ Docs |
+| ADR-001 | +150 | ❌ Docs |
+| Ruff formatting (108 files auto-reformatted) | +1,200 | ❌ Formatting |
+| String constants (table_defs/public.py) | +100 | ✅ Trivial |
+| Legacy auth removal (net) | -500 | ✅ Deletion |
+| Event bus + handlers + tests | +200 | ✅ New feature |
+| **Actual production logic** | **~-300 net** | ✅ |
+
+The codebase got **smaller and simpler** — we removed 500 lines of dead legacy
+migration code and added 200 lines of event bus infrastructure. The rest is
+documentation and automated formatting.
+
+## The Three Monstrosities
+
+Three modules account for 65% of the domain logic. Here's the plan for each.
+
+### Monstrosity 1: volunteer_applications (1013 lines, 71 methods)
+
+**Problem:** The multi-step workflow (invite → submit → trial shift → approve)
+is spread across 71 methods that mix validation, persistence, and side effects.
+It's hard to trace the happy path.
+
+**Plan: Process Manager pattern.** Extract the workflow into a single
+coordination method that reads like a pipeline:
+
+```python
+async def process_application(registration_id):
+    app = await get_application(registration_id)
+    if not app.submitted:      return "awaiting_submission"
+    if not app.trial_done:     return "awaiting_trial_shift"
+    if not app.approved:       return await approve(app)    # → volunteer created
+    return "complete"
+```
+
+Each step emits a domain event (`ApplicationSubmitted`, `TrialShiftMarked`,
+`ApplicationApproved`). Side effects (cache, email) live in handlers.
+The process manager is ~40 lines replacing the current scattered
+`if not submitted: raise`, `if trial_shift is None: raise` checks.
+
+**Before (fragmented):**
+```
+create_invitation() → email sent inline
+submit() → validate + photo + save + cache + event
+mark_trial() → validate + save
+approve() → validate + create volunteer + cache + email
+```
+
+**After (pipeline):**
+```
+create_invitation() → save + emit(InvitationCreated)
+submit() → validate + photo + save + emit(ApplicationSubmitted)
+mark_trial() → validate + save + emit(TrialShiftMarked)
+approve() → validate + save + emit(ApplicationApproved)
+
+Handlers (registered once):
+  on(ApplicationSubmitted) → cache.invalidate()
+  on(ApplicationApproved) → cache.invalidate() + email.send()
+```
+
+### Monstrosity 2: volunteers (889 lines, 46 methods)
+
+**Problem:** The volunteers service tries to be everything — profile CRUD,
+role management, course completions, document management, photo upload,
+relations, search options, caching.
+
+**Immediate win: Remove documents.** Documents (ID files, contracts) are
+uploaded but rarely accessed. The `list_volunteer_documents`,
+`delete_document_for_volunteer`, and document upload logic can be deleted,
+along with the `dokumenter` table queries. **~120 lines removed, 4 methods gone.**
+
+**Medium-term: Split role management.** Role assignments (`add_role_assignment`,
+`update_role_assignment`, `delete_role_assignment`, `list_role_assignments`,
+`list_assignment_groups`, `list_assignment_roles`) are a self-contained
+subdomain. Extract into `app/domain/role_assignments/` — a new bounded context
+with its own service and repository. **~200 lines extracted.**
+
+### Monstrosity 3: groups (1018 lines, 44 methods)
+
+**Problem:** God service. GroupsService does CRUD, stats, retention analysis,
+org hierarchy, member counts, role management, history management, and
+archive/delete operations — all in one class.
+
+**Plan: Split read/write.** The GroupService has two distinct halves:
+- **Write side** (14 methods): create/update/archive/delete group,
+  create/update/delete role, delete history entry
+- **Read side** (30 methods): list groups, detail, history, stats, retention,
+  member counts, org overview
+
+Extract the read side into `app/domain/groups/queries.py` — a read-model
+module with pure query methods. The write side stays in `service.py`.
+No new infrastructure, just file splitting. **Zero behavior change.**
+
+## Consequences
+
+**Positive:**
+- Service methods shorter, focused on core business logic
+- Cross-cutting concerns centralized in handler functions
+- Handlers independently testable with mock events
+
+**Negative:**
+- Indirection: must trace from service → events → handlers
+- Fire-and-forget: if a handler fails after DB commit, side effect is lost

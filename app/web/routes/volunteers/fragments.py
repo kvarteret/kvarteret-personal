@@ -141,25 +141,6 @@ async def volunteer_course_completions_panel(
     )
 
 
-@router.get("/volunteers/{volunteer_id}/documents/panel")
-async def volunteer_documents_panel(
-    request: Request,
-    volunteer_id: int,
-    current_user=Depends(require_authenticated_user),
-    volunteers_service: VolunteersService = Depends(get_volunteers_service),
-):
-    volunteer = await require_existing_volunteer(volunteers_service, volunteer_id)
-    documents = await volunteers_service.list_volunteer_documents(volunteer_id)
-    return templates.TemplateResponse(
-        request,
-        "components/volunteers/volunteer_documents_panel.html",
-        {
-            "current_user": current_user,
-            "volunteer": volunteer,
-            "documents": documents,
-        },
-    )
-
 
 @router.get("/volunteers/{volunteer_id}/relations/panel")
 async def volunteer_relations_panel(
