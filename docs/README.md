@@ -35,7 +35,7 @@ The docs are organized by purpose:
 - the mobile-card API used by the volunteer app
 - event read APIs exposed in `openapi.json`
 - public volunteer prospect registration
-- media proxy routes for private personnel photos and documents
+- media proxy routes for private personnel photos
 - the Spotify-backed now-playing API
 
 Sibling repositories consume some of these APIs. Their usage is documented in [API boundaries](reference/api-boundaries.md), while third-party systems are documented in [External systems](reference/external-systems.md).

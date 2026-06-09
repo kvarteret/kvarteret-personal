@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import rmtree

@@ -8,7 +8,9 @@ from app.config import Settings, get_settings
 class SessionCookieSigner:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._serializer = URLSafeSerializer(settings.app_secret_key, salt="kvarteret-session")
+        self._serializer = URLSafeSerializer(
+            settings.app_secret_key, salt="kvarteret-session"
+        )
 
     def sign_session_id(self, session_id: str) -> str:
         return self._serializer.dumps(session_id)

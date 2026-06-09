@@ -4,7 +4,7 @@
 
 - a server-rendered admin UI using Jinja templates and Tailwind CSS
 - JSON APIs under `/api/*`
-- signed media proxy routes for private photos and documents
+- signed media proxy routes for private photos
 - system routes such as `/health`
 
 The app factory is `app/main.py:create_app`. It builds middleware for method override, CSRF validation for web mutations, session hydration, request logging, and HTML cache headers. Route groups are then mounted from `app/system/router.py`, `app/media/router.py`, `app/api/router.py`, and `app/web/router.py`.
@@ -26,7 +26,7 @@ flowchart TB
     db["SQLAlchemy Core repositories\napp/db and repositories"]
     supabaseDb["Supabase Postgres"]
     supabaseAuth["Supabase Auth"]
-    storage["StorageService\nSupabase Storage and Azure Blob"]
+    storage["StorageService\nAzure Blob"]
     email["SmtpEmailSender"]
     spotify["NowPlayingService\nSpotify Web API"]
     feedback["FeedbackService\nSlack webhook"]

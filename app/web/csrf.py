@@ -15,7 +15,9 @@ CSRF_HEADER_NAME = "X-CSRF-Token"
 class CsrfTokenService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._serializer = URLSafeSerializer(settings.app_secret_key, salt="kvarteret-csrf")
+        self._serializer = URLSafeSerializer(
+            settings.app_secret_key, salt="kvarteret-csrf"
+        )
 
     def issue_token(self) -> str:
         return self._serializer.dumps({"nonce": token_urlsafe(32)})
@@ -27,10 +29,18 @@ class CsrfTokenService:
             payload = self._serializer.loads(token)
         except BadSignature:
             return False
-        return isinstance(payload, dict) and isinstance(payload.get("nonce"), str) and bool(payload["nonce"])
+        return (
+            isinstance(payload, dict)
+            and isinstance(payload.get("nonce"), str)
+            and bool(payload["nonce"])
+        )
 
-    def tokens_match(self, cookie_token: str | None, submitted_token: str | None) -> bool:
-        if not self.is_valid_token(cookie_token) or not self.is_valid_token(submitted_token):
+    def tokens_match(
+        self, cookie_token: str | None, submitted_token: str | None
+    ) -> bool:
+        if not self.is_valid_token(cookie_token) or not self.is_valid_token(
+            submitted_token
+        ):
             return False
         assert cookie_token is not None
         assert submitted_token is not None
@@ -41,6 +51,7 @@ class CsrfTokenService:
             key=CSRF_COOKIE_NAME,
             value=token,
             httponly=True,
-            secure=request.url.scheme == "https" or self.settings.app_env == "production",
+            secure=request.url.scheme == "https"
+            or self.settings.app_env == "production",
             samesite="lax",
         )

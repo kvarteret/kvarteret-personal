@@ -1,2 +1,1 @@
 """Temporary compatibility routes."""
-

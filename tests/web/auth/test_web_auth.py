@@ -52,7 +52,6 @@ class FakeLoginService:
                 expires_at=datetime.now(UTC),
             ),
             user=make_authenticated_user(UserRole.ADMIN),
-            migrated_from_legacy=True,
         )
 
 
@@ -100,9 +99,6 @@ class FakeVolunteersService:
         return None
 
     async def list_role_assignments(self, volunteer_id: int, limit: int = 12):
-        return []
-
-    async def list_volunteer_documents(self, volunteer_id: int):
         return []
 
     async def get_volunteer_relations(self, volunteer_id: int):

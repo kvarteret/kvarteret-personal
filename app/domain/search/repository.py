@@ -30,7 +30,9 @@ class VolunteerSearchRepository(SqlAlchemyRepository):
                 last_semesters.c.last_semester,
             )
             .select_from(
-                personal.outerjoin(points, points.c.id_personal == personal.c.id).outerjoin(
+                personal.outerjoin(
+                    points, points.c.id_personal == personal.c.id
+                ).outerjoin(
                     last_semesters, last_semesters.c.id_personal == personal.c.id
                 )
             )
@@ -66,16 +68,28 @@ def _build_filters(query: SearchQuery, points) -> list:
         filters.append(personal.c.fodselsdato <= query.birth_date_before)
 
     if query.pingvin_points_above is not None:
-        filters.append(func.coalesce(points.c.pingvin_points, 0) > query.pingvin_points_above)
+        filters.append(
+            func.coalesce(points.c.pingvin_points, 0) > query.pingvin_points_above
+        )
     if query.pingvin_points_below is not None:
-        filters.append(func.coalesce(points.c.pingvin_points, 0) < query.pingvin_points_below)
+        filters.append(
+            func.coalesce(points.c.pingvin_points, 0) < query.pingvin_points_below
+        )
 
     filters.extend(
         [
             _active_signed_contract_filter(query.has_active_signed_contract),
-            _membership_filter(query.include_groups, semester_code=None, include_mode=True),
-            _membership_filter(query.include_current_groups, semester_code=_get_current_semester_code(), include_mode=True),
-            _membership_filter(query.exclude_groups, semester_code=None, include_mode=False),
+            _membership_filter(
+                query.include_groups, semester_code=None, include_mode=True
+            ),
+            _membership_filter(
+                query.include_current_groups,
+                semester_code=_get_current_semester_code(),
+                include_mode=True,
+            ),
+            _membership_filter(
+                query.exclude_groups, semester_code=None, include_mode=False
+            ),
             _membership_filter(
                 query.exclude_current_groups,
                 semester_code=_get_current_semester_code(),
@@ -110,7 +124,9 @@ def _membership_filter(
     return _related_filter(
         filter_list,
         include_mode=include_mode,
-        build_exists=lambda filter_id: _role_assignment_exists(filter_id, semester_code),
+        build_exists=lambda filter_id: _role_assignment_exists(
+            filter_id, semester_code
+        ),
     )
 
 
@@ -127,7 +143,9 @@ def _course_filter(filter_list: SearchFilterList | None, *, include_mode: bool):
     )
 
 
-def _related_filter(filter_list: SearchFilterList | None, *, include_mode: bool, build_exists):
+def _related_filter(
+    filter_list: SearchFilterList | None, *, include_mode: bool, build_exists
+):
     if filter_list is None or not filter_list.ids:
         return None
     # Each filter list can mean "all of these" or "any of these"; flipping that

@@ -24,7 +24,9 @@ class PhoneNormalizationResult:
     reason: str
 
 
-def normalize_phone_number(value: str | None, *, default_region: str = DEFAULT_PHONE_REGION) -> str | None:
+def normalize_phone_number(
+    value: str | None, *, default_region: str = DEFAULT_PHONE_REGION
+) -> str | None:
     result = analyze_phone_number(value, default_region=default_region)
     if result.status == "empty":
         return None
@@ -46,18 +48,24 @@ def normalize_required_phone_number(
     return result.normalized
 
 
-def require_e164_phone_number(value: str | None, *, default_region: str = DEFAULT_PHONE_REGION) -> str:
+def require_e164_phone_number(
+    value: str | None, *, default_region: str = DEFAULT_PHONE_REGION
+) -> str:
     result = analyze_phone_number(value, default_region=default_region)
     if result.cleaned is None:
         raise ValueError("Phone number is required.")
     if result.normalized is None:
         raise ValueError("Phone number must be a valid E.164 number.")
     if result.cleaned != result.normalized:
-        raise ValueError("Phone number must be entered in E.164 format, for example +4791234567.")
+        raise ValueError(
+            "Phone number must be entered in E.164 format, for example +4791234567."
+        )
     return result.normalized
 
 
-def analyze_phone_number(value: str | None, *, default_region: str = DEFAULT_PHONE_REGION) -> PhoneNormalizationResult:
+def analyze_phone_number(
+    value: str | None, *, default_region: str = DEFAULT_PHONE_REGION
+) -> PhoneNormalizationResult:
     cleaned = _clean_phone_input(value)
     if cleaned is None:
         return PhoneNormalizationResult(
@@ -145,7 +153,9 @@ def _clean_phone_input(value: str | None) -> str | None:
     return cleaned or None
 
 
-def _parse_phone_number(cleaned: str, *, default_region: str) -> phonenumbers.PhoneNumber | None:
+def _parse_phone_number(
+    cleaned: str, *, default_region: str
+) -> phonenumbers.PhoneNumber | None:
     candidates = _build_parse_candidates(cleaned, default_region=default_region)
     for raw_value, region in candidates:
         try:
@@ -155,7 +165,9 @@ def _parse_phone_number(cleaned: str, *, default_region: str) -> phonenumbers.Ph
     return None
 
 
-def _build_parse_candidates(cleaned: str, *, default_region: str) -> list[tuple[str, str | None]]:
+def _build_parse_candidates(
+    cleaned: str, *, default_region: str
+) -> list[tuple[str, str | None]]:
     digits = _DIGITS_RE.sub("", cleaned)
     candidates: list[tuple[str, str | None]] = []
 
@@ -176,7 +188,7 @@ def _build_parse_candidates(cleaned: str, *, default_region: str) -> list[tuple[
         return candidates
 
     # Allow formatting noise on already-international numbers such as "+47 999 99 999".
-    if cleaned.startswith("+") or cleaned.startswith("00"):
+    if cleaned.startswith(("+", "00")):
         candidates.append((cleaned, None))
         return candidates
 

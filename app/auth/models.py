@@ -8,15 +8,6 @@ from app.auth.roles import UserRole
 
 
 @dataclass(slots=True)
-class LegacyUser:
-    id: int
-    username: str
-    email: str | None
-    display_name: str | None
-    password_hash: str
-
-
-@dataclass(slots=True)
 class UserAccount:
     id: int
     auth_user_id: UUID

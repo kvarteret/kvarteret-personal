@@ -3,12 +3,20 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.roles import UserRole
-from app.dependencies import get_admin_accounts_service, require_admin_user, require_authenticated_user
+from app.dependencies import (
+    get_admin_accounts_service,
+    require_admin_user,
+    require_authenticated_user,
+)
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.web.route_helpers import not_configured_http_exception
 from app.web.templates import templates
+
+_ADMIN_PAGES_NOT_CONFIGURED = (
+    "Database-backed admin-account views are not configured yet."
+)
 
 router = APIRouter()
 
@@ -23,14 +31,18 @@ async def my_account_detail(
 ):
     try:
         admin_account = (
-            await admin_accounts_service.get_admin_account_detail(current_user.user_account_id)
+            await admin_accounts_service.get_admin_account_detail(
+                current_user.user_account_id
+            )
             if current_user.user_account_id
             else None
         )
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed admin-account views are not configured yet.")
+        raise not_configured_http_exception(_ADMIN_PAGES_NOT_CONFIGURED)
     if admin_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found."
+        )
     return templates.TemplateResponse(
         request,
         "pages/admin_accounts/admin_account_profile.html",
@@ -60,9 +72,11 @@ async def admin_accounts_index(
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:
-        admin_accounts = await admin_accounts_service.list_admin_accounts(query=q, limit=100)
+        admin_accounts = await admin_accounts_service.list_admin_accounts(
+            query=q, limit=100
+        )
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed admin-account views are not configured yet.")
+        raise not_configured_http_exception(_ADMIN_PAGES_NOT_CONFIGURED)
     log_admin_activity(
         request=request,
         user=current_user,
@@ -110,11 +124,15 @@ async def admin_account_detail(
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:
-        admin_account = await admin_accounts_service.get_admin_account_detail(account_id)
+        admin_account = await admin_accounts_service.get_admin_account_detail(
+            account_id
+        )
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed admin-account views are not configured yet.")
+        raise not_configured_http_exception(_ADMIN_PAGES_NOT_CONFIGURED)
     if admin_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found."
+        )
     log_admin_activity(
         request=request,
         user=current_user,

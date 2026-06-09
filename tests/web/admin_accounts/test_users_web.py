@@ -110,9 +110,6 @@ class FakeSupabaseAuthGateway:
             return None
         return self.updated_password[0] if self.updated_password else self.created_user[0] if self.created_user else None
 
-    async def create_user_from_legacy(self, legacy_user, password: str):
-        raise NotImplementedError
-
     async def create_user(self, *, email: str, password: str, metadata: dict | None = None):
         auth_user_id = uuid4()
         self.created_user = (auth_user_id, email, password, metadata)

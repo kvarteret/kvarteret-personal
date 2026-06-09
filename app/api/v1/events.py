@@ -21,6 +21,8 @@ from app.domain.mobile_card.service import (
 
 router = APIRouter()
 
+_INVALID_BEARER_TOKEN = "Invalid bearer token."
+
 
 @router.get(
     "",
@@ -118,14 +120,14 @@ async def _resolve_event_authorization(
     if not authorization.lower().startswith("bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid bearer token.",
+            detail=_INVALID_BEARER_TOKEN,
         )
 
     token = authorization.split(" ", 1)[1].strip()
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid bearer token.",
+            detail=_INVALID_BEARER_TOKEN,
         )
 
     try:
@@ -133,7 +135,7 @@ async def _resolve_event_authorization(
     except MobileCardInvalidAccessCodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid bearer token.",
+            detail=_INVALID_BEARER_TOKEN,
         ) from exc
     return EventAuthorization(can_view_internal=True)
 

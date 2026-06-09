@@ -28,8 +28,8 @@
         <div class="flex items-center justify-center gap-4 text-sm">
           <div class="min-w-12 text-left">
             {% if volunteer.photo_url %}
-              <form action="/volunteers/{{ volunteer.volunteer_id }}/photo?_method=DELETE" method="post" onsubmit="return window.confirm('Fjern profilbildet?');">
-                <button class="font-medium text-stone-700 underline-offset-4 hover:underline" type="submit">Fjern</button>
+              <form action="/volunteers/{{ volunteer.volunteer_id }}/photo?_method=DELETE" method="post">
+                <button class="font-medium text-stone-700 underline-offset-4 hover:underline" type="submit" onclick="return confirm('Fjern profilbildet?')">Fjern</button>
               </form>
             {% endif %}
           </div>
@@ -54,8 +54,8 @@
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
         {% if can_manage_volunteer_profile %}
-          <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne frivilligen? Dette fjerner historikk, filer, kort og profilbilde.');">
-            <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit">Slett frivillig</button>
+          <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=DELETE" method="post">
+            <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit" onclick="return confirm('Slette denne frivilligen? Dette fjerner historikk, filer, kort og profilbilde.')">Slett frivillig</button>
           </form>
         {% endif %}
       </div>
@@ -186,7 +186,7 @@
       <div class="grid gap-6">
         {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/role-assignments/panel', 'Laster historikk...') }}
         {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/course-completions/panel', 'Laster kurs...') }}
-        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/documents/panel', 'Laster filer...') }}
+        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/relations/panel', 'Laster relasjoner...') }}
       </div>
     </div>
   </section>

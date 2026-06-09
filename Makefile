@@ -1,6 +1,6 @@
 -include .env
 
-.PHONY: help install css assets css-watch run test openapi openapi-check migrate smoke-auth upload-legacy-images empty-supabase-storage
+.PHONY: help install css assets css-watch run test openapi openapi-check migrate smoke-auth
 
 help:
 	@printf "Targets:\n"
@@ -14,8 +14,6 @@ help:
 	@printf "  make openapi-check Verify the checked-in OpenAPI artifact is current\n"
 	@printf "  make migrate    Apply Alembic migrations to the configured database\n"
 	@printf "  make smoke-auth Run a live auth create-login-cleanup smoke test\n"
-	@printf "  make upload-legacy-images Upload recovered Azure images into Supabase Storage\n"
-	@printf "  make empty-supabase-storage Empty every bucket in Supabase Storage for the configured project\n"
 
 install:
 	uv sync
@@ -47,9 +45,3 @@ migrate:
 
 smoke-auth:
 	uv run python scripts/live_auth_smoke.py
-
-upload-legacy-images:
-	uv run python scripts/upload_legacy_images_to_supabase.py
-
-empty-supabase-storage:
-	uv run python scripts/empty_supabase_storage.py --confirm DELETE-ALL-STORAGE-DATA

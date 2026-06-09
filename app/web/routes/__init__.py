@@ -11,13 +11,21 @@ from app.web.routes.feedback.routes import router as feedback_router
 from app.web.routes.groups.actions import router as group_actions_router
 from app.web.routes.groups.pages import router as group_pages_router
 from app.web.routes.spotify.pages import router as spotify_pages_router
-from app.web.routes.volunteer_applications.actions import router as volunteer_application_actions_router
-from app.web.routes.volunteer_applications.pages import router as volunteer_application_pages_router
+from app.web.routes.volunteer_applications.actions import (
+    router as volunteer_application_actions_router,
+)
+from app.web.routes.volunteer_applications.pages import (
+    router as volunteer_application_pages_router,
+)
 from app.web.routes.volunteers.actions import router as volunteer_actions_router
 from app.web.routes.volunteers.fragments import router as volunteer_fragments_router
 from app.web.routes.volunteers.pages import router as volunteer_pages_router
-from app.web.routes.volunteers.search_fragments import router as volunteer_search_fragments_router
-from app.web.routes.volunteers.search_pages import router as volunteer_search_pages_router
+from app.web.routes.volunteers.search_fragments import (
+    router as volunteer_search_fragments_router,
+)
+from app.web.routes.volunteers.search_pages import (
+    router as volunteer_search_pages_router,
+)
 
 web_router = APIRouter(dependencies=[Depends(load_web_navigation_state)])
 web_router.include_router(auth_router)

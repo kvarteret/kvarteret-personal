@@ -27,8 +27,6 @@ class Settings(BaseSettings):
     database_max_overflow: int = Field(default=5)
     database_pool_timeout_seconds: int = Field(default=10)
     database_pool_recycle_seconds: int = Field(default=1800)
-    photo_bucket: str = Field(default="personnel-photos")
-    document_bucket: str = Field(default="personnel-documents")
     # Linear feedback integration — all products route through this backend
     linear_api_key: str | None = Field(default=None)
     linear_team_id: str | None = Field(default=None)
@@ -98,6 +96,7 @@ class Settings(BaseSettings):
     mobile_card_session_attempt_window_seconds: int = Field(default=600)
     mobile_card_session_ttl_days: int = Field(default=90)
     mobile_card_session_renewal_threshold_days: int = Field(default=30)
+
     @field_validator(
         "app_env",
         "app_secret_key",
@@ -109,8 +108,6 @@ class Settings(BaseSettings):
         "azure_blob_account_key",
         "azure_photo_container",
         "database_url",
-        "photo_bucket",
-        "document_bucket",
         "linear_api_key",
         "linear_team_id",
         "linear_project_id_personal",

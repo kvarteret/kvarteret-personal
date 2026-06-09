@@ -30,5 +30,13 @@ for (const entry of await readdir(sourceDir, { withFileTypes: true })) {
   }
 
   const outputName = `${path.basename(entry.name, ".mjml")}.html`
-  await writeFile(path.join(outputDir, outputName), html, "utf8")
+  await writeFile(path.join(outputDir, outputName), normalizeHtml(html), "utf8")
+}
+
+function normalizeHtml(html) {
+  return `${html
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trimEnd()}\n`
 }
