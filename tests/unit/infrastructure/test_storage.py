@@ -1,6 +1,7 @@
-import httpx
+import pytest
 
 from app.config import Settings
+from app.errors import NotConfiguredError
 from app.infrastructure.storage.service import StorageService
 
 
@@ -59,38 +60,15 @@ class FakeBlobServiceClient:
         return self.container_client
 
 
-def test_create_photo_signed_url_uses_photo_bucket() -> None:
-    captured: dict[str, object] = {}
+def test_storage_requires_azure_blob_configuration() -> None:
+    with pytest.raises(NotConfiguredError, match="Media storage is not configured"):
+        StorageService(Settings(azure_blob_connection_string=None))
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["method"] = request.method
-        captured["url"] = str(request.url)
-        captured["body"] = request.content.decode()
-        return httpx.Response(200, json={"signedURL": "/object/sign/personnel-photos/abc123.jpg?token=1"})
 
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    service = StorageService(
-        Settings(
-            photo_bucket="personnel-photos",
-            supabase_url="https://example.supabase.co",
-            supabase_secret_key="key",
-            azure_blob_connection_string=None,
-            azure_blob_account_name=None,
-            azure_blob_account_key=None,
-        ),
-        client=client,
+def test_create_photo_signed_url_uses_azure(monkeypatch) -> None:
+    blob_client = FakeBlobClient(
+        url="https://personaldatabasen.blob.core.windows.net/images/abc123.jpg"
     )
-
-    url = service.create_photo_signed_url("abc123.jpg", expires_in=90)
-
-    assert captured["method"] == "POST"
-    assert captured["url"] == "https://example.supabase.co/storage/v1/object/sign/personnel-photos/abc123.jpg"
-    assert "expiresIn" in str(captured["body"])
-    assert url == "https://example.supabase.co/storage/v1/object/sign/personnel-photos/abc123.jpg?token=1"
-
-
-def test_create_photo_signed_url_uses_azure_when_configured(monkeypatch) -> None:
-    blob_client = FakeBlobClient(url="https://personaldatabasen.blob.core.windows.net/images/abc123.jpg")
     service = StorageService(
         Settings(
             azure_blob_connection_string="UseDevelopmentStorage=true",
@@ -101,15 +79,20 @@ def test_create_photo_signed_url_uses_azure_when_configured(monkeypatch) -> None
         blob_service_client=FakeBlobServiceClient(FakeContainerClient(blob_client)),
     )
 
-    monkeypatch.setattr("app.infrastructure.storage.service.generate_blob_sas", lambda **kwargs: "sig=1")
+    monkeypatch.setattr(
+        "app.infrastructure.storage.service.generate_blob_sas",
+        lambda **kwargs: "sig=1",
+    )
 
     url = service.create_photo_signed_url("abc123.jpg", expires_in=90)
 
     assert url == "https://personaldatabasen.blob.core.windows.net/images/abc123.jpg?sig=1"
 
 
-def test_upload_photo_uses_azure_when_configured() -> None:
-    blob_client = FakeBlobClient(url="https://personaldatabasen.blob.core.windows.net/images/abc123.jpg")
+def test_upload_photo_uses_azure() -> None:
+    blob_client = FakeBlobClient(
+        url="https://personaldatabasen.blob.core.windows.net/images/abc123.jpg"
+    )
     container_client = FakeContainerClient(blob_client)
     blob_service_client = FakeBlobServiceClient(container_client)
     service = StorageService(
@@ -136,7 +119,7 @@ def test_upload_photo_uses_azure_when_configured() -> None:
     ]
 
 
-def test_download_photo_uses_azure_when_configured() -> None:
+def test_download_photo_uses_azure() -> None:
     blob_client = FakeBlobClient(
         url="https://personaldatabasen.blob.core.windows.net/images/abc123.jpg",
         download_content=b"jpeg-bytes",
@@ -156,8 +139,10 @@ def test_download_photo_uses_azure_when_configured() -> None:
     assert content == b"jpeg-bytes"
 
 
-def test_remove_photo_uses_azure_when_configured() -> None:
-    blob_client = FakeBlobClient(url="https://personaldatabasen.blob.core.windows.net/images/abc123.jpg")
+def test_remove_photo_uses_azure() -> None:
+    blob_client = FakeBlobClient(
+        url="https://personaldatabasen.blob.core.windows.net/images/abc123.jpg"
+    )
     service = StorageService(
         Settings(
             azure_blob_connection_string="UseDevelopmentStorage=true",
@@ -171,146 +156,3 @@ def test_remove_photo_uses_azure_when_configured() -> None:
     service.remove_photo("abc123.jpg")
 
     assert blob_client.deleted is True
-
-
-def test_create_document_signed_url_uses_document_bucket() -> None:
-    captured: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        return httpx.Response(200, json={"data": {"signedUrl": "/object/sign/personnel-documents/12/certificate.pdf?token=2"}})
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    service = StorageService(
-        Settings(
-            document_bucket="personnel-documents",
-            supabase_url="https://example.supabase.co",
-            supabase_secret_key="key",
-            azure_blob_connection_string=None,
-            azure_blob_account_name=None,
-            azure_blob_account_key=None,
-        ),
-        client=client,
-    )
-
-    url = service.create_document_signed_url("12/certificate.pdf", expires_in=120)
-
-    assert captured["url"] == "https://example.supabase.co/storage/v1/object/sign/personnel-documents/12/certificate.pdf"
-    assert url == "https://example.supabase.co/storage/v1/object/sign/personnel-documents/12/certificate.pdf?token=2"
-
-
-def test_upload_document_uses_document_bucket() -> None:
-    captured: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["method"] = request.method
-        captured["url"] = str(request.url)
-        captured["content_type"] = request.headers["content-type"]
-        captured["upsert"] = request.headers["x-upsert"]
-        captured["body"] = request.content
-        return httpx.Response(200, json={"Key": "12/certificate.pdf"})
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    service = StorageService(
-        Settings(
-            document_bucket="personnel-documents",
-            supabase_url="https://example.supabase.co",
-            supabase_secret_key="key",
-            azure_blob_connection_string=None,
-            azure_blob_account_name=None,
-            azure_blob_account_key=None,
-        ),
-        client=client,
-    )
-
-    service.upload_document("12/certificate.pdf", b"pdf-bytes", "application/pdf")
-
-    assert captured["method"] == "POST"
-    assert captured["url"] == "https://example.supabase.co/storage/v1/object/personnel-documents/12/certificate.pdf"
-    assert captured["upsert"] == "true"
-    assert "multipart/form-data" in str(captured["content_type"])
-    assert isinstance(captured["body"], bytes)
-    assert b"pdf-bytes" in captured["body"]
-
-
-def test_remove_photo_uses_photo_bucket() -> None:
-    captured: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["method"] = request.method
-        captured["url"] = str(request.url)
-        captured["body"] = request.content.decode()
-        return httpx.Response(200, json=[])
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    service = StorageService(
-        Settings(
-            photo_bucket="personnel-photos",
-            supabase_url="https://example.supabase.co",
-            supabase_secret_key="key",
-            azure_blob_connection_string=None,
-            azure_blob_account_name=None,
-            azure_blob_account_key=None,
-        ),
-        client=client,
-    )
-
-    service.remove_photo("abc123.jpg")
-
-    assert captured["method"] == "DELETE"
-    assert captured["url"] == "https://example.supabase.co/storage/v1/object/personnel-photos"
-    assert "abc123.jpg" in str(captured["body"])
-
-
-def test_list_buckets_uses_bucket_endpoint() -> None:
-    captured: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["method"] = request.method
-        captured["url"] = str(request.url)
-        return httpx.Response(200, json=[{"id": "personnel-photos"}, {"id": "personnel-documents"}])
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    service = StorageService(
-        Settings(
-            supabase_url="https://example.supabase.co",
-            supabase_secret_key="key",
-            azure_blob_connection_string=None,
-            azure_blob_account_name=None,
-            azure_blob_account_key=None,
-        ),
-        client=client,
-    )
-
-    buckets = service.list_buckets()
-
-    assert captured["method"] == "GET"
-    assert captured["url"] == "https://example.supabase.co/storage/v1/bucket"
-    assert buckets == [{"id": "personnel-photos"}, {"id": "personnel-documents"}]
-
-
-def test_empty_bucket_uses_empty_bucket_endpoint() -> None:
-    captured: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["method"] = request.method
-        captured["url"] = str(request.url)
-        return httpx.Response(200, json={"message": "Empty bucket has been queued. Completion may take up to an hour."})
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    service = StorageService(
-        Settings(
-            supabase_url="https://example.supabase.co",
-            supabase_secret_key="key",
-            azure_blob_connection_string=None,
-            azure_blob_account_name=None,
-            azure_blob_account_key=None,
-        ),
-        client=client,
-    )
-
-    message = service.empty_bucket("personnel-photos")
-
-    assert captured["method"] == "POST"
-    assert captured["url"] == "https://example.supabase.co/storage/v1/bucket/personnel-photos/empty"
-    assert message == "Empty bucket has been queued. Completion may take up to an hour."

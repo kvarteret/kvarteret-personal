@@ -1,226 +1,125 @@
-# ADR-001: Adopt Modular Monolith with Lightweight Event Bus
+# ADR-001: Pragmatic Modular Monolith with Explicit Workflows
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-06-09
+**Updated:** 2026-06-10
 **Deciders:** E-Tjenesten
-
-## Inspiration: PostHog
-
-PostHog runs a 100k+ line Django monolith with 50+ engineers and actively argues
-against microservices. Their stack mirrors ours in key ways:
-
-| PostHog | Us |
-|---|---|
-| Django monolith | FastAPI monolith |
-| Celery (email, quick async) | SimpleEventBus (in-process) |
-| Temporal (mission-critical workflows) | Future if needed |
-| ClickHouse + PostgreSQL | PostgreSQL |
-| Feature flags for rollout | Coexistence during migration |
-
-PostHog's task worker decision tree maps directly to our event bus scope:
-
-> *"Is it a tiny, low-latency, fire-and-forget task (e.g. send email)? → Celery"*
-> *"Is it mission-critical with complex failure scenarios? → Temporal"*
-
-Our event bus is the in-process equivalent of Celery for tiny tasks.
-If we ever need exactly-once guarantees, retry policies, or long-running
-workflows, we'd add Temporal — not build it ourselves.
 
 ## Context
 
-The kvarteret-personal codebase is a FastAPI application with 10 domain
-modules. Each module is naturally isolated (zero cross-imports between
-domain modules) and wired through a single DI container in `runtime.py`.
-The application follows a Transaction Script pattern: each service method
-performs a complete business operation from start to finish, including
-side effects like cache invalidation, email delivery, and audit logging.
+`kvarteret-personal` is a FastAPI modular monolith. Routes delegate to domain
+services, services use SQLAlchemy Core repositories, and `app/runtime.py` wires
+the object graph.
 
-This approach works but creates two problems:
+The main architecture problem is not lack of infrastructure. The problem is
+that stateful workflows are hard to trace when one large service mixes:
 
-1. **Service methods have too many responsibilities.** A single method like
-   `submit_volunteer_application` handles validation, photo processing, DB
-   persistence, cache invalidation, and email notification. This makes
-   methods long and hard to test in isolation.
+- state transitions
+- validation
+- SQL persistence
+- photo handling
+- cache invalidation
+- email delivery
+- cleanup
 
-2. **Cross-cutting concerns are duplicated.** Every method that creates or
-   modifies data manually calls `_invalidate_pending_count_cache()`,
-   `log_admin_activity()`, or `email_sender.send_email()`. There is no
-   central place to add a new cross-cutting concern.
+The clearest example is volunteer applications. The lifecycle is:
+
+```text
+invite -> submit -> mark trial shift -> approve/decline
+```
+
+That lifecycle should be readable from one file.
 
 ## Decision
 
-We will adopt a **Modular Monolith** architecture with a lightweight
-in-process event bus, inspired by PostHog's approach:
+Adopt a pragmatic modular-monolith style organized around explicit workflows for
+stateful business processes.
 
-> *"A well-structured monolith with clear boundaries is preferable to a
-> poorly-structured set of microservices."*
+For workflow-heavy modules:
 
-### What changes
+- add a `workflow.py` coordinator whose methods read like the business process
+- keep routes responsible for HTTP/form parsing
+- keep repositories responsible for SQL
+- keep side effects behind named methods such as `after_submitted` and
+  `after_approved`
+- avoid putting core approval rules or state transitions behind an event bus
 
-1. **New module: `app/events.py`** — A `SimpleEventBus` (~30 lines) with
-   `emit(event)` and `subscribe(event_type, handler)`. Handlers are async
-   callables registered at startup. In-process delivery (same event loop).
-   Equivalent to PostHog's "Celery for tiny tasks" — no persistence,
-   no retry, no external queues.
+For read-heavy admin modules:
 
-2. **Domain events as dataclasses** — Each module defines its events in
-   `domain/<module>/events.py`. Events are plain `@dataclass` objects.
-   No base class required, no serialization (in-process only).
+- split query/read-model code out of broad service classes when it reduces
+  file size without changing behavior
+- keep write methods in the service that owns the mutation
 
-3. **Service methods publish, handlers subscribe** — Core business logic
-   stays in service methods. Side effects move to standalone handler
-   functions registered at startup.
+## Current Implementation
 
-4. **Handlers registered in `runtime.py`** — The DI container wires
-   handlers at startup, injecting dependencies into handler functions.
+`app/domain/volunteer_applications/workflow.py` is the proof point. It
+coordinates:
 
-### What does NOT change
+- `invite`
+- `register_public_prospect`
+- `submit`
+- `mark_trial_shift_attended`
+- `approve`
+- `drop_group_invitee`
+- `delete`
+- `resend_invitation`
 
-- Domain modules remain isolated (no cross-imports)
-- DI container remains the central wiring point
-- Database access pattern stays the same
-- Route handlers continue delegating to services
-- No event sourcing, no CQRS, no eventual consistency
-- No Celery, Redis, Temporal, or external queues (until needed)
+`app/domain/volunteer_applications/side_effects.py` centralizes the current
+side effects:
 
-### Event bus contract
+- pending-count cache invalidation
+- invitation email
+- friend invitation email
+- profile completion email
+- deleted-application photo cleanup
 
-```python
-# app/events.py
+`VolunteerApplicationsService` remains the route-facing facade for compatibility
+with existing route dependencies and tests. Its public methods delegate to the
+workflow; the lower-level record/transition methods retain the existing
+validation and repository behavior.
 
-EventHandler = Callable[[Any], Coroutine[Any, Any, None]]
+## Event Bus Policy
 
-class SimpleEventBus:
-    def __init__(self):
-        self._handlers: dict[type, list[EventHandler]] = defaultdict(list)
+`app/events.py` may remain as a small in-process utility for local, non-critical
+side effects. It is not the organizing architecture and should not carry core
+state transitions, approval rules, or business invariants.
 
-    def subscribe(self, event_type: type, handler: EventHandler) -> None:
-        self._handlers[event_type].append(handler)
+Do not add Celery, Redis queues, Temporal, event sourcing, CQRS, or
+microservices for this app unless a concrete reliability requirement appears.
 
-    async def emit(self, event: object) -> None:
-        for handler in self._handlers.get(type(event), []):
-            await handler(event)
-```
+## Cleanup Decisions
 
-## Migration Plan
+Volunteer documents are removed from the active app surface. The app no longer
+serves document panels, document routes, signed document media URLs, or document
+storage APIs.
 
-Each phase is independently deployable — old code and new event-driven
-code coexist during migration (PostHog-style feature flags optional).
-
-- **Phase 1:** `SimpleEventBus` + `volunteer_applications` (cache invalidation)
-- **Phase 2:** `volunteers` module (photo updates, cache invalidation)
-- **Phase 3:** `mobile_card` module (access code emails)
-- **Phase 4:** `admin_accounts` module (onboarding emails)
-- **Future:** If we need retry/guarantee → Temporal (not Celery, per
-  PostHog's cost analysis: Temporal is ~300x cheaper per operation)
-
-## Line Count Reality Check
-
-The diff shows **+3,914 / -1,679 = net +2,235 lines**. This is misleading.
-Breaking it down:
-
-| Category | Lines | Production? |
-|---|---|---|
-| Agent skills (.agents/*.md) | +275 | ❌ Docs |
-| Ralph task files (.ralph/*.md) | +156 | ❌ Docs |
-| ADR-001 | +150 | ❌ Docs |
-| Ruff formatting (108 files auto-reformatted) | +1,200 | ❌ Formatting |
-| String constants (table_defs/public.py) | +100 | ✅ Trivial |
-| Legacy auth removal (net) | -500 | ✅ Deletion |
-| Event bus + handlers + tests | +200 | ✅ New feature |
-| **Actual production logic** | **~-300 net** | ✅ |
-
-The codebase got **smaller and simpler** — we removed 500 lines of dead legacy
-migration code and added 200 lines of event bus infrastructure. The rest is
-documentation and automated formatting.
-
-## The Three Monstrosities
-
-Three modules account for 65% of the domain logic. Here's the plan for each.
-
-### Monstrosity 1: volunteer_applications (1013 lines, 71 methods)
-
-**Problem:** The multi-step workflow (invite → submit → trial shift → approve)
-is spread across 71 methods that mix validation, persistence, and side effects.
-It's hard to trace the happy path.
-
-**Plan: Process Manager pattern.** Extract the workflow into a single
-coordination method that reads like a pipeline:
-
-```python
-async def process_application(registration_id):
-    app = await get_application(registration_id)
-    if not app.submitted:      return "awaiting_submission"
-    if not app.trial_done:     return "awaiting_trial_shift"
-    if not app.approved:       return await approve(app)    # → volunteer created
-    return "complete"
-```
-
-Each step emits a domain event (`ApplicationSubmitted`, `TrialShiftMarked`,
-`ApplicationApproved`). Side effects (cache, email) live in handlers.
-The process manager is ~40 lines replacing the current scattered
-`if not submitted: raise`, `if trial_shift is None: raise` checks.
-
-**Before (fragmented):**
-```
-create_invitation() → email sent inline
-submit() → validate + photo + save + cache + event
-mark_trial() → validate + save
-approve() → validate + create volunteer + cache + email
-```
-
-**After (pipeline):**
-```
-create_invitation() → save + emit(InvitationCreated)
-submit() → validate + photo + save + emit(ApplicationSubmitted)
-mark_trial() → validate + save + emit(TrialShiftMarked)
-approve() → validate + save + emit(ApplicationApproved)
-
-Handlers (registered once):
-  on(ApplicationSubmitted) → cache.invalidate()
-  on(ApplicationApproved) → cache.invalidate() + email.send()
-```
-
-### Monstrosity 2: volunteers (889 lines, 46 methods)
-
-**Problem:** The volunteers service tries to be everything — profile CRUD,
-role management, course completions, document management, photo upload,
-relations, search options, caching.
-
-**Immediate win: Remove documents.** Documents (ID files, contracts) are
-uploaded but rarely accessed. The `list_volunteer_documents`,
-`delete_document_for_volunteer`, and document upload logic can be deleted,
-along with the `dokumenter` table queries. **~120 lines removed, 4 methods gone.**
-
-**Medium-term: Split role management.** Role assignments (`add_role_assignment`,
-`update_role_assignment`, `delete_role_assignment`, `list_role_assignments`,
-`list_assignment_groups`, `list_assignment_roles`) are a self-contained
-subdomain. Extract into `app/domain/role_assignments/` — a new bounded context
-with its own service and repository. **~200 lines extracted.**
-
-### Monstrosity 3: groups (1018 lines, 44 methods)
-
-**Problem:** God service. GroupsService does CRUD, stats, retention analysis,
-org hierarchy, member counts, role management, history management, and
-archive/delete operations — all in one class.
-
-**Plan: Split read/write.** The GroupService has two distinct halves:
-- **Write side** (14 methods): create/update/archive/delete group,
-  create/update/delete role, delete history entry
-- **Read side** (30 methods): list groups, detail, history, stats, retention,
-  member counts, org overview
-
-Extract the read side into `app/domain/groups/queries.py` — a read-model
-module with pure query methods. The write side stays in `service.py`.
-No new infrastructure, just file splitting. **Zero behavior change.**
+Supabase Storage is no longer a media backend for `kvarteret-personal`.
+Personnel photos use Azure Blob Storage through `StorageService`. Supabase
+continues to provide Postgres and Auth for this app.
 
 ## Consequences
 
-**Positive:**
-- Service methods shorter, focused on core business logic
-- Cross-cutting concerns centralized in handler functions
-- Handlers independently testable with mock events
+Positive:
 
-**Negative:**
-- Indirection: must trace from service → events → handlers
-- Fire-and-forget: if a handler fails after DB commit, side effect is lost
+- The volunteer application lifecycle is traceable from one coordinator.
+- Side effects have names and tests instead of being scattered through long
+  service methods.
+- Routes and public behavior stay stable while internals become easier to
+  navigate.
+- Removing documents and Supabase media fallback reduces active infrastructure
+  surface area.
+- Group admin read/statistics SQL now lives in `groups/queries.py`, keeping
+  `groups/service.py` focused on writes and delete guards.
+
+Negative:
+
+- There is one more internal module to follow from the service facade.
+- The service still contains many data classes and operation methods; this ADR
+  does not attempt a full domain-model rewrite.
+
+## Follow-up
+
+- Extract volunteer role assignments into their own domain module after the
+  document cleanup settles.
+- Keep future refactors staged and behavior-preserving unless a product change
+  requires otherwise.

@@ -15,8 +15,8 @@ class SimpleEventBus:
 
     Usage:
         bus = SimpleEventBus()
-        bus.subscribe(ApplicationSubmitted, on_application_submitted)
-        await bus.emit(ApplicationSubmitted(application_id=42))
+        bus.subscribe(SomeSideEffectEvent, on_some_side_effect)
+        await bus.emit(SomeSideEffectEvent(record_id=42))
     """
 
     def __init__(self) -> None:

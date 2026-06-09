@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
@@ -48,10 +47,6 @@ from app.domain.volunteers.semester_transfer import SemesterTransferService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.events import SimpleEventBus
-from app.domain.volunteer_applications.events import ApplicationSubmitted
-
-logger = logging.getLogger(__name__)
-
 
 # Keep the app bootable in local and test environments that do not have live
 # Supabase credentials, while still failing fast once a protected auth path is used.
@@ -216,21 +211,12 @@ def build_application_container(
             applicant_email_renderer=applicant_email_renderer,
             storage_service=storage_service,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
-            event_bus=event_bus,
         ),
         semester_transfer_service=SemesterTransferService(
             session_factory=session_factory
         ),
         feedback_service=FeedbackService(resolved_settings),
         event_bus=event_bus,
-    )
-
-    # Register event handlers — side effects decoupled from service methods.
-    event_bus.subscribe(
-        ApplicationSubmitted,
-        lambda event: _on_application_submitted(
-            event, container.volunteer_applications_service
-        ),
     )
 
     return container
@@ -246,14 +232,8 @@ async def app_lifespan(app: FastAPI):
         await app.state.container.aclose()
 
 
-# Photos and documents can be configured independently, so only create the
-# storage adapter when at least one side of the split storage setup is usable.
 def _build_storage_service(settings: Settings) -> StorageService | None:
-    has_supabase_documents = bool(
-        settings.supabase_url and settings.supabase_secret_key
-    )
-    has_azure_photos = bool(settings.azure_blob_connection_string)
-    if not has_supabase_documents and not has_azure_photos:
+    if not settings.azure_blob_connection_string:
         return None
     return StorageService(settings)
 
@@ -262,15 +242,3 @@ def _build_supabase_auth_gateway(settings: Settings) -> SupabaseAuthGatewayProto
     if not settings.supabase_url or not settings.supabase_secret_key:
         return UnconfiguredSupabaseAuthGateway()
     return SupabaseAuthGateway(settings)
-
-
-async def _on_application_submitted(event: ApplicationSubmitted, service: VolunteerApplicationsService) -> None:
-    """Handler: invalidate pending count cache when an application is submitted."""
-    service.invalidate_pending_count_cache()
-    logger.info(
-        "Application submitted",
-        extra={
-            "event": "volunteer_applications.application_submitted",
-            "event_data": {"registration_id": event.registration_id},
-        },
-    )

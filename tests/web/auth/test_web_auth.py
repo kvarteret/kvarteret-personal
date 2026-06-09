@@ -101,9 +101,6 @@ class FakeVolunteersService:
     async def list_role_assignments(self, volunteer_id: int, limit: int = 12):
         return []
 
-    async def list_volunteer_documents(self, volunteer_id: int):
-        return []
-
     async def get_volunteer_relations(self, volunteer_id: int):
         return None
 

@@ -30,7 +30,6 @@ from app.db.tables import (
     registrering,
     registrering_gruppe_medlem,
     volunteer_cards,
-    volunteer_documents,
     volunteer_next_of_kin,
     volunteer_photos,
     volunteer_records,
@@ -265,24 +264,6 @@ class VolunteersRepository(SqlAlchemyRepository):
             .where(assignment_roles.c.id_gruppe == group_id)
             .order_by(
                 assignment_roles.c.verv.asc().nullslast(), assignment_roles.c.id.asc()
-            )
-        )
-        return await self.fetch_all_mappings(stmt)
-
-    async def fetch_volunteer_document_rows(
-        self, volunteer_id: int
-    ) -> list[dict[str, Any]]:
-        stmt = (
-            select(
-                volunteer_documents.c.id,
-                volunteer_documents.c.filename,
-                volunteer_documents.c.filetype,
-                volunteer_documents.c.gruppekobling,
-                volunteer_documents.c.opprettet,
-            )
-            .where(volunteer_documents.c.id_personal == volunteer_id)
-            .order_by(
-                volunteer_documents.c.opprettet.desc(), volunteer_documents.c.id.desc()
             )
         )
         return await self.fetch_all_mappings(stmt)
@@ -607,60 +588,6 @@ class VolunteersRepository(SqlAlchemyRepository):
             )
         )
 
-    async def document_exists(self, *, volunteer_id: int, filename: str) -> bool:
-        return bool(
-            await self.fetch_scalar(
-                select(
-                    exists().where(
-                        volunteer_documents.c.id_personal == volunteer_id,
-                        func.lower(volunteer_documents.c.filename) == filename.lower(),
-                    )
-                )
-            )
-        )
-
-    async def create_document_record(
-        self,
-        *,
-        volunteer_id: int,
-        group_id: int | None,
-        filename: str,
-        extension: str,
-    ):
-        stmt = (
-            insert(volunteer_documents)
-            .values(
-                id_personal=volunteer_id,
-                gruppekobling=group_id,
-                filename=filename,
-                filetype=extension,
-            )
-            .returning(
-                volunteer_documents.c.id,
-                volunteer_documents.c.id_personal,
-                volunteer_documents.c.gruppekobling,
-                volunteer_documents.c.filename,
-                volunteer_documents.c.filetype,
-            )
-        )
-        return await self.execute_one_mapping(stmt)
-
-    async def fetch_document_record(self, document_id: int):
-        return await self.fetch_first_mapping(
-            select(
-                volunteer_documents.c.id,
-                volunteer_documents.c.id_personal,
-                volunteer_documents.c.filename,
-            )
-            .where(volunteer_documents.c.id == document_id)
-            .limit(1)
-        )
-
-    async def delete_document_record(self, document_id: int) -> None:
-        await self.execute(
-            delete(volunteer_documents).where(volunteer_documents.c.id == document_id)
-        )
-
     async def delete_volunteer(self, volunteer_id: int) -> None:
         async def remove(session) -> None:
             await session.execute(
@@ -671,11 +598,6 @@ class VolunteersRepository(SqlAlchemyRepository):
             await session.execute(
                 delete(course_completions).where(
                     course_completions.c.id_personal == volunteer_id
-                )
-            )
-            await session.execute(
-                delete(volunteer_documents).where(
-                    volunteer_documents.c.id_personal == volunteer_id
                 )
             )
             await session.execute(

@@ -6,7 +6,7 @@ from asyncio import to_thread
 from dataclasses import dataclass
 from datetime import date, datetime
 from secrets import token_hex, token_urlsafe
-from typing import Any, Protocol
+from typing import Protocol
 
 from app.cache import TTLCache
 from app.config import Settings
@@ -20,7 +20,10 @@ from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number, normalize_required_phone_number
 from app.infrastructure.formatting.semester import format_semester_code
 from app.infrastructure.storage.service import StorageService
-from app.domain.volunteer_applications.events import ApplicationSubmitted
+from app.domain.volunteer_applications.side_effects import (
+    VolunteerApplicationSideEffects,
+)
+from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkflow
 
 _REGISTRATION_NOT_FOUND = "Registration was not found."
 
@@ -380,17 +383,25 @@ class VolunteerApplicationsService:
         applicant_email_renderer: ApplicantEmailTemplateRendererProtocol | None = None,
         storage_service: StorageService | None = None,
         pending_count_cache_ttl_seconds: int = 30,
-        event_bus: Any | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
         self.email_sender = email_sender
         self.applicant_email_renderer = applicant_email_renderer or ApplicantEmailTemplateRenderer()
         self.storage_service = storage_service
-        self.event_bus = event_bus
         self._pending_count_cache: TTLCache[str, int] = TTLCache(
             ttl_seconds=pending_count_cache_ttl_seconds,
             max_entries=1,
+        )
+        self.workflow = VolunteerApplicationWorkflow(
+            operations=self,
+            side_effects=VolunteerApplicationSideEffects(
+                invalidate_pending_count_cache=self._invalidate_pending_count_cache,
+                send_invitation_email=self._send_invitation_email,
+                send_friend_invitation_email=self._send_friend_invitation_email,
+                send_profile_completion_email=self._send_profile_completion_email,
+                storage_service=storage_service,
+            ),
         )
 
     async def create_public_prospect_registration(
@@ -399,6 +410,16 @@ class VolunteerApplicationsService:
         *,
         base_url: str | None = None,
     ) -> VolunteerApplicationDetail:
+        return await self.workflow.register_public_prospect(
+            registration, base_url=base_url
+        )
+
+    async def create_public_prospect_registration_record(
+        self,
+        registration: PublicProspectRegistrationInput,
+        *,
+        base_url: str | None = None,
+    ) -> PublicProspectRegistrationResult:
         normalized_email = registration.email.strip().lower()
         if not normalized_email:
             raise VolunteerApplicationValidationError("E-postadresse er påkrevd.")
@@ -456,27 +477,27 @@ class VolunteerApplicationsService:
             inviter_name=_build_full_name(first_name, last_name),
             first_choice_group_name=known_choice_names[first_choice_slug],
         )
-        self._invalidate_pending_count_cache()
-        for invite in result.friend_invites:
-            try:
-                await self._send_friend_invitation_email(
-                    email=invite.email,
-                    token=invite.token,
-                    inviter_name=invite.inviter_name,
-                    first_choice_group_name=invite.first_choice_group_name,
-                    base_url=base_url,
-                )
-            except Exception:
-                # The registration is already persisted so admins can resend the invitation.
-                logger.exception("Failed to send group volunteer invitation email for registration %s", invite.registration_id)
-                pass
-        return result.detail
+        return result
 
     async def create_volunteer_application_invitation(
         self,
         email: str,
         *,
         base_url: str | None = None,
+        initial_group_id: int | None = None,
+        initial_role_id: int | None = None,
+    ) -> VolunteerApplicationInvite:
+        return await self.workflow.invite(
+            email,
+            base_url=base_url,
+            initial_group_id=initial_group_id,
+            initial_role_id=initial_role_id,
+        )
+
+    async def create_invitation_record(
+        self,
+        email: str,
+        *,
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite:
@@ -495,11 +516,6 @@ class VolunteerApplicationsService:
             initial_group_id=initial_group_id,
             initial_role_id=initial_role_id,
         )
-        try:
-            await self._send_invitation_email(email=invite.email, token=invite.token, base_url=base_url)
-        except Exception:
-            await self.repository.delete_volunteer_application(invite.registration_id)
-            raise
         return invite
 
     async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
@@ -595,6 +611,25 @@ class VolunteerApplicationsService:
         photo_content: bytes | None = None,
         photo_content_type: str | None = None,
     ) -> VolunteerApplicationDetail:
+        return await self.workflow.submit(
+            token,
+            submission,
+            base_url=base_url,
+            photo_filename=photo_filename,
+            photo_content=photo_content,
+            photo_content_type=photo_content_type,
+        )
+
+    async def submit_application_record(
+        self,
+        token: str,
+        submission: VolunteerApplicationSubmissionInput,
+        *,
+        base_url: str | None = None,
+        photo_filename: str | None = None,
+        photo_content: bytes | None = None,
+        photo_content_type: str | None = None,
+    ) -> VolunteerApplicationDetail:
         existing = await self.get_volunteer_application_by_token(token)
         if existing is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
@@ -638,16 +673,6 @@ class VolunteerApplicationsService:
         detail = await self.get_volunteer_application_by_token(token)
         if detail is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
-
-        if self.event_bus is not None:
-            await self.event_bus.emit(
-                ApplicationSubmitted(
-                    registration_id=detail.registration_id,
-                    first_name=detail.first_name,
-                    last_name=detail.last_name,
-                    email=detail.email,
-                )
-            )
 
         return detail
 
@@ -712,8 +737,6 @@ class VolunteerApplicationsService:
                     pass
             raise
 
-        self._invalidate_pending_count_cache()
-
         should_remove_old = (
             uploaded_new_photo
             and old_storage_path is not None
@@ -729,6 +752,16 @@ class VolunteerApplicationsService:
                 pass
 
     async def mark_trial_shift_attended(
+        self,
+        registration_id: int,
+        *,
+        attended: bool,
+    ) -> VolunteerApplicationDetail:
+        return await self.workflow.mark_trial_shift_attended(
+            registration_id, attended=attended
+        )
+
+    async def mark_trial_shift_attended_record(
         self,
         registration_id: int,
         *,
@@ -750,6 +783,18 @@ class VolunteerApplicationsService:
         accepted_group_id: int | None = None,
         base_url: str | None = None,
     ) -> int:
+        return await self.workflow.approve(
+            registration_id,
+            accepted_group_id=accepted_group_id,
+            base_url=base_url,
+        )
+
+    async def approve_application_record(
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None = None,
+    ) -> tuple[VolunteerApplicationDetail, int]:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
@@ -775,9 +820,7 @@ class VolunteerApplicationsService:
             detail,
             accepted_group_id=resolved_group_id,
         )
-        self._invalidate_pending_count_cache()
-        await self._send_profile_completion_email(email=detail.email, token=detail.token, base_url=base_url)
-        return volunteer_id
+        return detail, volunteer_id
 
     async def approve_volunteer_application_group(
         self,
@@ -815,26 +858,35 @@ class VolunteerApplicationsService:
         *,
         dropped_by_user_id: int | None = None,
     ) -> None:
+        await self.workflow.drop_group_invitee(
+            registration_id, dropped_by_user_id=dropped_by_user_id
+        )
+
+    async def drop_group_invitee_record(
+        self,
+        registration_id: int,
+        *,
+        dropped_by_user_id: int | None = None,
+    ) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         if detail.group_role != "invitee" or detail.group_status != "active":
             raise VolunteerApplicationConflictError("Only active group invitees can be removed from a group.")
         await self.repository.drop_group_invitee(registration_id, dropped_by_user_id=dropped_by_user_id)
-        self._invalidate_pending_count_cache()
+        return detail
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
+        await self.workflow.delete(registration_id)
+
+    async def delete_application_record(
+        self, registration_id: int
+    ) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         await self.repository.delete_volunteer_application(registration_id)
-        self._invalidate_pending_count_cache()
-        storage_path = _build_photo_storage_path(detail.photo_sha1, detail.photo_filetype)
-        if storage_path and self.storage_service is not None:
-            try:
-                await to_thread(self.storage_service.remove_photo, storage_path)
-            except Exception:
-                pass
+        return detail
 
     async def resend_volunteer_application_invitation(
         self,
@@ -842,10 +894,17 @@ class VolunteerApplicationsService:
         *,
         base_url: str | None = None,
     ) -> VolunteerApplicationDetail:
+        return await self.workflow.resend_invitation(
+            registration_id, base_url=base_url
+        )
+
+    async def resend_invitation_record(
+        self,
+        registration_id: int,
+    ) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
-        await self._send_invitation_email(email=detail.email, token=detail.token, base_url=base_url)
         return detail
 
     def _normalize_friend_emails(

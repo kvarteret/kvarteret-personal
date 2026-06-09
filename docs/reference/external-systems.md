@@ -8,8 +8,7 @@ This page documents third-party systems used by `kvarteret-personal` and related
 | --- | --- | --- | --- |
 | Supabase Postgres | Personnel data, web sessions, event schema, registration data, Spotify token storage | `app/db`, repositories, `migrations/` | read/write |
 | Supabase Auth | Admin account lifecycle, login bridge, password setup | `app/auth/supabase_auth.py` | read/write over HTTP |
-| Supabase Storage | Personnel documents, optional photo storage, bucket maintenance | `app/infrastructure/storage/service.py` | read/write over Storage API |
-| Azure Blob Storage | Legacy-compatible personnel photo storage when configured | `app/infrastructure/storage/service.py` | read/write and signed read URLs |
+| Azure Blob Storage | Personnel photo storage | `app/infrastructure/storage/service.py` | read/write and signed read URLs |
 | Spotify Web API | Shared now-playing state and OAuth refresh token exchange | `app/domain/spotify/now_playing.py` | OAuth and read |
 | SMTP provider | Mobile-card access codes and onboarding/application email | `app/infrastructure/email/smtp.py` | outbound email |
 | Linear | Feedback submissions from the admin UI and public feedback API | `app/domain/feedback/service.py` | outbound GraphQL API |
@@ -21,13 +20,9 @@ Supabase Postgres is the primary database. The app connects through SQLAlchemy C
 
 Supabase Auth is not the mobile-card auth provider. It is used for admin-user lifecycle and password flows. The app bridges old auth state into Supabase Auth and stores web sessions separately.
 
-Supabase Storage is used for private documents and can be used for personnel photos when Azure photo credentials are absent. Buckets default to `personnel-photos` and `personnel-documents`.
-
 ## Azure Blob Storage
 
-Azure Blob Storage is used for personnel photos when `AZURE_BLOB_CONNECTION_STRING` is configured. The default container is `images`.
-
-The storage adapter deliberately hides this split. Callers ask for photo operations; the adapter chooses Azure first when configured, otherwise Supabase Storage.
+Azure Blob Storage is the only supported media backend for personnel photos. Configure `AZURE_BLOB_CONNECTION_STRING`; the default container is `images`.
 
 ## Spotify
 

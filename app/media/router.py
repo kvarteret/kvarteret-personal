@@ -42,11 +42,6 @@ AUTHENTICATED_IMAGE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Vary": "Accept, Authorization, Cookie",
 }
-DOCUMENT_HEADERS = {
-    "Cache-Control": "private, no-store",
-    "Pragma": "no-cache",
-    "X-Content-Type-Options": "nosniff",
-}
 PHOTO_VARIANT_CACHE: TTLCache[tuple[str, int], ProcessedPhoto] = TTLCache(
     ttl_seconds=3600, max_entries=4096
 )
@@ -143,39 +138,6 @@ async def get_authenticated_photo(
         media_type=photo.content_type,
         etag=_photo_etag(photo_path, requested_size),
         headers=AUTHENTICATED_IMAGE_HEADERS,
-    )
-
-
-@router.get("/media/documents/{document_path:path}")
-async def get_document(
-    request: Request,
-    document_path: str,
-    token: str = Query(..., min_length=1),
-    media_token_service: MediaTokenService = Depends(get_media_token_service),
-) -> Response:
-    if not media_token_service.verify_media_token(
-        token=token, kind="document", path=document_path
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid media token."
-        )
-    try:
-        content = await to_thread(
-            _get_storage_service(request).download_document, document_path
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found."
-        ) from exc
-    media_type = mimetypes.guess_type(document_path)[0] or "application/octet-stream"
-    filename = document_path.rsplit("/", 1)[-1]
-    return Response(
-        content=content,
-        media_type=media_type,
-        headers={
-            **DOCUMENT_HEADERS,
-            "Content-Disposition": f'inline; filename="{filename}"',
-        },
     )
 
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import mimetypes
 from asyncio import to_thread
 from pathlib import Path
 from secrets import token_hex
@@ -18,9 +17,7 @@ from app.shared.text import normalize_search_query
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number
 from app.domain.volunteers.mappers import (
-    build_document_storage_path,
     map_course_completion_item,
-    map_document_item,
     map_group_option,
     map_role_assignment_item,
     map_volunteer_detail,
@@ -33,9 +30,6 @@ from app.domain.volunteers.models import (
     CourseCompletionNotFoundError,
     DuplicateCourseCompletionError,
     DuplicateRoleAssignmentError,
-    DuplicateDocumentError,
-    DocumentItem,
-    DocumentNotFoundError,
     GroupOption,
     InvalidCourseCompletionError,
     InvalidVolunteerRelationsError,
@@ -44,7 +38,6 @@ from app.domain.volunteers.models import (
     RoleAssignmentNotFoundError,
     UnsupportedUploadError,
     VolunteerDetail,
-    VolunteerDocumentUploadResult,
     VolunteerListItem,
     VolunteerListPage,
     VolunteerCourseCompletionItem,
@@ -257,28 +250,6 @@ class VolunteersService:
                 details={"volunteer_id": volunteer_id},
             )
 
-    async def list_volunteer_documents(self, volunteer_id: int) -> list[DocumentItem]:
-        started_at = perf_counter()
-        cached = self._cache_get(volunteer_id, "documents")
-        if cached is not None:
-            return cached
-        try:
-            rows = await self.repository.fetch_volunteer_document_rows(volunteer_id)
-            items = [map_document_item(volunteer_id, row) for row in rows]
-            for item in items:
-                item.download_url = _build_document_url(
-                    self.media_token_service, volunteer_id, item.filename
-                )
-            self._cache_set(volunteer_id, "documents", items)
-            return items
-        finally:
-            log_operation_timing(
-                logger,
-                operation="volunteers.detail.documents",
-                started_at=started_at,
-                details={"volunteer_id": volunteer_id},
-            )
-
     async def get_volunteer_relations(self, volunteer_id: int) -> VolunteerRelations:
         started_at = perf_counter()
         cached = self._cache_get(volunteer_id, "relations")
@@ -386,10 +357,6 @@ class VolunteersService:
             raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
 
         photo_row = await self.repository.fetch_photo_record(volunteer_id)
-        document_rows = await self.repository.fetch_volunteer_document_rows(
-            volunteer_id
-        )
-
         await self.repository.delete_volunteer(volunteer_id)
         self._invalidate_volunteer_cache(volunteer_id)
 
@@ -402,16 +369,6 @@ class VolunteersService:
                     f"{photo_row['sha1']}.{photo_row['filetype']}"
                 )
             )
-
-        for row in document_rows:
-            if row.get("filename"):
-                await _best_effort_remove(
-                    lambda filename=row["filename"]: (
-                        self.storage_service.remove_document(
-                            build_document_storage_path(volunteer_id, filename)
-                        )
-                    )
-                )
 
     async def add_course_completion(
         self,
@@ -635,75 +592,6 @@ class VolunteersService:
         )
         self._invalidate_volunteer_cache(volunteer_id)
 
-    async def upload_document(
-        self,
-        volunteer_id: int,
-        filename: str,
-        content: bytes,
-        content_type: str | None,
-        group_id: int | None = None,
-    ) -> VolunteerDocumentUploadResult:
-        safe_filename = _sanitize_filename(filename)
-        extension = _normalize_extension(safe_filename)
-        if extension not in {"pdf", "jpg", "jpeg", "png"}:
-            raise UnsupportedUploadError("Documents must be pdf, jpg, jpeg, or png.")
-        if not await self.repository.volunteer_exists(volunteer_id):
-            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
-        if await self.repository.document_exists(
-            volunteer_id=volunteer_id, filename=safe_filename
-        ):
-            raise DuplicateDocumentError(
-                f"Document {safe_filename} already exists for volunteer {volunteer_id}."
-            )
-
-        storage_path = build_document_storage_path(volunteer_id, safe_filename)
-        storage_service = self._require_storage_service()
-        await to_thread(
-            storage_service.upload_document,
-            storage_path,
-            content,
-            _resolve_content_type(safe_filename, content_type),
-        )
-        try:
-            row = await self.repository.create_document_record(
-                volunteer_id=volunteer_id,
-                group_id=group_id,
-                filename=safe_filename,
-                extension=extension,
-            )
-        except Exception:
-            await _best_effort_remove(
-                lambda: storage_service.remove_document(storage_path)
-            )
-            raise
-        self._invalidate_volunteer_cache(volunteer_id)
-
-        return VolunteerDocumentUploadResult(
-            document_id=row["id"],
-            volunteer_id=row["id_personal"],
-            filename=row["filename"],
-            filetype=row["filetype"],
-            group_id=row["gruppekobling"],
-            storage_path=storage_path,
-            download_url=_require_media_token_service(
-                self.media_token_service
-            ).build_document_media_url(storage_path),
-        )
-
-    async def delete_document(self, document_id: int) -> None:
-        row = await self.repository.fetch_document_record(document_id)
-        if not row:
-            raise DocumentNotFoundError(f"Document {document_id} was not found.")
-        await self._delete_document_row(row)
-
-    async def delete_document_for_volunteer(
-        self, volunteer_id: int, document_id: int
-    ) -> None:
-        row = await self.repository.fetch_document_record(document_id)
-        if not row or row["id_personal"] != volunteer_id:
-            raise DocumentNotFoundError(f"Document {document_id} was not found.")
-        await self._delete_document_row(row)
-
     def _invalidate_volunteer_cache(self, volunteer_id: int) -> None:
         self._cache.pop(volunteer_id)
 
@@ -760,17 +648,6 @@ class VolunteersService:
             else None,
         )
 
-    async def _delete_document_row(self, row) -> None:
-        await self.repository.delete_document_record(row["id"])
-        storage_service = self._require_storage_service()
-        await _best_effort_remove(
-            lambda: storage_service.remove_document(
-                build_document_storage_path(row["id_personal"], row["filename"])
-            )
-        )
-        self._invalidate_volunteer_cache(row["id_personal"])
-
-
 def _sanitize_filename(filename: str) -> str:
     safe_name = Path(filename).name.strip()
     if not safe_name:
@@ -783,12 +660,6 @@ def _normalize_extension(filename: str) -> str:
     if not suffix:
         raise UnsupportedUploadError("Uploaded files must include an extension.")
     return suffix
-
-
-def _resolve_content_type(filename: str, provided: str | None) -> str:
-    if provided:
-        return provided
-    return mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -830,18 +701,6 @@ def _build_photo_url(
         return None
     return _require_media_token_service(media_token_service).build_photo_media_url(
         f"{sha1}.{filetype}"
-    )
-
-
-def _build_document_url(
-    media_token_service: MediaTokenService | None,
-    volunteer_id: int,
-    filename: str | None,
-) -> str | None:
-    if not filename:
-        return None
-    return _require_media_token_service(media_token_service).build_document_media_url(
-        build_document_storage_path(volunteer_id, filename)
     )
 
 
