@@ -18,6 +18,7 @@ from app.infrastructure.email.mobile_card_templates import (
 )
 from app.media_tokens import MediaTokenService
 from app.infrastructure.email.protocols import EmailSenderProtocol
+from app.infrastructure.email.smtp import SmtpDeliveryError
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.domain.mobile_card.repository import MobileCardRepository, MobileCardSnapshot
 from app.infrastructure.formatting.semester import get_current_semester_code
@@ -321,11 +322,20 @@ class MobileCardService:
             access_code=access_code,
             expires_in_minutes=self.settings.mobile_card_access_code_ttl_minutes,
         )
-        await self.email_sender.send_email(
-            recipient_email=email.strip(),
-            subject=rendered_email.subject,
-            html_body=rendered_email.html_body,
-        )
+        try:
+            await self.email_sender.send_email(
+                recipient_email=email.strip(),
+                subject=rendered_email.subject,
+                html_body=rendered_email.html_body,
+            )
+        except SmtpDeliveryError:
+            logger.exception(
+                "Failed to deliver access code email for volunteer %s",
+                volunteer_row["id"],
+            )
+            raise MobileCardError(
+                "Could not send access code email. Please try again later."
+            )
         logger.info(
             "Sent mobile-card access code email for volunteer %s", volunteer_row["id"]
         )
@@ -353,6 +363,9 @@ class MobileCardService:
             message="Too many access-code attempts. Try again later.",
         )
 
+        # Increment rate limit BEFORE validation to prevent TOCTOU races.
+        self._increment_rate_limit(self._session_attempt_counts, attempt_keys)
+
         volunteer_row = await self.repository.find_volunteer_by_email_and_code(
             email=normalized_email,
             access_code=normalized_access_code,
@@ -360,7 +373,6 @@ class MobileCardService:
             - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
         )
         if volunteer_row is None:
-            self._increment_rate_limit(self._session_attempt_counts, attempt_keys)
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         self._clear_rate_limit(self._session_attempt_counts, attempt_keys)
         token = self._build_session_token({"person_id": volunteer_row["id"]})
