@@ -30,7 +30,6 @@ from app.domain.volunteers.service import (
     CourseCompletionNotFoundError,
     DuplicateCourseCompletionError,
     DuplicateRoleAssignmentError,
-    DocumentNotFoundError,
     InvalidCourseCompletionError,
     InvalidVolunteerRelationsError,
     InvalidRoleAssignmentError,
@@ -475,35 +474,6 @@ async def volunteer_delete_photo(
         action="volunteer.delete_photo",
         subject_type="volunteer",
         subject_id=volunteer_id,
-    )
-    return RedirectResponse(
-        url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER
-    )
-
-
-@router.delete("/volunteers/{volunteer_id}/documents/{document_id}")
-async def volunteer_delete_document(
-    request: Request,
-    volunteer_id: int,
-    document_id: int,
-    current_user=Depends(require_management_user),
-    volunteers_service: VolunteersService = Depends(get_volunteers_service),
-):
-    try:
-        await volunteers_service.delete_document_for_volunteer(
-            volunteer_id, document_id
-        )
-    except DocumentNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
-    log_admin_activity(
-        request=request,
-        user=current_user,
-        action="volunteer.delete_document",
-        subject_type="document",
-        subject_id=document_id,
-        details={"volunteer_id": volunteer_id},
     )
     return RedirectResponse(
         url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER

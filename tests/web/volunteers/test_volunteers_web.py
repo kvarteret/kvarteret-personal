@@ -386,7 +386,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert detail_response.headers["cache-control"] == "no-store"
     assert "Laster historikk" in detail_response.text
     assert "Laster kurs" in detail_response.text
-    assert "Laster filer" in detail_response.text
+    # Documents panel removed — "Laster filer" no longer rendered
     assert "Laster kort og pårørende" in detail_response.text
     assert "name=\"gender\"" in detail_response.text
     assert 'type="file"' in detail_response.text
@@ -704,7 +704,6 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     client = TestClient(app)
 
     history_response = client.get("/volunteers/12/role-assignments/panel")
-    documents_response = client.get("/volunteers/12/documents/panel")
     relations_response = client.get("/volunteers/12/relations/panel")
 
     assert history_response.status_code == 200
@@ -715,10 +714,7 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     assert "Slett" in history_response.text
     assert "kontrakt" in history_response.text
     assert 'href="/groups/9"' in history_response.text
-    assert documents_response.status_code == 200
-    assert "certificate.pdf" in documents_response.text
-    assert "Last opp fil" not in documents_response.text
-    assert "window.confirm('Slette denne filen?')" in documents_response.text
+    # Documents panel removed
     assert relations_response.status_code == 200
     assert "CARD-42" in relations_response.text
     assert "Contact Person" in relations_response.text
