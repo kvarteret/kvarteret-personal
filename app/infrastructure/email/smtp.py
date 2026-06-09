@@ -9,6 +9,10 @@ from app.config import Settings
 from app.errors import NotConfiguredError
 
 
+class SmtpDeliveryError(RuntimeError):
+    """Raised when an email cannot be delivered via SMTP."""
+
+
 class SmtpEmailSender:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -64,9 +68,14 @@ def _send_via_smtp(
     message.set_content(html_body, subtype="html")
 
     with smtplib.SMTP(server, port, timeout=30) as smtp:
-        smtp.ehlo()
-        if use_starttls:
-            smtp.starttls()
+        try:
             smtp.ehlo()
-        smtp.login(account, password)
-        smtp.send_message(message)
+            if use_starttls:
+                smtp.starttls()
+                smtp.ehlo()
+            smtp.login(account, password)
+            smtp.send_message(message)
+        except smtplib.SMTPException as exc:
+            raise SmtpDeliveryError(
+                f"Failed to deliver email to {recipient_email}: {exc}"
+            ) from exc
