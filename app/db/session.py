@@ -3,7 +3,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
 from app.config import Settings
@@ -42,14 +47,19 @@ class DatabaseRuntimeManager:
 
 def build_database_runtime(settings: Settings) -> DatabaseRuntime:
     if not settings.database_url:
-        raise NotConfiguredError("DATABASE_URL is required for database-backed features.")
+        raise NotConfiguredError(
+            "DATABASE_URL is required for database-backed features."
+        )
 
     connect_args: dict[str, object] = {}
     is_sqlite = settings.database_url.startswith("sqlite+aiosqlite")
     if is_sqlite:
         connect_args["check_same_thread"] = False
 
-    engine_kwargs: dict[str, object] = {"connect_args": connect_args, "pool_pre_ping": True}
+    engine_kwargs: dict[str, object] = {
+        "connect_args": connect_args,
+        "pool_pre_ping": True,
+    }
     if not is_sqlite:
         # Serverless workers should not retain sticky DB sessions.
         use_null_pool = settings.database_use_null_pool or bool(os.getenv("VERCEL"))

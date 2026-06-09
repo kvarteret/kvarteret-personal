@@ -153,6 +153,7 @@ class EventsRepository(SqlAlchemyRepository):
 
 
 def _event_select():
+    """Factory: creates a fresh select each call so callers can mutate safely."""
     return select(
         events.c.id,
         events.c.slug,

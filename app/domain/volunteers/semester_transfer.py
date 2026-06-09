@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import grupper, historie, personal, verv
-from app.infrastructure.formatting.semester import format_semester_code, get_current_semester_code, get_next_semester_code
+from app.infrastructure.formatting.semester import (
+    format_semester_code,
+    get_current_semester_code,
+    get_next_semester_code,
+)
 
 
 class SemesterTransferError(RuntimeError):
@@ -47,7 +51,9 @@ class SemesterTransferEntry:
 
 
 class SemesterTransferService(SqlAlchemyRepository):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession] | None = None
+    ) -> None:
         super().__init__(session_factory=session_factory)
 
     async def preview_transfer(
@@ -56,13 +62,24 @@ class SemesterTransferService(SqlAlchemyRepository):
         source_semester: int | None = None,
         target_semester: int | None = None,
     ) -> SemesterTransferPreview:
-        group_stmt = select(grupper.c.id, grupper.c.navn).where(grupper.c.id == group_id).limit(1)
-        source_semester_stmt = select(func.max(historie.c.semester)).where(historie.c.id_gruppe == group_id)
+        group_stmt = (
+            select(grupper.c.id, grupper.c.navn)
+            .where(grupper.c.id == group_id)
+            .limit(1)
+        )
+        source_semester_stmt = select(func.max(historie.c.semester)).where(
+            historie.c.id_gruppe == group_id
+        )
         async with self.session_factory() as session:
             group_row = (await session.execute(group_stmt)).mappings().first()
             if group_row is None:
-                raise SemesterTransferGroupNotFoundError(f"Group {group_id} was not found.")
-            resolved_source = source_semester or (await session.execute(source_semester_stmt)).scalar_one_or_none()
+                raise SemesterTransferGroupNotFoundError(
+                    f"Group {group_id} was not found."
+                )
+            resolved_source = (
+                source_semester
+                or (await session.execute(source_semester_stmt)).scalar_one_or_none()
+            )
             if resolved_source is None:
                 resolved_source = get_current_semester_code()
 
@@ -70,17 +87,25 @@ class SemesterTransferService(SqlAlchemyRepository):
                 select(
                     historie.c.id,
                     historie.c.id_personal,
-                    func.concat_ws(" ", personal.c.fornavn, personal.c.etternavn).label("volunteer_name"),
+                    func.concat_ws(" ", personal.c.fornavn, personal.c.etternavn).label(
+                        "volunteer_name"
+                    ),
                     historie.c.id_verv,
                     verv.c.verv.label("verv_navn"),
                     historie.c.signert_kontrakt,
                 )
                 .select_from(
-                    historie.join(personal, personal.c.id == historie.c.id_personal).outerjoin(verv, verv.c.id == historie.c.id_verv)
+                    historie.join(
+                        personal, personal.c.id == historie.c.id_personal
+                    ).outerjoin(verv, verv.c.id == historie.c.id_verv)
                 )
                 .where(historie.c.id_gruppe == group_id)
                 .where(historie.c.semester == resolved_source)
-                .order_by(personal.c.etternavn.asc(), personal.c.fornavn.asc(), historie.c.id.asc())
+                .order_by(
+                    personal.c.etternavn.asc(),
+                    personal.c.fornavn.asc(),
+                    historie.c.id.asc(),
+                )
             )
             member_rows = (await session.execute(members_stmt)).mappings().all()
 
@@ -95,7 +120,8 @@ class SemesterTransferService(SqlAlchemyRepository):
             candidates=[
                 SemesterTransferCandidate(
                     volunteer_id=row["id_personal"],
-                    volunteer_name=row["volunteer_name"] or f"Volunteer {row['id_personal']}",
+                    volunteer_name=row["volunteer_name"]
+                    or f"Volunteer {row['id_personal']}",
                     role_id=row["id_verv"],
                     role_name=row["verv_navn"],
                     contract_signed=row["signert_kontrakt"],
@@ -105,9 +131,13 @@ class SemesterTransferService(SqlAlchemyRepository):
             ],
         )
 
-    async def apply_transfer(self, group_id: int, target_semester: int, entries: list[SemesterTransferEntry]) -> int:
+    async def apply_transfer(
+        self, group_id: int, target_semester: int, entries: list[SemesterTransferEntry]
+    ) -> int:
         async with self.session_factory() as session:
-            group_exists = await session.scalar(select(grupper.c.id).where(grupper.c.id == group_id).limit(1))
+            group_exists = await session.scalar(
+                select(grupper.c.id).where(grupper.c.id == group_id).limit(1)
+            )
         if group_exists is None:
             raise SemesterTransferGroupNotFoundError(f"Group {group_id} was not found.")
         if not entries:
@@ -147,4 +177,8 @@ class SemesterTransferService(SqlAlchemyRepository):
 
 def _default_target_semester(source_semester: int) -> int:
     current = get_current_semester_code()
-    return current if current > source_semester else get_next_semester_code(source_semester)
+    return (
+        current
+        if current > source_semester
+        else get_next_semester_code(source_semester)
+    )

@@ -24,7 +24,9 @@ class SessionRepositoryProtocol(Protocol):
         ip_address: str | None,
         user_agent: str | None,
     ) -> WebSession: ...
-    async def load_authenticated_user_for_session(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None: ...
+    async def load_authenticated_user_for_session(
+        self, session_id: str
+    ) -> tuple[WebSession, AuthenticatedUser] | None: ...
     async def delete_session(self, session_id: str) -> None: ...
 
 
@@ -39,13 +41,17 @@ class SessionStoreProtocol(Protocol):
         ip_address: str | None,
         user_agent: str | None,
     ) -> WebSession: ...
-    async def load_authenticated_user(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None: ...
+    async def load_authenticated_user(
+        self, session_id: str
+    ) -> tuple[WebSession, AuthenticatedUser] | None: ...
     async def delete_session(self, session_id: str) -> None: ...
     def invalidate_session_cache(self, session_id: str) -> None: ...
 
 
 class SessionStore:
-    def __init__(self, repository: SessionRepositoryProtocol, settings: Settings) -> None:
+    def __init__(
+        self, repository: SessionRepositoryProtocol, settings: Settings
+    ) -> None:
         self.repository = repository
         self.settings = settings
         self._cache: TTLCache[str, CachedSession] = TTLCache(
@@ -62,9 +68,11 @@ class SessionStore:
         impersonator_user_account_id: int | None = None,
         ip_address: str | None,
         user_agent: str | None,
-        ) -> WebSession:
+    ) -> WebSession:
         session_id = token_urlsafe(32)
-        expires_at = datetime.now(UTC) + timedelta(hours=self.settings.session_ttl_hours)
+        expires_at = datetime.now(UTC) + timedelta(
+            hours=self.settings.session_ttl_hours
+        )
         session = await self.repository.create_session(
             session_id=session_id,
             auth_user_id=auth_user_id,
@@ -78,7 +86,9 @@ class SessionStore:
         self._cache.pop(session_id)
         return session
 
-    async def load_authenticated_user(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None:
+    async def load_authenticated_user(
+        self, session_id: str
+    ) -> tuple[WebSession, AuthenticatedUser] | None:
         cached = self._cache.get(session_id)
         now = datetime.now(UTC)
         if cached:
@@ -87,7 +97,9 @@ class SessionStore:
             else:
                 return cached.web_session, cached.user
 
-        auth_context = await self.repository.load_authenticated_user_for_session(session_id)
+        auth_context = await self.repository.load_authenticated_user_for_session(
+            session_id
+        )
         if auth_context is None:
             self._cache.pop(session_id)
             return None

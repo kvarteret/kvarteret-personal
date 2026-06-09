@@ -51,22 +51,18 @@ from app.domain.admin_accounts.service import AdminAccountsService
 # Keep the app bootable in local and test environments that do not have live
 # Supabase credentials, while still failing fast once a protected auth path is used.
 class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
+    _MISSING_CREDENTIALS = "Supabase credentials are required for authentication."
+
     async def sign_in_with_password(self, email: str, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def create_user_from_legacy(self, legacy_user, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
     ):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def invite_user(
         self,
@@ -75,9 +71,7 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
         metadata: dict | None = None,
         redirect_to: str | None = None,
     ):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def generate_link(
         self,
@@ -87,24 +81,16 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
         redirect_to: str | None = None,
         metadata: dict | None = None,
     ):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def update_user_password(self, auth_user_id, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def update_password_with_access_token(self, access_token: str, password: str):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def delete_user(self, auth_user_id):
-        raise NotConfiguredError(
-            "Supabase credentials are required for authentication."
-        )
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
     async def aclose(self) -> None:
         return None

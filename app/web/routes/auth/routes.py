@@ -24,12 +24,21 @@ from app.observability import log_admin_activity
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.web.templates import templates
 
+_LOGIN_TEMPLATE = "pages/auth/login.html"
+
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 logger = logging.getLogger(__name__)
 
 
-def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
+def _set_session_cookie(
+    response,
+    *,
+    request: Request,
+    settings,
+    session_cookie_signer: SessionCookieSigner,
+    session_id: str,
+) -> None:
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_cookie_signer.sign_session_id(session_id),
@@ -82,7 +91,7 @@ async def login_page(
         return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     return templates.TemplateResponse(
         request,
-        "pages/auth/login.html",
+        _LOGIN_TEMPLATE,
         {
             "title": "Login",
             "section": "login",
@@ -111,7 +120,7 @@ async def login_submit(
     except NotConfiguredError:
         return templates.TemplateResponse(
             request,
-            "pages/auth/login.html",
+            _LOGIN_TEMPLATE,
             {
                 "title": "Login",
                 "section": "login",
@@ -123,7 +132,7 @@ async def login_submit(
     except LoginError:
         return templates.TemplateResponse(
             request,
-            "pages/auth/login.html",
+            _LOGIN_TEMPLATE,
             {
                 "title": "Login",
                 "section": "login",
@@ -166,7 +175,9 @@ async def logout(
             user=current_user,
             action="logout",
             subject_type="session",
-            subject_id=getattr(getattr(request.state, "session", None), "session_id", None),
+            subject_id=getattr(
+                getattr(request.state, "session", None), "session_id", None
+            ),
         )
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(settings.session_cookie_name)
@@ -208,7 +219,9 @@ async def set_password_submit(
         error_message = "Passordene må være like."
     else:
         try:
-            await supabase_auth_gateway.update_password_with_access_token(normalized_access_token, password)
+            await supabase_auth_gateway.update_password_with_access_token(
+                normalized_access_token, password
+            )
         except Exception:
             logger.exception("Failed to set password from onboarding link.")
             error_message = "Kunne ikke sette passordet akkurat nå."

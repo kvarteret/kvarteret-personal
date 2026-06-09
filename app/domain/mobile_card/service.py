@@ -22,6 +22,8 @@ from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.domain.mobile_card.repository import MobileCardRepository, MobileCardSnapshot
 from app.infrastructure.formatting.semester import get_current_semester_code
 
+_UNKNOWN_SESSION_TOKEN = "Unknown session token."
+
 logger = logging.getLogger(__name__)
 
 _APRIL_FOOLS_IMAGE_BY_GROUP_ID = {
@@ -485,19 +487,19 @@ class MobileCardService:
         except SignatureExpired as exc:
             self._log_invalid_session("expired")
             raise MobileCardInvalidSessionError(
-                "Unknown session token.", reason="expired"
+                _UNKNOWN_SESSION_TOKEN, reason="expired"
             ) from exc
         except BadSignature as exc:
             self._log_invalid_session("bad_signature")
             raise MobileCardInvalidSessionError(
-                "Unknown session token.",
+                _UNKNOWN_SESSION_TOKEN,
                 reason="bad_signature",
             ) from exc
 
         if not isinstance(payload, dict):
             self._log_invalid_session("malformed")
             raise MobileCardInvalidSessionError(
-                "Unknown session token.", reason="malformed"
+                _UNKNOWN_SESSION_TOKEN, reason="malformed"
             )
 
         is_review = payload.get("review") is True
@@ -506,7 +508,7 @@ class MobileCardService:
         if not is_review and not isinstance(person_id, int):
             self._log_invalid_session("malformed")
             raise MobileCardInvalidSessionError(
-                "Unknown session token.", reason="malformed"
+                _UNKNOWN_SESSION_TOKEN, reason="malformed"
             )
 
         age_seconds = max(0, int((now - issued_at).total_seconds()))
@@ -578,7 +580,9 @@ class MobileCardService:
             access_code is None or access_code == self.settings.review_bypass_token
         )
 
-    def _build_review_card(self, *, include_role_history: bool = False) -> MobileCardResponse:
+    def _build_review_card(
+        self, *, include_role_history: bool = False
+    ) -> MobileCardResponse:
         return MobileCardResponse(
             person_id=0,
             first_name="Review",

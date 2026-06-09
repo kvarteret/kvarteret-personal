@@ -20,6 +20,8 @@ from app.domain.volunteers.options import SEMESTER_TERM_OPTIONS
 from app.web.route_helpers import not_configured_http_exception
 from app.web.templates import templates
 
+_GROUP_PAGES_NOT_CONFIGURED = "Database-backed group views are not configured yet."
+
 router = APIRouter()
 
 
@@ -33,7 +35,7 @@ async def groups_index(
     try:
         groups = await groups_service.list_groups(query=q, limit=100)
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed group views are not configured yet.")
+        raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
     return templates.TemplateResponse(
         request,
         "pages/groups/groups.html",
@@ -56,7 +58,7 @@ async def groups_new(
     try:
         group_options = await groups_service.list_groups(limit=500)
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed group views are not configured yet.")
+        raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
     return templates.TemplateResponse(
         request,
         "pages/groups/group_new.html",
@@ -81,9 +83,11 @@ async def groups_detail(
         group = await groups_service.get_group_detail(group_id)
         group_options = await groups_service.list_groups(limit=500)
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed group views are not configured yet.")
+        raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
     if group is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Group not found."
+        )
     can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     return templates.TemplateResponse(
         request,
@@ -94,7 +98,9 @@ async def groups_detail(
             "current_user": current_user,
             "can_manage_group": can_manage,
             "group": group,
-            "group_options": [option for option in group_options if option.group_id != group.group_id],
+            "group_options": [
+                option for option in group_options if option.group_id != group.group_id
+            ],
             "default_assignment_year": get_current_semester_code() // 10,
             "default_assignment_term": get_current_semester_code() % 10,
             "semester_term_options": SEMESTER_TERM_OPTIONS,
@@ -113,12 +119,17 @@ async def groups_detail_history(
     try:
         history = await groups_service.get_group_history_by_semester(group_id)
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed group views are not configured yet.")
+        raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
     can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     return templates.TemplateResponse(
         request,
         "components/groups/group_history.html",
-        {"current_user": current_user, "history": history, "group_id": group_id, "can_manage_group": can_manage},
+        {
+            "current_user": current_user,
+            "history": history,
+            "group_id": group_id,
+            "can_manage_group": can_manage,
+        },
     )
 
 
@@ -135,7 +146,7 @@ async def groups_detail_stats(
             groups_service.get_group_retention_stats(group_id),
         )
     except NotConfiguredError:
-        raise not_configured_http_exception("Database-backed group views are not configured yet.")
+        raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
     return templates.TemplateResponse(
         request,
         "components/groups/group_stats.html",
@@ -163,7 +174,10 @@ async def groups_semester_transfer(
         action="group.preview_semester_transfer",
         subject_type="group",
         subject_id=group_id,
-        details={"source_semester": preview.source_semester, "target_semester": preview.target_semester},
+        details={
+            "source_semester": preview.source_semester,
+            "target_semester": preview.target_semester,
+        },
     )
     return templates.TemplateResponse(
         request,

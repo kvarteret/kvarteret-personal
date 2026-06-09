@@ -27,8 +27,12 @@ logger = logging.getLogger("app.performance")
 
 
 class AuthRepositoryProtocol(Protocol):
-    async def get_user_account_by_identifier(self, identifier: str) -> UserAccount | None: ...
-    async def get_legacy_user_by_identifier(self, identifier: str) -> LegacyUser | None: ...
+    async def get_user_account_by_identifier(
+        self, identifier: str
+    ) -> UserAccount | None: ...
+    async def get_legacy_user_by_identifier(
+        self, identifier: str
+    ) -> LegacyUser | None: ...
     async def get_legacy_roles(self, legacy_user_id: int) -> list[str]: ...
     async def get_legacy_group_ids(self, legacy_user_id: int) -> list[int]: ...
     async def create_direct_user_account(
@@ -47,7 +51,9 @@ class AuthRepositoryProtocol(Protocol):
         legacy_user: LegacyUser,
         role: UserRole,
     ) -> UserAccount: ...
-    async def replace_group_admin_memberships(self, auth_user_id: UUID, group_ids: list[int]) -> None: ...
+    async def replace_group_admin_memberships(
+        self, auth_user_id: UUID, group_ids: list[int]
+    ) -> None: ...
     async def record_migration_event(
         self,
         *,
@@ -69,7 +75,9 @@ class AuthRepositoryProtocol(Protocol):
         ip_address: str | None,
         user_agent: str | None,
     ) -> WebSession: ...
-    async def load_authenticated_user_for_session(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None: ...
+    async def load_authenticated_user_for_session(
+        self, session_id: str
+    ) -> tuple[WebSession, AuthenticatedUser] | None: ...
     async def delete_session(self, session_id: str) -> None: ...
 
 
@@ -94,7 +102,9 @@ LEGACY_USER_COLUMNS = (
 
 
 class DatabaseAuthRepository(SqlAlchemyRepository):
-    async def get_user_account_by_identifier(self, identifier: str) -> UserAccount | None:
+    async def get_user_account_by_identifier(
+        self, identifier: str
+    ) -> UserAccount | None:
         lowered = identifier.lower()
         stmt = (
             select(*USER_ACCOUNT_COLUMNS)
@@ -135,7 +145,11 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
     async def get_legacy_roles(self, legacy_user_id: int) -> list[str]:
         stmt = (
             select(aspnetroles.c.name)
-            .select_from(aspnetuserroles.join(aspnetroles, aspnetroles.c.id == aspnetuserroles.c.roleid))
+            .select_from(
+                aspnetuserroles.join(
+                    aspnetroles, aspnetroles.c.id == aspnetuserroles.c.roleid
+                )
+            )
             .where(aspnetuserroles.c.userid == legacy_user_id)
             .order_by(aspnetroles.c.name)
         )
@@ -207,13 +221,22 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
         row = await self.execute_one_mapping(stmt)
         return _map_user_account(row)
 
-    async def replace_group_admin_memberships(self, auth_user_id: UUID, group_ids: list[int]) -> None:
+    async def replace_group_admin_memberships(
+        self, auth_user_id: UUID, group_ids: list[int]
+    ) -> None:
         async def replace(session):
-            await session.execute(delete(group_admin_memberships).where(group_admin_memberships.c.auth_user_id == auth_user_id))
+            await session.execute(
+                delete(group_admin_memberships).where(
+                    group_admin_memberships.c.auth_user_id == auth_user_id
+                )
+            )
             if group_ids:
                 await session.execute(
                     insert(group_admin_memberships),
-                    [{"auth_user_id": auth_user_id, "gruppe_id": group_id} for group_id in group_ids],
+                    [
+                        {"auth_user_id": auth_user_id, "gruppe_id": group_id}
+                        for group_id in group_ids
+                    ],
                 )
 
         await self.execute_in_transaction(replace)
@@ -267,14 +290,21 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
             impersonator_user=None,
         )
 
-    async def load_authenticated_user_for_session(self, session_id: str) -> tuple[WebSession, AuthenticatedUser] | None:
+    async def load_authenticated_user_for_session(
+        self, session_id: str
+    ) -> tuple[WebSession, AuthenticatedUser] | None:
         started_at = perf_counter()
-        row = await self.fetch_first_mapping(_build_session_load_stmt(session_id=session_id))
+        row = await self.fetch_first_mapping(
+            _build_session_load_stmt(session_id=session_id)
+        )
         try:
             if not row or row["user_account_id"] is None:
                 return None
             impersonator_user = None
-            if row["impersonator_user_account_id"] is not None and row["impersonator_role"] is not None:
+            if (
+                row["impersonator_user_account_id"] is not None
+                and row["impersonator_role"] is not None
+            ):
                 impersonator_auth_user_id = row["impersonator_auth_user_id"]
                 if impersonator_auth_user_id is None:
                     return None
@@ -304,10 +334,14 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
             )
             return web_session, user
         finally:
-            log_operation_timing(logger, operation="auth.session.load", started_at=started_at)
+            log_operation_timing(
+                logger, operation="auth.session.load", started_at=started_at
+            )
 
     async def delete_session(self, session_id: str) -> None:
-        await self.execute(delete(web_sessions).where(web_sessions.c.session_id == session_id))
+        await self.execute(
+            delete(web_sessions).where(web_sessions.c.session_id == session_id)
+        )
 
 
 def _map_user_account(row) -> UserAccount:
@@ -343,11 +377,17 @@ def _build_session_load_stmt(*, session_id: str):
             impersonator_accounts.c.role.label("impersonator_role"),
         )
         .select_from(
-            web_sessions.outerjoin(user_accounts, user_accounts.c.id == web_sessions.c.user_account_id).outerjoin(
+            web_sessions.outerjoin(
+                user_accounts, user_accounts.c.id == web_sessions.c.user_account_id
+            ).outerjoin(
                 impersonator_accounts,
-                impersonator_accounts.c.id == web_sessions.c.impersonator_user_account_id,
+                impersonator_accounts.c.id
+                == web_sessions.c.impersonator_user_account_id,
             )
         )
-        .where(web_sessions.c.session_id == session_id, web_sessions.c.expires_at > func.current_timestamp())
+        .where(
+            web_sessions.c.session_id == session_id,
+            web_sessions.c.expires_at > func.current_timestamp(),
+        )
         .limit(1)
     )

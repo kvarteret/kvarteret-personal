@@ -18,12 +18,19 @@ from app.dependencies import (
     get_volunteers_service,
 )
 from app.media_tokens import MediaTokenService
-from app.domain.mobile_card.service import MobileCardInvalidAccessCodeError, MobileCardService
-from app.infrastructure.media.photo_processing import ProcessedPhoto, render_photo_variant
+from app.domain.mobile_card.service import (
+    MobileCardInvalidAccessCodeError,
+    MobileCardService,
+)
+from app.infrastructure.media.photo_processing import (
+    ProcessedPhoto,
+    render_photo_variant,
+)
 from app.infrastructure.storage.service import StorageService
 from app.domain.volunteers.service import VolunteersService
 
 logger = logging.getLogger(__name__)
+_PHOTO_NOT_FOUND = "Photo not found."
 router = APIRouter()
 SECURE_MEDIA_HEADERS = {
     "Cache-Control": "private, max-age=900",
@@ -80,7 +87,7 @@ async def get_photo(
         )
     except Exception as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail=_PHOTO_NOT_FOUND
         ) from exc
     return _build_photo_response(
         request=request,
@@ -115,7 +122,7 @@ async def get_authenticated_photo(
     photo_path = await volunteers_service.get_photo_storage_path(volunteer_id)
     if photo_path is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail=_PHOTO_NOT_FOUND
         )
 
     requested_size = _resolve_photo_size(size, settings.photo_default_size)
@@ -128,7 +135,7 @@ async def get_authenticated_photo(
         )
     except Exception as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail=_PHOTO_NOT_FOUND
         ) from exc
     return _build_photo_response(
         request=request,

@@ -67,7 +67,9 @@ def get_template_gettext(message: str, **variables: object) -> str:
     return translated % variables if variables else translated
 
 
-def get_template_ngettext(singular: str, plural: str, count: int, **variables: object) -> str:
+def get_template_ngettext(
+    singular: str, plural: str, count: int, **variables: object
+) -> str:
     translated = _current_translations.get().ngettext(singular, plural, count)
     payload = {"count": count, **variables}
     return translated % payload if payload else translated

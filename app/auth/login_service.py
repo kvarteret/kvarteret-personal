@@ -44,13 +44,23 @@ class LoginService:
         user_agent: str | None,
     ) -> LoginResult:
         normalized_identifier = identifier.strip().lower()
-        account = await self.repository.get_user_account_by_identifier(normalized_identifier)
+        account = await self.repository.get_user_account_by_identifier(
+            normalized_identifier
+        )
         if account:
-            auth_user_id = await self.supabase_auth.sign_in_with_password(account.email, password)
+            auth_user_id = await self.supabase_auth.sign_in_with_password(
+                account.email, password
+            )
             if auth_user_id is None:
                 logger.warning(
                     "login failed",
-                    extra={"event": "auth.login.failed", "event_data": {"identifier": normalized_identifier, "reason": "invalid_credentials"}},
+                    extra={
+                        "event": "auth.login.failed",
+                        "event_data": {
+                            "identifier": normalized_identifier,
+                            "reason": "invalid_credentials",
+                        },
+                    },
                 )
                 raise LoginError("Invalid credentials.")
             session = await self.session_store.create_session(
@@ -84,17 +94,29 @@ class LoginService:
                 },
             )
             return result
-        legacy_user = await self.repository.get_legacy_user_by_identifier(normalized_identifier)
-        if legacy_user is None or not verify_aspnet_identity_hash(legacy_user.password_hash, password):
+        legacy_user = await self.repository.get_legacy_user_by_identifier(
+            normalized_identifier
+        )
+        if legacy_user is None or not verify_aspnet_identity_hash(
+            legacy_user.password_hash, password
+        ):
             logger.warning(
                 "login failed",
-                extra={"event": "auth.login.failed", "event_data": {"identifier": normalized_identifier, "reason": "invalid_credentials"}},
+                extra={
+                    "event": "auth.login.failed",
+                    "event_data": {
+                        "identifier": normalized_identifier,
+                        "reason": "invalid_credentials",
+                    },
+                },
             )
             raise LoginError("Invalid credentials.")
 
         legacy_roles = await self.repository.get_legacy_roles(legacy_user.id)
         role = highest_role(legacy_roles)
-        auth_user_id = await self.supabase_auth.create_user_from_legacy(legacy_user, password)
+        auth_user_id = await self.supabase_auth.create_user_from_legacy(
+            legacy_user, password
+        )
         account = await self.repository.upsert_user_account(
             auth_user_id=auth_user_id,
             legacy_user=legacy_user,

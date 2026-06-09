@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.dependencies import get_feedback_service
-from app.domain.feedback.service import FeedbackDeliveryError, FeedbackService, FeedbackValidationError
+from app.domain.feedback.service import (
+    FeedbackDeliveryError,
+    FeedbackService,
+    FeedbackValidationError,
+)
 
 router = APIRouter()
 

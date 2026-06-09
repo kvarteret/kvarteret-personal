@@ -39,7 +39,9 @@ def process_uploaded_photo(
     max_dimension: int,
 ) -> ProcessedPhoto:
     if len(content) > max_upload_bytes:
-        raise PhotoUploadTooLargeError(f"Photos must be {max_upload_bytes // (1024 * 1024)} MB or smaller.")
+        raise PhotoUploadTooLargeError(
+            f"Photos must be {max_upload_bytes // (1024 * 1024)} MB or smaller."
+        )
     return _render_photo(content, max_dimension=max_dimension, quality=82)
 
 
@@ -47,7 +49,9 @@ def render_photo_variant(content: bytes, *, max_dimension: int) -> ProcessedPhot
     return _render_photo(content, max_dimension=max_dimension, quality=78)
 
 
-def _render_photo(content: bytes, *, max_dimension: int, quality: int) -> ProcessedPhoto:
+def _render_photo(
+    content: bytes, *, max_dimension: int, quality: int
+) -> ProcessedPhoto:
     image_module = _require_pillow()
     if max_dimension < 32:
         raise InvalidPhotoError("Photo size must be at least 32 pixels.")
@@ -62,7 +66,9 @@ def _render_photo(content: bytes, *, max_dimension: int, quality: int) -> Proces
     normalized.thumbnail((max_dimension, max_dimension), resampling.LANCZOS)
 
     output = BytesIO()
-    normalized.save(output, format="JPEG", quality=quality, optimize=True, progressive=True)
+    normalized.save(
+        output, format="JPEG", quality=quality, optimize=True, progressive=True
+    )
     rendered = ProcessedPhoto(
         content=output.getvalue(),
         content_type="image/jpeg",

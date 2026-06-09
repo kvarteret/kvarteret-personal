@@ -23,8 +23,15 @@ from app.observability import log_admin_activity
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.errors import NotConfiguredError
-from app.infrastructure.email.admin_account_templates import AdminAccountEmailTemplateRenderer
+from app.infrastructure.email.admin_account_templates import (
+    AdminAccountEmailTemplateRenderer,
+)
 from app.web.route_helpers import redirect_to
+
+_ADMIN_ACCESS_REQUIRED = "Admin access is required."
+_ADMIN_ACCOUNT_NOT_FOUND = "Admin account not found."
+_INVALID_ROLE = "Invalid role."
+_ADMIN_ACCOUNTS_NEW_PATH = "/admin-accounts/new"
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
@@ -41,14 +48,18 @@ def _redirect_with_password_error(message: str):
     return redirect_to(f"/my-account?password_error={quote_plus(message)}")
 
 
-async def _best_effort_delete_auth_user(auth_gateway, auth_user_id, *, context: str) -> None:
+async def _best_effort_delete_auth_user(
+    auth_gateway, auth_user_id, *, context: str
+) -> None:
     try:
         await auth_gateway.delete_user(auth_user_id)
     except Exception:
         logger.exception("Failed to clean up auth user after %s.", context)
 
 
-async def _best_effort_delete_admin_account(admin_accounts_service, *, user_account_id: int, auth_user_id, context: str) -> None:
+async def _best_effort_delete_admin_account(
+    admin_accounts_service, *, user_account_id: int, auth_user_id, context: str
+) -> None:
     try:
         await admin_accounts_service.delete_admin_account(
             user_account_id=user_account_id,
@@ -56,6 +67,29 @@ async def _best_effort_delete_admin_account(admin_accounts_service, *, user_acco
         )
     except Exception:
         logger.exception("Failed to clean up admin account after %s.", context)
+
+
+async def _cleanup_failed_admin_creation(
+    admin_accounts_service: AdminAccountsService,
+    supabase_auth_gateway,
+    *,
+    admin_account,
+    auth_user_id: str | None,
+    context: str,
+) -> None:
+    if admin_account is not None:
+        await _best_effort_delete_admin_account(
+            admin_accounts_service,
+            user_account_id=admin_account.user_account_id,
+            auth_user_id=admin_account.auth_user_id,
+            context=context,
+        )
+    if auth_user_id is not None:
+        await _best_effort_delete_auth_user(
+            supabase_auth_gateway,
+            auth_user_id,
+            context=context,
+        )
 
 
 def _build_onboarding_redirect_url(request: Request, base_url: str | None) -> str:
@@ -66,7 +100,14 @@ def _build_onboarding_redirect_url(request: Request, base_url: str | None) -> st
     return f"{origin}/set-password"
 
 
-def _set_session_cookie(response, *, request: Request, settings, session_cookie_signer: SessionCookieSigner, session_id: str) -> None:
+def _set_session_cookie(
+    response,
+    *,
+    request: Request,
+    settings,
+    session_cookie_signer: SessionCookieSigner,
+    session_id: str,
+) -> None:
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_cookie_signer.sign_session_id(session_id),
@@ -89,9 +130,13 @@ async def my_account_update(
     session_store=Depends(get_session_store),
 ):
     if current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_ADMIN_ACCESS_REQUIRED
+        )
     if current_user.user_account_id is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
+        )
     try:
         role_value = UserRole(role)
         admin_account = await admin_accounts_service.update_admin_account(
@@ -102,9 +147,13 @@ async def my_account_update(
             role=role_value,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_ROLE
+        ) from exc
     if admin_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
+        )
     session = getattr(request.state, "session", None)
     if session is not None:
         session_store.invalidate_session_cache(session.session_id)
@@ -121,23 +170,33 @@ async def my_account_change_password(
     supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
     if current_user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_ADMIN_ACCESS_REQUIRED
+        )
     if len(new_password) < 8:
         return _redirect_with_password_error("Det nye passordet må være minst 8 tegn.")
     if new_password != confirm_password:
         return _redirect_with_password_error("Passordene må være like.")
     try:
-        verified_auth_user_id = await supabase_auth_gateway.sign_in_with_password(current_user.email, current_password)
+        verified_auth_user_id = await supabase_auth_gateway.sign_in_with_password(
+            current_user.email, current_password
+        )
     except Exception:
         logger.exception("Failed to verify admin password change request.")
-        return _redirect_with_password_error("Kunne ikke oppdatere passordet akkurat nå.")
+        return _redirect_with_password_error(
+            "Kunne ikke oppdatere passordet akkurat nå."
+        )
     if verified_auth_user_id != current_user.auth_user_id:
         return _redirect_with_password_error("Nåværende passord er feil.")
     try:
-        await supabase_auth_gateway.update_user_password(current_user.auth_user_id, new_password)
+        await supabase_auth_gateway.update_user_password(
+            current_user.auth_user_id, new_password
+        )
     except Exception:
         logger.exception("Failed to update admin password.")
-        return _redirect_with_password_error("Kunne ikke oppdatere passordet akkurat nå.")
+        return _redirect_with_password_error(
+            "Kunne ikke oppdatere passordet akkurat nå."
+        )
     log_admin_activity(
         request=request,
         user=current_user,
@@ -164,14 +223,18 @@ async def admin_account_create(
     try:
         role_value = UserRole(role)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_ROLE
+        ) from exc
 
     auth_user_id = None
     admin_account = None
     setup_url = None
     try:
         normalized_username = username.strip()
-        normalized_display_name = display_name.strip() if display_name and display_name.strip() else None
+        normalized_display_name = (
+            display_name.strip() if display_name and display_name.strip() else None
+        )
         auth_user_id = await supabase_auth_gateway.create_user(
             email=email.strip(),
             password=secrets.token_urlsafe(24),
@@ -191,7 +254,9 @@ async def admin_account_create(
         setup_url = await supabase_auth_gateway.generate_link(
             link_type="recovery",
             email=email.strip(),
-            redirect_to=_build_onboarding_redirect_url(request, settings.app_public_base_url),
+            redirect_to=_build_onboarding_redirect_url(
+                request, settings.app_public_base_url
+            ),
         )
         rendered_email = admin_account_email_renderer.render_onboarding_email(
             setup_url=setup_url,
@@ -205,35 +270,23 @@ async def admin_account_create(
             html_body=rendered_email.html_body,
         )
     except NotConfiguredError as exc:
-        if admin_account is not None:
-            await _best_effort_delete_admin_account(
-                admin_accounts_service,
-                user_account_id=admin_account.user_account_id,
-                auth_user_id=admin_account.auth_user_id,
-                context="admin onboarding configuration failure",
-            )
-        if auth_user_id is not None:
-            await _best_effort_delete_auth_user(
-                supabase_auth_gateway,
-                auth_user_id,
-                context="admin onboarding configuration failure",
-            )
-        return _redirect_with_error("/admin-accounts/new", str(exc))
+        await _cleanup_failed_admin_creation(
+            admin_accounts_service,
+            supabase_auth_gateway,
+            admin_account=admin_account,
+            auth_user_id=auth_user_id,
+            context="admin onboarding configuration failure",
+        )
+        return _redirect_with_error(_ADMIN_ACCOUNTS_NEW_PATH, str(exc))
     except ValueError as exc:
-        if admin_account is not None:
-            await _best_effort_delete_admin_account(
-                admin_accounts_service,
-                user_account_id=admin_account.user_account_id,
-                auth_user_id=admin_account.auth_user_id,
-                context="admin-account validation failure",
-            )
-        if auth_user_id is not None:
-            await _best_effort_delete_auth_user(
-                supabase_auth_gateway,
-                auth_user_id,
-                context="admin-account validation failure",
-            )
-        return _redirect_with_error("/admin-accounts/new", str(exc))
+        await _cleanup_failed_admin_creation(
+            admin_accounts_service,
+            supabase_auth_gateway,
+            admin_account=admin_account,
+            auth_user_id=auth_user_id,
+            context="admin-account validation failure",
+        )
+        return _redirect_with_error(_ADMIN_ACCOUNTS_NEW_PATH, str(exc))
     except Exception:
         if admin_account is not None:
             await _best_effort_delete_admin_account(
@@ -250,7 +303,7 @@ async def admin_account_create(
             )
         logger.exception("Failed to create admin account.")
         return _redirect_with_error(
-            "/admin-accounts/new",
+            _ADMIN_ACCOUNTS_NEW_PATH,
             "Kunne ikke opprette admin-kontoen akkurat nå.",
         )
 
@@ -260,7 +313,11 @@ async def admin_account_create(
         action="admin_account.create",
         subject_type="admin_account",
         subject_id=admin_account.user_account_id,
-        details={"role": admin_account.role.value, "delivery": "smtp_onboarding_email", "setup_url": bool(setup_url)},
+        details={
+            "role": admin_account.role.value,
+            "delivery": "smtp_onboarding_email",
+            "setup_url": bool(setup_url),
+        },
     )
     return redirect_to(f"/admin-accounts/{admin_account.user_account_id}")
 
@@ -287,9 +344,13 @@ async def admin_account_update(
             role=role_value,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_ROLE
+        ) from exc
     if admin_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
+        )
     session = getattr(request.state, "session", None)
     if session is not None and current_user.user_account_id == account_id:
         session_store.invalidate_session_cache(session.session_id)
@@ -307,12 +368,16 @@ async def admin_account_impersonate(
     session_store=Depends(get_session_store),
 ):
     if current_user.user_account_id is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
+        )
     if current_user.user_account_id == account_id:
         return redirect_to(f"/admin-accounts/{account_id}")
     admin_account = await admin_accounts_service.get_admin_account_detail(account_id)
     if admin_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
+        )
 
     new_session = await session_store.create_session(
         auth_user_id=admin_account.auth_user_id,
@@ -358,7 +423,7 @@ async def mobile_card_april_state_update(
     if current_user.email.strip().lower() != _APRIL_TOGGLE_EMAIL:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access is required.",
+            detail=_ADMIN_ACCESS_REQUIRED,
         )
     normalized_enabled = enabled.strip().lower()
     if normalized_enabled not in {"true", "false"}:
@@ -379,9 +444,7 @@ async def mobile_card_april_state_update(
         details={"enabled": target_enabled},
     )
     message = (
-        "Aprilspøken ble aktivert."
-        if target_enabled
-        else "Aprilspøken ble deaktivert."
+        "Aprilspøken ble aktivert." if target_enabled else "Aprilspøken ble deaktivert."
     )
     return redirect_to(f"/?mobile_card_april_message={quote_plus(message)}")
 
@@ -395,11 +458,15 @@ async def admin_account_delete(
     supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
     if current_user.user_account_id == account_id:
-        return _redirect_with_error(f"/admin-accounts/{account_id}", "Du kan ikke slette din egen admin-konto.")
+        return _redirect_with_error(
+            f"/admin-accounts/{account_id}", "Du kan ikke slette din egen admin-konto."
+        )
 
     admin_account = await admin_accounts_service.get_admin_account_detail(account_id)
     if admin_account is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin account not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
+        )
 
     try:
         await supabase_auth_gateway.delete_user(admin_account.auth_user_id)

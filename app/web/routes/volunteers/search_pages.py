@@ -13,9 +13,7 @@ from app.web.templates import templates
 router = APIRouter()
 
 
-@router.get("/volunteers/search")
-async def search_volunteers_page(
-    request: Request,
+async def _parse_search_filters(
     birth_date_after: str | None = None,
     birth_date_before: str | None = None,
     pingvin_points_above: str | None = None,
@@ -27,31 +25,41 @@ async def search_volunteers_page(
     exclude_current_groups: list[int] = Query(default_factory=list),
     include_courses: list[int] = Query(default_factory=list),
     exclude_courses: list[int] = Query(default_factory=list),
+) -> SearchQuery:
+    return SearchQuery(
+        birth_date_after=date.fromisoformat(birth_date_after)
+        if birth_date_after
+        else None,
+        birth_date_before=date.fromisoformat(birth_date_before)
+        if birth_date_before
+        else None,
+        pingvin_points_above=_to_optional_int(pingvin_points_above),
+        pingvin_points_below=_to_optional_int(pingvin_points_below),
+        has_active_signed_contract=_to_checkbox_bool(has_active_signed_contract),
+        include_groups=_to_filter_list(include_groups),
+        include_current_groups=_to_filter_list(include_current_groups),
+        exclude_groups=_to_filter_list(exclude_groups),
+        exclude_current_groups=_to_filter_list(exclude_current_groups),
+        include_courses=_to_filter_list(include_courses),
+        exclude_courses=_to_filter_list(exclude_courses),
+    )
+
+
+@router.get("/volunteers/search")
+async def search_volunteers_page(
+    request: Request,
+    search_filters: SearchQuery = Depends(_parse_search_filters),
     current_user=Depends(require_authenticated_user),
-    volunteer_search_service: VolunteerSearchService = Depends(get_volunteer_search_service),
+    volunteer_search_service: VolunteerSearchService = Depends(
+        get_volunteer_search_service
+    ),
 ):
-    pingvin_points_above_value = _to_optional_int(pingvin_points_above)
-    pingvin_points_below_value = _to_optional_int(pingvin_points_below)
-    has_active_signed_contract_enabled = _to_checkbox_bool(has_active_signed_contract)
     should_run_search = bool(request.query_params)
+    params = request.query_params
 
     results = []
     if should_run_search:
-        results = await volunteer_search_service.search_volunteers(
-            SearchQuery(
-                birth_date_after=date.fromisoformat(birth_date_after) if birth_date_after else None,
-                birth_date_before=date.fromisoformat(birth_date_before) if birth_date_before else None,
-                pingvin_points_above=pingvin_points_above_value,
-                pingvin_points_below=pingvin_points_below_value,
-                has_active_signed_contract=has_active_signed_contract_enabled,
-                include_groups=_to_filter_list(include_groups),
-                include_current_groups=_to_filter_list(include_current_groups),
-                exclude_groups=_to_filter_list(exclude_groups),
-                exclude_current_groups=_to_filter_list(exclude_current_groups),
-                include_courses=_to_filter_list(include_courses),
-                exclude_courses=_to_filter_list(exclude_courses),
-            )
-        )
+        results = await volunteer_search_service.search_volunteers(search_filters)
         if current_user.role == UserRole.ADMIN:
             log_admin_activity(
                 request=request,
@@ -60,17 +68,17 @@ async def search_volunteers_page(
                 subject_type="volunteer",
                 details={
                     "result_count": len(results),
-                    "include_groups": include_groups,
-                    "include_current_groups": include_current_groups,
-                    "exclude_groups": exclude_groups,
-                    "exclude_current_groups": exclude_current_groups,
-                    "include_courses": include_courses,
-                    "exclude_courses": exclude_courses,
-                    "birth_date_after": birth_date_after or "",
-                    "birth_date_before": birth_date_before or "",
-                    "pingvin_points_above": pingvin_points_above_value,
-                    "pingvin_points_below": pingvin_points_below_value,
-                    "has_active_signed_contract": has_active_signed_contract_enabled,
+                    "include_groups": search_filters.include_groups,
+                    "include_current_groups": search_filters.include_current_groups,
+                    "exclude_groups": search_filters.exclude_groups,
+                    "exclude_current_groups": search_filters.exclude_current_groups,
+                    "include_courses": search_filters.include_courses,
+                    "exclude_courses": search_filters.exclude_courses,
+                    "birth_date_after": params.get("birth_date_after", ""),
+                    "birth_date_before": params.get("birth_date_before", ""),
+                    "pingvin_points_above": search_filters.pingvin_points_above,
+                    "pingvin_points_below": search_filters.pingvin_points_below,
+                    "has_active_signed_contract": search_filters.has_active_signed_contract,
                 },
             )
 
@@ -83,17 +91,19 @@ async def search_volunteers_page(
             "current_user": current_user,
             "results": results,
             "form": {
-                "birth_date_after": birth_date_after or "",
-                "birth_date_before": birth_date_before or "",
-                "pingvin_points_above": pingvin_points_above_value or "",
-                "pingvin_points_below": pingvin_points_below_value or "",
-                "has_active_signed_contract": has_active_signed_contract_enabled,
-                "include_groups": include_groups,
-                "include_current_groups": include_current_groups,
-                "exclude_groups": exclude_groups,
-                "exclude_current_groups": exclude_current_groups,
-                "include_courses": include_courses,
-                "exclude_courses": exclude_courses,
+                "birth_date_after": params.get("birth_date_after", ""),
+                "birth_date_before": params.get("birth_date_before", ""),
+                "pingvin_points_above": params.get("pingvin_points_above", ""),
+                "pingvin_points_below": params.get("pingvin_points_below", ""),
+                "has_active_signed_contract": params.get(
+                    "has_active_signed_contract", False
+                ),
+                "include_groups": params.getlist("include_groups"),
+                "include_current_groups": params.getlist("include_current_groups"),
+                "exclude_groups": params.getlist("exclude_groups"),
+                "exclude_current_groups": params.getlist("exclude_current_groups"),
+                "include_courses": params.getlist("include_courses"),
+                "exclude_courses": params.getlist("exclude_courses"),
             },
         },
     )

@@ -76,7 +76,9 @@ async def volunteers_index(
                 cursor=cursor,
                 only_active=only_active_enabled,
             ),
-            volunteers_service.count_volunteers(query=q, only_active=only_active_enabled),
+            volunteers_service.count_volunteers(
+                query=q, only_active=only_active_enabled
+            ),
         )
     except NotConfiguredError:
         raise HTTPException(
@@ -115,7 +117,9 @@ async def volunteer_detail(
             detail="Database-backed volunteer views are not configured yet.",
         )
     if volunteer is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer not found."
+        )
     can_manage_profile = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     can_manage_photo = can_manage_profile
     if current_user.role == UserRole.ADMIN:
@@ -137,7 +141,9 @@ async def volunteer_detail(
             "can_manage_volunteer_profile": can_manage_profile,
             "can_manage_volunteer_photo": can_manage_photo,
             "gender_options": GENDER_OPTIONS,
-            "duplicate_application_id": request.query_params.get("duplicate_application_id"),
+            "duplicate_application_id": request.query_params.get(
+                "duplicate_application_id"
+            ),
         },
     )
     response.headers["Cache-Control"] = "no-store"

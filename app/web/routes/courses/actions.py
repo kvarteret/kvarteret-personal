@@ -46,9 +46,13 @@ async def courses_update(
     current_user=Depends(require_management_user),
     courses_service: CoursesService = Depends(get_courses_service),
 ):
-    updated = await courses_service.update_course(course_id, name=name, description=description)
+    updated = await courses_service.update_course(
+        course_id, name=name, description=description
+    )
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found."
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -71,7 +75,9 @@ async def courses_delete(
     except CourseDeleteBlockedError as exc:
         raise blocked_http_exception(exc.blockers) from exc
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found."
+        )
     return log_and_redirect(
         request=request,
         user=current_user,
@@ -112,7 +118,12 @@ async def courses_add_completion(
         action="course_completion.create",
         subject_type="course",
         subject_id=course_id,
-        details={"volunteer_ids": volunteer_ids, "created_count": created_count, "year": year, "term": term},
+        details={
+            "volunteer_ids": volunteer_ids,
+            "created_count": created_count,
+            "year": year,
+            "term": term,
+        },
         redirect_path=f"/courses/{course_id}",
     )
 
@@ -126,9 +137,13 @@ async def courses_delete_completion(
     courses_service: CoursesService = Depends(get_courses_service),
 ):
     try:
-        await courses_service.delete_course_completion(course_id=course_id, completion_id=completion_id)
+        await courses_service.delete_course_completion(
+            course_id=course_id, completion_id=completion_id
+        )
     except CourseCompletionNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     return log_and_redirect(
         request=request,
         user=current_user,
