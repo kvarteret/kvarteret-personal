@@ -52,7 +52,6 @@ class FakeLoginService:
                 expires_at=datetime.now(UTC),
             ),
             user=make_authenticated_user(UserRole.ADMIN),
-            migrated_from_legacy=True,
         )
 
 

@@ -5,7 +5,6 @@ from uuid import UUID
 
 import httpx
 
-from app.auth.models import LegacyUser
 from app.config import Settings
 from app.errors import NotConfiguredError
 
@@ -15,9 +14,6 @@ _API_VERSION = "2024-01-01"
 
 class SupabaseAuthGatewayProtocol(Protocol):
     async def sign_in_with_password(self, email: str, password: str) -> UUID | None: ...
-    async def create_user_from_legacy(
-        self, legacy_user: LegacyUser, password: str
-    ) -> UUID: ...
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
     ) -> UUID: ...
@@ -76,19 +72,6 @@ class SupabaseAuthGateway:
         except httpx.HTTPError:
             return None
         return _extract_user_id(response.json())
-
-    async def create_user_from_legacy(
-        self, legacy_user: LegacyUser, password: str
-    ) -> UUID:
-        email = legacy_user.email or f"legacy-{legacy_user.id}@invalid.local"
-        return await self.create_user(
-            email=email,
-            password=password,
-            metadata={
-                "legacy_user_id": legacy_user.id,
-                "legacy_username": legacy_user.username,
-            },
-        )
 
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
