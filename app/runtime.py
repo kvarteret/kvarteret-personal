@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
@@ -46,6 +47,10 @@ from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
 from app.domain.volunteers.semester_transfer import SemesterTransferService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
+from app.events import SimpleEventBus
+from app.domain.volunteer_applications.events import ApplicationSubmitted
+
+logger = logging.getLogger(__name__)
 
 
 # Keep the app bootable in local and test environments that do not have live
@@ -118,6 +123,7 @@ class ApplicationContainer:
     volunteer_applications_service: VolunteerApplicationsService
     semester_transfer_service: SemesterTransferService
     feedback_service: FeedbackService
+    event_bus: SimpleEventBus
 
     async def aclose(self) -> None:
         if self.storage_service is not None:
@@ -146,11 +152,12 @@ def build_application_container(
     email_sender = SmtpEmailSender(resolved_settings)
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
+    event_bus = SimpleEventBus()
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository(session_factory=session_factory)
     )
 
-    return ApplicationContainer(
+    container = ApplicationContainer(
         settings=resolved_settings,
         database_runtime_manager=database_runtime_manager,
         session_factory=session_factory,
@@ -209,12 +216,24 @@ def build_application_container(
             applicant_email_renderer=applicant_email_renderer,
             storage_service=storage_service,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
+            event_bus=event_bus,
         ),
         semester_transfer_service=SemesterTransferService(
             session_factory=session_factory
         ),
         feedback_service=FeedbackService(resolved_settings),
+        event_bus=event_bus,
     )
+
+    # Register event handlers — side effects decoupled from service methods.
+    event_bus.subscribe(
+        ApplicationSubmitted,
+        lambda event: _on_application_submitted(
+            event, container.volunteer_applications_service
+        ),
+    )
+
+    return container
 
 
 @asynccontextmanager
@@ -243,3 +262,15 @@ def _build_supabase_auth_gateway(settings: Settings) -> SupabaseAuthGatewayProto
     if not settings.supabase_url or not settings.supabase_secret_key:
         return UnconfiguredSupabaseAuthGateway()
     return SupabaseAuthGateway(settings)
+
+
+async def _on_application_submitted(event: ApplicationSubmitted, service: VolunteerApplicationsService) -> None:
+    """Handler: invalidate pending count cache when an application is submitted."""
+    service.invalidate_pending_count_cache()
+    logger.info(
+        "Application submitted",
+        extra={
+            "event": "volunteer_applications.application_submitted",
+            "event_data": {"registration_id": event.registration_id},
+        },
+    )

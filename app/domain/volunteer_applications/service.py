@@ -6,7 +6,7 @@ from asyncio import to_thread
 from dataclasses import dataclass
 from datetime import date, datetime
 from secrets import token_hex, token_urlsafe
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.cache import TTLCache
 from app.config import Settings
@@ -20,6 +20,7 @@ from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number, normalize_required_phone_number
 from app.infrastructure.formatting.semester import format_semester_code
 from app.infrastructure.storage.service import StorageService
+from app.domain.volunteer_applications.events import ApplicationSubmitted
 
 _REGISTRATION_NOT_FOUND = "Registration was not found."
 
@@ -379,12 +380,14 @@ class VolunteerApplicationsService:
         applicant_email_renderer: ApplicantEmailTemplateRendererProtocol | None = None,
         storage_service: StorageService | None = None,
         pending_count_cache_ttl_seconds: int = 30,
+        event_bus: Any | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
         self.email_sender = email_sender
         self.applicant_email_renderer = applicant_email_renderer or ApplicantEmailTemplateRenderer()
         self.storage_service = storage_service
+        self.event_bus = event_bus
         self._pending_count_cache: TTLCache[str, int] = TTLCache(
             ttl_seconds=pending_count_cache_ttl_seconds,
             max_entries=1,
@@ -635,6 +638,17 @@ class VolunteerApplicationsService:
         detail = await self.get_volunteer_application_by_token(token)
         if detail is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
+
+        if self.event_bus is not None:
+            await self.event_bus.emit(
+                ApplicationSubmitted(
+                    registration_id=detail.registration_id,
+                    first_name=detail.first_name,
+                    last_name=detail.last_name,
+                    email=detail.email,
+                )
+            )
+
         return detail
 
     async def _upload_new_photo(
@@ -898,6 +912,10 @@ class VolunteerApplicationsService:
 
     def _invalidate_pending_count_cache(self) -> None:
         self._pending_count_cache.pop("pending-count")
+
+    def invalidate_pending_count_cache(self) -> None:
+        """Public entry point for event handlers to invalidate the pending count cache."""
+        self._invalidate_pending_count_cache()
 
     async def _send_invitation_email(self, *, email: str, token: str, base_url: str | None = None) -> None:
         resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
