@@ -13,14 +13,6 @@ class VolunteerNotFoundError(VolunteersServiceError):
     pass
 
 
-class DocumentNotFoundError(VolunteersServiceError):
-    pass
-
-
-class DuplicateDocumentError(VolunteersServiceError):
-    pass
-
-
 class UnsupportedUploadError(VolunteersServiceError):
     pass
 
@@ -102,17 +94,6 @@ class NextOfKinItem:
 class CardItem:
     card_id: int
     card_number: str
-
-
-@dataclass(slots=True)
-class DocumentItem:
-    document_id: int
-    filename: str
-    filetype: str | None
-    group_id: int | None
-    created_at: datetime
-    storage_path: str
-    download_url: str | None
 
 
 @dataclass(slots=True)
@@ -202,17 +183,6 @@ class VolunteerPhotoUploadResult:
     storage_path: str
 
 
-@dataclass(slots=True)
-class VolunteerDocumentUploadResult:
-    document_id: int
-    volunteer_id: int
-    filename: str
-    filetype: str | None
-    group_id: int | None
-    storage_path: str
-    download_url: str
-
-
 class VolunteersServiceProtocol(Protocol):
     async def list_volunteers(
         self, query: str | None = None, limit: int = 50
@@ -238,9 +208,6 @@ class VolunteersServiceProtocol(Protocol):
     async def list_course_completions(
         self, volunteer_id: int, limit: int = 100
     ) -> list[VolunteerCourseCompletionItem]: ...
-    async def list_volunteer_documents(
-        self, volunteer_id: int
-    ) -> list[DocumentItem]: ...
     async def get_volunteer_relations(
         self, volunteer_id: int
     ) -> VolunteerRelations: ...
@@ -308,12 +275,3 @@ class VolunteersServiceProtocol(Protocol):
     async def delete_role_assignment_for_volunteer(
         self, volunteer_id: int, history_id: int
     ) -> None: ...
-    async def upload_document(
-        self,
-        volunteer_id: int,
-        filename: str,
-        content: bytes,
-        content_type: str | None,
-        group_id: int | None = None,
-    ) -> VolunteerDocumentUploadResult: ...
-    async def delete_document(self, document_id: int) -> None: ...

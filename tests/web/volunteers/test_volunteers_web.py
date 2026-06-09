@@ -13,7 +13,6 @@ from app.domain.volunteers.models import (
     CardItem,
     CourseCompletionNotFoundError,
     DuplicateCourseCompletionError,
-    DocumentItem,
     GroupOption,
     InvalidCourseCompletionError,
     RoleAssignmentItem,
@@ -138,19 +137,6 @@ class FakeVolunteersService:
                 course_name="Fire safety",
                 completed_semester_code=20262,
                 completed_semester_label="Fall 2026",
-            )
-        ]
-
-    async def list_volunteer_documents(self, volunteer_id: int) -> list[DocumentItem]:
-        return [
-            DocumentItem(
-                document_id=6,
-                filename="certificate.pdf",
-                filetype="pdf",
-                group_id=7,
-                created_at=datetime(2026, 3, 13, tzinfo=UTC),
-                storage_path="12/certificate.pdf",
-                download_url=None,
             )
         ]
 

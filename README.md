@@ -9,7 +9,7 @@ It owns:
 - the mobile-card API used by `kvarteret-internbevis-rn`
 - event read APIs exposed in `openapi.json`
 - public volunteer prospect intake used by `blifrivillig.no`
-- media proxy routes for private personnel photos and documents
+- media proxy routes for private personnel photos
 - the Spotify-backed now-playing API
 - the checked-in OpenAPI contract in `openapi.json`
 
@@ -45,8 +45,6 @@ The root web page redirects to `/login` when there is no admin session.
     make openapi
     make openapi-check
     make smoke-auth
-    make upload-legacy-images
-
 Use [Local development](docs/how-to/local-development.md) for daily workflows.
 
 ## API Contract
@@ -75,7 +73,7 @@ See [Kvarteret system map](docs/explanation/kvarteret-system-map.md) for the ful
 
 ## External Systems
 
-Direct runtime dependencies include Supabase Postgres, Supabase Auth, Supabase Storage, Azure Blob Storage, Spotify, SMTP, Slack Incoming Webhooks, and Vercel.
+Direct runtime dependencies include Supabase Postgres, Supabase Auth, Azure Blob Storage, Spotify, SMTP, Slack Incoming Webhooks, Linear, and Vercel.
 
 See [External systems](docs/reference/external-systems.md) and [Configuration](docs/reference/configuration.md).
 

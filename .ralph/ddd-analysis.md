@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | **volunteer_applications** | 1013 | 71 | 9 | Multi-step workflow: invite→submit→approve/decline. Group registrations, friend invites, email notifications, photo upload. |
 | **groups** | 1018 | 44 | 7 | God service: CRUD + stats + retention + org hierarchy + member counts + role assignments |
-| **volunteers** | 889 | 46 | 13 | Central aggregate: profile, roles, courses, documents, photos, relations, search, caching |
+| **volunteers** | 889 | 46 | 13 | Central aggregate: profile, roles, courses, photos, relations, search, caching |
 
 ### DDD Assessment
 
@@ -21,14 +21,14 @@ from one domain module to another. The DI container is the only
 integration point.
 
 **🔴 No aggregate roots.** Any service can modify any table. `volunteers`
-service modifies `personal`, `personal_bilde`, `verv`, `historie`, `dokumenter`.
+service modifies `personal`, `personal_bilde`, `verv`, and `historie`.
 `groups` service modifies `grupper`, `verv`, `historie`, `grupper_admin_kobling`.
 No invariant enforcement across these tables.
 
-**🔴 No domain events.** `approve_volunteer_application` creates a volunteer
-in the DB, invalidates a cache, and sends an email — all in one method.
-In DDD, this would emit a `VolunteerPromoted` event, and the email sender
-would be a separate event handler. Zero event-driven patterns.
+**🔴 No domain event model.** `approve_volunteer_application` still runs as an
+explicit workflow operation instead of a DDD aggregate event. Side effects are
+now separated behind a port, but the module deliberately remains workflow-led
+rather than event-led.
 
 **🟡 God services.** `GroupsService` does CRUD, stats, retention analysis,
 role management, history management. In DDD this would be split into:
@@ -49,7 +49,7 @@ ApplicationProcess (aggregate root)
   ├── approve()
   ├── decline()
   └── events:
-      ├── ApplicationSubmitted → email handler
+      ├── ApplicantSubmitted → email handler
       ├── TrialShiftCompleted → notification handler
       └── ApplicantPromoted → profile email handler
 

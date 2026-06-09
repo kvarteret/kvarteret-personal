@@ -29,11 +29,6 @@ class MediaTokenService:
             kind="photo", base_path=f"/media/photos/{path}", path=path
         )
 
-    def build_document_media_url(self, path: str) -> str:
-        return self._build_media_url(
-            kind="document", base_path=f"/media/documents/{path}", path=path
-        )
-
     def _build_media_url(self, *, kind: str, base_path: str, path: str) -> str:
         token = self.sign_media_token(kind=kind, path=path)
         prefix = (
@@ -56,7 +51,3 @@ def verify_media_token(*, token: str, kind: str, path: str, max_age: int = 900) 
 
 def build_photo_media_url(path: str) -> str:
     return MediaTokenService(get_settings()).build_photo_media_url(path)
-
-
-def build_document_media_url(path: str) -> str:
-    return MediaTokenService(get_settings()).build_document_media_url(path)

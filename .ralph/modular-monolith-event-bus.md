@@ -1,26 +1,21 @@
-## Modular Monolith Event Bus — Phase 1 COMPLETE ✅
+## Pragmatic Modular Monolith — Workflow Direction
 
 ### Delivered
-- [x] `app/events.py` — SimpleEventBus (30 lines)
-- [x] `app/domain/volunteer_applications/events.py` — 3 domain events
-- [x] Wired into `ApplicationContainer` + `runtime.py`
-- [x] `submit_volunteer_application` emits `ApplicationSubmitted`
-- [x] Handler registered: `_on_application_submitted` (cache invalidation)
-- [x] Coexistence: cache invalidated inline AND via handler
-- [x] 4 unit tests for SimpleEventBus (all passing)
-- [x] ADR-001 written (PostHog-inspired)
-- [x] All 227 tests pass, ruff clean
+- [x] ADR-001 rewritten around explicit workflow visibility, not event-bus-first architecture.
+- [x] `app/domain/volunteer_applications/workflow.py` added as the lifecycle coordinator.
+- [x] `app/domain/volunteer_applications/side_effects.py` added for cache/email/photo cleanup side effects.
+- [x] Volunteer document UI/service/repository/media/storage surface removed.
+- [x] Supabase Storage media support removed; personnel photos use Azure Blob Storage.
+- [x] `SimpleEventBus` kept as a narrow tested utility, but removed from the volunteer application control flow.
+- [x] `groups/queries.py` added for group admin read/statistics behavior; `groups/service.py` keeps writes.
 
 ### Architecture
 ```
-submit_volunteer_application()
-    → validate + photo + save
-    → bus.emit(ApplicationSubmitted)
-          → handler: cache.invalidate()
+VolunteerApplicationsService facade
+    -> VolunteerApplicationWorkflow
+        -> record/transition operation
+        -> named side-effect method
 ```
 
-### Next phases (deferred)
-- Phase 2: `ApplicationApproved` handler (profile completion email)
-- Phase 3: `mobile_card` access code email handler
-- Phase 4: `admin_accounts` onboarding email handler
-- Phase 5: Remove inline cache/email calls (after handler test coverage)
+### Next phases
+- Extract volunteer role assignments into a dedicated domain module after the document cleanup settles.

@@ -5,7 +5,6 @@ from app.shared.text import build_full_name
 from app.domain.volunteers.models import (
     AssignmentRoleOption,
     CardItem,
-    DocumentItem,
     GroupOption,
     NextOfKinItem,
     RoleAssignmentItem,
@@ -17,10 +16,6 @@ from app.domain.volunteers.models import (
 )
 from app.domain.volunteers.options import gender_label, normalize_gender_code
 from app.infrastructure.formatting.semester import format_semester_code
-
-
-def build_document_storage_path(volunteer_id: int, filename: str) -> str:
-    return f"{volunteer_id}/{filename}"
 
 
 def map_volunteer_list_item(row: dict) -> VolunteerListItem:
@@ -76,18 +71,6 @@ def map_volunteer_detail(row: dict) -> VolunteerDetail:
             if row.get("registration_id") is not None
             else None
         ),
-    )
-
-
-def map_document_item(volunteer_id: int, row: dict) -> DocumentItem:
-    return DocumentItem(
-        document_id=int(row["id"]),
-        filename=row["filename"],
-        filetype=row.get("filetype"),
-        group_id=row.get("gruppekobling"),
-        created_at=require_datetime(row["opprettet"]),
-        storage_path=build_document_storage_path(volunteer_id, row["filename"]),
-        download_url=None,
     )
 
 
