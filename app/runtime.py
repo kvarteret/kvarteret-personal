@@ -56,9 +56,6 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def sign_in_with_password(self, email: str, password: str):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
-    async def create_user_from_legacy(self, legacy_user, password: str):
-        raise NotConfiguredError(self._MISSING_CREDENTIALS)
-
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
     ):
