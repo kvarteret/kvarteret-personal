@@ -71,6 +71,7 @@
             {% endif %}
             {% if volunteer_application.pending_volunteer_id %}
               <p class="text-lg font-medium tracking-tight text-kvarteret-ink">{{ volunteer_application.first_name or "" }} {{ volunteer_application.last_name or "" }}</p>
+              <p class="text-sm text-stone-500">Søkt: {{ volunteer_application.created_at.strftime("%d.%m.%Y") if volunteer_application.created_at else "" }}</p>
               <p class="text-sm text-kvarteret-ink">{{ volunteer_application.phone or "Ingen telefon sendt inn" }}</p>
               {% if volunteer_application.study_institution %}
                 <p class="text-sm text-kvarteret-ink">{{ volunteer_application.study_institution }}</p>

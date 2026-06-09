@@ -58,7 +58,9 @@ class FeedbackDeliveryError(FeedbackError):
 @dataclass(slots=True)
 class FeedbackSubmission:
     category: str | None
-    feedback_type: str | None  # "bug" | "feature" | "improvement", overrides category mapping
+    feedback_type: (
+        str | None
+    )  # "bug" | "feature" | "improvement", overrides category mapping
     name: str | None
     email: str | None
     message: str
@@ -100,6 +102,42 @@ class FeedbackService:
         await to_thread(_create_linear_issue, submission, self.settings)
 
 
+def _validate_category(category: str | None) -> str | None:
+    normalized = (category or "").strip().lower() or None
+    if normalized and normalized not in {"ris", "ros", "forslag"}:
+        raise FeedbackValidationError("Velg ris, ros eller forslag.")
+    return normalized
+
+
+def _validate_feedback_message(message: str) -> str:
+    normalized = (message or "").strip()
+    if not normalized:
+        raise FeedbackValidationError("Du må skrive noe først. Ugetit?.")
+    if len(normalized) > MAX_MESSAGE_LENGTH:
+        raise FeedbackValidationError(
+            f"Meldingen må være {MAX_MESSAGE_LENGTH} tegn eller kortere."
+        )
+    return normalized
+
+
+def _validate_feedback_page(page: str) -> str:
+    normalized = (page or "").strip() or "unknown"
+    if len(normalized) > MAX_PAGE_LENGTH:
+        raise FeedbackValidationError("Ugyldig side.")
+    return normalized
+
+
+def _validate_feedback_email(email: str | None) -> str | None:
+    normalized = (email or "").strip() or None
+    if normalized and len(normalized) > MAX_EMAIL_LENGTH:
+        raise FeedbackValidationError(
+            f"E-post må være {MAX_EMAIL_LENGTH} tegn eller kortere."
+        )
+    if normalized and not re.match(EMAIL_PATTERN, normalized):
+        raise FeedbackValidationError("Skriv inn en gyldig e-postadresse.")
+    return normalized
+
+
 def _normalize_submission(
     *,
     category: str | None,
@@ -112,25 +150,10 @@ def _normalize_submission(
     user_id: int | None,
     source: str,
 ) -> FeedbackSubmission:
-    normalized_category = (category or "").strip().lower() or None
-    if normalized_category and normalized_category not in {"ris", "ros", "forslag"}:
-        raise FeedbackValidationError("Velg ris, ros eller forslag.")
-
-    normalized_message = (message or "").strip()
-    if not normalized_message:
-        raise FeedbackValidationError("Du må skrive noe først. Ugetit?.")
-    if len(normalized_message) > MAX_MESSAGE_LENGTH:
-        raise FeedbackValidationError(f"Meldingen må være {MAX_MESSAGE_LENGTH} tegn eller kortere.")
-
-    normalized_page = (page or "").strip() or "unknown"
-    if len(normalized_page) > MAX_PAGE_LENGTH:
-        raise FeedbackValidationError("Ugyldig side.")
-
-    normalized_email = (email or "").strip() or None
-    if normalized_email and len(normalized_email) > MAX_EMAIL_LENGTH:
-        raise FeedbackValidationError(f"E-post må være {MAX_EMAIL_LENGTH} tegn eller kortere.")
-    if normalized_email and not re.match(EMAIL_PATTERN, normalized_email):
-        raise FeedbackValidationError("Skriv inn en gyldig e-postadresse.")
+    normalized_category = _validate_category(category)
+    normalized_message = _validate_feedback_message(message)
+    normalized_page = _validate_feedback_page(page)
+    normalized_email = _validate_feedback_email(email)
 
     submitted_at = datetime.now().astimezone().strftime("%d.%m.%Y %H:%M")
     normalized_source = source if source in _SOURCE_PROJECT else "personalplattformen"
@@ -178,7 +201,9 @@ def _build_description(submission: FeedbackSubmission) -> str:
     return "\n".join(lines)
 
 
-def _linear_graphql(api_key: str, query: str, variables: dict[str, object]) -> dict[str, object]:
+def _linear_graphql(
+    api_key: str, query: str, variables: dict[str, object]
+) -> dict[str, object]:
     body = json.dumps({"query": query, "variables": variables}).encode("utf-8")
     req = urllib_request.Request(
         _GRAPHQL_ENDPOINT,
@@ -194,7 +219,7 @@ def _linear_graphql(api_key: str, query: str, variables: dict[str, object]) -> d
             result = json.loads(response.read())
     except urllib_error.HTTPError as exc:
         response_body = exc.read().decode("utf-8", errors="replace")
-        logger.error("[linear] HTTP error %s: %s", exc.code, response_body[:1000])
+        logger.exception("[linear] HTTP error %s: %s", exc.code, response_body[:1000])
         raise FeedbackDeliveryError("Linear request failed.") from exc
     except Exception as exc:
         logger.exception("[linear] Failed to call Linear")
@@ -212,7 +237,9 @@ def _create_linear_issue(submission: FeedbackSubmission, settings: Settings) -> 
     if not api_key:
         raise FeedbackDeliveryError("LINEAR_API_KEY is not configured.")
 
-    project_attr, _ = _SOURCE_PROJECT.get(submission.source, ("linear_project_id_personal", ""))
+    project_attr, _ = _SOURCE_PROJECT.get(
+        submission.source, ("linear_project_id_personal", "")
+    )
     team_id = settings.linear_team_id
     project_id = getattr(settings, project_attr, None)
 
@@ -225,7 +252,9 @@ def _create_linear_issue(submission: FeedbackSubmission, settings: Settings) -> 
         if not value
     ]
     if missing_settings:
-        raise FeedbackDeliveryError(f"Incomplete Linear config: {', '.join(missing_settings)}.")
+        raise FeedbackDeliveryError(
+            f"Incomplete Linear config: {', '.join(missing_settings)}."
+        )
 
     variables = {
         "input": {

@@ -24,7 +24,9 @@ def build_document_storage_path(volunteer_id: int, filename: str) -> str:
 
 
 def map_volunteer_list_item(row: dict) -> VolunteerListItem:
-    last_semester_code = int(row["last_semester"]) if row.get("last_semester") is not None else None
+    last_semester_code = (
+        int(row["last_semester"]) if row.get("last_semester") is not None else None
+    )
     return VolunteerListItem(
         volunteer_id=row["id"],
         first_name=row["fornavn"],
@@ -56,7 +58,9 @@ def map_volunteer_detail(row: dict) -> VolunteerDetail:
         postal_code=row["postnummerid"],
         pingvin_points=int(row.get("pingvin_points") or 0),
         photo_url=None,
-        current_discount_level=int(row["current_discount_level"]) if row.get("current_discount_level") is not None else None,
+        current_discount_level=int(row["current_discount_level"])
+        if row.get("current_discount_level") is not None
+        else None,
         registration_log_entry=(
             VolunteerRegistrationLogEntry(
                 registration_id=int(row["registration_id"]),
@@ -109,7 +113,8 @@ def map_course_completion_item(row: dict) -> VolunteerCourseCompletionItem:
         course_id=int(row["id_kurs"]),
         course_name=row["course_name"],
         completed_semester_code=semester_code,
-        completed_semester_label=format_semester_code(semester_code) or str(semester_code),
+        completed_semester_label=format_semester_code(semester_code)
+        or str(semester_code),
     )
 
 

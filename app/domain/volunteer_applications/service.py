@@ -21,6 +21,22 @@ from app.infrastructure.contact.phone_numbers import normalize_phone_number, nor
 from app.infrastructure.formatting.semester import format_semester_code
 from app.infrastructure.storage.service import StorageService
 
+_REGISTRATION_NOT_FOUND = "Registration was not found."
+
+
+def _normalize_phone(phone: str) -> str:
+    try:
+        return normalize_required_phone_number(phone)
+    except ValueError as exc:
+        raise VolunteerApplicationValidationError(str(exc)) from exc
+
+
+def _check_postal_code(postal_code: str | None) -> None:
+    if postal_code is not None and not re.fullmatch(r"\d{4}", postal_code):
+        raise VolunteerApplicationValidationError(
+            "Postal code must be exactly 4 digits (e.g. 5011)."
+        )
+
 PUBLIC_PROSPECT_GROUPS = {
     "skjenkegruppen": "Skjenkegruppen",
     "kraft": "Kraftetaten",
@@ -416,19 +432,7 @@ class VolunteerApplicationsService:
             registration.friend_emails,
             inviter_email=normalized_email,
         )
-        for index, friend_email in enumerate(friend_emails):
-            duplicate_friend_volunteer = await self.repository.find_volunteer_id_by_email(friend_email)
-            if duplicate_friend_volunteer is not None:
-                raise VolunteerApplicationFieldConflictError(
-                    "Én av vennene er allerede frivillig.",
-                    {"friendEmails": {str(index): "Denne e-postadressen tilhører allerede en frivillig."}},
-                )
-            duplicate_friend_registration = await self.repository.find_active_registration_id_by_email(friend_email)
-            if duplicate_friend_registration is not None:
-                raise VolunteerApplicationFieldConflictError(
-                    "Én av vennene har allerede en aktiv søknad.",
-                    {"friendEmails": {str(index): "Denne e-postadressen har allerede en aktiv søknad."}},
-                )
+        await self._assert_friend_emails_available(friend_emails)
 
         token = token_urlsafe(24)
         result = await self.repository.create_public_prospect_registration(
@@ -591,14 +595,16 @@ class VolunteerApplicationsService:
         existing = await self.get_volunteer_application_by_token(token)
         if existing is None:
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
-        try:
-            submission.phone = normalize_required_phone_number(submission.phone)
-        except ValueError as exc:
-            raise VolunteerApplicationValidationError(str(exc)) from exc
 
-        if submission.postal_code is not None:
-            if not re.fullmatch(r"\d{4}", submission.postal_code):
-                raise VolunteerApplicationValidationError("Postal code must be exactly 4 digits (e.g. 5011).")
+        submission.phone = _normalize_phone(submission.phone)
+        _check_postal_code(submission.postal_code)
+
+        # --- Photo handling ---
+        has_existing_photo = existing.photo_sha1 is not None
+        has_new_photo = bool(photo_filename and photo_content)
+        missing_required_photo = not has_existing_photo and not has_new_photo
+        if missing_required_photo:
+            raise VolunteerApplicationValidationError("Profilbilde er påkrevd.")
 
         photo_sha1 = existing.photo_sha1
         photo_filetype = existing.photo_filetype
@@ -607,32 +613,67 @@ class VolunteerApplicationsService:
         uploaded_new_photo = False
         storage_service: StorageService | None = None
 
-        if not existing.photo_sha1 and not (photo_filename and photo_content):
-            raise VolunteerApplicationValidationError("Profilbilde er påkrevd.")
-
-        if photo_filename and photo_content:
-            safe_filename = _sanitize_filename(photo_filename)
-            extension = _normalize_extension(safe_filename)
-            if extension not in {"jpg", "jpeg", "png", "webp"}:
-                raise VolunteerApplicationConflictError("Photos must be jpg, jpeg, png, or webp.")
-            storage_service = self._require_storage_service()
-            photo_sha1 = token_hex(20)
-            processed_photo = process_uploaded_photo(
-                photo_content,
-                max_upload_bytes=self.settings.photo_upload_max_bytes,
-                max_dimension=self.settings.photo_max_dimension,
+        if has_new_photo:
+            photo_sha1, photo_filetype, new_storage_path, storage_service = await self._upload_new_photo(
+                photo_filename, photo_content
             )
-            photo_filetype = processed_photo.extension
-            new_storage_path = _build_photo_storage_path(photo_sha1, photo_filetype)
             assert new_storage_path is not None
-            await to_thread(
-                storage_service.upload_photo,
-                new_storage_path,
-                processed_photo.content,
-                processed_photo.content_type,
-            )
             uploaded_new_photo = True
 
+        # --- Save and cleanup ---
+        await self._save_and_cleanup_photos(
+            existing=existing,
+            submission=submission,
+            photo_sha1=photo_sha1,
+            photo_filetype=photo_filetype,
+            old_storage_path=old_storage_path,
+            new_storage_path=new_storage_path,
+            uploaded_new_photo=uploaded_new_photo,
+            storage_service=storage_service,
+        )
+
+        detail = await self.get_volunteer_application_by_token(token)
+        if detail is None:
+            raise VolunteerApplicationNotFoundError("Registration token was not found.")
+        return detail
+
+    async def _upload_new_photo(
+        self, photo_filename: str, photo_content: bytes
+    ) -> tuple[str, str, str, StorageService]:
+        safe_filename = _sanitize_filename(photo_filename)
+        extension = _normalize_extension(safe_filename)
+        if extension not in {"jpg", "jpeg", "png", "webp"}:
+            raise VolunteerApplicationConflictError(
+                "Photos must be jpg, jpeg, png, or webp."
+            )
+        storage_service = self._require_storage_service()
+        photo_sha1 = token_hex(20)
+        processed = process_uploaded_photo(
+            photo_content,
+            max_upload_bytes=self.settings.photo_upload_max_bytes,
+            max_dimension=self.settings.photo_max_dimension,
+        )
+        new_path = _build_photo_storage_path(photo_sha1, processed.extension)
+        await to_thread(
+            storage_service.upload_photo,
+            new_path,
+            processed.content,
+            processed.content_type,
+        )
+        return photo_sha1, processed.extension, new_path, storage_service
+
+    async def _save_and_cleanup_photos(
+        self,
+        *,
+        existing: VolunteerApplicationDetail,
+        submission: VolunteerApplicationSubmissionInput,
+        photo_sha1: str | None,
+        photo_filetype: str | None,
+        old_storage_path: str | None,
+        new_storage_path: str | None,
+        uploaded_new_photo: bool,
+        storage_service: StorageService | None,
+    ) -> None:
         try:
             await self.repository.save_submission(
                 registration_id=existing.registration_id,
@@ -642,22 +683,36 @@ class VolunteerApplicationsService:
                 photo_filetype=photo_filetype,
             )
         except Exception:
-            if uploaded_new_photo and storage_service is not None and new_storage_path and old_storage_path != new_storage_path:
+            should_rollback = (
+                uploaded_new_photo
+                and storage_service is not None
+                and new_storage_path is not None
+                and new_storage_path != old_storage_path
+            )
+            if should_rollback:
                 try:
-                    await to_thread(storage_service.remove_photo, new_storage_path)
+                    await to_thread(
+                        storage_service.remove_photo, new_storage_path
+                    )
                 except Exception:
                     pass
             raise
+
         self._invalidate_pending_count_cache()
-        if uploaded_new_photo and old_storage_path and old_storage_path != new_storage_path:
+
+        should_remove_old = (
+            uploaded_new_photo
+            and old_storage_path is not None
+            and old_storage_path != new_storage_path
+        )
+        if should_remove_old:
             try:
-                await to_thread(self._require_storage_service().remove_photo, old_storage_path)
+                await to_thread(
+                    self._require_storage_service().remove_photo,
+                    old_storage_path,
+                )
             except Exception:
                 pass
-        detail = await self.get_volunteer_application_by_token(token)
-        if detail is None:
-            raise VolunteerApplicationNotFoundError("Registration token was not found.")
-        return detail
 
     async def mark_trial_shift_attended(
         self,
@@ -667,11 +722,11 @@ class VolunteerApplicationsService:
     ) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
-            raise VolunteerApplicationNotFoundError("Registration was not found.")
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         await self.repository.set_trial_shift_attended(registration_id, attended=attended)
         refreshed = await self.get_volunteer_application_detail(registration_id)
         if refreshed is None:
-            raise VolunteerApplicationNotFoundError("Registration was not found.")
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         return refreshed
 
     async def approve_volunteer_application(
@@ -683,7 +738,7 @@ class VolunteerApplicationsService:
     ) -> int:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
-            raise VolunteerApplicationNotFoundError("Registration was not found.")
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         if detail.pending_volunteer_id is None:
             raise VolunteerApplicationConflictError("Registration is missing prospect details.")
         if detail.promoted_volunteer_id is not None:
@@ -748,7 +803,7 @@ class VolunteerApplicationsService:
     ) -> None:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
-            raise VolunteerApplicationNotFoundError("Registration was not found.")
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         if detail.group_role != "invitee" or detail.group_status != "active":
             raise VolunteerApplicationConflictError("Only active group invitees can be removed from a group.")
         await self.repository.drop_group_invitee(registration_id, dropped_by_user_id=dropped_by_user_id)
@@ -757,7 +812,7 @@ class VolunteerApplicationsService:
     async def delete_volunteer_application(self, registration_id: int) -> None:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
-            raise VolunteerApplicationNotFoundError("Registration was not found.")
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         await self.repository.delete_volunteer_application(registration_id)
         self._invalidate_pending_count_cache()
         storage_path = _build_photo_storage_path(detail.photo_sha1, detail.photo_filetype)
@@ -775,7 +830,7 @@ class VolunteerApplicationsService:
     ) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
-            raise VolunteerApplicationNotFoundError("Registration was not found.")
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         await self._send_invitation_email(email=detail.email, token=detail.token, base_url=base_url)
         return detail
 
@@ -805,6 +860,25 @@ class VolunteerApplicationsService:
                 {"friendEmails": field_errors},
             )
         return normalized
+
+    async def _assert_friend_emails_available(self, friend_emails: list[str]) -> None:
+        for index, friend_email in enumerate(friend_emails):
+            is_already_volunteer = (
+                await self.repository.find_volunteer_id_by_email(friend_email)
+            ) is not None
+            if is_already_volunteer:
+                raise VolunteerApplicationFieldConflictError(
+                    "Én av vennene er allerede frivillig.",
+                    {"friendEmails": {str(index): "Denne e-postadressen tilhører allerede en frivillig."}},
+                )
+            has_active_registration = (
+                await self.repository.find_active_registration_id_by_email(friend_email)
+            ) is not None
+            if has_active_registration:
+                raise VolunteerApplicationFieldConflictError(
+                    "Én av vennene har allerede en aktiv søknad.",
+                    {"friendEmails": {str(index): "Denne e-postadressen har allerede en aktiv søknad."}},
+                )
 
     def _ensure_group_members_ready_for_promotion(self, detail: VolunteerApplicationDetail) -> None:
         if not detail.group_id or detail.group_status != "active":

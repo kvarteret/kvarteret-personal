@@ -13,7 +13,9 @@ class SmtpEmailSender:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    async def send_email(self, *, recipient_email: str, subject: str, html_body: str) -> None:
+    async def send_email(
+        self, *, recipient_email: str, subject: str, html_body: str
+    ) -> None:
         if not self._is_configured():
             raise NotConfiguredError("SMTP email is not configured.")
         await to_thread(

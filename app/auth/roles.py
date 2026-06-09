@@ -33,4 +33,3 @@ def highest_role(role_names: list[str]) -> UserRole:
         return UserRole.VIEWER
 
     return max(roles, key=lambda role: ROLE_PRIORITY[role])
-

@@ -3,17 +3,13 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from time import monotonic
-from typing import Generic, TypeVar
-
-K = TypeVar("K")
-V = TypeVar("V")
 
 
-class TTLCache(Generic[K, V]):
+class TTLCache[K, V]:
     def __init__(self, ttl_seconds: int, max_entries: int = 1024) -> None:
         self.ttl_seconds = max(1, ttl_seconds)
         self.max_entries = max(1, max_entries)
-        self._entries: OrderedDict[K, CacheEntry[V]] = OrderedDict()
+        self._entries: OrderedDict[K, "CacheEntry[V]"] = OrderedDict()
 
     def get(self, key: K) -> V | None:
         entry = self._entries.get(key)
@@ -26,7 +22,9 @@ class TTLCache(Generic[K, V]):
         return entry.value
 
     def set(self, key: K, value: V) -> None:
-        self._entries[key] = CacheEntry(value=value, expires_at=monotonic() + self.ttl_seconds)
+        self._entries[key] = CacheEntry(
+            value=value, expires_at=monotonic() + self.ttl_seconds
+        )
         self._entries.move_to_end(key)
         self._evict_if_needed()
 
@@ -48,6 +46,6 @@ class TTLCache(Generic[K, V]):
 
 
 @dataclass(slots=True)
-class CacheEntry(Generic[V]):
+class CacheEntry[V]:
     value: V
     expires_at: float

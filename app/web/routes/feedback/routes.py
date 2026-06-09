@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from app.dependencies import get_current_user, get_feedback_service
-from app.domain.feedback.service import FeedbackDeliveryError, FeedbackService, FeedbackValidationError
+from app.domain.feedback.service import (
+    FeedbackDeliveryError,
+    FeedbackService,
+    FeedbackValidationError,
+)
 from app.web.templates import templates
 
 router = APIRouter()
@@ -26,7 +30,9 @@ async def feedback_panel(
         request,
         page=page or request.headers.get("HX-Current-URL") or "/",
         status="idle",
-        name=current_user.display_name or current_user.username if current_user else None,
+        name=current_user.display_name or current_user.username
+        if current_user
+        else None,
         email=current_user.email if current_user else None,
     )
 

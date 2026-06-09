@@ -88,7 +88,9 @@ def build_aspnet_identity_v3_hash(
     dklen: int = 32,
 ) -> str:
     hash_name = _PRF_TO_HASH[prf]
-    subkey = hashlib.pbkdf2_hmac(hash_name, password.encode("utf-8"), salt, iterations, dklen)
+    subkey = hashlib.pbkdf2_hmac(
+        hash_name, password.encode("utf-8"), salt, iterations, dklen
+    )
     payload = b"".join(
         [
             bytes([1]),
@@ -100,4 +102,3 @@ def build_aspnet_identity_v3_hash(
         ]
     )
     return base64.b64encode(payload).decode("ascii")
-

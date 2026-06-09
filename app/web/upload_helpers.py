@@ -20,7 +20,9 @@ async def read_upload_file_limited(
             break
         total += len(chunk)
         if total > max_bytes:
-            raise PhotoUploadTooLargeError(f"Photos must be {max_bytes // (1024 * 1024)} MB or smaller.")
+            raise PhotoUploadTooLargeError(
+                f"Photos must be {max_bytes // (1024 * 1024)} MB or smaller."
+            )
         chunks.append(chunk)
 
     return b"".join(chunks)

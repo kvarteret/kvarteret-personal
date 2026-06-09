@@ -51,7 +51,9 @@ class MobileCardSnapshot:
 
 
 class MobileCardRepository(SqlAlchemyRepository):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession] | None = None
+    ) -> None:
         super().__init__(session_factory=session_factory)
 
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
@@ -68,7 +70,9 @@ class MobileCardRepository(SqlAlchemyRepository):
         )
         return await self.fetch_all_mappings(stmt)
 
-    async def store_access_code(self, *, volunteer_id: int, access_code: str, created_at: datetime) -> None:
+    async def store_access_code(
+        self, *, volunteer_id: int, access_code: str, created_at: datetime
+    ) -> None:
         async with self.session_factory() as session:
             async with session.begin():
                 await session.execute(
@@ -90,15 +94,28 @@ class MobileCardRepository(SqlAlchemyRepository):
         async with self.session_factory() as session:
             async with session.begin():
                 row = (
-                    await session.execute(
-                        select(personal.c.id)
-                        .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
-                        .where(personal.c.internkortaccesstoken == access_code)
-                        .where(personal.c.internkort_access_token_created_at.is_not(None))
-                        .where(personal.c.internkort_access_token_created_at >= expires_after)
-                        .limit(1)
+                    (
+                        await session.execute(
+                            select(personal.c.id)
+                            .where(
+                                func.lower(func.coalesce(personal.c.epost, "")) == email
+                            )
+                            .where(personal.c.internkortaccesstoken == access_code)
+                            .where(
+                                personal.c.internkort_access_token_created_at.is_not(
+                                    None
+                                )
+                            )
+                            .where(
+                                personal.c.internkort_access_token_created_at
+                                >= expires_after
+                            )
+                            .limit(1)
+                        )
                     )
-                ).mappings().first()
+                    .mappings()
+                    .first()
+                )
                 if row is None:
                     return None
                 await session.execute(
@@ -143,10 +160,13 @@ class MobileCardRepository(SqlAlchemyRepository):
                 historie.c.signert_kontrakt,
             )
             .select_from(
-                personal.outerjoin(personal_bilde, personal_bilde.c.id_personal == personal.c.id)
+                personal.outerjoin(
+                    personal_bilde, personal_bilde.c.id_personal == personal.c.id
+                )
                 .outerjoin(
                     historie,
-                    (historie.c.id_personal == personal.c.id) & (historie.c.semester == semester_code),
+                    (historie.c.id_personal == personal.c.id)
+                    & (historie.c.semester == semester_code),
                 )
                 .outerjoin(verv, verv.c.id == historie.c.id_verv)
                 .outerjoin(grupper, grupper.c.id == historie.c.id_gruppe)

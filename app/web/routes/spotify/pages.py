@@ -13,6 +13,8 @@ from app.observability import log_admin_activity
 from app.domain.spotify.now_playing import NowPlayingService, SpotifyOAuthError
 from app.web.templates import templates
 
+_SPOTIFY_OAUTH_LOGIN_CALLBACK = "spotify.oauth.login.callback"
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,10 @@ async def spotify_now_playing_page(
         user=current_user,
         action="spotify.now_playing.view",
         subject_type="spotify",
-        details={"authorized": now_playing.state["authorized"], "has_track": now_playing.state["hasTrack"]},
+        details={
+            "authorized": now_playing.state["authorized"],
+            "has_track": now_playing.state["hasTrack"],
+        },
     )
     return templates.TemplateResponse(
         request,
@@ -89,7 +94,7 @@ async def spotify_callback(
         log_admin_activity(
             request=request,
             user=current_user,
-            action="spotify.oauth.login.callback",
+            action=_SPOTIFY_OAUTH_LOGIN_CALLBACK,
             outcome="failure",
             subject_type="spotify",
             subject_id=session.session_id,
@@ -97,7 +102,9 @@ async def spotify_callback(
         )
         return _redirect_with_feedback(error="Spotify avviste autoriseringen.")
     if not code or not state:
-        return _redirect_with_feedback(error="Spotify callback was incomplete. Start the flow again.")
+        return _redirect_with_feedback(
+            error="Spotify callback was incomplete. Start the flow again."
+        )
 
     try:
         await now_playing_service.complete_oauth_callback(
@@ -111,22 +118,26 @@ async def spotify_callback(
         log_admin_activity(
             request=request,
             user=current_user,
-            action="spotify.oauth.login.callback",
+            action=_SPOTIFY_OAUTH_LOGIN_CALLBACK,
             outcome="failure",
             subject_type="spotify",
             subject_id=session.session_id,
             details={"reason": str(exc)},
         )
-        return _redirect_with_feedback(error="Kunne ikke koble til Spotify. Prøv igjen.")
+        return _redirect_with_feedback(
+            error="Kunne ikke koble til Spotify. Prøv igjen."
+        )
 
     log_admin_activity(
         request=request,
         user=current_user,
-        action="spotify.oauth.login.callback",
+        action=_SPOTIFY_OAUTH_LOGIN_CALLBACK,
         subject_type="spotify",
         subject_id=session.session_id,
     )
-    return _redirect_with_feedback(message="Spotify is now connected for shared now-playing.")
+    return _redirect_with_feedback(
+        message="Spotify is now connected for shared now-playing."
+    )
 
 
 @router.post("/spotify/logout")
@@ -157,8 +168,16 @@ def _require_active_session(request: Request) -> WebSession:
     return session
 
 
-def _redirect_with_feedback(*, message: str | None = None, error: str | None = None) -> RedirectResponse:
-    query = urlencode({key: value for key, value in {"message": message, "error": error}.items() if value})
+def _redirect_with_feedback(
+    *, message: str | None = None, error: str | None = None
+) -> RedirectResponse:
+    query = urlencode(
+        {
+            key: value
+            for key, value in {"message": message, "error": error}.items()
+            if value
+        }
+    )
     destination = "/spotify/now-playing"
     if query:
         destination = f"{destination}?{query}"

@@ -28,12 +28,17 @@ async def render_role_assignments_panel(
         else []
     )
     editing_assignment = next(
-        (assignment for assignment in assignments if assignment.history_id == editing_assignment_id),
+        (
+            assignment
+            for assignment in assignments
+            if assignment.history_id == editing_assignment_id
+        ),
         None,
     )
     editing_role_options = (
         await volunteers_service.list_assignment_roles(editing_assignment.group_id)
-        if current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN} and editing_assignment is not None
+        if current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
+        and editing_assignment is not None
         else []
     )
     current_semester_code = get_current_semester_code()
@@ -52,7 +57,8 @@ async def render_role_assignments_panel(
             "semester_term_options": SEMESTER_TERM_OPTIONS,
             "current_semester_code": current_semester_code,
             "has_active_contract": any(
-                assignment.semester_code == current_semester_code and assignment.contract_signed
+                assignment.semester_code == current_semester_code
+                and assignment.contract_signed
                 for assignment in assignments
             ),
         },
@@ -65,7 +71,9 @@ async def require_existing_volunteer(
 ):
     volunteer = await volunteers_service.get_volunteer_detail(volunteer_id)
     if volunteer is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Volunteer not found."
+        )
     return volunteer
 
 
@@ -82,9 +90,13 @@ async def render_relations_panel(
     relations = await volunteers_service.get_volunteer_relations(volunteer.volunteer_id)
     can_manage_relations = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     editing_relations = editing and can_manage_relations
-    editable_cards = relations.cards if relations.cards else [CardItem(card_id=0, card_number="")]
+    editable_cards = (
+        relations.cards if relations.cards else [CardItem(card_id=0, card_number="")]
+    )
     editable_next_of_kin = (
-        relations.next_of_kin if relations.next_of_kin else [NextOfKinItem(next_of_kin_id=0, name="", phone="")]
+        relations.next_of_kin
+        if relations.next_of_kin
+        else [NextOfKinItem(next_of_kin_id=0, name="", phone="")]
     )
     return templates.TemplateResponse(
         request,
@@ -112,8 +124,13 @@ async def render_course_completions_panel(
 ):
     # Course options are fetched only for managers because they are only needed
     # to render the mutation form, not for the read-only panel.
-    completions = await volunteers_service.list_course_completions(volunteer.volunteer_id)
-    can_manage_course_completions = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
+    completions = await volunteers_service.list_course_completions(
+        volunteer.volunteer_id
+    )
+    can_manage_course_completions = current_user.role in {
+        UserRole.ADMIN,
+        UserRole.GROUP_ADMIN,
+    }
     course_options = (
         await courses_service.list_courses(limit=500)
         if can_manage_course_completions

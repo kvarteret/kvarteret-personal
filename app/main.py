@@ -23,7 +23,12 @@ from app.observability import (
 )
 from app.runtime import app_lifespan, build_application_container
 from app.system.router import router as system_router
-from app.web.csrf import CSRF_COOKIE_NAME, CSRF_FIELD_NAME, CSRF_HEADER_NAME, CsrfTokenService
+from app.web.csrf import (
+    CSRF_COOKIE_NAME,
+    CSRF_FIELD_NAME,
+    CSRF_HEADER_NAME,
+    CsrfTokenService,
+)
 from app.web.router import web_router
 
 logger = logging.getLogger(__name__)
@@ -31,25 +36,42 @@ logger = logging.getLogger(__name__)
 
 def create_app(container=None) -> FastAPI:
     resolved_container = container or build_application_container()
-    csrf_token_service = CsrfTokenService(resolved_container.settings)
     configure_logging(resolved_container.settings)
     app = FastAPI(title="Kvarteret Personal", lifespan=app_lifespan)
     app.state.container = resolved_container
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+    _install_method_override_middleware(app)
+    _install_csrf_middleware(app, resolved_container)
+    _install_auth_context_middleware(app, resolved_container)
+    _install_request_context_middleware(app)
+    _install_http_exception_handler(app)
+    _include_routers(app)
+    return app
+
+
+def _install_method_override_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def method_override(request: Request, call_next):
         if request.method == "POST":
-            override = request.query_params.get("_method") or request.headers.get("X-HTTP-Method-Override")
+            override = request.query_params.get("_method") or request.headers.get(
+                "X-HTTP-Method-Override"
+            )
             if override:
                 request.scope["method"] = override.upper()
         return await call_next(request)
+
+
+def _install_csrf_middleware(app: FastAPI, container) -> None:
+    csrf_token_service = CsrfTokenService(container.settings)
 
     @app.middleware("http")
     async def csrf_middleware(request: Request, call_next):
         csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
         csrf_cookie_is_valid = csrf_token_service.is_valid_token(csrf_cookie)
-        request.state.csrf_token = csrf_cookie if csrf_cookie_is_valid else csrf_token_service.issue_token()
+        request.state.csrf_token = (
+            csrf_cookie if csrf_cookie_is_valid else csrf_token_service.issue_token()
+        )
         request.state.csrf_cookie_needs_refresh = not csrf_cookie_is_valid
 
         if _requires_csrf_validation(request):
@@ -62,21 +84,31 @@ def create_app(container=None) -> FastAPI:
             csrf_token_service.set_cookie(response, request, request.state.csrf_token)
         return response
 
+
+def _install_auth_context_middleware(app: FastAPI, container) -> None:
     @app.middleware("http")
     async def auth_context_middleware(request: Request, call_next):
         request.state.current_user = None
         request.state.session = None
         request.state.impersonator_user = None
         request.state.volunteer_application_pending_count = 0
-        signed_cookie = request.cookies.get(request.app.state.container.settings.session_cookie_name)
+        signed_cookie = request.cookies.get(container.settings.session_cookie_name)
         if signed_cookie:
             try:
-                session_id = request.app.state.container.session_cookie_signer.unsign_session_id(signed_cookie)
-                auth_context = await request.app.state.container.session_store.load_authenticated_user(session_id)
+                session_id = container.session_cookie_signer.unsign_session_id(
+                    signed_cookie
+                )
+                auth_context = await container.session_store.load_authenticated_user(
+                    session_id
+                )
                 if auth_context:
                     request.state.session, request.state.current_user = auth_context
-                    request.state.impersonator_user = request.state.session.impersonator_user
-                    bind_request_context(**request_context_for_user(request.state.current_user))
+                    request.state.impersonator_user = (
+                        request.state.session.impersonator_user
+                    )
+                    bind_request_context(
+                        **request_context_for_user(request.state.current_user)
+                    )
             except BadSignature:
                 request.state.current_user = None
                 request.state.session = None
@@ -88,6 +120,8 @@ def create_app(container=None) -> FastAPI:
                 request.state.impersonator_user = None
         return await call_next(request)
 
+
+def _install_request_context_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
         started_at = perf_counter()
@@ -98,20 +132,28 @@ def create_app(container=None) -> FastAPI:
             path=request.url.path,
             client_ip=client_ip_from_request(request),
         )
+        response = None
         try:
             response = await call_next(request)
         except Exception:
             log_request_exception(logger, request=request, started_at=started_at)
             raise
         finally:
-            if "response" in locals():
+            if response is not None:
                 _apply_html_preload_cache_headers(request, response)
                 response.headers["X-Request-ID"] = request_id
-                log_request(logger, request=request, status_code=response.status_code, started_at=started_at)
+                log_request(
+                    logger,
+                    request=request,
+                    status_code=response.status_code,
+                    started_at=started_at,
+                )
             reset_request_context(token)
             clear_request_context()
         return response
 
+
+def _install_http_exception_handler(app: FastAPI) -> None:
     @app.exception_handler(HTTPException)
     async def handle_http_exception(request: Request, exc: HTTPException):
         if exc.status_code == 401 and _is_web_navigation_request(request):
@@ -120,11 +162,12 @@ def create_app(container=None) -> FastAPI:
             return RedirectResponse(url="/login", status_code=303)
         return await http_exception_handler(request, exc)
 
+
+def _include_routers(app: FastAPI) -> None:
     app.include_router(system_router)
     app.include_router(media_router)
     app.include_router(api_router)
     app.include_router(web_router)
-    return app
 
 
 def _apply_html_preload_cache_headers(request: Request, response) -> None:
@@ -181,7 +224,7 @@ async def _load_submitted_csrf_token(request: Request) -> str | None:
 def _restore_request_body(request: Request, body: bytes) -> None:
     sent = False
 
-    async def receive() -> Message:
+    def receive() -> Message:
         nonlocal sent
         if sent:
             return {"type": "http.request", "body": b"", "more_body": False}

@@ -3,7 +3,21 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Float, Text, and_, case, delete, exists, func, insert, literal, or_, select, union_all, update
+from sqlalchemy import (
+    Float,
+    Text,
+    and_,
+    case,
+    delete,
+    exists,
+    func,
+    insert,
+    literal,
+    or_,
+    select,
+    union_all,
+    update,
+)
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import (
@@ -35,13 +49,23 @@ class VolunteersRepository(SqlAlchemyRepository):
         only_active: bool = False,
     ) -> list[dict[str, Any]]:
         name_sort = _name_sort_columns()
-        active_volunteers = _current_active_volunteers_subquery() if only_active else None
+        active_volunteers = (
+            _current_active_volunteers_subquery() if only_active else None
+        )
         stmt = (
             _volunteer_list_base_stmt(active_volunteers=active_volunteers)
-            .order_by(name_sort.last_name.asc(), name_sort.first_name.asc(), volunteer_records.c.id.asc())
+            .order_by(
+                name_sort.last_name.asc(),
+                name_sort.first_name.asc(),
+                volunteer_records.c.id.asc(),
+            )
             .limit(limit)
         )
-        if after_volunteer_id is not None and after_last_name is not None and after_first_name is not None:
+        if (
+            after_volunteer_id is not None
+            and after_last_name is not None
+            and after_first_name is not None
+        ):
             stmt = stmt.where(
                 or_(
                     name_sort.last_name > after_last_name,
@@ -76,20 +100,31 @@ class VolunteersRepository(SqlAlchemyRepository):
         )
 
     async def count_volunteers(self, *, only_active: bool = False) -> int:
-        active_volunteers = _current_active_volunteers_subquery() if only_active else None
+        active_volunteers = (
+            _current_active_volunteers_subquery() if only_active else None
+        )
         base = select(volunteer_records.c.id)
         if active_volunteers is not None:
             base = base.select_from(
-                volunteer_records.join(active_volunteers, active_volunteers.c.id_personal == volunteer_records.c.id)
+                volunteer_records.join(
+                    active_volunteers,
+                    active_volunteers.c.id_personal == volunteer_records.c.id,
+                )
             )
         stmt = select(func.count()).select_from(base.subquery())
         return await self.fetch_scalar(stmt) or 0
 
-    async def count_volunteers_search(self, *, normalized_query: str, only_active: bool = False) -> int:
-        stmt = _build_volunteer_search_count_stmt(normalized_query=normalized_query, only_active=only_active)
+    async def count_volunteers_search(
+        self, *, normalized_query: str, only_active: bool = False
+    ) -> int:
+        stmt = _build_volunteer_search_count_stmt(
+            normalized_query=normalized_query, only_active=only_active
+        )
         return await self.fetch_scalar(stmt) or 0
 
-    async def fetch_volunteer_shell_row(self, volunteer_id: int) -> dict[str, Any] | None:
+    async def fetch_volunteer_shell_row(
+        self, volunteer_id: int
+    ) -> dict[str, Any] | None:
         points = _pingvin_points_subquery()
         discount_levels = _current_discount_level_subquery()
         first_choice_group = grupper.alias("first_choice_group")
@@ -124,22 +159,28 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_records.outerjoin(
                     volunteer_photos,
                     volunteer_photos.c.id_personal == volunteer_records.c.id,
-                ).outerjoin(
+                )
+                .outerjoin(
                     points,
                     points.c.id_personal == volunteer_records.c.id,
-                ).outerjoin(
+                )
+                .outerjoin(
                     discount_levels,
                     discount_levels.c.id_personal == volunteer_records.c.id,
-                ).outerjoin(
+                )
+                .outerjoin(
                     registrering,
                     registrering.c.promoted_volunteer_id == volunteer_records.c.id,
-                ).outerjoin(
+                )
+                .outerjoin(
                     first_choice_group,
                     first_choice_group.c.id == registrering.c.first_choice_group_id,
-                ).outerjoin(
+                )
+                .outerjoin(
                     second_choice_group,
                     second_choice_group.c.id == registrering.c.second_choice_group_id,
-                ).outerjoin(
+                )
+                .outerjoin(
                     registrering_gruppe_medlem,
                     registrering_gruppe_medlem.c.registrering_id == registrering.c.id,
                 )
@@ -167,7 +208,9 @@ class VolunteersRepository(SqlAlchemyRepository):
                 assignment_roles.c.pingvinpoeng,
             )
             .select_from(
-                role_assignments.join(groups, groups.c.id == role_assignments.c.id_gruppe).outerjoin(
+                role_assignments.join(
+                    groups, groups.c.id == role_assignments.c.id_gruppe
+                ).outerjoin(
                     assignment_roles,
                     assignment_roles.c.id == role_assignments.c.id_verv,
                 )
@@ -191,17 +234,23 @@ class VolunteersRepository(SqlAlchemyRepository):
                 course_completions.c.gjennomfort_dato,
                 courses.c.navn.label("course_name"),
             )
-            .select_from(course_completions.join(courses, courses.c.id == course_completions.c.id_kurs))
+            .select_from(
+                course_completions.join(
+                    courses, courses.c.id == course_completions.c.id_kurs
+                )
+            )
             .where(course_completions.c.id_personal == volunteer_id)
-            .order_by(course_completions.c.gjennomfort_dato.desc(), course_completions.c.id.desc())
+            .order_by(
+                course_completions.c.gjennomfort_dato.desc(),
+                course_completions.c.id.desc(),
+            )
             .limit(limit)
         )
         return await self.fetch_all_mappings(stmt)
 
     async def list_assignment_group_rows(self) -> list[dict[str, Any]]:
-        stmt = (
-            select(groups.c.id, groups.c.navn, groups.c.aktiv)
-            .order_by(groups.c.aktiv.desc(), groups.c.navn.asc(), groups.c.id.asc())
+        stmt = select(groups.c.id, groups.c.navn, groups.c.aktiv).order_by(
+            groups.c.aktiv.desc(), groups.c.navn.asc(), groups.c.id.asc()
         )
         return await self.fetch_all_mappings(stmt)
 
@@ -214,11 +263,15 @@ class VolunteersRepository(SqlAlchemyRepository):
                 assignment_roles.c.pingvinpoeng,
             )
             .where(assignment_roles.c.id_gruppe == group_id)
-            .order_by(assignment_roles.c.verv.asc().nullslast(), assignment_roles.c.id.asc())
+            .order_by(
+                assignment_roles.c.verv.asc().nullslast(), assignment_roles.c.id.asc()
+            )
         )
         return await self.fetch_all_mappings(stmt)
 
-    async def fetch_volunteer_document_rows(self, volunteer_id: int) -> list[dict[str, Any]]:
+    async def fetch_volunteer_document_rows(
+        self, volunteer_id: int
+    ) -> list[dict[str, Any]]:
         stmt = (
             select(
                 volunteer_documents.c.id,
@@ -228,56 +281,60 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_documents.c.opprettet,
             )
             .where(volunteer_documents.c.id_personal == volunteer_id)
-            .order_by(volunteer_documents.c.opprettet.desc(), volunteer_documents.c.id.desc())
+            .order_by(
+                volunteer_documents.c.opprettet.desc(), volunteer_documents.c.id.desc()
+            )
         )
         return await self.fetch_all_mappings(stmt)
 
-    async def fetch_volunteer_relation_rows(self, volunteer_id: int) -> list[dict[str, Any]]:
-        kin_stmt = (
-            select(
-                literal("kin").label("relation_type"),
-                volunteer_next_of_kin.c.id.label("relation_id"),
-                volunteer_next_of_kin.c.navn.label("primary_text"),
-                volunteer_next_of_kin.c.telefon.label("secondary_text"),
-                volunteer_next_of_kin.c.opprettet.label("created_at"),
-            )
-            .where(volunteer_next_of_kin.c.id_personal == volunteer_id)
-        )
-        card_stmt = (
-            select(
-                literal("card").label("relation_type"),
-                volunteer_cards.c.id.label("relation_id"),
-                volunteer_cards.c.kortnummer.label("primary_text"),
-                literal(None, type_=Text()).label("secondary_text"),
-                volunteer_cards.c.opprettet.label("created_at"),
-            )
-            .where(volunteer_cards.c.id_personal == volunteer_id)
-        )
+    async def fetch_volunteer_relation_rows(
+        self, volunteer_id: int
+    ) -> list[dict[str, Any]]:
+        kin_stmt = select(
+            literal("kin").label("relation_type"),
+            volunteer_next_of_kin.c.id.label("relation_id"),
+            volunteer_next_of_kin.c.navn.label("primary_text"),
+            volunteer_next_of_kin.c.telefon.label("secondary_text"),
+            volunteer_next_of_kin.c.opprettet.label("created_at"),
+        ).where(volunteer_next_of_kin.c.id_personal == volunteer_id)
+        card_stmt = select(
+            literal("card").label("relation_type"),
+            volunteer_cards.c.id.label("relation_id"),
+            volunteer_cards.c.kortnummer.label("primary_text"),
+            literal(None, type_=Text()).label("secondary_text"),
+            volunteer_cards.c.opprettet.label("created_at"),
+        ).where(volunteer_cards.c.id_personal == volunteer_id)
         relations = union_all(kin_stmt, card_stmt).subquery()
-        stmt = (
-            select(
-                relations.c.relation_type,
-                relations.c.relation_id,
-                relations.c.primary_text,
-                relations.c.secondary_text,
-                relations.c.created_at,
-            )
-            .order_by(relations.c.created_at.desc(), relations.c.relation_id.desc())
-        )
+        stmt = select(
+            relations.c.relation_type,
+            relations.c.relation_id,
+            relations.c.primary_text,
+            relations.c.secondary_text,
+            relations.c.created_at,
+        ).order_by(relations.c.created_at.desc(), relations.c.relation_id.desc())
         return await self.fetch_all_mappings(stmt)
 
     async def volunteer_exists(self, volunteer_id: int) -> bool:
-        return bool(await self.fetch_scalar(select(exists().where(volunteer_records.c.id == volunteer_id))))
+        return bool(
+            await self.fetch_scalar(
+                select(exists().where(volunteer_records.c.id == volunteer_id))
+            )
+        )
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return await self.fetch_scalar(
             select(volunteer_records.c.id)
-            .where(func.lower(func.coalesce(volunteer_records.c.epost, "")) == email.lower())
+            .where(
+                func.lower(func.coalesce(volunteer_records.c.epost, ""))
+                == email.lower()
+            )
             .limit(1)
         )
 
     async def course_exists(self, course_id: int) -> bool:
-        return bool(await self.fetch_scalar(select(exists().where(courses.c.id == course_id))))
+        return bool(
+            await self.fetch_scalar(select(exists().where(courses.c.id == course_id)))
+        )
 
     async def fetch_photo_record(self, volunteer_id: int):
         return await self.fetch_first_mapping(
@@ -303,7 +360,9 @@ class VolunteersRepository(SqlAlchemyRepository):
                 )
             else:
                 await session.execute(
-                    insert(volunteer_photos).values(id_personal=volunteer_id, sha1=filename_hash, filetype=extension)
+                    insert(volunteer_photos).values(
+                        id_personal=volunteer_id, sha1=filename_hash, filetype=extension
+                    )
                 )
 
         await self.execute_in_transaction(save)
@@ -346,9 +405,15 @@ class VolunteersRepository(SqlAlchemyRepository):
         created_at = datetime.now(UTC)
 
         async def replace(session) -> None:
-            await session.execute(delete(volunteer_cards).where(volunteer_cards.c.id_personal == volunteer_id))
             await session.execute(
-                delete(volunteer_next_of_kin).where(volunteer_next_of_kin.c.id_personal == volunteer_id)
+                delete(volunteer_cards).where(
+                    volunteer_cards.c.id_personal == volunteer_id
+                )
+            )
+            await session.execute(
+                delete(volunteer_next_of_kin).where(
+                    volunteer_next_of_kin.c.id_personal == volunteer_id
+                )
             )
             if card_numbers:
                 await session.execute(
@@ -418,7 +483,9 @@ class VolunteersRepository(SqlAlchemyRepository):
         )
         return await self.execute_one_mapping(stmt)
 
-    async def fetch_course_completion_record(self, completion_id: int) -> dict[str, Any] | None:
+    async def fetch_course_completion_record(
+        self, completion_id: int
+    ) -> dict[str, Any] | None:
         stmt = (
             select(
                 course_completions.c.id,
@@ -432,13 +499,15 @@ class VolunteersRepository(SqlAlchemyRepository):
         return await self.fetch_first_mapping(stmt)
 
     async def delete_course_completion(self, completion_id: int) -> None:
-        await self.execute(delete(course_completions).where(course_completions.c.id == completion_id))
+        await self.execute(
+            delete(course_completions).where(course_completions.c.id == completion_id)
+        )
 
     async def role_belongs_to_group(self, *, group_id: int, role_id: int) -> bool:
         return bool(
             await self.fetch_scalar(
                 select(
-                        exists().where(
+                    exists().where(
                         assignment_roles.c.id == role_id,
                         assignment_roles.c.id_gruppe == group_id,
                     )
@@ -527,10 +596,16 @@ class VolunteersRepository(SqlAlchemyRepository):
         )
 
     async def delete_role_assignment(self, history_id: int) -> None:
-        await self.execute(delete(role_assignments).where(role_assignments.c.id == history_id))
+        await self.execute(
+            delete(role_assignments).where(role_assignments.c.id == history_id)
+        )
 
     async def delete_photo_record(self, volunteer_id: int) -> None:
-        await self.execute(delete(volunteer_photos).where(volunteer_photos.c.id_personal == volunteer_id))
+        await self.execute(
+            delete(volunteer_photos).where(
+                volunteer_photos.c.id_personal == volunteer_id
+            )
+        )
 
     async def document_exists(self, *, volunteer_id: int, filename: str) -> bool:
         return bool(
@@ -572,23 +647,55 @@ class VolunteersRepository(SqlAlchemyRepository):
 
     async def fetch_document_record(self, document_id: int):
         return await self.fetch_first_mapping(
-            select(volunteer_documents.c.id, volunteer_documents.c.id_personal, volunteer_documents.c.filename)
+            select(
+                volunteer_documents.c.id,
+                volunteer_documents.c.id_personal,
+                volunteer_documents.c.filename,
+            )
             .where(volunteer_documents.c.id == document_id)
             .limit(1)
         )
 
     async def delete_document_record(self, document_id: int) -> None:
-        await self.execute(delete(volunteer_documents).where(volunteer_documents.c.id == document_id))
+        await self.execute(
+            delete(volunteer_documents).where(volunteer_documents.c.id == document_id)
+        )
 
     async def delete_volunteer(self, volunteer_id: int) -> None:
         async def remove(session) -> None:
-            await session.execute(delete(role_assignments).where(role_assignments.c.id_personal == volunteer_id))
-            await session.execute(delete(course_completions).where(course_completions.c.id_personal == volunteer_id))
-            await session.execute(delete(volunteer_documents).where(volunteer_documents.c.id_personal == volunteer_id))
-            await session.execute(delete(volunteer_cards).where(volunteer_cards.c.id_personal == volunteer_id))
-            await session.execute(delete(volunteer_next_of_kin).where(volunteer_next_of_kin.c.id_personal == volunteer_id))
-            await session.execute(delete(volunteer_photos).where(volunteer_photos.c.id_personal == volunteer_id))
-            await session.execute(delete(volunteer_records).where(volunteer_records.c.id == volunteer_id))
+            await session.execute(
+                delete(role_assignments).where(
+                    role_assignments.c.id_personal == volunteer_id
+                )
+            )
+            await session.execute(
+                delete(course_completions).where(
+                    course_completions.c.id_personal == volunteer_id
+                )
+            )
+            await session.execute(
+                delete(volunteer_documents).where(
+                    volunteer_documents.c.id_personal == volunteer_id
+                )
+            )
+            await session.execute(
+                delete(volunteer_cards).where(
+                    volunteer_cards.c.id_personal == volunteer_id
+                )
+            )
+            await session.execute(
+                delete(volunteer_next_of_kin).where(
+                    volunteer_next_of_kin.c.id_personal == volunteer_id
+                )
+            )
+            await session.execute(
+                delete(volunteer_photos).where(
+                    volunteer_photos.c.id_personal == volunteer_id
+                )
+            )
+            await session.execute(
+                delete(volunteer_records).where(volunteer_records.c.id == volunteer_id)
+            )
 
         await self.execute_in_transaction(remove)
 
@@ -598,19 +705,27 @@ class _SearchColumns:
         self.first_name = func.lower(func.coalesce(volunteer_records.c.fornavn, ""))
         self.last_name = func.lower(func.coalesce(volunteer_records.c.etternavn, ""))
         self.full_name = func.lower(
-            func.concat_ws(" ", func.coalesce(volunteer_records.c.fornavn, ""), volunteer_records.c.etternavn)
+            func.concat_ws(
+                " ",
+                func.coalesce(volunteer_records.c.fornavn, ""),
+                volunteer_records.c.etternavn,
+            )
         )
         self.email = func.lower(func.coalesce(volunteer_records.c.epost, ""))
         self.phone = func.lower(func.coalesce(volunteer_records.c.telefon, ""))
         self.group_names = func.lower(
             func.coalesce(
-                assignment_search_text.c.group_names if assignment_search_text is not None else literal("", type_=Text()),
+                assignment_search_text.c.group_names
+                if assignment_search_text is not None
+                else literal("", type_=Text()),
                 "",
             )
         )
         self.role_names = func.lower(
             func.coalesce(
-                assignment_search_text.c.role_names if assignment_search_text is not None else literal("", type_=Text()),
+                assignment_search_text.c.role_names
+                if assignment_search_text is not None
+                else literal("", type_=Text()),
                 "",
             )
         )
@@ -648,9 +763,13 @@ def _volunteer_list_base_stmt(*, rank_score=None, active_volunteers=None):
         columns.append(rank_score)
     base_from = volunteer_records
     if active_volunteers is not None:
-        base_from = base_from.join(active_volunteers, active_volunteers.c.id_personal == volunteer_records.c.id)
+        base_from = base_from.join(
+            active_volunteers, active_volunteers.c.id_personal == volunteer_records.c.id
+        )
     return select(*columns).select_from(
-        base_from.outerjoin(volunteer_photos, volunteer_photos.c.id_personal == volunteer_records.c.id)
+        base_from.outerjoin(
+            volunteer_photos, volunteer_photos.c.id_personal == volunteer_records.c.id
+        )
         .outerjoin(points, points.c.id_personal == volunteer_records.c.id)
         .outerjoin(last_semester, last_semester.c.id_personal == volunteer_records.c.id)
     )
@@ -660,9 +779,15 @@ def _pingvin_points_subquery():
     return (
         select(
             role_assignments.c.id_personal.label("id_personal"),
-            func.coalesce(func.sum(assignment_roles.c.pingvinpoeng), 0).label("pingvin_points"),
+            func.coalesce(func.sum(assignment_roles.c.pingvinpoeng), 0).label(
+                "pingvin_points"
+            ),
         )
-        .select_from(role_assignments.outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.id_verv))
+        .select_from(
+            role_assignments.outerjoin(
+                assignment_roles, assignment_roles.c.id == role_assignments.c.id_verv
+            )
+        )
         .group_by(role_assignments.c.id_personal)
         .subquery()
     )
@@ -685,7 +810,9 @@ def _current_discount_level_subquery():
             role_assignments.c.id_personal.label("id_personal"),
             func.max(groups.c.rabatt_trinn).label("current_discount_level"),
         )
-        .select_from(role_assignments.join(groups, groups.c.id == role_assignments.c.id_gruppe))
+        .select_from(
+            role_assignments.join(groups, groups.c.id == role_assignments.c.id_gruppe)
+        )
         .where(role_assignments.c.semester == get_current_semester_code())
         .group_by(role_assignments.c.id_personal)
         .subquery()
@@ -706,14 +833,23 @@ def _assignment_search_text_subquery(*, only_current_semester: bool = True):
     base = (
         select(
             role_assignments.c.id_personal.label("id_personal"),
-            func.coalesce(func.lower(func.string_agg(func.distinct(groups.c.navn), literal(" "))), "").label("group_names"),
             func.coalesce(
-                func.lower(func.string_agg(func.distinct(assignment_roles.c.verv), literal(" "))),
+                func.lower(func.string_agg(func.distinct(groups.c.navn), literal(" "))),
+                "",
+            ).label("group_names"),
+            func.coalesce(
+                func.lower(
+                    func.string_agg(
+                        func.distinct(assignment_roles.c.verv), literal(" ")
+                    )
+                ),
                 "",
             ).label("role_names"),
         )
         .select_from(
-            role_assignments.outerjoin(groups, groups.c.id == role_assignments.c.id_gruppe).outerjoin(
+            role_assignments.outerjoin(
+                groups, groups.c.id == role_assignments.c.id_gruppe
+            ).outerjoin(
                 assignment_roles,
                 assignment_roles.c.id == role_assignments.c.id_verv,
             )
@@ -721,14 +857,18 @@ def _assignment_search_text_subquery(*, only_current_semester: bool = True):
         .group_by(role_assignments.c.id_personal)
     )
     if only_current_semester:
-        base = base.where(role_assignments.c.semester == get_current_semester_code()).where(
-            role_assignments.c.signert_kontrakt.is_(True)
-        )
+        base = base.where(
+            role_assignments.c.semester == get_current_semester_code()
+        ).where(role_assignments.c.signert_kontrakt.is_(True))
     return base.subquery()
 
 
-def _build_volunteer_search_stmt(*, normalized_query: str, limit: int, offset: int, only_active: bool = False):
-    assignment_search_text = _assignment_search_text_subquery(only_current_semester=only_active)
+def _build_volunteer_search_stmt(
+    *, normalized_query: str, limit: int, offset: int, only_active: bool = False
+):
+    assignment_search_text = _assignment_search_text_subquery(
+        only_current_semester=only_active
+    )
     active_volunteers = _current_active_volunteers_subquery() if only_active else None
     search = _search_columns(assignment_search_text)
     tokens = normalized_query.split()
@@ -749,15 +889,33 @@ def _build_volunteer_search_stmt(*, normalized_query: str, limit: int, offset: i
     ]
 
     rank_score = literal(0.0, type_=Float())
-    rank_score = rank_score + case((search.full_name == normalized_query, 100.0), else_=0.0)
-    rank_score = rank_score + case((search.last_name == normalized_query, 45.0), else_=0.0)
-    rank_score = rank_score + case((search.first_name == normalized_query, 35.0), else_=0.0)
-    rank_score = rank_score + case((search.full_name.startswith(normalized_query), 28.0), else_=0.0)
-    rank_score = rank_score + case((search.full_name.contains(normalized_query), 16.0), else_=0.0)
-    rank_score = rank_score + case((search.group_names.contains(normalized_query), 14.0), else_=0.0)
-    rank_score = rank_score + case((search.role_names.contains(normalized_query), 14.0), else_=0.0)
-    rank_score = rank_score + case((search.email.contains(normalized_query), 10.0), else_=0.0)
-    rank_score = rank_score + case((search.phone.contains(normalized_query), 10.0), else_=0.0)
+    rank_score = rank_score + case(
+        (search.full_name == normalized_query, 100.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.last_name == normalized_query, 45.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.first_name == normalized_query, 35.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.full_name.startswith(normalized_query), 28.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.full_name.contains(normalized_query), 16.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.group_names.contains(normalized_query), 14.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.role_names.contains(normalized_query), 14.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.email.contains(normalized_query), 10.0), else_=0.0
+    )
+    rank_score = rank_score + case(
+        (search.phone.contains(normalized_query), 10.0), else_=0.0
+    )
     rank_score = rank_score + (
         func.greatest(
             func.word_similarity(search.full_name, normalized_query),
@@ -769,16 +927,32 @@ def _build_volunteer_search_stmt(*, normalized_query: str, limit: int, offset: i
     )
 
     for token in tokens:
-        rank_score = rank_score + case((search.full_name.contains(token), 4.0), else_=0.0)
-        rank_score = rank_score + case((search.first_name.startswith(token), 5.0), else_=0.0)
-        rank_score = rank_score + case((search.last_name.startswith(token), 6.0), else_=0.0)
-        rank_score = rank_score + case((search.group_names.contains(token), 3.0), else_=0.0)
-        rank_score = rank_score + case((search.role_names.contains(token), 3.0), else_=0.0)
+        rank_score = rank_score + case(
+            (search.full_name.contains(token), 4.0), else_=0.0
+        )
+        rank_score = rank_score + case(
+            (search.first_name.startswith(token), 5.0), else_=0.0
+        )
+        rank_score = rank_score + case(
+            (search.last_name.startswith(token), 6.0), else_=0.0
+        )
+        rank_score = rank_score + case(
+            (search.group_names.contains(token), 3.0), else_=0.0
+        )
+        rank_score = rank_score + case(
+            (search.role_names.contains(token), 3.0), else_=0.0
+        )
         rank_score = rank_score + case((search.email.contains(token), 2.5), else_=0.0)
 
     stmt = (
-        _volunteer_list_base_stmt(rank_score=rank_score.label("rank_score"), active_volunteers=active_volunteers)
-        .outerjoin(assignment_search_text, assignment_search_text.c.id_personal == volunteer_records.c.id)
+        _volunteer_list_base_stmt(
+            rank_score=rank_score.label("rank_score"),
+            active_volunteers=active_volunteers,
+        )
+        .outerjoin(
+            assignment_search_text,
+            assignment_search_text.c.id_personal == volunteer_records.c.id,
+        )
         .where(and_(*token_filters))
         .order_by(
             rank_score.desc(),
@@ -792,8 +966,12 @@ def _build_volunteer_search_stmt(*, normalized_query: str, limit: int, offset: i
     return stmt
 
 
-def _build_volunteer_search_count_stmt(*, normalized_query: str, only_active: bool = False):
-    assignment_search_text = _assignment_search_text_subquery(only_current_semester=only_active)
+def _build_volunteer_search_count_stmt(
+    *, normalized_query: str, only_active: bool = False
+):
+    assignment_search_text = _assignment_search_text_subquery(
+        only_current_semester=only_active
+    )
     active_volunteers = _current_active_volunteers_subquery() if only_active else None
     search = _search_columns(assignment_search_text)
     tokens = normalized_query.split()
@@ -817,10 +995,18 @@ def _build_volunteer_search_count_stmt(*, normalized_query: str, only_active: bo
         .select_from(
             volunteer_records
             if active_volunteers is None
-            else volunteer_records.join(active_volunteers, active_volunteers.c.id_personal == volunteer_records.c.id)
+            else volunteer_records.join(
+                active_volunteers,
+                active_volunteers.c.id_personal == volunteer_records.c.id,
+            )
         )
-        .outerjoin(volunteer_photos, volunteer_photos.c.id_personal == volunteer_records.c.id)
-        .outerjoin(assignment_search_text, assignment_search_text.c.id_personal == volunteer_records.c.id)
+        .outerjoin(
+            volunteer_photos, volunteer_photos.c.id_personal == volunteer_records.c.id
+        )
+        .outerjoin(
+            assignment_search_text,
+            assignment_search_text.c.id_personal == volunteer_records.c.id,
+        )
         .where(and_(*token_filters))
         .subquery()
     )

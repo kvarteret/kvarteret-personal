@@ -19,7 +19,9 @@ class StoredIntegrationToken:
 
 
 class IntegrationTokensRepository(SqlAlchemyRepository):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession] | None = None) -> None:
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession] | None = None
+    ) -> None:
         super().__init__(session_factory=session_factory)
 
     async def get_token(self, provider: str) -> StoredIntegrationToken | None:
@@ -50,7 +52,9 @@ class IntegrationTokensRepository(SqlAlchemyRepository):
     ) -> None:
         async def callback(session):
             existing = await session.scalar(
-                select(integration_tokens.c.provider).where(integration_tokens.c.provider == provider)
+                select(integration_tokens.c.provider).where(
+                    integration_tokens.c.provider == provider
+                )
             )
             if existing is None:
                 await session.execute(
@@ -75,4 +79,6 @@ class IntegrationTokensRepository(SqlAlchemyRepository):
         await self.execute_in_transaction(callback)
 
     async def delete_token(self, provider: str) -> None:
-        await self.execute(delete(integration_tokens).where(integration_tokens.c.provider == provider))
+        await self.execute(
+            delete(integration_tokens).where(integration_tokens.c.provider == provider)
+        )
