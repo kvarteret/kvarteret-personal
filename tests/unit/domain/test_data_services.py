@@ -7,6 +7,8 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.config import Settings
+from app.db.rate_limit import InMemoryRateLimiter
+from app.db.session import reset_request_session, set_request_session
 from app.domain.courses.repository import CoursesRepository
 from app.domain.courses.service import (
     CoursesService,
@@ -455,13 +457,13 @@ async def test_groups_service_archive_marks_group_inactive(monkeypatch) -> None:
             )
             return FakeResult()
 
-    async def fake_execute_in_transaction(callback):
-        return await callback(FakeSession())
-
-    monkeypatch.setattr(service, "execute_in_transaction", fake_execute_in_transaction)
     monkeypatch.setattr("app.domain.groups.service.get_current_semester_code", lambda: 20261)
 
-    archived = await service.archive_group(7)
+    token = set_request_session(FakeSession())
+    try:
+        archived = await service.archive_group(7)
+    finally:
+        reset_request_session(token)
 
     assert archived is True
     assert "UPDATE public.groups SET is_active=false" in captured["sql"]
@@ -523,9 +525,6 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
             captured["params"] = params
             return FakeResult()
 
-    async def fake_execute_in_transaction(callback):
-        return await callback(FakeSession())
-
     monkeypatch.setattr(service.repository, "course_exists", fake_course_exists)
     monkeypatch.setattr(
         service.repository, "list_existing_volunteer_ids", fake_list_existing_volunteer_ids
@@ -535,11 +534,14 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
         "list_existing_course_completion_volunteer_ids",
         fake_list_existing_course_completion_volunteer_ids,
     )
-    monkeypatch.setattr(service.repository, "execute_in_transaction", fake_execute_in_transaction)
 
-    created_count = await service.create_course_completions(
-        course_id=4, volunteer_ids=[12, 13], year=2026, term=1
-    )
+    token = set_request_session(FakeSession())
+    try:
+        created_count = await service.create_course_completions(
+            course_id=4, volunteer_ids=[12, 13], year=2026, term=1
+        )
+    finally:
+        reset_request_session(token)
 
     assert created_count == 2
     assert captured["semester_code"] == 20261
@@ -1095,6 +1097,7 @@ async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts
         ),
         repository=FakeMobileCardRepository(),  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     with pytest.raises(MobileCardInvalidAccessCodeError):
@@ -1129,6 +1132,7 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         Settings(app_secret_key="test-secret", mobile_card_access_code_ttl_minutes=10),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
@@ -1169,6 +1173,7 @@ async def test_mobile_card_service_issues_new_code_on_every_request() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
@@ -1195,6 +1200,7 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1215,6 +1221,7 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1257,6 +1264,7 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(False),
     
@@ -1276,6 +1284,7 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(True),
     
@@ -1321,6 +1330,7 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         april_state_service=FakeMobileCardAprilStateService(True),
     
     )
@@ -1357,6 +1367,7 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         april_state_service=FakeMobileCardAprilStateService(True),
     
     )
@@ -1381,6 +1392,7 @@ async def test_mobile_card_service_renews_session_when_token_is_near_expiry(
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1410,6 +1422,7 @@ async def test_mobile_card_service_reports_expired_token_reason(monkeypatch) -> 
         Settings(app_secret_key="test-secret", mobile_card_session_ttl_days=1),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1436,12 +1449,14 @@ async def test_mobile_card_service_reports_bad_signature_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
     other_service = MobileCardService(
         Settings(app_secret_key="other-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1460,6 +1475,7 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 

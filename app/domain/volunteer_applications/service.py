@@ -10,6 +10,7 @@ from typing import Protocol
 
 from app.cache import TTLCache
 from app.config import Settings
+from app.db.session import commit_request_session
 from app.errors import NotConfiguredError
 from app.infrastructure.email.applicant_templates import (
     ApplicantEmailTemplateRenderer,
@@ -982,6 +983,7 @@ class VolunteerApplicationsService:
             raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send registration invitation emails.")
         invitation_url = f"{resolved_base_url}/apply/{token}"
         rendered_email = self.applicant_email_renderer.render_invitation_email(invitation_url=invitation_url)
+        await commit_request_session()
         await self.email_sender.send_email(
             recipient_email=email,
             subject=rendered_email.subject,
@@ -1006,6 +1008,7 @@ class VolunteerApplicationsService:
             inviter_name=inviter_name,
             first_choice_group_name=first_choice_group_name,
         )
+        await commit_request_session()
         await self.email_sender.send_email(
             recipient_email=email,
             subject=rendered_email.subject,
@@ -1018,6 +1021,7 @@ class VolunteerApplicationsService:
             raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send profile completion emails.")
         invitation_url = f"{resolved_base_url}/apply/{token}"
         rendered_email = self.applicant_email_renderer.render_profile_completion_email(invitation_url=invitation_url)
+        await commit_request_session()
         await self.email_sender.send_email(
             recipient_email=email,
             subject=rendered_email.subject,

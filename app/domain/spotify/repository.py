@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import delete, insert, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import integration_tokens
@@ -19,11 +18,6 @@ class StoredIntegrationToken:
 
 
 class IntegrationTokensRepository(SqlAlchemyRepository):
-    def __init__(
-        self, session_factory: async_sessionmaker[AsyncSession] | None = None
-    ) -> None:
-        super().__init__(session_factory=session_factory)
-
     async def get_token(self, provider: str) -> StoredIntegrationToken | None:
         row = await self.fetch_first_mapping(
             select(
@@ -76,7 +70,7 @@ class IntegrationTokensRepository(SqlAlchemyRepository):
                     )
                 )
 
-        await self.execute_in_transaction(callback)
+        await callback(self.session)
 
     async def delete_token(self, provider: str) -> None:
         await self.execute(

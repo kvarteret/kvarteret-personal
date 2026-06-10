@@ -218,7 +218,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 delete(user_accounts).where(user_accounts.c.id == user_account_id)
             )
 
-        await self.execute_in_transaction(delete_account)
+        await delete_account(self.session)
 
     async def _load_group_admin_ids(
         self, auth_user_ids: list[UUID]

@@ -7,7 +7,6 @@ from time import perf_counter
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import groups, role_assignments, volunteer_records, volunteer_photos, assignment_roles
@@ -53,11 +52,6 @@ class MobileCardSnapshot:
 
 
 class MobileCardRepository(SqlAlchemyRepository):
-    def __init__(
-        self, session_factory: async_sessionmaker[AsyncSession] | None = None
-    ) -> None:
-        super().__init__(session_factory=session_factory)
-
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
         stmt = (
             select(
@@ -82,9 +76,8 @@ class MobileCardRepository(SqlAlchemyRepository):
             index_elements=[mobile_card_access_codes.c.volunteer_id],
             set_={"code_hash": code_hash, "created_at": created_at},
         )
-        async with self.session_factory() as session:
-            async with session.begin():
-                await session.execute(stmt)
+        session = self.session
+        await session.execute(stmt)
 
     async def find_volunteer_by_email_and_code(
         self,
@@ -93,37 +86,36 @@ class MobileCardRepository(SqlAlchemyRepository):
         code_hash: str,
         expires_after: datetime,
     ) -> dict | None:
-        async with self.session_factory() as session:
-            async with session.begin():
-                row = (
-                    (
-                        await session.execute(
-                            select(volunteer_records.c.id)
-                            .select_from(
-                                volunteer_records.join(
-                                    mobile_card_access_codes,
-                                    mobile_card_access_codes.c.volunteer_id == volunteer_records.c.id,
-                                )
-                            )
-                            .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
-                            .where(mobile_card_access_codes.c.code_hash == code_hash)
-                            .where(mobile_card_access_codes.c.created_at >= expires_after)
-                            .limit(1)
+        session = self.session
+        row = (
+            (
+                await session.execute(
+                    select(volunteer_records.c.id)
+                    .select_from(
+                        volunteer_records.join(
+                            mobile_card_access_codes,
+                            mobile_card_access_codes.c.volunteer_id == volunteer_records.c.id,
                         )
                     )
-                    .mappings()
-                    .first()
+                    .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
+                    .where(mobile_card_access_codes.c.code_hash == code_hash)
+                    .where(mobile_card_access_codes.c.created_at >= expires_after)
+                    .limit(1)
                 )
-                if row is None:
-                    return None
-                # Codes are single-use: consuming one deletes the row
-                # (the columns are NOT NULL, so nulling them would raise).
-                await session.execute(
-                    delete(mobile_card_access_codes).where(
-                        mobile_card_access_codes.c.volunteer_id == row["id"]
-                    )
-                )
-                return dict(row)
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return None
+        # Codes are single-use: consuming one deletes the row
+        # (the columns are NOT NULL, so nulling them would raise).
+        await session.execute(
+            delete(mobile_card_access_codes).where(
+                mobile_card_access_codes.c.volunteer_id == row["id"]
+            )
+        )
+        return dict(row)
 
     async def fetch_card_snapshot(
         self,
@@ -191,22 +183,22 @@ class MobileCardRepository(SqlAlchemyRepository):
             .where(role_assignments.c.volunteer_id == volunteer_id)
             .order_by(role_assignments.c.semester.desc(), role_assignments.c.id.desc())
         )
-        async with self.session_factory() as session:
-            rows = list((await session.execute(snapshot_stmt)).mappings().all())
-            history_rows = (
-                list((await session.execute(history_stmt)).mappings().all())
-                if include_role_history
-                else []
-            )
-            log_operation_timing(
-                logger,
-                operation="mobile_card.snapshot",
-                started_at=started_at,
-                details={"volunteer_id": volunteer_id, "semester_code": semester_code},
-            )
-            if not rows:
-                return None
-            person_row = rows[0]
+        session = self.session
+        rows = list((await session.execute(snapshot_stmt)).mappings().all())
+        history_rows = (
+            list((await session.execute(history_stmt)).mappings().all())
+            if include_role_history
+            else []
+        )
+        log_operation_timing(
+            logger,
+            operation="mobile_card.snapshot",
+            started_at=started_at,
+            details={"volunteer_id": volunteer_id, "semester_code": semester_code},
+        )
+        if not rows:
+            return None
+        person_row = rows[0]
 
         photo_path = None
         if person_row["sha1"] and person_row["filetype"]:

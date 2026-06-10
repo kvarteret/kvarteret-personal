@@ -16,6 +16,7 @@ from app.db.tables import (
     user_accounts,
     web_sessions,
 )
+from app.db.session import session_scope
 from app.main import create_app
 from app.runtime import build_application_container
 
@@ -37,13 +38,15 @@ async def main() -> None:
             password=password,
             metadata={"smoke_test": True, "username": username},
         )
-        account = await container.auth_repository.create_direct_user_account(
-            auth_user_id=auth_user_id,
-            username=username,
-            email=email,
-            display_name="Smoke User",
-            role=UserRole.ADMIN,
-        )
+        runtime = container.database_runtime_manager.get_runtime()
+        async with session_scope(runtime):
+            account = await container.auth_repository.create_direct_user_account(
+                auth_user_id=auth_user_id,
+                username=username,
+                email=email,
+                display_name="Smoke User",
+                role=UserRole.ADMIN,
+            )
 
         transport = ASGITransport(app=create_app())
         async with AsyncClient(transport=transport, base_url="http://testserver") as client:
