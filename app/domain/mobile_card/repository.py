@@ -5,7 +5,8 @@ from datetime import date, datetime
 import logging
 from time import perf_counter
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
@@ -63,14 +64,6 @@ class MobileCardRepository(SqlAlchemyRepository):
                 volunteer_records.c.id,
                 volunteer_records.c.first_name,
                 volunteer_records.c.last_name,
-                mobile_card_access_codes.c.code_hash,
-                mobile_card_access_codes.c.created_at,
-            )
-            .select_from(
-                volunteer_records.outerjoin(
-                    mobile_card_access_codes,
-                    mobile_card_access_codes.c.volunteer_id == volunteer_records.c.id,
-                )
             )
             .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
             .order_by(volunteer_records.c.id.asc())
@@ -78,24 +71,26 @@ class MobileCardRepository(SqlAlchemyRepository):
         return await self.fetch_all_mappings(stmt)
 
     async def store_access_code(
-        self, *, volunteer_id: int, access_code: str, created_at: datetime
+        self, *, volunteer_id: int, code_hash: str, created_at: datetime
     ) -> None:
+        stmt = pg_insert(mobile_card_access_codes).values(
+            volunteer_id=volunteer_id,
+            code_hash=code_hash,
+            created_at=created_at,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[mobile_card_access_codes.c.volunteer_id],
+            set_={"code_hash": code_hash, "created_at": created_at},
+        )
         async with self.session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    update(mobile_card_access_codes)
-                    .where(mobile_card_access_codes.c.volunteer_id == volunteer_id)
-                    .values(
-                        code_hash=access_code,
-                        created_at=created_at,
-                    )
-                )
+                await session.execute(stmt)
 
     async def find_volunteer_by_email_and_code(
         self,
         *,
         email: str,
-        access_code: str,
+        code_hash: str,
         expires_after: datetime,
     ) -> dict | None:
         async with self.session_factory() as session:
@@ -111,7 +106,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                                 )
                             )
                             .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
-                            .where(mobile_card_access_codes.c.code_hash == access_code)
+                            .where(mobile_card_access_codes.c.code_hash == code_hash)
                             .where(mobile_card_access_codes.c.created_at >= expires_after)
                             .limit(1)
                         )
@@ -121,10 +116,12 @@ class MobileCardRepository(SqlAlchemyRepository):
                 )
                 if row is None:
                     return None
+                # Codes are single-use: consuming one deletes the row
+                # (the columns are NOT NULL, so nulling them would raise).
                 await session.execute(
-                    update(mobile_card_access_codes)
-                    .where(mobile_card_access_codes.c.volunteer_id == row["id"])
-                    .values(code_hash=None, created_at=None)
+                    delete(mobile_card_access_codes).where(
+                        mobile_card_access_codes.c.volunteer_id == row["id"]
+                    )
                 )
                 return dict(row)
 

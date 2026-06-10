@@ -20,6 +20,7 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
+from app.db.rate_limit import InMemoryRateLimiter
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardInvalidAccessCodeError,
@@ -218,12 +219,12 @@ class FakeMobileCardRepository:
         return list(self.volunteers_by_email)
 
     async def store_access_code(
-        self, *, volunteer_id: int, access_code: str, created_at: datetime
+        self, *, volunteer_id: int, code_hash: str, created_at: datetime
     ) -> None:
-        self.stored_access_codes.append((volunteer_id, access_code, created_at))
+        self.stored_access_codes.append((volunteer_id, code_hash, created_at))
 
     async def find_volunteer_by_email_and_code(
-        self, *, email: str, access_code: str, expires_after: datetime
+        self, *, email: str, code_hash: str, expires_after: datetime
     ) -> dict | None:
         return self.volunteer_by_email_and_code
 
@@ -1094,6 +1095,7 @@ async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts
         ),
         repository=FakeMobileCardRepository(),  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     with pytest.raises(MobileCardInvalidAccessCodeError):
@@ -1128,52 +1130,59 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         Settings(app_secret_key="test-secret", mobile_card_access_code_ttl_minutes=10),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
 
     assert len(repository.stored_access_codes) == 1
-    volunteer_id, access_code, created_at = repository.stored_access_codes[0]
+    volunteer_id, code_hash, created_at = repository.stored_access_codes[0]
     assert volunteer_id == 12
     assert created_at.tzinfo == UTC
-    assert len(access_code) == 6
+    assert len(code_hash) == 64  # SHA-256 hex digest
     assert email_sender.sent_emails[0]["recipient_email"] == "person@example.com"
     assert (
         email_sender.sent_emails[0]["subject"]
         == "Kvarteret Internkort is ready for you"
     )
     assert "Your verification code" in email_sender.sent_emails[0]["html_body"]
-    assert access_code in email_sender.sent_emails[0]["html_body"]
+    import re
+    assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"]), "expected a 6-digit code in the email"
     assert "This code expires in 10 minutes." in email_sender.sent_emails[0]["html_body"]
     assert "If you did not request this code" in email_sender.sent_emails[0]["html_body"]
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_resends_recent_access_code_during_cooldown() -> None:
+async def test_mobile_card_service_issues_new_code_on_every_request() -> None:
+    """Every access-code request generates and stores a new code (cooldown reuse is dead)."""
     repository = FakeMobileCardRepository(
         volunteers_by_email=[
             {
                 "id": 12,
                 "first_name": "Ada",
                 "last_name": "Lovelace",
-                "code_hash": "654321",
+                "code_hash": "some-old-hash",
                 "created_at": datetime.now(UTC),
             }
         ]
     )
     email_sender = FakeEmailSender()
     service = MobileCardService(
-        Settings(
-            app_secret_key="test-secret", mobile_card_access_code_cooldown_seconds=60
-        ),
+        Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
 
-    assert repository.stored_access_codes == []
-    assert email_sender.sent_emails[0]["html_body"].find("654321") != -1
+    # A new code was stored (not empty), even though an old one existed.
+    assert len(repository.stored_access_codes) == 1
+    _, code_hash_new, _ = repository.stored_access_codes[0]
+    assert code_hash_new != "some-old-hash"
+    # The email contains a 6-digit code.
+    import re
+    assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"])
 
 
 @pytest.mark.asyncio
@@ -1189,6 +1198,8 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.serializer.dumps({"person_id": 12})
@@ -1208,6 +1219,8 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.serializer.dumps({"person_id": 12})
@@ -1251,6 +1264,8 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
         email_sender=FakeEmailSender(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(False),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
@@ -1269,6 +1284,8 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
         email_sender=FakeEmailSender(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(True),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
@@ -1312,6 +1329,8 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         april_state_service=FakeMobileCardAprilStateService(True),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
@@ -1347,6 +1366,8 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         april_state_service=FakeMobileCardAprilStateService(True),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
@@ -1369,6 +1390,8 @@ async def test_mobile_card_service_renews_session_when_token_is_near_expiry(
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1397,6 +1420,8 @@ async def test_mobile_card_service_reports_expired_token_reason(monkeypatch) -> 
         Settings(app_secret_key="test-secret", mobile_card_session_ttl_days=1),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1422,11 +1447,15 @@ async def test_mobile_card_service_reports_bad_signature_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
     other_service = MobileCardService(
         Settings(app_secret_key="other-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = other_service.serializer.dumps({"person_id": 12})
@@ -1444,6 +1473,8 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.serializer.dumps({"review": False})

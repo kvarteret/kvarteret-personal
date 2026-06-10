@@ -9,16 +9,19 @@ from itsdangerous import BadSignature
 from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginError, LoginService
+from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.dependencies import (
     get_current_user,
     get_login_service,
     get_mobile_card_april_state_service,
+    get_rate_limiter,
     get_session_cookie_signer,
     get_session_store,
     get_settings,
     get_supabase_auth_gateway,
     require_authenticated_user,
 )
+from app.observability import client_ip_from_request
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -109,7 +112,40 @@ async def login_submit(
     login_service: LoginService = Depends(get_login_service),
     session_cookie_signer: SessionCookieSigner = Depends(get_session_cookie_signer),
     settings=Depends(get_settings),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ):
+    normalized_identifier = identifier.strip().lower()
+    client_ip = client_ip_from_request(request)
+    throttle_keys = [f"login:account:{normalized_identifier}"]
+    if client_ip:
+        throttle_keys.append(f"login:ip:{client_ip}")
+    try:
+        # Counted before verification so failures cannot race the check.
+        for key in throttle_keys:
+            await rate_limiter.hit(
+                key,
+                limit=settings.login_attempt_limit,
+                window_seconds=settings.login_attempt_window_seconds,
+            )
+    except RateLimitExceeded:
+        logger.warning(
+            "login throttled",
+            extra={
+                "event": "auth.login.throttled",
+                "event_data": {"identifier": normalized_identifier},
+            },
+        )
+        return templates.TemplateResponse(
+            request,
+            _LOGIN_TEMPLATE,
+            {
+                "title": "Login",
+                "section": "login",
+                "error_message": "Too many login attempts. Try again later.",
+                "message": None,
+            },
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
     try:
         result = await login_service.login(
             identifier=identifier,

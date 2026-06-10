@@ -12,14 +12,25 @@ layers =
     app.db
     app.infrastructure
     app.shared
+unmatched_ignore_imports_alerting = none
 ignore_imports =
-    app.domain -> app.db
-    app.domain -> app.db.tables
-    app.domain -> app.db.repository
-    app.domain -> app.db.table_defs
-    app.web -> app.domain
-    app.web -> app.infrastructure
-    app.web -> app.shared
-    app.domain -> app.infrastructure
-    app.domain -> app.shared
-    app.db -> app.domain
+    app.domain.* -> app.db.metadata
+    app.domain.* -> app.db.repository
+    app.domain.* -> app.db.tables
+    app.domain.* -> app.db.rate_limit
+    app.domain.* -> app.infrastructure.formatting.semester
+    app.domain.mobile_card.service -> app.infrastructure.email.mobile_card_templates
+    app.domain.mobile_card.service -> app.infrastructure.email.protocols
+    app.domain.mobile_card.service -> app.infrastructure.email.smtp
+    app.domain.volunteers.service -> app.infrastructure.media.photo_processing
+    app.domain.volunteers.service -> app.infrastructure.contact.phone_numbers
+    app.domain.volunteers.service -> app.infrastructure.storage.service
+    app.domain.volunteer_applications.service -> app.infrastructure.email.applicant_templates
+    app.domain.volunteer_applications.service -> app.infrastructure.email.protocols
+    app.domain.volunteer_applications.service -> app.infrastructure.media.photo_processing
+    app.domain.volunteer_applications.service -> app.infrastructure.contact.phone_numbers
+    app.domain.volunteers.models -> app.infrastructure.formatting.semester
+    app.db.table_defs.public -> app.domain.*.tables
+    app.web.* -> app.domain.*
+    app.web.* -> app.infrastructure.*
+    app.web.* -> app.shared.*

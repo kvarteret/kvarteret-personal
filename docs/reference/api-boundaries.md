@@ -88,8 +88,6 @@ tables. The repo is retired, so those source references are historical evidence
 only and are not a coordination requirement for `kvarteret-personal` table
 removal.
 
-## Deprecated Compatibility Boundary
+## Removed Legacy Boundary
 
-`POST /api/DigitalInternkort/RequestAccessTokenOnEmail` and `POST /api/DigitalInternkort/GetInternkortInformation` are deprecated compatibility endpoints for older clients. New code should use `/api/v1/mobile-card/*`.
-
-Do not remove these endpoints until all supported clients have moved to the v1 mobile-card API and release data confirms that older app versions no longer need them.
+`POST /api/DigitalInternkort/RequestAccessTokenOnEmail` and `POST /api/DigitalInternkort/GetInternkortInformation` were permanently removed on 2026-06-10 as part of the legacy restructure (M4). The four-week traffic gate was waived by the product owner. Pre-v1 app installs that called these paths lose mobile-card access and must update to the v1 mobile-card API at `/api/v1/mobile-card/*`.
