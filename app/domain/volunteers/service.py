@@ -16,15 +16,6 @@ from app.observability import log_operation_timing
 from app.shared.text import normalize_search_query
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number
-from app.domain.volunteers.mappers import (
-    map_course_completion_item,
-    map_group_option,
-    map_role_assignment_item,
-    map_volunteer_detail,
-    map_volunteer_list_item,
-    map_relations,
-    map_role_option,
-)
 from app.domain.volunteers.models import (
     AssignmentRoleOption,
     CourseCompletionNotFoundError,
@@ -66,7 +57,7 @@ class VolunteersService:
         photo_upload_max_bytes: int = 40 * 1024 * 1024,
         photo_max_dimension: int = 2048,
     ) -> None:
-        self.repository = repository or VolunteersRepository()
+        self.repository = repository
         self.storage_service = storage_service
         self.media_token_service = media_token_service
         self.detail_cache_ttl_seconds = detail_cache_ttl_seconds or 300
@@ -153,7 +144,7 @@ class VolunteersService:
                 )
                 has_more = len(rows) > safe_limit
                 visible_rows = rows[:safe_limit]
-                items = [map_volunteer_list_item(row) for row in visible_rows]
+                items = [VolunteerListItem.from_row(row) for row in visible_rows]
                 for item, row in zip(items, visible_rows, strict=False):
                     item.photo_url = _build_photo_url(
                         self.media_token_service, row.get("sha1"), row.get("filetype")
@@ -190,7 +181,7 @@ class VolunteersService:
             row = await self.repository.fetch_volunteer_shell_row(volunteer_id)
             if row is None:
                 return None
-            volunteer = map_volunteer_detail(row)
+            volunteer = VolunteerDetail.from_row(row)
             volunteer.photo_url = _build_photo_url(
                 self.media_token_service, row.get("sha1"), row.get("filetype")
             )
@@ -215,7 +206,7 @@ class VolunteersService:
             rows = await self.repository.fetch_volunteer_role_assignment_rows(
                 volunteer_id, limit=limit
             )
-            items = [map_role_assignment_item(row) for row in rows]
+            items = [RoleAssignmentItem.from_row(row) for row in rows]
             self._cache_set(volunteer_id, "history", items)
             return items
         finally:
@@ -239,7 +230,7 @@ class VolunteersService:
             rows = await self.repository.fetch_volunteer_course_completion_rows(
                 volunteer_id, limit=limit
             )
-            items = [map_course_completion_item(row) for row in rows]
+            items = [VolunteerCourseCompletionItem.from_row(row) for row in rows]
             self._cache_set(volunteer_id, "course_completions", items)
             return items
         finally:
@@ -257,7 +248,7 @@ class VolunteersService:
             return cached
         try:
             rows = await self.repository.fetch_volunteer_relation_rows(volunteer_id)
-            relations = map_relations(rows)
+            relations = VolunteerRelations.from_rows(rows)
             self._cache_set(volunteer_id, "relations", relations)
             return relations
         finally:
@@ -270,11 +261,11 @@ class VolunteersService:
 
     async def list_assignment_groups(self) -> list[GroupOption]:
         rows = await self.repository.list_assignment_group_rows()
-        return [map_group_option(row) for row in rows]
+        return [GroupOption.from_row(row) for row in rows]
 
     async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
         rows = await self.repository.list_assignment_role_rows(group_id)
-        return [map_role_option(row) for row in rows]
+        return [AssignmentRoleOption.from_row(row) for row in rows]
 
     async def update_volunteer_profile(
         self,
@@ -335,7 +326,7 @@ class VolunteersService:
                 continue
             if normalized_name is None or normalized_phone is None:
                 raise InvalidVolunteerRelationsError(
-                    "Hver pårørende må ha både navn og telefon."
+                    "Hver pårørende må ha både name og phone."
                 )
             normalized_next_of_kin.append(
                 {
@@ -404,7 +395,7 @@ class VolunteersService:
         self, volunteer_id: int, completion_id: int
     ) -> None:
         row = await self.repository.fetch_course_completion_record(completion_id)
-        if not row or row["id_personal"] != volunteer_id:
+        if not row or row["volunteer_id"] != volunteer_id:
             raise CourseCompletionNotFoundError(
                 f"Course completion {completion_id} was not found."
             )
@@ -430,7 +421,7 @@ class VolunteersService:
             group_id=group_id, role_id=role_id
         ):
             raise InvalidRoleAssignmentError(
-                "Selected verv does not belong to the selected group."
+                "Selected name does not belong to the selected group."
             )
         if await self.repository.role_assignment_exists(
             volunteer_id=volunteer_id,
@@ -439,7 +430,7 @@ class VolunteersService:
             semester_code=semester_code,
         ):
             raise DuplicateRoleAssignmentError(
-                "This verv is already registered for the selected semester."
+                "This name is already registered for the selected semester."
             )
         await self.repository.create_role_assignment(
             volunteer_id=volunteer_id,
@@ -462,7 +453,7 @@ class VolunteersService:
         contract_signed: bool,
     ) -> None:
         row = await self.repository.fetch_role_assignment_record(history_id)
-        if not row or row["id_personal"] != volunteer_id:
+        if not row or row["volunteer_id"] != volunteer_id:
             raise RoleAssignmentNotFoundError(
                 f"Role assignment {history_id} was not found."
             )
@@ -473,7 +464,7 @@ class VolunteersService:
             group_id=group_id, role_id=role_id
         ):
             raise InvalidRoleAssignmentError(
-                "Selected verv does not belong to the selected group."
+                "Selected name does not belong to the selected group."
             )
         if await self.repository.role_assignment_exists(
             volunteer_id=volunteer_id,
@@ -483,7 +474,7 @@ class VolunteersService:
             exclude_history_id=history_id,
         ):
             raise DuplicateRoleAssignmentError(
-                "This verv is already registered for the selected semester."
+                "This name is already registered for the selected semester."
             )
         await self.repository.update_role_assignment(
             history_id,
@@ -498,7 +489,7 @@ class VolunteersService:
         self, volunteer_id: int, history_id: int
     ) -> None:
         row = await self.repository.fetch_role_assignment_record(history_id)
-        if not row or row["id_personal"] != volunteer_id:
+        if not row or row["volunteer_id"] != volunteer_id:
             raise RoleAssignmentNotFoundError(
                 f"Role assignment {history_id} was not found."
             )
@@ -634,7 +625,7 @@ class VolunteersService:
         return VolunteerListPage(
             items=[
                 _with_photo_url(
-                    map_volunteer_list_item(row),
+                    VolunteerListItem.from_row(row),
                     self.media_token_service,
                     row.get("sha1"),
                     row.get("filetype"),
@@ -718,8 +709,8 @@ def _encode_browse_cursor(row: dict[str, Any]) -> str:
     return _encode_cursor(
         {
             "mode": "browse",
-            "last_name": row["etternavn"],
-            "first_name": row.get("fornavn") or "",
+            "last_name": row["last_name"],
+            "first_name": row.get("first_name") or "",
             "volunteer_id": row["id"],
         }
     )

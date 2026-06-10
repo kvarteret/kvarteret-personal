@@ -5,11 +5,13 @@ from datetime import date, datetime
 import logging
 from time import perf_counter
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import grupper, historie, personal, personal_bilde, verv
+from app.db.tables import groups, role_assignments, volunteer_records, volunteer_photos, assignment_roles
+from app.domain.mobile_card.tables import mobile_card_access_codes
 from app.observability import log_operation_timing
 
 logger = logging.getLogger("app.performance")
@@ -59,36 +61,36 @@ class MobileCardRepository(SqlAlchemyRepository):
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
         stmt = (
             select(
-                personal.c.id,
-                personal.c.fornavn,
-                personal.c.etternavn,
-                personal.c.internkortaccesstoken,
-                personal.c.internkort_access_token_created_at,
+                volunteer_records.c.id,
+                volunteer_records.c.first_name,
+                volunteer_records.c.last_name,
             )
-            .where(func.lower(func.coalesce(personal.c.epost, "")) == email)
-            .order_by(personal.c.id.asc())
+            .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
+            .order_by(volunteer_records.c.id.asc())
         )
         return await self.fetch_all_mappings(stmt)
 
     async def store_access_code(
-        self, *, volunteer_id: int, access_code: str, created_at: datetime
+        self, *, volunteer_id: int, code_hash: str, created_at: datetime
     ) -> None:
+        stmt = pg_insert(mobile_card_access_codes).values(
+            volunteer_id=volunteer_id,
+            code_hash=code_hash,
+            created_at=created_at,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[mobile_card_access_codes.c.volunteer_id],
+            set_={"code_hash": code_hash, "created_at": created_at},
+        )
         async with self.session_factory() as session:
             async with session.begin():
-                await session.execute(
-                    update(personal)
-                    .where(personal.c.id == volunteer_id)
-                    .values(
-                        internkortaccesstoken=access_code,
-                        internkort_access_token_created_at=created_at,
-                    )
-                )
+                await session.execute(stmt)
 
     async def find_volunteer_by_email_and_code(
         self,
         *,
         email: str,
-        access_code: str,
+        code_hash: str,
         expires_after: datetime,
     ) -> dict | None:
         async with self.session_factory() as session:
@@ -96,20 +98,16 @@ class MobileCardRepository(SqlAlchemyRepository):
                 row = (
                     (
                         await session.execute(
-                            select(personal.c.id)
-                            .where(
-                                func.lower(func.coalesce(personal.c.epost, "")) == email
-                            )
-                            .where(personal.c.internkortaccesstoken == access_code)
-                            .where(
-                                personal.c.internkort_access_token_created_at.is_not(
-                                    None
+                            select(volunteer_records.c.id)
+                            .select_from(
+                                volunteer_records.join(
+                                    mobile_card_access_codes,
+                                    mobile_card_access_codes.c.volunteer_id == volunteer_records.c.id,
                                 )
                             )
-                            .where(
-                                personal.c.internkort_access_token_created_at
-                                >= expires_after
-                            )
+                            .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
+                            .where(mobile_card_access_codes.c.code_hash == code_hash)
+                            .where(mobile_card_access_codes.c.created_at >= expires_after)
                             .limit(1)
                         )
                     )
@@ -118,12 +116,11 @@ class MobileCardRepository(SqlAlchemyRepository):
                 )
                 if row is None:
                     return None
+                # Codes are single-use: consuming one deletes the row
+                # (the columns are NOT NULL, so nulling them would raise).
                 await session.execute(
-                    update(personal)
-                    .where(personal.c.id == row["id"])
-                    .values(
-                        internkortaccesstoken=None,
-                        internkort_access_token_created_at=None,
+                    delete(mobile_card_access_codes).where(
+                        mobile_card_access_codes.c.volunteer_id == row["id"]
                     )
                 )
                 return dict(row)
@@ -137,62 +134,62 @@ class MobileCardRepository(SqlAlchemyRepository):
     ) -> MobileCardSnapshot | None:
         started_at = perf_counter()
         points_stmt = (
-            select(func.coalesce(func.sum(verv.c.pingvinpoeng), 0))
-            .select_from(historie.outerjoin(verv, verv.c.id == historie.c.id_verv))
-            .where(historie.c.id_personal == volunteer_id)
+            select(func.coalesce(func.sum(assignment_roles.c.penguin_points), 0))
+            .select_from(role_assignments.outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.role_id))
+            .where(role_assignments.c.volunteer_id == volunteer_id)
             .scalar_subquery()
         )
         snapshot_stmt = (
             select(
-                personal.c.id,
-                personal.c.fornavn,
-                personal.c.etternavn,
-                personal.c.fodselsdato,
-                personal.c.opprettet,
-                personal_bilde.c.sha1,
-                personal_bilde.c.filetype,
+                volunteer_records.c.id,
+                volunteer_records.c.first_name,
+                volunteer_records.c.last_name,
+                volunteer_records.c.birth_date,
+                volunteer_records.c.created_at,
+                volunteer_photos.c.sha1,
+                volunteer_photos.c.filetype,
                 points_stmt.label("pingvin_points"),
-                verv.c.verv.label("verv_navn"),
-                grupper.c.navn.label("gruppe_navn"),
-                historie.c.id_gruppe.label("gruppe_id"),
-                grupper.c.rabatt_trinn,
-                verv.c.pingvinpoeng.label("pingvin_poeng"),
-                historie.c.signert_kontrakt,
+                assignment_roles.c.name.label("verv_navn"),
+                groups.c.name.label("gruppe_navn"),
+                role_assignments.c.group_id.label("gruppe_id"),
+                groups.c.discount_tier,
+                assignment_roles.c.penguin_points.label("pingvin_poeng"),
+                role_assignments.c.contract_signed,
             )
             .select_from(
-                personal.outerjoin(
-                    personal_bilde, personal_bilde.c.id_personal == personal.c.id
+                volunteer_records.outerjoin(
+                    volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
                 )
                 .outerjoin(
-                    historie,
-                    (historie.c.id_personal == personal.c.id)
-                    & (historie.c.semester == semester_code),
+                    role_assignments,
+                    (role_assignments.c.volunteer_id == volunteer_records.c.id)
+                    & (role_assignments.c.semester == semester_code),
                 )
-                .outerjoin(verv, verv.c.id == historie.c.id_verv)
-                .outerjoin(grupper, grupper.c.id == historie.c.id_gruppe)
+                .outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.role_id)
+                .outerjoin(groups, groups.c.id == role_assignments.c.group_id)
             )
-            .where(personal.c.id == volunteer_id)
-            .order_by(grupper.c.navn.asc().nullslast(), verv.c.verv.asc().nullslast())
+            .where(volunteer_records.c.id == volunteer_id)
+            .order_by(groups.c.name.asc().nullslast(), assignment_roles.c.name.asc().nullslast())
         )
         history_stmt = (
             select(
-                historie.c.id,
-                historie.c.semester,
-                historie.c.id_gruppe.label("gruppe_id"),
-                grupper.c.navn.label("gruppe_navn"),
-                verv.c.verv.label("verv_navn"),
-                grupper.c.rabatt_trinn,
-                verv.c.pingvinpoeng.label("pingvin_poeng"),
-                historie.c.signert_kontrakt,
+                role_assignments.c.id,
+                role_assignments.c.semester,
+                role_assignments.c.group_id.label("gruppe_id"),
+                groups.c.name.label("gruppe_navn"),
+                assignment_roles.c.name.label("verv_navn"),
+                groups.c.discount_tier,
+                assignment_roles.c.penguin_points.label("pingvin_poeng"),
+                role_assignments.c.contract_signed,
             )
             .select_from(
-                historie.join(grupper, grupper.c.id == historie.c.id_gruppe).outerjoin(
-                    verv,
-                    verv.c.id == historie.c.id_verv,
+                role_assignments.join(groups, groups.c.id == role_assignments.c.group_id).outerjoin(
+                    assignment_roles,
+                    assignment_roles.c.id == role_assignments.c.role_id,
                 )
             )
-            .where(historie.c.id_personal == volunteer_id)
-            .order_by(historie.c.semester.desc(), historie.c.id.desc())
+            .where(role_assignments.c.volunteer_id == volunteer_id)
+            .order_by(role_assignments.c.semester.desc(), role_assignments.c.id.desc())
         )
         async with self.session_factory() as session:
             rows = list((await session.execute(snapshot_stmt)).mappings().all())
@@ -217,10 +214,10 @@ class MobileCardRepository(SqlAlchemyRepository):
 
         return MobileCardSnapshot(
             volunteer_id=person_row["id"],
-            first_name=person_row["fornavn"] or "",
-            last_name=person_row["etternavn"],
-            birth_date=person_row["fodselsdato"],
-            created_at=person_row["opprettet"],
+            first_name=person_row["first_name"] or "",
+            last_name=person_row["last_name"],
+            birth_date=person_row["birth_date"],
+            created_at=person_row["created_at"],
             photo_path=photo_path,
             pingvin_points=int(person_row["pingvin_points"] or 0),
             active_roles=[
@@ -228,9 +225,9 @@ class MobileCardRepository(SqlAlchemyRepository):
                     name=row["verv_navn"],
                     group=row["gruppe_navn"],
                     group_id=row["gruppe_id"],
-                    discount_level=row["rabatt_trinn"],
+                    discount_level=row["discount_tier"],
                     pingvin_points=int(row["pingvin_poeng"] or 0),
-                    signed_contract=row["signert_kontrakt"],
+                    signed_contract=row["contract_signed"],
                 )
                 for row in rows
                 if row["verv_navn"] is not None and row["gruppe_navn"] is not None
@@ -240,9 +237,9 @@ class MobileCardRepository(SqlAlchemyRepository):
                     name=row["verv_navn"] or "",
                     group=row["gruppe_navn"],
                     group_id=row["gruppe_id"],
-                    discount_level=row["rabatt_trinn"],
+                    discount_level=row["discount_tier"],
                     pingvin_points=int(row["pingvin_poeng"] or 0),
-                    signed_contract=row["signert_kontrakt"],
+                    signed_contract=row["contract_signed"],
                     semester=int(row["semester"]),
                     is_active=int(row["semester"]) == semester_code,
                 )

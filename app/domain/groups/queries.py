@@ -22,7 +22,7 @@ from sqlalchemy import (
 )
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import grupper, historie, personal, personal_bilde, verv
+from app.db.tables import groups, role_assignments, volunteer_records, volunteer_photos, assignment_roles
 from app.infrastructure.formatting.semester import (
     format_semester_code,
     get_current_semester_code,
@@ -138,32 +138,32 @@ class GroupsQueries(SqlAlchemyRepository):
     ) -> list[GroupListItem]:
         stmt = (
             select(
-                grupper.c.id,
-                grupper.c.navn,
-                grupper.c.beskrivelse,
-                grupper.c.aktiv,
-                grupper.c.aktiv_til_og_med,
-                grupper.c.id_overgruppe,
-                grupper.c.rabatt_trinn,
+                groups.c.id,
+                groups.c.name,
+                groups.c.description,
+                groups.c.is_active,
+                groups.c.active_through_semester,
+                groups.c.parent_group_id,
+                groups.c.discount_tier,
             )
-            .order_by(grupper.c.navn.asc(), grupper.c.id.asc())
+            .order_by(groups.c.name.asc(), groups.c.id.asc())
             .limit(limit)
         )
         if query and query.strip():
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(
-                or_(grupper.c.navn.ilike(pattern), grupper.c.beskrivelse.ilike(pattern))
+                or_(groups.c.name.ilike(pattern), groups.c.description.ilike(pattern))
             )
         rows = await self.fetch_all_mappings(stmt)
         return [
             GroupListItem(
                 group_id=row["id"],
-                name=row["navn"],
-                description=row["beskrivelse"],
-                active=row["aktiv"],
-                active_until_semester=row["aktiv_til_og_med"],
-                parent_group_id=row["id_overgruppe"],
-                discount_step=row["rabatt_trinn"],
+                name=row["name"],
+                description=row["description"],
+                active=row["is_active"],
+                active_until_semester=row["active_through_semester"],
+                parent_group_id=row["parent_group_id"],
+                discount_step=row["discount_tier"],
             )
             for row in rows
         ]
@@ -173,23 +173,23 @@ class GroupsQueries(SqlAlchemyRepository):
         current_semester = get_current_semester_code()
         role_assignment_counts = (
             select(
-                historie.c.id_verv.label("role_id"),
+                role_assignments.c.role_id.label("role_id"),
                 func.count().label("assignment_count"),
             )
-            .where(historie.c.id_gruppe == group_id, historie.c.id_verv.is_not(None))
-            .group_by(historie.c.id_verv)
+            .where(role_assignments.c.group_id == group_id, role_assignments.c.role_id.is_not(None))
+            .group_by(role_assignments.c.role_id)
             .subquery()
         )
         group_select = select(
             literal("group").label("row_type"),
-            grupper.c.id.label("group_id"),
-            grupper.c.navn.label("group_name"),
-            grupper.c.beskrivelse.label("group_description"),
-            grupper.c.aktiv.label("group_active"),
-            grupper.c.aktiv_til_og_med.label("group_active_until"),
-            grupper.c.id_overgruppe.label("group_parent_id"),
-            grupper.c.rabatt_trinn.label("group_discount_step"),
-            grupper.c.opprettet.label("group_created_at"),
+            groups.c.id.label("group_id"),
+            groups.c.name.label("group_name"),
+            groups.c.description.label("group_description"),
+            groups.c.is_active.label("group_active"),
+            groups.c.active_through_semester.label("group_active_until"),
+            groups.c.parent_group_id.label("group_parent_id"),
+            groups.c.discount_tier.label("group_discount_step"),
+            groups.c.created_at.label("group_created_at"),
             literal(None, type_=BigInteger()).label("position_id"),
             literal(None, type_=Text()).label("position_name"),
             literal(None, type_=Integer()).label("position_points"),
@@ -203,7 +203,7 @@ class GroupsQueries(SqlAlchemyRepository):
             literal(None, type_=Text()).label("member_role_name"),
             literal(None, type_=Integer()).label("member_semester"),
             literal(None, type_=Boolean()).label("member_contract_signed"),
-        ).where(grupper.c.id == group_id)
+        ).where(groups.c.id == group_id)
         positions_select = (
             select(
                 literal("position").label("row_type"),
@@ -214,10 +214,10 @@ class GroupsQueries(SqlAlchemyRepository):
                 literal(None, type_=Integer()).label("group_active_until"),
                 literal(None, type_=BigInteger()).label("group_parent_id"),
                 literal(None, type_=Integer()).label("group_discount_step"),
-                literal(None, type_=grupper.c.opprettet.type).label("group_created_at"),
-                verv.c.id.label("position_id"),
-                verv.c.verv.label("position_name"),
-                verv.c.pingvinpoeng.label("position_points"),
+                literal(None, type_=groups.c.created_at.type).label("group_created_at"),
+                assignment_roles.c.id.label("position_id"),
+                assignment_roles.c.name.label("position_name"),
+                assignment_roles.c.penguin_points.label("position_points"),
                 func.coalesce(role_assignment_counts.c.assignment_count, 0).label(
                     "position_assignment_count"
                 ),
@@ -232,40 +232,40 @@ class GroupsQueries(SqlAlchemyRepository):
                 literal(None, type_=Boolean()).label("member_contract_signed"),
             )
             .select_from(
-                verv.outerjoin(
+                assignment_roles.outerjoin(
                     role_assignment_counts,
-                    role_assignment_counts.c.role_id == verv.c.id,
+                    role_assignment_counts.c.role_id == assignment_roles.c.id,
                 )
             )
-            .where(verv.c.id_gruppe == group_id)
+            .where(assignment_roles.c.group_id == group_id)
         )
         recent_members = (
             select(
-                historie.c.id,
-                historie.c.id_personal,
-                historie.c.semester,
-                historie.c.signert_kontrakt,
-                personal.c.fornavn,
-                personal.c.etternavn,
-                personal_bilde.c.sha1,
-                personal_bilde.c.filetype,
-                verv.c.verv.label("role_name"),
+                role_assignments.c.id,
+                role_assignments.c.volunteer_id,
+                role_assignments.c.semester,
+                role_assignments.c.contract_signed,
+                volunteer_records.c.first_name,
+                volunteer_records.c.last_name,
+                volunteer_photos.c.sha1,
+                volunteer_photos.c.filetype,
+                assignment_roles.c.name.label("role_name"),
             )
             .select_from(
-                historie.join(personal, personal.c.id == historie.c.id_personal)
+                role_assignments.join(volunteer_records, volunteer_records.c.id == role_assignments.c.volunteer_id)
                 .outerjoin(
-                    personal_bilde, personal_bilde.c.id_personal == personal.c.id
+                    volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
                 )
-                .outerjoin(verv, verv.c.id == historie.c.id_verv)
+                .outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.role_id)
             )
             .where(
-                historie.c.id_gruppe == group_id,
-                historie.c.semester == current_semester,
+                role_assignments.c.group_id == group_id,
+                role_assignments.c.semester == current_semester,
             )
             .order_by(
-                personal.c.etternavn.asc(),
-                personal.c.fornavn.asc(),
-                historie.c.id.asc(),
+                volunteer_records.c.last_name.asc(),
+                volunteer_records.c.first_name.asc(),
+                role_assignments.c.id.asc(),
             )
             .subquery()
         )
@@ -278,20 +278,20 @@ class GroupsQueries(SqlAlchemyRepository):
             literal(None, type_=Integer()).label("group_active_until"),
             literal(None, type_=BigInteger()).label("group_parent_id"),
             literal(None, type_=Integer()).label("group_discount_step"),
-            literal(None, type_=grupper.c.opprettet.type).label("group_created_at"),
+            literal(None, type_=groups.c.created_at.type).label("group_created_at"),
             literal(None, type_=BigInteger()).label("position_id"),
             literal(None, type_=Text()).label("position_name"),
             literal(None, type_=Integer()).label("position_points"),
             literal(None, type_=Integer()).label("position_assignment_count"),
             recent_members.c.id.label("history_id"),
-            recent_members.c.id_personal.label("volunteer_id"),
-            recent_members.c.fornavn.label("volunteer_first_name"),
-            recent_members.c.etternavn.label("volunteer_last_name"),
+            recent_members.c.volunteer_id.label("volunteer_id"),
+            recent_members.c.first_name.label("volunteer_first_name"),
+            recent_members.c.last_name.label("volunteer_last_name"),
             recent_members.c.sha1.label("volunteer_photo_sha1"),
             recent_members.c.filetype.label("volunteer_photo_filetype"),
             recent_members.c.role_name.label("member_role_name"),
             recent_members.c.semester.label("member_semester"),
-            recent_members.c.signert_kontrakt.label("member_contract_signed"),
+            recent_members.c.contract_signed.label("member_contract_signed"),
         )
         rows = await self.fetch_all_mappings(
             union_all(group_select, positions_select, members_select)
@@ -335,29 +335,29 @@ class GroupsQueries(SqlAlchemyRepository):
     async def get_group_history_by_semester(self, group_id: int) -> list[SemesterGroup]:
         stmt = (
             select(
-                historie.c.id,
-                historie.c.id_personal,
-                historie.c.semester,
-                historie.c.signert_kontrakt,
-                personal.c.fornavn,
-                personal.c.etternavn,
-                personal_bilde.c.sha1,
-                personal_bilde.c.filetype,
-                verv.c.verv.label("role_name"),
+                role_assignments.c.id,
+                role_assignments.c.volunteer_id,
+                role_assignments.c.semester,
+                role_assignments.c.contract_signed,
+                volunteer_records.c.first_name,
+                volunteer_records.c.last_name,
+                volunteer_photos.c.sha1,
+                volunteer_photos.c.filetype,
+                assignment_roles.c.name.label("role_name"),
             )
             .select_from(
-                historie.join(personal, personal.c.id == historie.c.id_personal)
+                role_assignments.join(volunteer_records, volunteer_records.c.id == role_assignments.c.volunteer_id)
                 .outerjoin(
-                    personal_bilde, personal_bilde.c.id_personal == personal.c.id
+                    volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
                 )
-                .outerjoin(verv, verv.c.id == historie.c.id_verv)
+                .outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.role_id)
             )
-            .where(historie.c.id_gruppe == group_id)
+            .where(role_assignments.c.group_id == group_id)
             .order_by(
-                historie.c.semester.desc(),
-                personal.c.etternavn.asc(),
-                personal.c.fornavn.asc(),
-                historie.c.id.asc(),
+                role_assignments.c.semester.desc(),
+                volunteer_records.c.last_name.asc(),
+                volunteer_records.c.first_name.asc(),
+                role_assignments.c.id.asc(),
             )
         )
         rows = await self.fetch_all_mappings(stmt)
@@ -367,9 +367,9 @@ class GroupsQueries(SqlAlchemyRepository):
             grouped_members[semester_code].append(
                 GroupMemberItem(
                     history_id=row["id"],
-                    volunteer_id=row["id_personal"],
+                    volunteer_id=row["volunteer_id"],
                     volunteer_name=build_full_name(
-                        row.get("fornavn"), row.get("etternavn")
+                        row.get("first_name"), row.get("last_name")
                     ),
                     photo_url=_build_group_member_photo_url(
                         row.get("sha1"), row.get("filetype")
@@ -378,7 +378,7 @@ class GroupsQueries(SqlAlchemyRepository):
                     semester_code=semester_code,
                     semester_label=format_semester_code(semester_code)
                     or str(semester_code),
-                    contract_signed=row["signert_kontrakt"],
+                    contract_signed=row["contract_signed"],
                 )
             )
         return [
@@ -394,12 +394,12 @@ class GroupsQueries(SqlAlchemyRepository):
     async def get_group_semester_stats(self, group_id: int) -> list[SemesterStats]:
         stmt = (
             select(
-                historie.c.semester,
-                func.count(distinct(historie.c.id_personal)).label("member_count"),
+                role_assignments.c.semester,
+                func.count(distinct(role_assignments.c.volunteer_id)).label("member_count"),
             )
-            .where(historie.c.id_gruppe == group_id)
-            .group_by(historie.c.semester)
-            .order_by(historie.c.semester.asc())
+            .where(role_assignments.c.group_id == group_id)
+            .group_by(role_assignments.c.semester)
+            .order_by(role_assignments.c.semester.asc())
         )
         rows = await self.fetch_all_mappings(stmt)
         return [
@@ -416,16 +416,16 @@ class GroupsQueries(SqlAlchemyRepository):
         current_semester = get_current_semester_code()
         stmt = (
             select(
-                grupper.c.id,
-                grupper.c.navn,
-                func.count(distinct(historie.c.id_personal)).label("member_count"),
+                groups.c.id,
+                groups.c.name,
+                func.count(distinct(role_assignments.c.volunteer_id)).label("member_count"),
             )
-            .select_from(grupper.join(historie, historie.c.id_gruppe == grupper.c.id))
-            .where(historie.c.semester == current_semester)
-            .group_by(grupper.c.id, grupper.c.navn)
+            .select_from(groups.join(role_assignments, role_assignments.c.group_id == groups.c.id))
+            .where(role_assignments.c.semester == current_semester)
+            .group_by(groups.c.id, groups.c.name)
             .order_by(
-                func.count(distinct(historie.c.id_personal)).desc(),
-                grupper.c.navn.asc(),
+                func.count(distinct(role_assignments.c.volunteer_id)).desc(),
+                groups.c.name.asc(),
             )
             .limit(25)
         )
@@ -433,7 +433,7 @@ class GroupsQueries(SqlAlchemyRepository):
         return [
             GroupMemberCount(
                 group_id=row["id"],
-                group_name=row["navn"],
+                group_name=row["name"],
                 member_count=row["member_count"],
             )
             for row in rows
@@ -442,24 +442,24 @@ class GroupsQueries(SqlAlchemyRepository):
     async def get_org_stats_detailed(self) -> list[OrgSemesterDetailed]:
         org_stmt = (
             select(
-                historie.c.semester,
-                func.count(distinct(historie.c.id_personal)).label("unique_members"),
+                role_assignments.c.semester,
+                func.count(distinct(role_assignments.c.volunteer_id)).label("unique_members"),
             )
-            .group_by(historie.c.semester)
-            .order_by(historie.c.semester.asc())
+            .group_by(role_assignments.c.semester)
+            .order_by(role_assignments.c.semester.asc())
         )
         breakdown_stmt = (
             select(
-                historie.c.semester,
-                grupper.c.navn.label("group_name"),
-                func.count(distinct(historie.c.id_personal)).label("member_count"),
+                role_assignments.c.semester,
+                groups.c.name.label("group_name"),
+                func.count(distinct(role_assignments.c.volunteer_id)).label("member_count"),
             )
-            .select_from(historie.join(grupper, grupper.c.id == historie.c.id_gruppe))
-            .group_by(historie.c.semester, grupper.c.id, grupper.c.navn)
+            .select_from(role_assignments.join(groups, groups.c.id == role_assignments.c.group_id))
+            .group_by(role_assignments.c.semester, groups.c.id, groups.c.name)
             .order_by(
-                historie.c.semester.asc(),
-                func.count(distinct(historie.c.id_personal)).desc(),
-                grupper.c.navn.asc(),
+                role_assignments.c.semester.asc(),
+                func.count(distinct(role_assignments.c.volunteer_id)).desc(),
+                groups.c.name.asc(),
             )
         )
         org_rows = await self.fetch_all_mappings(org_stmt)
@@ -486,16 +486,16 @@ class GroupsQueries(SqlAlchemyRepository):
     async def get_org_retention_stats(self) -> list[SemesterRetentionStats]:
         current_members = (
             select(
-                historie.c.semester.label("semester"),
-                historie.c.id_personal.label("id_personal"),
+                role_assignments.c.semester.label("semester"),
+                role_assignments.c.volunteer_id.label("volunteer_id"),
             )
             .distinct()
             .subquery("current_members")
         )
-        history_prev_any = historie.alias("history_prev_any")
-        history_next_any = historie.alias("history_next_any")
-        history_same_source = historie.alias("history_same_source")
-        history_next_same = historie.alias("history_next_same")
+        history_prev_any = role_assignments.alias("history_prev_any")
+        history_next_any = role_assignments.alias("history_next_any")
+        history_same_source = role_assignments.alias("history_same_source")
+        history_next_same = role_assignments.alias("history_next_same")
         previous_semester = case(
             (current_members.c.semester % 10 == 1, current_members.c.semester - 9),
             else_=current_members.c.semester - 1,
@@ -508,7 +508,7 @@ class GroupsQueries(SqlAlchemyRepository):
             select(literal(1))
             .select_from(history_prev_any)
             .where(
-                history_prev_any.c.id_personal == current_members.c.id_personal,
+                history_prev_any.c.volunteer_id == current_members.c.volunteer_id,
                 history_prev_any.c.semester == previous_semester,
             )
             .exists()
@@ -517,7 +517,7 @@ class GroupsQueries(SqlAlchemyRepository):
             select(literal(1))
             .select_from(history_next_any)
             .where(
-                history_next_any.c.id_personal == current_members.c.id_personal,
+                history_next_any.c.volunteer_id == current_members.c.volunteer_id,
                 history_next_any.c.semester == next_semester,
             )
             .exists()
@@ -528,16 +528,16 @@ class GroupsQueries(SqlAlchemyRepository):
                 history_same_source.join(
                     history_next_same,
                     (
-                        history_next_same.c.id_personal
-                        == history_same_source.c.id_personal
+                        history_next_same.c.volunteer_id
+                        == history_same_source.c.volunteer_id
                     )
                     & (
-                        history_next_same.c.id_gruppe == history_same_source.c.id_gruppe
+                        history_next_same.c.group_id == history_same_source.c.group_id
                     ),
                 )
             )
             .where(
-                history_same_source.c.id_personal == current_members.c.id_personal,
+                history_same_source.c.volunteer_id == current_members.c.volunteer_id,
                 history_same_source.c.semester == current_members.c.semester,
                 history_next_same.c.semester == next_semester,
             )
@@ -569,16 +569,16 @@ class GroupsQueries(SqlAlchemyRepository):
     ) -> list[SemesterRetentionStats]:
         current_members = (
             select(
-                historie.c.semester.label("semester"),
-                historie.c.id_personal.label("id_personal"),
+                role_assignments.c.semester.label("semester"),
+                role_assignments.c.volunteer_id.label("volunteer_id"),
             )
-            .where(historie.c.id_gruppe == group_id)
+            .where(role_assignments.c.group_id == group_id)
             .distinct()
             .subquery("current_group_members")
         )
-        history_prev_same_group = historie.alias("history_prev_same_group")
-        history_next_same_group = historie.alias("history_next_same_group")
-        history_next_any = historie.alias("history_next_any")
+        history_prev_same_group = role_assignments.alias("history_prev_same_group")
+        history_next_same_group = role_assignments.alias("history_next_same_group")
+        history_next_any = role_assignments.alias("history_next_any")
         previous_semester = case(
             (current_members.c.semester % 10 == 1, current_members.c.semester - 9),
             else_=current_members.c.semester - 1,
@@ -591,8 +591,8 @@ class GroupsQueries(SqlAlchemyRepository):
             select(literal(1))
             .select_from(history_prev_same_group)
             .where(
-                history_prev_same_group.c.id_personal == current_members.c.id_personal,
-                history_prev_same_group.c.id_gruppe == group_id,
+                history_prev_same_group.c.volunteer_id == current_members.c.volunteer_id,
+                history_prev_same_group.c.group_id == group_id,
                 history_prev_same_group.c.semester == previous_semester,
             )
             .exists()
@@ -601,8 +601,8 @@ class GroupsQueries(SqlAlchemyRepository):
             select(literal(1))
             .select_from(history_next_same_group)
             .where(
-                history_next_same_group.c.id_personal == current_members.c.id_personal,
-                history_next_same_group.c.id_gruppe == group_id,
+                history_next_same_group.c.volunteer_id == current_members.c.volunteer_id,
+                history_next_same_group.c.group_id == group_id,
                 history_next_same_group.c.semester == next_semester,
             )
             .exists()
@@ -611,7 +611,7 @@ class GroupsQueries(SqlAlchemyRepository):
             select(literal(1))
             .select_from(history_next_any)
             .where(
-                history_next_any.c.id_personal == current_members.c.id_personal,
+                history_next_any.c.volunteer_id == current_members.c.volunteer_id,
                 history_next_any.c.semester == next_semester,
             )
             .exists()
@@ -640,13 +640,13 @@ class GroupsQueries(SqlAlchemyRepository):
     async def _get_group_delete_blockers(self, group_id: int) -> list[str]:
         child_group_count = await self.fetch_scalar(
             select(func.count())
-            .select_from(grupper)
-            .where(grupper.c.id_overgruppe == group_id)
+            .select_from(groups)
+            .where(groups.c.parent_group_id == group_id)
         )
         history_count = await self.fetch_scalar(
             select(func.count())
-            .select_from(historie)
-            .where(historie.c.id_gruppe == group_id)
+            .select_from(role_assignments)
+            .where(role_assignments.c.group_id == group_id)
         )
         blockers: list[str] = []
         if child_group_count:

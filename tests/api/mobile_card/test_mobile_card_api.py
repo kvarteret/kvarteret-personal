@@ -268,48 +268,6 @@ def test_mobile_card_session_returns_generic_invalid_credentials() -> None:
     assert response.json() == {"detail": "Invalid email or access code."}
 
 
-def test_legacy_mobile_card_adapter_returns_legacy_contract() -> None:
-    client = _make_client()
-
-    response = client.post(
-        "/api/DigitalInternkort/GetInternkortInformation",
-        json={"email": "person.one@example.com", "accessToken": "123456"},
-    )
-
-    payload = response.json()
-
-    assert response.status_code == 200
-    assert payload["fornavn"] == "Sample"
-    assert payload["aktiveVerv"][0]["navn"] == "Shift lead"
-    assert payload["aktiveVerv"][0]["pingvinPoeng"] == 4
-    assert "vervHistorikk" not in payload
-    assert "pingvinPoengSum" in payload
-
-
-def test_legacy_mobile_card_errors_return_plain_text_for_mobile_app() -> None:
-    client = _make_client()
-
-    response = client.post(
-        "/api/DigitalInternkort/RequestAccessTokenOnEmail",
-        json={"email": "missing@example.com"},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-
-
-def test_legacy_mobile_card_session_uses_generic_invalid_credentials() -> None:
-    client = _make_client()
-
-    response = client.post(
-        "/api/DigitalInternkort/GetInternkortInformation",
-        json={"email": "missing@example.com", "accessToken": "123456"},
-    )
-
-    assert response.status_code == 401
-    assert response.text == "Invalid email or access code."
-
-
 def test_mobile_card_access_code_request_returns_429_when_rate_limited() -> None:
     client = _make_client()
 

@@ -14,13 +14,13 @@ from app.db.session import build_database_runtime
 from app.services.phone_numbers import analyze_phone_number, is_obviously_false_phone_number
 
 TABLES = (
-    ("personal", "id", "telefon"),
-    ("paarorende", "id", "telefon"),
-    ("nytt_personal", "id", "telefon"),
+    ("volunteer_records", "id", "phone"),
+    ("volunteer_next_of_kin", "id", "phone"),
+    ("volunteer_application_submissions", "id", "phone"),
     ("aspnetusers", "id", "phonenumber"),
 )
 NON_NULL_SENTINELS: dict[tuple[str, str], str] = {
-    ("paarorende", "telefon"): "INVALID PHONE",
+    ("volunteer_next_of_kin", "phone"): "INVALID PHONE",
 }
 
 

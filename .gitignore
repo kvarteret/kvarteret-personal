@@ -21,4 +21,5 @@ supabase/.temp/
 app/static/css/output.css
 public/static/css/output.css
 .scannerwork/
-.ralph/
+.env.bak
+.sonarqube-password

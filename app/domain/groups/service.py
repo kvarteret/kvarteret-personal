@@ -14,10 +14,10 @@ from sqlalchemy import (
 
 from app.db.tables import (
     group_admin_memberships,
-    grupper,
-    grupper_kurs_kobling,
-    historie,
-    verv,
+    groups,
+    group_course_requirements,
+    role_assignments,
+    assignment_roles,
 )
 from app.domain.groups.queries import (
     GroupBreakdownItem,
@@ -134,19 +134,19 @@ class GroupsService(GroupsQueries):
         discount_step: int | None,
     ) -> int:
         row = await self.execute_one_mapping(
-            insert(grupper)
+            insert(groups)
             .values(
-                navn=name.strip(),
-                beskrivelse=(
+                name=name.strip(),
+                description=(
                     description.strip() if description and description.strip() else None
                 ),
-                aktiv=active,
-                aktiv_til_og_med=active_until_semester,
-                id_overgruppe=parent_group_id,
-                rabatt_trinn=discount_step,
-                opprettet=datetime.now(UTC),
+                is_active=active,
+                active_through_semester=active_until_semester,
+                parent_group_id=parent_group_id,
+                discount_tier=discount_step,
+                created_at=datetime.now(UTC),
             )
-            .returning(grupper.c.id)
+            .returning(groups.c.id)
         )
         return row["id"]
 
@@ -163,21 +163,21 @@ class GroupsService(GroupsQueries):
     ) -> bool:
         async def callback(session):
             result = await session.execute(
-                update(grupper)
-                .where(grupper.c.id == group_id)
+                update(groups)
+                .where(groups.c.id == group_id)
                 .values(
-                    navn=name.strip(),
-                    beskrivelse=(
+                    name=name.strip(),
+                    description=(
                         description.strip()
                         if description and description.strip()
                         else None
                     ),
-                    aktiv=active,
-                    aktiv_til_og_med=active_until_semester,
-                    id_overgruppe=parent_group_id,
-                    rabatt_trinn=discount_step,
+                    is_active=active,
+                    active_through_semester=active_until_semester,
+                    parent_group_id=parent_group_id,
+                    discount_tier=discount_step,
                 )
-                .returning(grupper.c.id)
+                .returning(groups.c.id)
             )
             row = result.first()
             return row[0] if row is not None else None
@@ -190,19 +190,19 @@ class GroupsService(GroupsQueries):
 
         async def callback(session):
             result = await session.execute(
-                update(grupper)
-                .where(grupper.c.id == group_id)
+                update(groups)
+                .where(groups.c.id == group_id)
                 .values(
-                    aktiv=False,
-                    aktiv_til_og_med=case(
+                    is_active=False,
+                    active_through_semester=case(
                         (
-                            grupper.c.aktiv_til_og_med > current_semester,
+                            groups.c.active_through_semester > current_semester,
                             current_semester,
                         ),
-                        else_=grupper.c.aktiv_til_og_med,
+                        else_=groups.c.active_through_semester,
                     ),
                 )
-                .returning(grupper.c.id)
+                .returning(groups.c.id)
             )
             row = result.first()
             return row[0] if row is not None else None
@@ -218,17 +218,17 @@ class GroupsService(GroupsQueries):
         async def callback(session):
             await session.execute(
                 delete(group_admin_memberships).where(
-                    group_admin_memberships.c.gruppe_id == group_id
+                    group_admin_memberships.c.group_id == group_id
                 )
             )
             await session.execute(
-                delete(grupper_kurs_kobling).where(
-                    grupper_kurs_kobling.c.id_gruppe == group_id
+                delete(group_course_requirements).where(
+                    group_course_requirements.c.group_id == group_id
                 )
             )
-            await session.execute(delete(verv).where(verv.c.id_gruppe == group_id))
+            await session.execute(delete(assignment_roles).where(assignment_roles.c.group_id == group_id))
             result = await session.execute(
-                delete(grupper).where(grupper.c.id == group_id).returning(grupper.c.id)
+                delete(groups).where(groups.c.id == group_id).returning(groups.c.id)
             )
             row = result.first()
             return row[0] if row is not None else None
@@ -243,13 +243,13 @@ class GroupsService(GroupsQueries):
         if not normalized_role_name:
             raise ValueError("Role name is required.")
         row = await self.execute_one_mapping(
-            insert(verv)
+            insert(assignment_roles)
             .values(
-                id_gruppe=group_id,
-                verv=normalized_role_name,
-                pingvinpoeng=pingvin_points,
+                group_id=group_id,
+                name=normalized_role_name,
+                penguin_points=pingvin_points,
             )
-            .returning(verv.c.id)
+            .returning(assignment_roles.c.id)
         )
         return row["id"] if row is not None else None
 
@@ -262,13 +262,13 @@ class GroupsService(GroupsQueries):
 
         async def callback(session):
             result = await session.execute(
-                update(verv)
-                .where(verv.c.id == role_id, verv.c.id_gruppe == group_id)
+                update(assignment_roles)
+                .where(assignment_roles.c.id == role_id, assignment_roles.c.group_id == group_id)
                 .values(
-                    verv=normalized_role_name,
-                    pingvinpoeng=pingvin_points,
+                    name=normalized_role_name,
+                    penguin_points=pingvin_points,
                 )
-                .returning(verv.c.id)
+                .returning(assignment_roles.c.id)
             )
             row = result.first()
             return row[0] if row is not None else None
@@ -283,9 +283,9 @@ class GroupsService(GroupsQueries):
 
         async def callback(session):
             result = await session.execute(
-                delete(verv)
-                .where(verv.c.id == role_id, verv.c.id_gruppe == group_id)
-                .returning(verv.c.id)
+                delete(assignment_roles)
+                .where(assignment_roles.c.id == role_id, assignment_roles.c.group_id == group_id)
+                .returning(assignment_roles.c.id)
             )
             row = result.first()
             return row[0] if row is not None else None
@@ -295,30 +295,30 @@ class GroupsService(GroupsQueries):
 
     async def delete_group_history_entry(self, group_id: int, history_id: int) -> None:
         row = await self.fetch_one_mapping(
-            select(historie.c.id, historie.c.id_gruppe).where(
-                historie.c.id == history_id
+            select(role_assignments.c.id, role_assignments.c.group_id).where(
+                role_assignments.c.id == history_id
             )
         )
-        if row is None or row["id_gruppe"] != group_id:
+        if row is None or row["group_id"] != group_id:
             raise GroupHistoryNotFoundError(
                 f"Group history entry {history_id} was not found."
             )
-        await self.execute(delete(historie).where(historie.c.id == history_id))
+        await self.execute(delete(role_assignments).where(role_assignments.c.id == history_id))
 
     async def _get_group_role_delete_blockers(
         self, group_id: int, role_id: int
     ) -> list[str]:
         role_exists = await self.fetch_scalar(
             select(func.count())
-            .select_from(verv)
-            .where(verv.c.id == role_id, verv.c.id_gruppe == group_id)
+            .select_from(assignment_roles)
+            .where(assignment_roles.c.id == role_id, assignment_roles.c.group_id == group_id)
         )
         if not role_exists:
             return []
         history_count = await self.fetch_scalar(
             select(func.count())
-            .select_from(historie)
-            .where(historie.c.id_verv == role_id, historie.c.id_gruppe == group_id)
+            .select_from(role_assignments)
+            .where(role_assignments.c.role_id == role_id, role_assignments.c.group_id == group_id)
         )
         blockers: list[str] = []
         if history_count:

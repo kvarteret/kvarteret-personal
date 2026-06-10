@@ -38,7 +38,6 @@ class FakeRepository:
         return UserAccount(
             id=8,
             auth_user_id=auth_user_id,
-            legacy_user_id=None,
             username=username,
             email=email,
             display_name=display_name,
@@ -138,7 +137,6 @@ async def test_login_with_existing_account_uses_supabase_password_login() -> Non
     repository.user_account = UserAccount(
         id=9,
         auth_user_id=uuid4(),
-        legacy_user_id=1,
         username="admin",
         email="admin@example.test",
         display_name="Admin User",
@@ -149,7 +147,7 @@ async def test_login_with_existing_account_uses_supabase_password_login() -> Non
     supabase_auth.sign_in_result = repository.user_account.auth_user_id
     service = LoginService(repository, supabase_auth, FakeSessionStore())
 
-    result = await service.login_with_bridge(
+    result = await service.login(
         identifier="admin",
         password="correct",
         ip_address="127.0.0.1",
@@ -167,7 +165,7 @@ async def test_login_with_unknown_identifier_raises() -> None:
     service = LoginService(repository, FakeSupabaseAuth(), FakeSessionStore())
 
     with pytest.raises(LoginError):
-        await service.login_with_bridge(
+        await service.login(
             identifier="nobody",
             password="anything",
             ip_address="127.0.0.1",
@@ -181,7 +179,6 @@ async def test_login_with_invalid_password_raises() -> None:
     repository.user_account = UserAccount(
         id=1,
         auth_user_id=uuid4(),
-        legacy_user_id=None,
         username="admin",
         email="admin@example.test",
         display_name="Admin",
@@ -193,7 +190,7 @@ async def test_login_with_invalid_password_raises() -> None:
     service = LoginService(repository, supabase_auth, FakeSessionStore())
 
     with pytest.raises(LoginError):
-        await service.login_with_bridge(
+        await service.login(
             identifier="admin",
             password="wrong",
             ip_address="127.0.0.1",
@@ -207,7 +204,6 @@ async def test_login_normalizes_identifier_before_repository_lookups() -> None:
     repository.user_account = UserAccount(
         id=2,
         auth_user_id=uuid4(),
-        legacy_user_id=None,
         username="admin",
         email="admin@example.test",
         display_name="Admin",
@@ -218,7 +214,7 @@ async def test_login_normalizes_identifier_before_repository_lookups() -> None:
     supabase_auth.sign_in_result = repository.user_account.auth_user_id
     service = LoginService(repository, supabase_auth, FakeSessionStore())
 
-    await service.login_with_bridge(
+    await service.login(
         identifier="  Admin ",
         password="correct",
         ip_address="127.0.0.1",

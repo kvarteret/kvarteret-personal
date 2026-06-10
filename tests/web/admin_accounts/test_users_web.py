@@ -21,7 +21,6 @@ class FakeAdminAccountsService:
             5: AdminAccountDetail(
                 user_account_id=5,
                 auth_user_id=uuid4(),
-                legacy_user_id=4,
                 username="admin",
                 email="admin.user@example.test",
                 display_name="System User",
@@ -34,7 +33,6 @@ class FakeAdminAccountsService:
             7: AdminAccountDetail(
                 user_account_id=7,
                 auth_user_id=uuid4(),
-                legacy_user_id=4,
                 username="sample.admin",
                 email="sample.admin@example.test",
                 display_name="Sample Admin",
@@ -51,7 +49,6 @@ class FakeAdminAccountsService:
             AdminAccountListItem(
                 user_account_id=7,
                 auth_user_id=uuid4(),
-                legacy_user_id=4,
                 username="sample.admin",
                 email="sample.admin@example.test",
                 display_name="Sample Admin",
@@ -81,7 +78,6 @@ class FakeAdminAccountsService:
         return AdminAccountDetail(
             user_account_id=11,
             auth_user_id=auth_user_id,
-            legacy_user_id=None,
             username=username,
             email=email,
             display_name=display_name,

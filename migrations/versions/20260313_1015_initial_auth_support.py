@@ -1,7 +1,7 @@
 """initial auth support tables
 
 Revision ID: 20260313_1015
-Revises:
+Revises: 20260313_0900
 Create Date: 2026-03-13 10:15:00
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "20260313_1015"
-down_revision = None
+down_revision = "20260313_0900"
 branch_labels = None
 depends_on = None
 
@@ -74,4 +74,3 @@ def downgrade() -> None:
     op.drop_index("ix_user_accounts_username", table_name="user_accounts")
     op.drop_index("ix_user_accounts_email", table_name="user_accounts")
     op.drop_table("user_accounts")
-

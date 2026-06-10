@@ -27,17 +27,20 @@ From `/Users/kluvin/dev/kvarteret/samfunnetibergen`:
 
     npm run api:sync
 
-This runs `make -C ../kvarteret-personal openapi` and regenerates the generated client/snapshot. Current public arrangement pages and feeds in `samfunnetibergen` are Sanity-backed, so only treat personal event API changes as a runtime `samfunnetibergen` dependency after verifying an active import or route call in that repo.
+This runs `make -C ../kvarteret-personal openapi` and regenerates the generated client/snapshot. Current public arrangement pages and feeds in `samfunnetibergen` are Sanity-backed. The retired personal event API is not a runtime `samfunnetibergen` dependency.
 
-## 4. Check `frontend-eventside`
+## 4. Record retired `frontend-eventside` impact
 
-`frontend-eventside` currently writes event data directly through Supabase instead of a generated `kvarteret-personal` API client. When event schema changes, inspect:
+`frontend-eventside` is retired. Its source still contains stale direct
+Supabase event-table code at historical paths such as:
 
     /Users/kluvin/dev/kvarteret/frontend-eventside/src/lib/services/events.ts
     /Users/kluvin/dev/kvarteret/frontend-eventside/src/lib/services/types.ts
     /Users/kluvin/dev/kvarteret/frontend-eventside/src/components/form
 
-Schema changes must be compatible with the direct Supabase writer until event writes move behind a backend API.
+These references are not a live client-regeneration requirement. If
+`frontend-eventside` is ever resurrected, rebuild it against the then-current
+event source instead of the retired `kvarteret-personal` event tables.
 
 ## 5. Acceptance
 

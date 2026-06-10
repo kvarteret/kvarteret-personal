@@ -6,7 +6,7 @@ from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import grupper, historie, personal, verv
+from app.db.tables import groups, role_assignments, volunteer_records, assignment_roles
 from app.infrastructure.formatting.semester import (
     format_semester_code,
     get_current_semester_code,
@@ -63,12 +63,12 @@ class SemesterTransferService(SqlAlchemyRepository):
         target_semester: int | None = None,
     ) -> SemesterTransferPreview:
         group_stmt = (
-            select(grupper.c.id, grupper.c.navn)
-            .where(grupper.c.id == group_id)
+            select(groups.c.id, groups.c.name)
+            .where(groups.c.id == group_id)
             .limit(1)
         )
-        source_semester_stmt = select(func.max(historie.c.semester)).where(
-            historie.c.id_gruppe == group_id
+        source_semester_stmt = select(func.max(role_assignments.c.semester)).where(
+            role_assignments.c.group_id == group_id
         )
         async with self.session_factory() as session:
             group_row = (await session.execute(group_stmt)).mappings().first()
@@ -85,26 +85,26 @@ class SemesterTransferService(SqlAlchemyRepository):
 
             members_stmt = (
                 select(
-                    historie.c.id,
-                    historie.c.id_personal,
-                    func.concat_ws(" ", personal.c.fornavn, personal.c.etternavn).label(
+                    role_assignments.c.id,
+                    role_assignments.c.volunteer_id,
+                    func.concat_ws(" ", volunteer_records.c.first_name, volunteer_records.c.last_name).label(
                         "volunteer_name"
                     ),
-                    historie.c.id_verv,
-                    verv.c.verv.label("verv_navn"),
-                    historie.c.signert_kontrakt,
+                    role_assignments.c.role_id,
+                    assignment_roles.c.name.label("verv_navn"),
+                    role_assignments.c.contract_signed,
                 )
                 .select_from(
-                    historie.join(
-                        personal, personal.c.id == historie.c.id_personal
-                    ).outerjoin(verv, verv.c.id == historie.c.id_verv)
+                    role_assignments.join(
+                        volunteer_records, volunteer_records.c.id == role_assignments.c.volunteer_id
+                    ).outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.role_id)
                 )
-                .where(historie.c.id_gruppe == group_id)
-                .where(historie.c.semester == resolved_source)
+                .where(role_assignments.c.group_id == group_id)
+                .where(role_assignments.c.semester == resolved_source)
                 .order_by(
-                    personal.c.etternavn.asc(),
-                    personal.c.fornavn.asc(),
-                    historie.c.id.asc(),
+                    volunteer_records.c.last_name.asc(),
+                    volunteer_records.c.first_name.asc(),
+                    role_assignments.c.id.asc(),
                 )
             )
             member_rows = (await session.execute(members_stmt)).mappings().all()
@@ -112,19 +112,19 @@ class SemesterTransferService(SqlAlchemyRepository):
         resolved_target = target_semester or _default_target_semester(resolved_source)
         return SemesterTransferPreview(
             group_id=group_row["id"],
-            group_name=group_row["navn"],
+            group_name=group_row["name"],
             source_semester=resolved_source,
             source_semester_label=format_semester_code(resolved_source),
             target_semester=resolved_target,
             target_semester_label=format_semester_code(resolved_target),
             candidates=[
                 SemesterTransferCandidate(
-                    volunteer_id=row["id_personal"],
+                    volunteer_id=row["volunteer_id"],
                     volunteer_name=row["volunteer_name"]
-                    or f"Volunteer {row['id_personal']}",
-                    role_id=row["id_verv"],
+                    or f"Volunteer {row['volunteer_id']}",
+                    role_id=row["role_id"],
                     role_name=row["verv_navn"],
-                    contract_signed=row["signert_kontrakt"],
+                    contract_signed=row["contract_signed"],
                     source_history_id=row["id"],
                 )
                 for row in member_rows
@@ -136,7 +136,7 @@ class SemesterTransferService(SqlAlchemyRepository):
     ) -> int:
         async with self.session_factory() as session:
             group_exists = await session.scalar(
-                select(grupper.c.id).where(grupper.c.id == group_id).limit(1)
+                select(groups.c.id).where(groups.c.id == group_id).limit(1)
             )
         if group_exists is None:
             raise SemesterTransferGroupNotFoundError(f"Group {group_id} was not found.")
@@ -146,23 +146,23 @@ class SemesterTransferService(SqlAlchemyRepository):
         if not volunteer_ids:
             return 0
         existing_stmt = (
-            select(historie.c.id_personal)
-            .where(historie.c.id_gruppe == group_id)
-            .where(historie.c.semester == target_semester)
-            .where(historie.c.id_personal.in_(volunteer_ids))
+            select(role_assignments.c.volunteer_id)
+            .where(role_assignments.c.group_id == group_id)
+            .where(role_assignments.c.semester == target_semester)
+            .where(role_assignments.c.volunteer_id.in_(volunteer_ids))
         )
         async with self.session_factory() as session:
             existing_volunteers = {
-                row["id_personal"]
+                row["volunteer_id"]
                 for row in (await session.execute(existing_stmt)).mappings().all()
             }
         values = [
             {
-                "id_personal": entry.volunteer_id,
-                "id_gruppe": group_id,
-                "id_verv": entry.role_id,
+                "volunteer_id": entry.volunteer_id,
+                "group_id": group_id,
+                "role_id": entry.role_id,
                 "semester": target_semester,
-                "signert_kontrakt": entry.contract_signed,
+                "contract_signed": entry.contract_signed,
             }
             for entry in entries
             if entry.volunteer_id not in existing_volunteers
@@ -171,7 +171,7 @@ class SemesterTransferService(SqlAlchemyRepository):
             return 0
         async with self.session_factory() as session:
             async with session.begin():
-                await session.execute(insert(historie), values)
+                await session.execute(insert(role_assignments), values)
         return len(values)
 
 
