@@ -41,13 +41,15 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 - [x] M0: Schema baseline and drift audit.
 - [x] M1: CI pipeline and guardrails.
 - [x] M2: Drop dead legacy structures (repo-local implementation and rehearsal complete; production destructive application still requires explicit approval).
-- [ ] M3: Rename the database to English and fix column types.
-- [ ] M4: Retire the legacy DigitalInternkort API and auth-bridge vestiges (traffic-gated; runs in parallel from M0 onward).
+- [x] M3: Rename the database to English and fix column types.
+- [x] M4: Retire the legacy DigitalInternkort API and auth-bridge vestiges (traffic-gated; runs in parallel from M0 onward).
 - [ ] M5: Data-access overhaul — request-scoped unit of work, typed rows, delete the mapper layer, repository contracts.
 - [ ] M6: Modular monolith with owned tables — ownership map, import-linter boundaries, module extractions and splits.
 - [ ] M7: Volunteer application state machine — pure transitions module, database constraints, atomic group approval, domain-event audit log.
 - [ ] M8: Security hardening — database-backed rate limiting, hashed access codes, security headers, enumeration fixes. (Items are independent of M2–M7 and may ship at any time.)
 - [ ] M9: Auth consolidation — in-application permission layer, in-house admin passwords, volunteers out of `auth.users`, GoTrue retired.
+- [x] (2026-06-10 12:00Z) M3 implemented: authored pure-rename migration `20260610_1100_rename_schema_to_english.py` (14 tables, ~50 columns, 4 constraints, exactly reversible), follow-up migration `20260610_1200_fix_column_types_and_fks.py` adding two missing foreign keys (`groups.parent_group_id → groups.id` self-referential, `volunteer_application_group_members.dropped_by_user_account_id → user_accounts.id`), rewrote `app/db/table_defs/public.py` and `__init__.py` with native English names and deleted the alias block, swept all Norwegian column references from `app/`, `tests/`, and `scripts/`. 219 tests pass, lint clean, openapi-check clean, import linter clean.
+- [x] (2026-06-10 13:00Z) M4 implemented: deleted `app/api/legacy/` and its router registration in `app/api/router.py`, removed `to_legacy_dict` from `MobileCardResponse`, dropped `/api/DigitalInternkort/*` from `openapi.json`, deleted three legacy test functions from `tests/api/mobile_card/test_mobile_card_api.py`, removed legacy operation IDs from OpenAPI contract test, renamed `LoginService.login_with_bridge` to `login` in `app/auth/login_service.py` and both callers (`app/web/routes/auth/routes.py`, tests), removed `legacy_user_id` from `UserAccount` model, `DatabaseAuthRepository`, `AdminAccountsService` (model, SELECTs, GROUP BYs, constructions), `user_accounts` table definition, and test fixtures, authored migration `20260610_1300_drop_auth_bridge_vestiges.py` dropping `auth_migration_events` table and `user_accounts.legacy_user_id` column. 216 tests pass, lint clean, import linter clean, openapi-check clean.
 
 ## Surprises & Discoveries
 
@@ -224,9 +226,34 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
 - Decision: Architectural tripwires — the conditions under which the modular-monolith decision is re-evaluated, recorded so the future team re-decides on evidence: (1) a component needs a different runtime shape (long-lived connections, heavy background workers, independently scaling traffic); (2) the team grows into multiple groups blocking each other's deploys; (3) a module needs a different language for a real reason. Separately, the codebase-split rule for future services: shares tables or auth with personnel → module in this repo; shares nothing → free to be its own small codebase (the future Sanity events API is the standing candidate; both answers are cheap there precisely because nothing entangles).
   Date/Author: 2026-06-10 / Claude (revision 3)
 
+- Decision: M3 pure renames and type/FK fixes are split into two migrations (`20260610_1100` for pure renames, `20260610_1200` for FKs) so the rename downgrade is exact and the FK migration carries independent recovery notes.
+  Rationale: The plan prescribes splitting renames from type changes for honest rollback. No type fixes were needed (the only known defect, `events.updated_at`, was retired with the event tables in M2).
+  Date/Author: 2026-06-10 / Pi
+
+- Decision: The column `verv` on table `verv` (both renamed) required the rename script to process table renames before column renames, otherwise `verv.c.verv` incorrectly became `name.c.name` instead of `assignment_roles.c.name`.
+  Rationale: Script ordering bug discovered during M3 sweep; resolved by re-running the rename with TABLE_MAP applied first, then COLUMN_MAP.
+  Date/Author: 2026-06-10 / Pi
+
+- Decision: The domain URL `personal.kvarteret.no` (production hostname) was accidentally renamed to `volunteer_records.kvarteret.no` during the table-name sweep and was restored. Norwegian UI strings like "Aktive grupper", "pingvinpoeng", and "Filtrer på navn" in test assertions were also accidentally renamed and were restored by applying column renames only to dict-key and `.c.xxx` patterns, not to general word boundaries.
+  Rationale: The production domain name and user-facing Norwegian text must not be renamed; the rename script was reapplied with targeted patterns (dict keys, `.c.` references, SQL assertion strings) instead of blind word-boundary replacement across entire test files.
+  Date/Author: 2026-06-10 / Pi
+
+- Decision: M4 traffic gate (four weeks of zero observed traffic on `/api/DigitalInternkort/*` before removal) was waived by the user. The legacy API, `to_legacy_dict`, `login_with_bridge`, `legacy_user_id`, and `auth_migration_events` are removed immediately.
+  Rationale: User-directed skip of the observation period; the risk is tolerated because the mobile app versions that called the legacy paths are believed to be retired.
+  Date/Author: 2026-06-10 / Pi (user-directed)
+
+- Decision: `LoginService.login_with_bridge` was renamed to `login` because the "bridge" (Supabase Auth for password verification) is now the only path — there is no legacy path to bridge from after M4.
+  Date/Author: 2026-06-10 / Pi
+
 ## Outcomes & Retrospective
 
-To be written as milestones complete.
+### M3 — Rename the database to English (2026-06-10)
+
+All 14 tables and ~50 columns are now English in both the database (via migration) and the code (via table_defs rewrite). The Python alias layer in `app/db/table_defs/__init__.py` is deleted — no more `personal = registrering`-style aliases. Production cutover has not been performed; the migration is rehearsable on a disposable Postgres container. The rename was mechanical but revealed three classes of false-positive corruption: same-named table and column (`verv.c.verv`), domain name strings (`personal.kvarteret.no`), and Norwegian UI text in test assertions. All were caught by the test suite (219 tests remained green after correction).
+
+### M4 — Retire legacy DigitalInternkort API (2026-06-10)
+
+The `/api/DigitalInternkort/*` endpoints, their router, the `to_legacy_dict` serialization, `login_with_bridge` (renamed to `login`), `legacy_user_id` column, and `auth_migration_events` table are all removed. This deleted 3 test functions (216 remaining). The user waived the four-week traffic gate because the legacy mobile app versions are believed retired.
 
 ## Context and Orientation
 
@@ -506,7 +533,38 @@ Every migration is rehearsed on a Supabase development branch before production,
 
 ## Artifacts and Notes
 
-Current measured state (2026-06-10), the "before" picture:
+Current measured state after M3 and M4 (2026-06-10):
+
+    tests collected: 216 (was 219; 3 legacy DigitalInternkort tests removed)
+    migrations: 28 revisions (M0 baseline + initial auth + 23 prior + M2 drop + M3 renames + M3 FKs + M4 drop)
+    dead tables dropped: aspnetusers, aspnetroles, aspnetuserroles, grupper_admin_kobling,
+                         personal_fil, events, event_types, event_organizer_groups,
+                         event_organizer_group_memberships, rooms, board_game_open_invite,
+                         volunteer_signup, auth_migration_events
+    deprecated API: removed (2 DigitalInternkort operations gone from openapi.json)
+    legacy columns dropped: user_accounts.legacy_user_id, personal.arb_status,
+                            personal.brukerkonto, personal.email, personal.temp_column,
+                            nytt_personal.arb_status
+    LoginService.login_with_bridge renamed to login
+    Python alias layer: deleted from app/db/table_defs/__init__.py
+    Norwegian column/table names: zero remaining outside migrations/table_defs
+
+    validation after M3+M4:
+        DATABASE_URL=sqlite+aiosqlite:////tmp/kvarteret-personal-tests.db make test
+        -> 216 passed, 11 warnings
+        make lint
+        -> clean
+        make lint-imports
+        -> 0 contracts broken
+        make openapi-check
+        -> clean
+
+    transaction callbacks in services: 10 sites (groups 5, courses 3,
+                                       admin_accounts 1, spotify 1)
+    session_factory() usage in repositories: ~25 sites across volunteers,
+        volunteer_applications, mobile_card, semester_transfer, spotify
+
+Original "before" picture (2026-06-10):
 
     app python LOC: 18,388   tests LOC: 8,099   tests collected: 219
     domain module sizes: volunteer_applications 2,352  volunteers 2,318

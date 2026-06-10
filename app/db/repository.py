@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.engine import RowMapping
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.db.session import current_session
 
 
 class SqlAlchemyRepository:
@@ -21,6 +23,21 @@ class SqlAlchemyRepository:
                 "A session factory must be configured before using this repository."
             )
         return self._session_factory
+
+    @property
+    def session(self) -> AsyncSession:
+        """Return the active request-scoped session if available.
+
+        Raises RuntimeError outside of a request scope — use
+        ``self.session_factory`` for explicit session management.
+        """
+        s = current_session()
+        if s is not None:
+            return s
+        raise RuntimeError(
+            "No active request-scoped session. Use session_factory() "
+            "or wrap the call in session_scope()."
+        )
 
     async def fetch_all_mappings(self, stmt) -> list[dict[str, Any]]:
         async with self.session_factory() as session:

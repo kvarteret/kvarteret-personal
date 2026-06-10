@@ -16,15 +16,6 @@ from app.observability import log_operation_timing
 from app.shared.text import normalize_search_query
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number
-from app.domain.volunteers.mappers import (
-    map_course_completion_item,
-    map_group_option,
-    map_role_assignment_item,
-    map_volunteer_detail,
-    map_volunteer_list_item,
-    map_relations,
-    map_role_option,
-)
 from app.domain.volunteers.models import (
     AssignmentRoleOption,
     CourseCompletionNotFoundError,
@@ -66,7 +57,7 @@ class VolunteersService:
         photo_upload_max_bytes: int = 40 * 1024 * 1024,
         photo_max_dimension: int = 2048,
     ) -> None:
-        self.repository = repository or VolunteersRepository()
+        self.repository = repository
         self.storage_service = storage_service
         self.media_token_service = media_token_service
         self.detail_cache_ttl_seconds = detail_cache_ttl_seconds or 300
@@ -153,7 +144,7 @@ class VolunteersService:
                 )
                 has_more = len(rows) > safe_limit
                 visible_rows = rows[:safe_limit]
-                items = [map_volunteer_list_item(row) for row in visible_rows]
+                items = [VolunteerListItem.from_row(row) for row in visible_rows]
                 for item, row in zip(items, visible_rows, strict=False):
                     item.photo_url = _build_photo_url(
                         self.media_token_service, row.get("sha1"), row.get("filetype")
@@ -190,7 +181,7 @@ class VolunteersService:
             row = await self.repository.fetch_volunteer_shell_row(volunteer_id)
             if row is None:
                 return None
-            volunteer = map_volunteer_detail(row)
+            volunteer = VolunteerDetail.from_row(row)
             volunteer.photo_url = _build_photo_url(
                 self.media_token_service, row.get("sha1"), row.get("filetype")
             )
@@ -215,7 +206,7 @@ class VolunteersService:
             rows = await self.repository.fetch_volunteer_role_assignment_rows(
                 volunteer_id, limit=limit
             )
-            items = [map_role_assignment_item(row) for row in rows]
+            items = [RoleAssignmentItem.from_row(row) for row in rows]
             self._cache_set(volunteer_id, "history", items)
             return items
         finally:
@@ -239,7 +230,7 @@ class VolunteersService:
             rows = await self.repository.fetch_volunteer_course_completion_rows(
                 volunteer_id, limit=limit
             )
-            items = [map_course_completion_item(row) for row in rows]
+            items = [VolunteerCourseCompletionItem.from_row(row) for row in rows]
             self._cache_set(volunteer_id, "course_completions", items)
             return items
         finally:
@@ -257,7 +248,7 @@ class VolunteersService:
             return cached
         try:
             rows = await self.repository.fetch_volunteer_relation_rows(volunteer_id)
-            relations = map_relations(rows)
+            relations = VolunteerRelations.from_rows(rows)
             self._cache_set(volunteer_id, "relations", relations)
             return relations
         finally:
@@ -270,11 +261,11 @@ class VolunteersService:
 
     async def list_assignment_groups(self) -> list[GroupOption]:
         rows = await self.repository.list_assignment_group_rows()
-        return [map_group_option(row) for row in rows]
+        return [GroupOption.from_row(row) for row in rows]
 
     async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
         rows = await self.repository.list_assignment_role_rows(group_id)
-        return [map_role_option(row) for row in rows]
+        return [AssignmentRoleOption.from_row(row) for row in rows]
 
     async def update_volunteer_profile(
         self,
@@ -634,7 +625,7 @@ class VolunteersService:
         return VolunteerListPage(
             items=[
                 _with_photo_url(
-                    map_volunteer_list_item(row),
+                    VolunteerListItem.from_row(row),
                     self.media_token_service,
                     row.get("sha1"),
                     row.get("filetype"),

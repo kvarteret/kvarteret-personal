@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 import os
 from dataclasses import dataclass
 
@@ -77,3 +80,53 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
         engine=engine,
         session_factory=async_sessionmaker(engine, expire_on_commit=False),
     )
+
+
+# ── Request-scoped session plumbing ──────────────────────────────
+
+_request_session_ctx: ContextVar[AsyncSession | None] = ContextVar(
+    "_request_session", default=None
+)
+
+
+def current_session() -> AsyncSession | None:
+    """Return the request-scoped session if one is active, else None."""
+    return _request_session_ctx.get()
+
+
+@asynccontextmanager
+async def session_scope(
+    runtime: DatabaseRuntime,
+) -> AsyncIterator[AsyncSession]:
+    """Context manager for scripts and background callers.
+
+    Yields a single AsyncSession, commits on success, rolls back on
+    exception, and sets the ContextVar so repositories can find it.
+    """
+    async with runtime.session_factory() as session:
+        token = _request_session_ctx.set(session)
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            _request_session_ctx.reset(token)
+
+
+async def get_request_session(
+    runtime: DatabaseRuntime,
+) -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency — one ``AsyncSession`` per HTTP request.
+
+    Sets the session on a ``ContextVar`` so that any repository
+    constructed during the request can find it without being
+    explicitly passed a session.
+    """
+    async with runtime.session_factory() as session:
+        token = _request_session_ctx.set(session)
+        try:
+            yield session
+        finally:
+            _request_session_ctx.reset(token)
