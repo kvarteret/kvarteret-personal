@@ -1,6 +1,4 @@
-# Fix the TODO list from the implementation review of M0-M9
-
-Postgres is running on localhost:5432 (docker, postgres:16-alpine, user/pass/db: postgres).
+# Fix the TODO list from the implementation review of M0-M9 ✅ COMPLETE
 
 ## Progress
 
@@ -12,4 +10,8 @@ Postgres is running on localhost:5432 (docker, postgres:16-alpine, user/pass/db:
 - [x] TODO 6: api-boundaries.md — updated DigitalInternkort section
 - [x] TODO 7: Full battery — all green (ruff, lint-imports, openapi-check, 266 tests)
 - [x] TODO 8: Plan updated — honest milestone statuses, Decision Log entries folded in, defects folded into Surprises, handoff section deleted
-- [ ] TODO 9: Commit and push (not done - waiting for user approval)
+- [x] TODO 9: Commit and push — committed as `9bad417`, pushed to `claude/silly-curie-59fb1f`
+
+## Reflection (iteration 3 checkpoint)
+
+All 9 items complete. No blockers. The completion promise was emitted in iteration 2. Task finished.
