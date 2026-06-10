@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Protocol
+from typing import Any, Protocol
+
+from app.shared.coercion import coerce_date, require_datetime
+from app.shared.text import build_full_name
+from app.domain.volunteers.options import gender_label, normalize_gender_code
+from app.infrastructure.formatting.semester import format_semester_code
 
 
 class VolunteersServiceError(RuntimeError):
@@ -68,6 +73,22 @@ class VolunteerListItem:
     last_semester_code: int | None = None
     last_semester_label: str | None = None
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> VolunteerListItem:
+        last_code = int(row["last_semester"]) if row.get("last_semester") is not None else None
+        return cls(
+            volunteer_id=row["id"],
+            first_name=row["first_name"],
+            last_name=row["last_name"],
+            full_name=build_full_name(row["first_name"], row["last_name"]),
+            email=row["email"],
+            phone=row["phone"],
+            photo_url=None,
+            pingvin_points=int(row.get("pingvin_points") or 0),
+            last_semester_code=last_code,
+            last_semester_label=format_semester_code(last_code),
+        )
+
 
 @dataclass(slots=True)
 class VolunteerSearchOption:
@@ -108,6 +129,21 @@ class RoleAssignmentItem:
     semester_label: str
     contract_signed: bool
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> RoleAssignmentItem:
+        sc = int(row["semester"])
+        return cls(
+            history_id=int(row["id"]),
+            group_id=int(row["group_id"]),
+            group_name=row.get("group_name") or f"Group {row['group_id']}",
+            role_id=row.get("role_id"),
+            role_name=row.get("role_name"),
+            pingvin_points=int(row.get("penguin_points") or 0),
+            semester_code=sc,
+            semester_label=format_semester_code(sc) or str(sc),
+            contract_signed=bool(row["contract_signed"]),
+        )
+
 
 @dataclass(slots=True)
 class VolunteerRegistrationLogEntry:
@@ -121,6 +157,20 @@ class VolunteerRegistrationLogEntry:
     group_role: str | None = None
     group_status: str | None = None
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> VolunteerRegistrationLogEntry:
+        return cls(
+            registration_id=int(row["registration_id"]),
+            created_at=require_datetime(row["registration_created_at"]),
+            source=row["registration_source"],
+            status=row["registration_status"],
+            first_choice_group_name=row.get("first_choice_group_name"),
+            second_choice_group_name=row.get("second_choice_group_name"),
+            group_id=row.get("registration_group_id"),
+            group_role=row.get("registration_group_role"),
+            group_status=row.get("registration_group_status"),
+        )
+
 
 @dataclass(slots=True)
 class VolunteerCourseCompletionItem:
@@ -130,12 +180,31 @@ class VolunteerCourseCompletionItem:
     completed_semester_code: int
     completed_semester_label: str
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> VolunteerCourseCompletionItem:
+        sc = int(row["completed_semester"])
+        return cls(
+            completion_id=int(row["id"]),
+            course_id=int(row["course_id"]),
+            course_name=row["course_name"],
+            completed_semester_code=sc,
+            completed_semester_label=format_semester_code(sc) or str(sc),
+        )
+
 
 @dataclass(slots=True)
 class GroupOption:
     group_id: int
     name: str
     active: bool
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> GroupOption:
+        return cls(
+            group_id=int(row["id"]),
+            name=row["name"],
+            active=bool(row["is_active"]),
+        )
 
 
 @dataclass(slots=True)
@@ -144,6 +213,15 @@ class AssignmentRoleOption:
     group_id: int
     role_name: str
     pingvin_points: int
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> AssignmentRoleOption:
+        return cls(
+            role_id=int(row["id"]),
+            group_id=int(row["group_id"]),
+            role_name=row["name"] or "Uten navn",
+            pingvin_points=int(row.get("penguin_points") or 0),
+        )
 
 
 @dataclass(slots=True)
@@ -165,6 +243,34 @@ class VolunteerDetail:
     current_discount_level: int | None = None
     registration_log_entry: VolunteerRegistrationLogEntry | None = None
 
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> VolunteerDetail:
+        gc = normalize_gender_code(row.get("gender"))
+        return cls(
+            volunteer_id=row["id"],
+            first_name=row["first_name"],
+            last_name=row["last_name"],
+            full_name=build_full_name(row["first_name"], row["last_name"]),
+            email=row["email"],
+            phone=row["phone"],
+            birth_date=coerce_date(row.get("birth_date")),
+            created_at=require_datetime(row["created_at"]),
+            gender_code=gc,
+            gender_label=gender_label(gc),
+            address=row["street_address"],
+            postal_code=row["postal_code"],
+            pingvin_points=int(row.get("pingvin_points") or 0),
+            photo_url=None,
+            current_discount_level=int(row["current_discount_level"])
+            if row.get("current_discount_level") is not None
+            else None,
+            registration_log_entry=(
+                VolunteerRegistrationLogEntry.from_row(row)
+                if row.get("registration_id") is not None
+                else None
+            ),
+        )
+
     @property
     def discount_level_label(self) -> str | None:
         return discount_level_label(self.current_discount_level)
@@ -174,6 +280,24 @@ class VolunteerDetail:
 class VolunteerRelations:
     next_of_kin: list[NextOfKinItem]
     cards: list[CardItem]
+
+    @classmethod
+    def from_rows(cls, rows: list[dict[str, Any]]) -> VolunteerRelations:
+        next_of_kin: list[NextOfKinItem] = []
+        cards: list[CardItem] = []
+        for row in rows:
+            if row["relation_type"] == "kin":
+                next_of_kin.append(NextOfKinItem(
+                    next_of_kin_id=int(row["relation_id"]),
+                    name=row["primary_text"],
+                    phone=row["secondary_text"],
+                ))
+            elif row["relation_type"] == "card":
+                cards.append(CardItem(
+                    card_id=int(row["relation_id"]),
+                    card_number=row["primary_text"],
+                ))
+        return cls(next_of_kin=next_of_kin, cards=cards)
 
 
 @dataclass(slots=True)

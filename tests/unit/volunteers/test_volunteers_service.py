@@ -43,7 +43,7 @@ def _build_person_detail() -> VolunteerDetail:
 
 @pytest.mark.asyncio
 async def test_person_detail_shell_uses_cache(monkeypatch):
-    service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
+    service = VolunteersService(repository=type("_FakeRepo", (), {})(), storage_service=object())  # type: ignore[arg-type]
     calls = 0
 
     async def fake_fetch(volunteer_id: int):
@@ -65,7 +65,7 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
             "filetype": None,
         }
 
-    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch)
+    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch, raising=False)
 
     first = await service.get_volunteer_detail(1)
     second = await service.get_volunteer_detail(1)
@@ -78,7 +78,7 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
-    service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
+    service = VolunteersService(repository=type("_FakeRepo", (), {})(), storage_service=object())  # type: ignore[arg-type]
     first_value = _build_person_detail()
     second_value = _build_person_detail()
     second_value.first_name = "Reloaded"
@@ -102,7 +102,7 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
             "filetype": None,
         }
 
-    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch_row)
+    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch_row, raising=False)
 
     cached = await service.get_volunteer_detail(1)
     service._cache.force_expire(1)
@@ -116,14 +116,14 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_cursor_offset_is_clamped(monkeypatch):
-    service = VolunteersService(storage_service=object())  # type: ignore[arg-type]
+    service = VolunteersService(repository=type("_FakeRepo", (), {})(), storage_service=object())  # type: ignore[arg-type]
     seen: dict[str, int] = {}
 
     async def fake_search(*, normalized_query: str, limit: int, offset: int, only_active: bool = False):
         seen["offset"] = offset
         return []
 
-    monkeypatch.setattr(service.repository, "search_volunteers_page", fake_search)
+    monkeypatch.setattr(service.repository, "search_volunteers_page", fake_search, raising=False)
 
     cursor = "eyJtb2RlIjoic2VhcmNoIiwib2Zmc2V0Ijo5OTk5OTl9"
     page = await service.list_volunteers_page(query="person", limit=10, cursor=cursor)
