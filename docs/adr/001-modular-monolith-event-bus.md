@@ -80,9 +80,9 @@ validation and repository behavior.
 
 ## Event Bus Policy
 
-`app/events.py` may remain as a small in-process utility for local, non-critical
-side effects. It is not the organizing architecture and should not carry core
-state transitions, approval rules, or business invariants.
+The in-process event bus prototype was removed in June 2026. No runtime
+consumers existed and the workflow/side-effects pattern proved sufficient for
+all cross-cutting concerns (cache invalidation, email delivery, photo cleanup).
 
 Do not add Celery, Redis queues, Temporal, event sourcing, CQRS, or
 microservices for this app unless a concrete reliability requirement appears.
