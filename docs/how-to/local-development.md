@@ -38,9 +38,12 @@ Run all tests:
 
     make test
 
+Use an explicit database URL for database-backed checks:
+
+    DATABASE_URL=sqlite+aiosqlite:////tmp/kvarteret-personal-tests.db make test
+
 Run focused tests while working on one surface:
 
-    uv run pytest tests/api/events/test_events_api.py
     uv run pytest tests/api/mobile_card/test_mobile_card_api.py
     uv run pytest tests/web/volunteers/test_volunteers_web.py
 
@@ -53,6 +56,16 @@ Verify the checked-in artifact:
     make openapi-check
 
 When the API changes, update sibling generated clients. See [Update OpenAPI clients](update-openapi-clients.md).
+
+## Check Schema Drift
+
+Compare the configured database schema to the SQLAlchemy table metadata:
+
+    make schema-drift
+
+Before the legacy restructure is complete, production is expected to report the
+drift recorded in `docs/reference/schema-snapshots/`. CI runs this against a
+migrated disposable Postgres database.
 
 ## Common Local Failure Modes
 

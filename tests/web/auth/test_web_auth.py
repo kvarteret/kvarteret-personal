@@ -43,7 +43,7 @@ class FakeMobileCardAprilStateService:
 
 
 class FakeLoginService:
-    async def login_with_bridge(self, *, identifier: str, password: str, ip_address: str | None, user_agent: str | None) -> LoginResult:
+    async def login(self, *, identifier: str, password: str, ip_address: str | None, user_agent: str | None) -> LoginResult:
         return LoginResult(
             session=WebSession(
                 session_id="session-123",

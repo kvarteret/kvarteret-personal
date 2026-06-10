@@ -27,7 +27,6 @@ from app.infrastructure.email.mobile_card_templates import (
 from app.infrastructure.email.smtp import SmtpEmailSender
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.domain.feedback.service import FeedbackService
-from app.domain.events import EventsRepository, EventsService
 from app.domain.mobile_card.repository import MobileCardRepository
 from app.domain.mobile_card.april_state import (
     MobileCardAprilStateRepository,
@@ -111,7 +110,6 @@ class ApplicationContainer:
     courses_service: CoursesService
     volunteer_search_service: VolunteerSearchService
     admin_accounts_service: AdminAccountsService
-    events_service: EventsService
     mobile_card_service: MobileCardService
     mobile_card_april_state_service: MobileCardAprilStateService
     now_playing_service: NowPlayingService
@@ -184,9 +182,6 @@ def build_application_container(
         admin_accounts_service=AdminAccountsService(
             session_factory=session_factory,
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
-        ),
-        events_service=EventsService(
-            repository=EventsRepository(session_factory=session_factory),
         ),
         mobile_card_april_state_service=mobile_card_april_state_service,
         mobile_card_service=MobileCardService(

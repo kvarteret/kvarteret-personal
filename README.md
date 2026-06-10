@@ -5,9 +5,8 @@
 It owns:
 
 - the personnel admin UI at `personal.kvarteret.no`
-- Supabase Postgres migrations for personnel, auth-support, registration, and event tables
+- Supabase Postgres migrations for personnel, auth-support, and registration tables
 - the mobile-card API used by `kvarteret-internbevis-rn`
-- event read APIs exposed in `openapi.json`
 - public volunteer prospect intake used by `blifrivillig.no`
 - media proxy routes for private personnel photos
 - the Spotify-backed now-playing API
@@ -42,6 +41,9 @@ The root web page redirects to `/login` when there is no admin session.
     make run
     make css-watch
     make test
+    make lint
+    make lint-imports
+    make audit
     make openapi
     make openapi-check
     make smoke-auth
@@ -65,9 +67,9 @@ Consumer boundaries and client regeneration are documented in [API boundaries](d
 
 The important sibling boundaries are:
 
-- `kvarteret-internbevis-rn` calls mobile-card and now-playing APIs; its generated personal client still includes event operations.
+- `kvarteret-internbevis-rn` calls mobile-card and now-playing APIs; any generated personal event operations are stale.
 - `samfunnetibergen` proxies volunteer prospect submissions; its current public arrangement pages and feeds are Sanity-backed.
-- `frontend-eventside` currently writes event tables directly through Supabase, while this repo owns the event schema migrations and public read API.
+- `frontend-eventside` is retired; stale direct event-table code in that repo is historical, not a live dependency.
 
 See [Kvarteret system map](docs/explanation/kvarteret-system-map.md) for the full diagram.
 

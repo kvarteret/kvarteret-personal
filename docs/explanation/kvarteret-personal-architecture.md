@@ -56,8 +56,6 @@ The public JSON API routes are composed in `app/api/router.py`.
 
 `/api/DigitalInternkort/*` is the deprecated compatibility surface for older Internkort clients. It adapts old Norwegian/camel-case request and response shapes onto the same mobile-card service layer.
 
-`/api/v1/events/*` is the public and mobile event read API. Public requests only see published, non-internal, non-ended events. Requests with a valid mobile-card bearer token can ask for internal events.
-
 `/api/v1/volunteer-prospects` accepts public recruitment leads from `samfunnetibergen`.
 
 `/api/now-playing` exposes the shared Spotify now-playing state with permissive CORS and no-store headers for app and site consumers.
@@ -68,7 +66,7 @@ The media routes in `app/media/router.py` keep private files behind backend-sign
 
 ## Data Model Ownership
 
-Supabase Postgres is the primary database. This repository owns schema migrations through Alembic under `migrations/`. Event tables such as `public.events`, `public.event_types`, `public.event_organizer_groups`, `public.event_organizer_group_memberships`, and `public.rooms` are part of this migration surface even though `frontend-eventside` currently writes them directly through Supabase.
+Supabase Postgres is the primary database. This repository owns schema migrations through Alembic under `migrations/`. The old event tables (`public.events`, `public.event_types`, `public.event_organizer_groups`, `public.event_organizer_group_memberships`, and `public.rooms`) are retired and removed by migration.
 
 The old migration plan remains useful as history, but it is no longer the primary documentation for how the system works today. Current architecture facts should live here or in reference docs.
 

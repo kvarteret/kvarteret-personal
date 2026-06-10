@@ -13,9 +13,9 @@ Verify cross-repo claims against code before editing durable docs.
   route, model, status-code, or operation-id changes.
 - Public volunteer prospects enter through `app/api/v1/volunteer_prospects.py`,
   which is mounted by `app/api/router.py`.
-- Event API routes still exist in `app/api/v1/events.py`, are covered by
-  `tests/api/events/test_events_api.py`, and are present in `openapi.json`.
-  Do not infer active event consumers from that API alone.
+- Event API routes and table support are retired in this branch. `/api/v1/events`
+  is intentionally absent from `openapi.json`; do not reintroduce it for stale
+  generated clients.
 - Current `samfunnetibergen` public arrangement pages and feeds are Sanity-backed
   in that sibling repo (`lib/sanity/fetch/events.ts`,
   `lib/sanity/queries/events.ts`, `app/[locale]/arrangementer/page.tsx`,
@@ -24,9 +24,9 @@ Verify cross-repo claims against code before editing durable docs.
   `src/features/dashboard/data/eventsRepository.ts`, while its generated
   `src/core/api/kvarteret-personal` client still contains personal event
   operations from `openapi.json`.
-- `frontend-eventside` reads and writes event rows directly through Supabase in
-  its API/service layer. This repo still owns event table migrations and the
-  checked-in API contract.
+- `frontend-eventside` is retired. Its source still contains direct Supabase
+  event-table code, but that is historical evidence only and not a live
+  dependency.
 
 ## Skills
 

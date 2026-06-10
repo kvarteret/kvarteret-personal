@@ -9,7 +9,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
-    JSON,
     MetaData,
     String,
     Table,
@@ -18,76 +17,65 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 
-_SET_NULL = ondelete = "SET NULL"
-
-
-_GRUPPER_ID_FK = "public.grupper.id"
+_VOLUNTEER_RECORDS_ID_FK = "public.volunteer_records.id"
+_GROUPS_ID_FK = "public.groups.id"
 _USER_ACCOUNTS_ID_FK = "public.user_accounts.id"
 _SET_NULL = "SET NULL"
-_PERSONAL_ID_FK = "public.personal.id"
+_CASCADE = "CASCADE"
+
 public_metadata = MetaData(schema="public")
 
-personal = Table(
-    "personal",
+volunteer_records = Table(
+    "volunteer_records",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("fornavn", Text),
-    Column("etternavn", Text, nullable=False),
-    Column("epost", Text),
-    Column("telefon", Text),
-    Column("fodselsdato", Date),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
-    Column("kjonn", Text, nullable=False),
-    Column("gateadresse", Text),
-    Column("postnummerid", Text),
+    Column("first_name", Text),
+    Column("last_name", Text, nullable=False),
+    Column("email", Text),
+    Column("phone", Text),
+    Column("birth_date", Date),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("gender", Text, nullable=False),
+    Column("street_address", Text),
+    Column("postal_code", Text),
     Column("internkortaccesstoken", Text),
     Column("internkort_access_token_created_at", DateTime(timezone=True)),
 )
 
-personal_bilde = Table(
-    "personal_bilde",
+volunteer_photos = Table(
+    "volunteer_photos",
     public_metadata,
-    Column("id_personal", BigInteger, ForeignKey(_PERSONAL_ID_FK), primary_key=True),
+    Column("volunteer_id", BigInteger, ForeignKey(_VOLUNTEER_RECORDS_ID_FK), primary_key=True),
     Column("sha1", Text, nullable=False),
     Column("filetype", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True)),
 )
 
-paarorende = Table(
-    "paarorende",
+volunteer_next_of_kin = Table(
+    "volunteer_next_of_kin",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("id_personal", BigInteger, ForeignKey(_PERSONAL_ID_FK), nullable=False),
-    Column("navn", Text, nullable=False),
-    Column("telefon", Text, nullable=False),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
+    Column("volunteer_id", BigInteger, ForeignKey(_VOLUNTEER_RECORDS_ID_FK), nullable=False),
+    Column("name", Text, nullable=False),
+    Column("phone", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
-personal_kort = Table(
-    "personal_kort",
+volunteer_cards = Table(
+    "volunteer_cards",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("id_personal", BigInteger, ForeignKey(_PERSONAL_ID_FK), nullable=False),
-    Column("kortnummer", Text, nullable=False),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
+    Column("volunteer_id", BigInteger, ForeignKey(_VOLUNTEER_RECORDS_ID_FK), nullable=False),
+    Column("card_number", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
-personal_fil = Table(
-    "personal_fil",
-    public_metadata,
-    Column("id", BigInteger, primary_key=True),
-    Column("id_personal", BigInteger, ForeignKey(_PERSONAL_ID_FK), nullable=False),
-    Column("gruppekobling", BigInteger),
-    Column("filename", Text, nullable=False),
-    Column("filetype", Text),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
-)
-
-registrering = Table(
-    "registrering",
+volunteer_application_invites = Table(
+    "volunteer_application_invites",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
     Column("token", Text, nullable=False),
-    Column("epost", Text, nullable=False),
+    Column("email", Text, nullable=False),
     Column("source", Text, nullable=False),
     Column("status", Text, nullable=False),
     Column("initial_group_id", BigInteger),
@@ -97,167 +85,141 @@ registrering = Table(
     Column("trial_shift_attended", Boolean, nullable=False),
     Column("trial_shift_marked_at", DateTime(timezone=True)),
     Column("full_profile_submitted_at", DateTime(timezone=True)),
-    Column("promoted_volunteer_id", BigInteger, ForeignKey(_PERSONAL_ID_FK)),
+    Column("promoted_volunteer_id", BigInteger, ForeignKey(_VOLUNTEER_RECORDS_ID_FK)),
     Column("promoted_at", DateTime(timezone=True)),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
-    UniqueConstraint("token", name="uq_registrering_token"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("token", name="uq_volunteer_application_invites_token"),
 )
 
-registrering_gruppe = Table(
-    "registrering_gruppe",
+volunteer_application_groups = Table(
+    "volunteer_application_groups",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
-registrering_gruppe_medlem = Table(
-    "registrering_gruppe_medlem",
+volunteer_application_group_members = Table(
+    "volunteer_application_group_members",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
     Column(
-        "gruppe_id",
+        "group_id",
         BigInteger,
-        ForeignKey("public.registrering_gruppe.id"),
+        ForeignKey("public.volunteer_application_groups.id"),
         nullable=False,
     ),
     Column(
-        "registrering_id",
+        "invite_id",
         BigInteger,
-        ForeignKey("public.registrering.id", ondelete=_SET_NULL),
+        ForeignKey("public.volunteer_application_invites.id", ondelete=_SET_NULL),
     ),
-    Column("registrering_epost", Text, nullable=False),
-    Column("rolle", Text, nullable=False),
+    Column("applicant_email", Text, nullable=False),
+    Column("role", Text, nullable=False),
     Column("status", Text, nullable=False),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
-    Column("droppet", DateTime(timezone=True)),
-    Column("droppet_av_user_id", BigInteger),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("dropped_at", DateTime(timezone=True)),
+    Column("dropped_by_user_account_id", BigInteger),
     CheckConstraint(
-        "rolle in ('inviter', 'invitee')", name="ck_registrering_gruppe_medlem_rolle"
+        "role in ('inviter', 'invitee')",
+        name="ck_volunteer_application_group_members_role",
     ),
     CheckConstraint(
-        "status in ('active', 'dropped')", name="ck_registrering_gruppe_medlem_status"
+        "status in ('active', 'dropped')",
+        name="ck_volunteer_application_group_members_status",
     ),
     UniqueConstraint(
-        "gruppe_id",
-        "registrering_id",
-        name="uq_registrering_gruppe_medlem_registrering",
+        "group_id",
+        "invite_id",
+        name="uq_volunteer_application_group_members_invite",
     ),
 )
 
-nytt_personal = Table(
-    "nytt_personal",
+volunteer_application_submissions = Table(
+    "volunteer_application_submissions",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
     Column(
-        "registrering_id",
+        "invite_id",
         BigInteger,
-        ForeignKey("public.registrering.id"),
+        ForeignKey("public.volunteer_application_invites.id"),
         nullable=False,
         unique=True,
     ),
-    Column("fornavn", Text),
-    Column("etternavn", Text, nullable=False),
-    Column("epost", Text, nullable=False),
-    Column("kjonn", Text, nullable=False),
-    Column("fodselsdato", Date),
-    Column("gateadresse", Text),
-    Column("postnummerid", Text),
-    Column("telefon", Text),
+    Column("first_name", Text),
+    Column("last_name", Text, nullable=False),
+    Column("email", Text, nullable=False),
+    Column("gender", Text, nullable=False),
+    Column("birth_date", Date),
+    Column("street_address", Text),
+    Column("postal_code", Text),
+    Column("phone", Text),
     Column("internkortaccesstoken", Text),
     Column("photo_sha1", Text),
     Column("photo_filetype", Text),
     Column("studiested", Text),
     Column("bakgrunn", Text),
-    Column("opprettet", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
-grupper = Table(
-    "grupper",
+groups = Table(
+    "groups",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("navn", Text, nullable=False),
-    Column("beskrivelse", Text),
-    Column("aktiv", Boolean, nullable=False),
-    Column("aktiv_til_og_med", Integer, nullable=False),
-    Column("id_overgruppe", BigInteger),
-    Column("rabatt_trinn", Integer),
-    Column("opprettet", DateTime(timezone=True)),
+    Column("name", Text, nullable=False),
+    Column("description", Text),
+    Column("is_active", Boolean, nullable=False),
+    Column("active_through_semester", Integer, nullable=False),
+    Column("parent_group_id", BigInteger),
+    Column("discount_tier", Integer),
+    Column("created_at", DateTime(timezone=True)),
 )
 
-verv = Table(
-    "verv",
+assignment_roles = Table(
+    "assignment_roles",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("verv", Text),
-    Column("id_gruppe", BigInteger, ForeignKey(_GRUPPER_ID_FK), nullable=False),
-    Column("pingvinpoeng", Integer, nullable=False),
+    Column("name", Text),
+    Column("group_id", BigInteger, ForeignKey(_GROUPS_ID_FK), nullable=False),
+    Column("penguin_points", Integer, nullable=False),
+    Column("created_at", DateTime(timezone=True)),
 )
 
-historie = Table(
-    "historie",
+role_assignments = Table(
+    "role_assignments",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("id_personal", BigInteger, ForeignKey(_PERSONAL_ID_FK), nullable=False),
-    Column("id_gruppe", BigInteger, ForeignKey(_GRUPPER_ID_FK), nullable=False),
-    Column("id_verv", BigInteger, ForeignKey("public.verv.id")),
+    Column("volunteer_id", BigInteger, ForeignKey(_VOLUNTEER_RECORDS_ID_FK), nullable=False),
+    Column("group_id", BigInteger, ForeignKey(_GROUPS_ID_FK), nullable=False),
+    Column("role_id", BigInteger, ForeignKey("public.assignment_roles.id")),
     Column("semester", Integer, nullable=False),
-    Column("signert_kontrakt", Boolean, nullable=False),
+    Column("contract_signed", Boolean, nullable=False),
+    Column("created_at", DateTime(timezone=True)),
 )
 
-kurs = Table(
-    "kurs",
+courses = Table(
+    "courses",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("navn", Text, nullable=False),
-    Column("beskrivelse", Text),
-    Column("opprettet", DateTime(timezone=True)),
+    Column("name", Text, nullable=False),
+    Column("description", Text),
+    Column("created_at", DateTime(timezone=True)),
 )
 
-historie_kurs = Table(
-    "historie_kurs",
+course_completions = Table(
+    "course_completions",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
-    Column("id_personal", BigInteger, ForeignKey(_PERSONAL_ID_FK), nullable=False),
-    Column("id_kurs", BigInteger, ForeignKey("public.kurs.id"), nullable=False),
-    Column("gjennomfort_dato", Integer, nullable=False),
+    Column("volunteer_id", BigInteger, ForeignKey(_VOLUNTEER_RECORDS_ID_FK), nullable=False),
+    Column("course_id", BigInteger, ForeignKey("public.courses.id"), nullable=False),
+    Column("completed_semester", Integer, nullable=False),
+    Column("created_at", DateTime(timezone=True)),
 )
 
-grupper_kurs_kobling = Table(
-    "grupper_kurs_kobling",
+group_course_requirements = Table(
+    "group_course_requirements",
     public_metadata,
-    Column("id_kurs", BigInteger, ForeignKey("public.kurs.id"), primary_key=True),
-    Column("id_gruppe", BigInteger, ForeignKey(_GRUPPER_ID_FK), primary_key=True),
-)
-
-aspnetusers = Table(
-    "aspnetusers",
-    public_metadata,
-    Column("id", BigInteger, primary_key=True),
-    Column("username", String(256)),
-    Column("email", String(256)),
-    Column("name", String(256)),
-    Column("passwordhash", Text),
-)
-
-aspnetroles = Table(
-    "aspnetroles",
-    public_metadata,
-    Column("id", BigInteger, primary_key=True),
-    Column("name", String(256), nullable=False),
-)
-
-aspnetuserroles = Table(
-    "aspnetuserroles",
-    public_metadata,
-    Column("userid", BigInteger, primary_key=True),
-    Column("roleid", BigInteger, primary_key=True),
-)
-
-grupper_admin_kobling = Table(
-    "grupper_admin_kobling",
-    public_metadata,
-    Column("id_user", BigInteger, primary_key=True),
-    Column("id_gruppe", BigInteger, primary_key=True),
+    Column("course_id", BigInteger, ForeignKey("public.courses.id"), primary_key=True),
+    Column("group_id", BigInteger, ForeignKey(_GROUPS_ID_FK), primary_key=True),
 )
 
 user_accounts = Table(
@@ -265,7 +227,6 @@ user_accounts = Table(
     public_metadata,
     Column("id", BigInteger, primary_key=True),
     Column("auth_user_id", UUID(as_uuid=True), nullable=False),
-    Column("legacy_user_id", BigInteger),
     Column("username", String(256), nullable=False),
     Column("email", String(320), nullable=False),
     Column("display_name", String(256)),
@@ -280,7 +241,7 @@ group_admin_memberships = Table(
     "group_admin_memberships",
     public_metadata,
     Column("auth_user_id", UUID(as_uuid=True), primary_key=True),
-    Column("gruppe_id", BigInteger, ForeignKey(_GRUPPER_ID_FK), primary_key=True),
+    Column("group_id", BigInteger, ForeignKey(_GROUPS_ID_FK), primary_key=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
@@ -320,114 +281,4 @@ mobile_card_april_state = Table(
         BigInteger,
         ForeignKey(_USER_ACCOUNTS_ID_FK, ondelete=_SET_NULL),
     ),
-)
-
-event_types = Table(
-    "event_types",
-    public_metadata,
-    Column("id", UUID(as_uuid=True), primary_key=True),
-    Column("slug", Text, nullable=False, unique=True),
-    Column("name", Text, nullable=False),
-    Column("description", Text),
-    Column("taxonomy_group", Text, nullable=False),
-    Column("sort_order", Integer, nullable=False),
-    Column("is_active", Boolean, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("updated_at", DateTime(timezone=True), nullable=False),
-)
-
-event_organizer_groups = Table(
-    "event_organizer_groups",
-    public_metadata,
-    Column("id", UUID(as_uuid=True), primary_key=True),
-    Column("slug", Text, nullable=False, unique=True),
-    Column("name", Text, nullable=False),
-    Column("sort_order", Integer, nullable=False),
-    Column("is_active", Boolean, nullable=False),
-    Column(
-        "default_event_type_id",
-        UUID(as_uuid=True),
-        ForeignKey("public.event_types.id", ondelete=_SET_NULL),
-    ),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("updated_at", DateTime(timezone=True), nullable=False),
-)
-
-rooms = Table(
-    "rooms",
-    public_metadata,
-    Column("id", UUID(as_uuid=True), primary_key=True),
-    Column("slug", Text, nullable=False, unique=True),
-    Column("name", Text, nullable=False),
-    Column("sort_order", Integer, nullable=False),
-    Column("is_active", Boolean, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("updated_at", DateTime(timezone=True), nullable=False),
-)
-
-events = Table(
-    "events",
-    public_metadata,
-    Column("id", UUID(as_uuid=True), primary_key=True),
-    Column("slug", Text, nullable=False),
-    Column("translations", JSON, nullable=False),
-    Column("status", Text, nullable=False),
-    Column("price", Text),
-    Column("ticket_url", Text),
-    Column("image_url", Text),
-    Column("event_start", DateTime(timezone=True)),
-    Column("event_end", DateTime(timezone=True)),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("updated_at", DateTime),
-    Column("facebook_url", Text),
-    Column(
-        "room_id", UUID(as_uuid=True), ForeignKey("public.rooms.id", ondelete=_SET_NULL)
-    ),
-    Column("room_text", Text),
-    Column(
-        "event_type_id",
-        UUID(as_uuid=True),
-        ForeignKey("public.event_types.id", ondelete="RESTRICT"),
-        nullable=False,
-    ),
-    Column("is_internal", Boolean, nullable=False),
-    Column("is_featured", Boolean, nullable=False),
-    Column("recurring_interval_days", Integer),
-)
-
-event_organizer_group_memberships = Table(
-    "event_organizer_group_memberships",
-    public_metadata,
-    Column("id", UUID(as_uuid=True), primary_key=True),
-    Column(
-        "event_id",
-        UUID(as_uuid=True),
-        ForeignKey("public.events.id", ondelete="CASCADE"),
-        nullable=False,
-    ),
-    Column(
-        "organizer_group_id",
-        UUID(as_uuid=True),
-        ForeignKey("public.event_organizer_groups.id", ondelete="CASCADE"),
-        nullable=False,
-    ),
-    Column("display_order", Integer, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    UniqueConstraint(
-        "event_id",
-        "organizer_group_id",
-        name="event_organizer_group_memberships_event_id_organizer_group_id_key",
-    ),
-)
-
-auth_migration_events = Table(
-    "auth_migration_events",
-    public_metadata,
-    Column("id", BigInteger, primary_key=True),
-    Column("legacy_user_id", BigInteger, nullable=False),
-    Column("auth_user_id", UUID(as_uuid=True)),
-    Column("email", String(320)),
-    Column("outcome", String(64), nullable=False),
-    Column("details", Text),
-    Column("created_at", DateTime(timezone=True), nullable=False),
 )

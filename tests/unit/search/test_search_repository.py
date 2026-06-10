@@ -19,8 +19,8 @@ def test_build_filters_can_require_current_signed_contract() -> None:
         )
     )
 
-    assert "historie.signert_kontrakt IS true" in compiled
-    assert "historie.semester =" in compiled
+    assert "role_assignments.contract_signed IS true" in compiled
+    assert "role_assignments.semester =" in compiled
 
 
 def test_volunteer_search_stmt_includes_group_role_and_email_matching() -> None:
@@ -33,13 +33,13 @@ def test_volunteer_search_stmt_includes_group_role_and_email_matching() -> None:
         )
     )
 
-    assert "string_agg(distinct(public.grupper.navn)" in compiled
-    assert "string_agg(distinct(public.verv.verv)" in compiled
-    assert "public.personal.epost" in compiled
+    assert "string_agg(distinct(public.groups.name)" in compiled
+    assert "string_agg(distinct(public.assignment_roles.name)" in compiled
+    assert "public.volunteer_records.email" in compiled
     assert "anon_3.group_names" in compiled
     assert "anon_3.role_names" in compiled
-    assert "public.historie.signert_kontrakt IS true" not in compiled
-    assert "public.historie.semester =" not in compiled
+    assert "public.role_assignments.contract_signed IS true" not in compiled
+    assert "public.role_assignments.semester =" not in compiled
 
 
 def test_volunteer_search_stmt_can_require_active_signed_contract() -> None:
@@ -52,5 +52,5 @@ def test_volunteer_search_stmt_can_require_active_signed_contract() -> None:
         )
     )
 
-    assert "public.historie.signert_kontrakt IS true" in compiled
-    assert "public.historie.semester =" in compiled
+    assert "public.role_assignments.contract_signed IS true" in compiled
+    assert "public.role_assignments.semester =" in compiled

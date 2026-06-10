@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import grupper, grupper_kurs_kobling, historie_kurs, kurs, personal
+from app.db.tables import groups, group_course_requirements, course_completions, courses, volunteer_records
 from app.observability import log_operation_timing
 from app.shared.coercion import coerce_datetime
 from app.shared.text import build_full_name
@@ -113,22 +113,22 @@ class CoursesService(SqlAlchemyRepository):
         self, query: str | None = None, limit: int = 100
     ) -> list[CourseListItem]:
         stmt = (
-            select(kurs.c.id, kurs.c.navn, kurs.c.beskrivelse, kurs.c.opprettet)
-            .order_by(kurs.c.navn.asc(), kurs.c.id.asc())
+            select(courses.c.id, courses.c.name, courses.c.description, courses.c.created_at)
+            .order_by(courses.c.name.asc(), courses.c.id.asc())
             .limit(limit)
         )
         if query and query.strip():
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(
-                or_(kurs.c.navn.ilike(pattern), kurs.c.beskrivelse.ilike(pattern))
+                or_(courses.c.name.ilike(pattern), courses.c.description.ilike(pattern))
             )
         rows = await self.fetch_all_mappings(stmt)
         return [
             CourseListItem(
                 course_id=row["id"],
-                name=row["navn"],
-                description=row["beskrivelse"],
-                created_at=coerce_datetime(row["opprettet"]),
+                name=row["name"],
+                description=row["description"],
+                created_at=coerce_datetime(row["created_at"]),
             )
             for row in rows
         ]
@@ -137,10 +137,10 @@ class CoursesService(SqlAlchemyRepository):
         started_at = perf_counter()
         course_select = select(
             literal("course").label("row_type"),
-            kurs.c.id.label("course_id"),
-            kurs.c.navn.label("course_name"),
-            kurs.c.beskrivelse.label("course_description"),
-            kurs.c.opprettet.label("course_created_at"),
+            courses.c.id.label("course_id"),
+            courses.c.name.label("course_name"),
+            courses.c.description.label("course_description"),
+            courses.c.created_at.label("course_created_at"),
             literal(None, type_=BigInteger()).label("group_id"),
             literal(None, type_=Text()).label("group_name"),
             literal(None, type_=BigInteger()).label("completion_id"),
@@ -148,16 +148,16 @@ class CoursesService(SqlAlchemyRepository):
             literal(None, type_=Text()).label("volunteer_first_name"),
             literal(None, type_=Text()).label("volunteer_last_name"),
             literal(None, type_=Integer()).label("completed_semester"),
-        ).where(kurs.c.id == course_id)
+        ).where(courses.c.id == course_id)
         groups_select = (
             select(
                 literal("group").label("row_type"),
                 literal(None, type_=BigInteger()).label("course_id"),
                 literal(None, type_=Text()).label("course_name"),
                 literal(None, type_=Text()).label("course_description"),
-                literal(None, type_=kurs.c.opprettet.type).label("course_created_at"),
-                grupper.c.id.label("group_id"),
-                grupper.c.navn.label("group_name"),
+                literal(None, type_=courses.c.created_at.type).label("course_created_at"),
+                groups.c.id.label("group_id"),
+                groups.c.name.label("group_name"),
                 literal(None, type_=BigInteger()).label("completion_id"),
                 literal(None, type_=BigInteger()).label("volunteer_id"),
                 literal(None, type_=Text()).label("volunteer_first_name"),
@@ -165,28 +165,28 @@ class CoursesService(SqlAlchemyRepository):
                 literal(None, type_=Integer()).label("completed_semester"),
             )
             .select_from(
-                grupper_kurs_kobling.join(
-                    grupper, grupper.c.id == grupper_kurs_kobling.c.id_gruppe
+                group_course_requirements.join(
+                    groups, groups.c.id == group_course_requirements.c.group_id
                 )
             )
-            .where(grupper_kurs_kobling.c.id_kurs == course_id)
+            .where(group_course_requirements.c.course_id == course_id)
         )
         recent_completions = (
             select(
-                historie_kurs.c.id,
-                historie_kurs.c.gjennomfort_dato,
-                personal.c.id.label("volunteer_id"),
-                personal.c.fornavn,
-                personal.c.etternavn,
+                course_completions.c.id,
+                course_completions.c.completed_semester,
+                volunteer_records.c.id.label("volunteer_id"),
+                volunteer_records.c.first_name,
+                volunteer_records.c.last_name,
             )
             .select_from(
-                historie_kurs.join(
-                    personal, personal.c.id == historie_kurs.c.id_personal
+                course_completions.join(
+                    volunteer_records, volunteer_records.c.id == course_completions.c.volunteer_id
                 )
             )
-            .where(historie_kurs.c.id_kurs == course_id)
+            .where(course_completions.c.course_id == course_id)
             .order_by(
-                historie_kurs.c.gjennomfort_dato.desc(), historie_kurs.c.id.desc()
+                course_completions.c.completed_semester.desc(), course_completions.c.id.desc()
             )
             .limit(20)
             .subquery()
@@ -196,14 +196,14 @@ class CoursesService(SqlAlchemyRepository):
             literal(None, type_=BigInteger()).label("course_id"),
             literal(None, type_=Text()).label("course_name"),
             literal(None, type_=Text()).label("course_description"),
-            literal(None, type_=kurs.c.opprettet.type).label("course_created_at"),
+            literal(None, type_=courses.c.created_at.type).label("course_created_at"),
             literal(None, type_=BigInteger()).label("group_id"),
             literal(None, type_=Text()).label("group_name"),
             recent_completions.c.id.label("completion_id"),
             recent_completions.c.volunteer_id.label("volunteer_id"),
-            recent_completions.c.fornavn.label("volunteer_first_name"),
-            recent_completions.c.etternavn.label("volunteer_last_name"),
-            recent_completions.c.gjennomfort_dato.label("completed_semester"),
+            recent_completions.c.first_name.label("volunteer_first_name"),
+            recent_completions.c.last_name.label("volunteer_last_name"),
+            recent_completions.c.completed_semester.label("completed_semester"),
         )
         rows = await self.fetch_all_mappings(
             union_all(course_select, groups_select, completions_select)
@@ -274,15 +274,15 @@ class CoursesService(SqlAlchemyRepository):
 
     async def create_course(self, *, name: str, description: str | None) -> int:
         row = await self.execute_one_mapping(
-            insert(kurs)
+            insert(courses)
             .values(
-                navn=name.strip(),
-                beskrivelse=(
+                name=name.strip(),
+                description=(
                     description.strip() if description and description.strip() else None
                 ),
-                opprettet=datetime.now(UTC),
+                created_at=datetime.now(UTC),
             )
-            .returning(kurs.c.id)
+            .returning(courses.c.id)
         )
         return row["id"]
 
@@ -291,17 +291,17 @@ class CoursesService(SqlAlchemyRepository):
     ) -> bool:
         async def callback(session):
             result = await session.execute(
-                update(kurs)
-                .where(kurs.c.id == course_id)
+                update(courses)
+                .where(courses.c.id == course_id)
                 .values(
-                    navn=name.strip(),
-                    beskrivelse=(
+                    name=name.strip(),
+                    description=(
                         description.strip()
                         if description and description.strip()
                         else None
                     ),
                 )
-                .returning(kurs.c.id)
+                .returning(courses.c.id)
             )
             row = result.first()
             return row[0] if row is not None else None
@@ -316,12 +316,12 @@ class CoursesService(SqlAlchemyRepository):
 
         async def callback(session):
             await session.execute(
-                delete(grupper_kurs_kobling).where(
-                    grupper_kurs_kobling.c.id_kurs == course_id
+                delete(group_course_requirements).where(
+                    group_course_requirements.c.course_id == course_id
                 )
             )
             result = await session.execute(
-                delete(kurs).where(kurs.c.id == course_id).returning(kurs.c.id)
+                delete(courses).where(courses.c.id == course_id).returning(courses.c.id)
             )
             row = result.first()
             return row[0] if row is not None else None
@@ -346,13 +346,13 @@ class CoursesService(SqlAlchemyRepository):
                 "Dette kurset er allerede registrert for valgt semester."
             )
         row = await self.execute_one_mapping(
-            insert(historie_kurs)
+            insert(course_completions)
             .values(
-                id_personal=volunteer_id,
-                id_kurs=course_id,
-                gjennomfort_dato=semester_code,
+                volunteer_id=volunteer_id,
+                course_id=course_id,
+                completed_semester=semester_code,
             )
-            .returning(historie_kurs.c.id)
+            .returning(course_completions.c.id)
         )
         return int(row["id"])
 
@@ -400,12 +400,12 @@ class CoursesService(SqlAlchemyRepository):
 
         async def callback(session):
             result = await session.execute(
-                insert(historie_kurs).returning(historie_kurs.c.id),
+                insert(course_completions).returning(course_completions.c.id),
                 [
                     {
-                        "id_personal": volunteer_id,
-                        "id_kurs": course_id,
-                        "gjennomfort_dato": semester_code,
+                        "volunteer_id": volunteer_id,
+                        "course_id": course_id,
+                        "completed_semester": semester_code,
                     }
                     for volunteer_id in normalized_volunteer_ids
                 ],
@@ -419,23 +419,23 @@ class CoursesService(SqlAlchemyRepository):
         self, *, course_id: int, completion_id: int
     ) -> None:
         row = await self.fetch_first_mapping(
-            select(historie_kurs.c.id, historie_kurs.c.id_kurs)
-            .where(historie_kurs.c.id == completion_id)
+            select(course_completions.c.id, course_completions.c.course_id)
+            .where(course_completions.c.id == completion_id)
             .limit(1)
         )
-        if not row or row["id_kurs"] != course_id:
+        if not row or row["course_id"] != course_id:
             raise CourseCompletionNotFoundError(
                 f"Course completion {completion_id} was not found."
             )
         await self.execute(
-            delete(historie_kurs).where(historie_kurs.c.id == completion_id)
+            delete(course_completions).where(course_completions.c.id == completion_id)
         )
 
     async def _get_course_delete_blockers(self, course_id: int) -> list[str]:
         completion_count = await self.fetch_scalar(
             select(func.count())
-            .select_from(historie_kurs)
-            .where(historie_kurs.c.id_kurs == course_id)
+            .select_from(course_completions)
+            .where(course_completions.c.course_id == course_id)
         )
         blockers: list[str] = []
         if completion_count:
@@ -445,7 +445,7 @@ class CoursesService(SqlAlchemyRepository):
     async def _course_exists(self, course_id: int) -> bool:
         return bool(
             await self.fetch_scalar(
-                select(func.count()).select_from(kurs).where(kurs.c.id == course_id)
+                select(func.count()).select_from(courses).where(courses.c.id == course_id)
             )
         )
 
@@ -453,14 +453,14 @@ class CoursesService(SqlAlchemyRepository):
         return bool(
             await self.fetch_scalar(
                 select(func.count())
-                .select_from(personal)
-                .where(personal.c.id == volunteer_id)
+                .select_from(volunteer_records)
+                .where(volunteer_records.c.id == volunteer_id)
             )
         )
 
     async def _list_existing_volunteer_ids(self, volunteer_ids: list[int]) -> set[int]:
         rows = await self.fetch_all_mappings(
-            select(personal.c.id).where(personal.c.id.in_(volunteer_ids))
+            select(volunteer_records.c.id).where(volunteer_records.c.id.in_(volunteer_ids))
         )
         return {int(row["id"]) for row in rows}
 
@@ -473,10 +473,10 @@ class CoursesService(SqlAlchemyRepository):
     ) -> bool:
         stmt = (
             select(func.count())
-            .select_from(historie_kurs)
-            .where(historie_kurs.c.id_kurs == course_id)
-            .where(historie_kurs.c.id_personal == volunteer_id)
-            .where(historie_kurs.c.gjennomfort_dato == semester_code)
+            .select_from(course_completions)
+            .where(course_completions.c.course_id == course_id)
+            .where(course_completions.c.volunteer_id == volunteer_id)
+            .where(course_completions.c.completed_semester == semester_code)
         )
         return bool(await self.fetch_scalar(stmt))
 
@@ -488,12 +488,12 @@ class CoursesService(SqlAlchemyRepository):
         semester_code: int,
     ) -> set[int]:
         rows = await self.fetch_all_mappings(
-            select(historie_kurs.c.id_personal)
-            .where(historie_kurs.c.id_kurs == course_id)
-            .where(historie_kurs.c.id_personal.in_(volunteer_ids))
-            .where(historie_kurs.c.gjennomfort_dato == semester_code)
+            select(course_completions.c.volunteer_id)
+            .where(course_completions.c.course_id == course_id)
+            .where(course_completions.c.volunteer_id.in_(volunteer_ids))
+            .where(course_completions.c.completed_semester == semester_code)
         )
-        return {int(row["id_personal"]) for row in rows}
+        return {int(row["volunteer_id"]) for row in rows}
 
 
 def _build_semester_code(*, year: int, term: int) -> int:

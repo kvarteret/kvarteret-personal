@@ -173,48 +173,6 @@ class MobileCardResponse(BaseModel):
     role_history: list[MobileCardRoleHistory] | None = None
     word_of_the_day: str
 
-    def to_legacy_dict(self) -> dict:
-        payload = {
-            "id": self.person_id,
-            "fornavn": self.first_name,
-            "etternavn": self.last_name,
-            "fodselsdato": self.birth_date.isoformat() if self.birth_date else None,
-            "opprettet": self.created_at.isoformat(),
-            "gyldigTil": self.valid_until.isoformat(),
-            "bildeUrl": self.photo_url,
-            "pingvinPoengSum": self.pingvin_points,
-            "aktiveVerv": [
-                {
-                    "navn": role.name,
-                    "gruppe": role.group,
-                    "rabattTrinn": role.discount_level,
-                    "pingvinPoeng": role.pingvin_points,
-                    "signertKontrakt": role.signed_contract,
-                }
-                for role in self.active_roles
-            ],
-            "dagensOrd": self.word_of_the_day,
-        }
-
-        if self.role_history is not None:
-            payload["vervHistorikk"] = [
-                {
-                    "navn": role.name,
-                    "gruppe": role.group,
-                    "rabattTrinn": role.discount_level,
-                    "pingvinPoeng": role.pingvin_points,
-                    "signertKontrakt": role.signed_contract,
-                    "ar": role.year,
-                    "semester": role.semester,
-                    "aktiv": role.is_active,
-                    "startet": None,
-                    "sluttet": None,
-                }
-                for role in self.role_history
-            ]
-
-        return payload
-
 
 @dataclass(slots=True)
 class MobileCardSession:
