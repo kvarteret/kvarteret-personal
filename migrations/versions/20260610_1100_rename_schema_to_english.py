@@ -114,6 +114,9 @@ _COLUMN_RENAMES = {
     "volunteer_application_groups": [
         ("opprettet", "created_at"),
     ],
+    "group_admin_memberships": [
+        ("gruppe_id", "group_id"),
+    ],
     "volunteer_application_group_members": [
         ("gruppe_id", "group_id"),
         ("registrering_id", "invite_id"),

@@ -35,7 +35,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.display_name,
                 user_accounts.c.role,
                 user_accounts.c.last_login,
-                func.count(group_admin_memberships.c.gruppe_id).label(
+                func.count(group_admin_memberships.c.group_id).label(
                     "group_admin_group_count"
                 ),
             )
@@ -233,17 +233,17 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         stmt = (
             select(
                 group_admin_memberships.c.auth_user_id,
-                group_admin_memberships.c.gruppe_id,
+                group_admin_memberships.c.group_id,
             )
             .where(group_admin_memberships.c.auth_user_id.in_(auth_user_ids))
             .order_by(
                 group_admin_memberships.c.auth_user_id.asc(),
-                group_admin_memberships.c.gruppe_id.asc(),
+                group_admin_memberships.c.group_id.asc(),
             )
         )
         memberships: dict[UUID, list[int]] = {
             auth_user_id: [] for auth_user_id in auth_user_ids
         }
         for row in await self.fetch_all_mappings(stmt):
-            memberships.setdefault(row["auth_user_id"], []).append(row["gruppe_id"])
+            memberships.setdefault(row["auth_user_id"], []).append(row["group_id"])
         return memberships
