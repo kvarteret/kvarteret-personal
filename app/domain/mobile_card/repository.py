@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import groups, role_assignments, volunteer_records, volunteer_photos, assignment_roles
+from app.domain.mobile_card.tables import mobile_card_access_codes
 from app.observability import log_operation_timing
 
 logger = logging.getLogger("app.performance")
@@ -62,8 +63,14 @@ class MobileCardRepository(SqlAlchemyRepository):
                 volunteer_records.c.id,
                 volunteer_records.c.first_name,
                 volunteer_records.c.last_name,
-                volunteer_records.c.internkortaccesstoken,
-                volunteer_records.c.internkort_access_token_created_at,
+                mobile_card_access_codes.c.code_hash,
+                mobile_card_access_codes.c.created_at,
+            )
+            .select_from(
+                volunteer_records.outerjoin(
+                    mobile_card_access_codes,
+                    mobile_card_access_codes.c.volunteer_id == volunteer_records.c.id,
+                )
             )
             .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
             .order_by(volunteer_records.c.id.asc())
@@ -76,11 +83,11 @@ class MobileCardRepository(SqlAlchemyRepository):
         async with self.session_factory() as session:
             async with session.begin():
                 await session.execute(
-                    update(volunteer_records)
-                    .where(volunteer_records.c.id == volunteer_id)
+                    update(mobile_card_access_codes)
+                    .where(mobile_card_access_codes.c.volunteer_id == volunteer_id)
                     .values(
-                        internkortaccesstoken=access_code,
-                        internkort_access_token_created_at=created_at,
+                        code_hash=access_code,
+                        created_at=created_at,
                     )
                 )
 
@@ -97,19 +104,15 @@ class MobileCardRepository(SqlAlchemyRepository):
                     (
                         await session.execute(
                             select(volunteer_records.c.id)
-                            .where(
-                                func.lower(func.coalesce(volunteer_records.c.email, "")) == email
-                            )
-                            .where(volunteer_records.c.internkortaccesstoken == access_code)
-                            .where(
-                                volunteer_records.c.internkort_access_token_created_at.is_not(
-                                    None
+                            .select_from(
+                                volunteer_records.join(
+                                    mobile_card_access_codes,
+                                    mobile_card_access_codes.c.volunteer_id == volunteer_records.c.id,
                                 )
                             )
-                            .where(
-                                volunteer_records.c.internkort_access_token_created_at
-                                >= expires_after
-                            )
+                            .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
+                            .where(mobile_card_access_codes.c.code_hash == access_code)
+                            .where(mobile_card_access_codes.c.created_at >= expires_after)
                             .limit(1)
                         )
                     )
@@ -119,12 +122,9 @@ class MobileCardRepository(SqlAlchemyRepository):
                 if row is None:
                     return None
                 await session.execute(
-                    update(volunteer_records)
-                    .where(volunteer_records.c.id == row["id"])
-                    .values(
-                        internkortaccesstoken=None,
-                        internkort_access_token_created_at=None,
-                    )
+                    update(mobile_card_access_codes)
+                    .where(mobile_card_access_codes.c.volunteer_id == row["id"])
+                    .values(code_hash=None, created_at=None)
                 )
                 return dict(row)
 

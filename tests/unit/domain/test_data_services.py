@@ -1118,8 +1118,8 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
                 "id": 12,
                 "first_name": "Ada",
                 "last_name": "Lovelace",
-                "internkortaccesstoken": None,
-                "internkort_access_token_created_at": None,
+                "code_hash": None,
+                "created_at": None,
             }
         ]
     )
@@ -1156,8 +1156,8 @@ async def test_mobile_card_service_resends_recent_access_code_during_cooldown() 
                 "id": 12,
                 "first_name": "Ada",
                 "last_name": "Lovelace",
-                "internkortaccesstoken": "654321",
-                "internkort_access_token_created_at": datetime.now(UTC),
+                "code_hash": "654321",
+                "created_at": datetime.now(UTC),
             }
         ]
     )
