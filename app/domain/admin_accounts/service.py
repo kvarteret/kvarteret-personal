@@ -274,7 +274,7 @@ class AdminAccountsService(SqlAlchemyRepository):
                 user_accounts.c.display_name,
                 user_accounts.c.role,
                 user_accounts.c.last_login,
-                func.count(group_admin_memberships.c.group_id).label(
+                func.count(group_admin_memberships.c.gruppe_id).label(
                     "group_admin_group_count"
                 ),
             )
@@ -365,12 +365,12 @@ class AdminAccountsService(SqlAlchemyRepository):
         stmt = (
             select(
                 group_admin_memberships.c.auth_user_id,
-                group_admin_memberships.c.group_id,
+                group_admin_memberships.c.gruppe_id,
             )
             .where(group_admin_memberships.c.auth_user_id.in_(auth_user_ids))
             .order_by(
                 group_admin_memberships.c.auth_user_id.asc(),
-                group_admin_memberships.c.group_id.asc(),
+                group_admin_memberships.c.gruppe_id.asc(),
             )
         )
         memberships: dict[UUID, list[int]] = {

@@ -46,7 +46,6 @@ from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
 from app.domain.volunteers.semester_transfer import SemesterTransferService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
-from app.events import SimpleEventBus
 
 # Keep the app bootable in local and test environments that do not have live
 # Supabase credentials, while still failing fast once a protected auth path is used.
@@ -118,7 +117,6 @@ class ApplicationContainer:
     volunteer_applications_service: VolunteerApplicationsService
     semester_transfer_service: SemesterTransferService
     feedback_service: FeedbackService
-    event_bus: SimpleEventBus
 
     async def aclose(self) -> None:
         if self.storage_service is not None:
@@ -147,7 +145,6 @@ def build_application_container(
     email_sender = SmtpEmailSender(resolved_settings)
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
-    event_bus = SimpleEventBus()
     rate_limiter = PostgresRateLimiter(session_factory=session_factory)
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository(session_factory=session_factory)
@@ -216,7 +213,6 @@ def build_application_container(
             session_factory=session_factory
         ),
         feedback_service=FeedbackService(resolved_settings),
-        event_bus=event_bus,
     )
 
     return container
