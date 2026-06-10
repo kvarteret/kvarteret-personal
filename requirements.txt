@@ -11,7 +11,7 @@ azure-storage-blob==12.28.0
 certifi==2026.2.25
 cffi==2.0.0 ; platform_python_implementation != 'PyPy'
 charset-normalizer==3.4.6
-cryptography==46.0.5
+cryptography==48.0.1
 dnspython==2.8.0
 email-validator==2.3.0
 fastapi==0.135.1
@@ -19,23 +19,23 @@ greenlet==3.3.2
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-idna==3.11
+idna==3.18
 isodate==0.7.2
 itsdangerous==2.2.0
 jinja2==3.1.6
 markupsafe==3.0.3
 passlib==1.7.4
 phonenumbers==9.0.26
-pillow==12.1.1
+pillow==12.2.0
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
 pydantic==2.12.5
 pydantic-core==2.41.5
 pydantic-settings==2.13.1
 python-dotenv==1.2.2
-python-multipart==0.0.22
-requests==2.32.5
+python-multipart==0.0.32
+requests==2.34.2
 sqlalchemy==2.0.48
-starlette==0.52.1
+starlette==1.2.1
 typing-extensions==4.15.0
 typing-inspection==0.4.2
-urllib3==2.6.3
+urllib3==2.7.0
