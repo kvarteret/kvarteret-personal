@@ -1,14 +1,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from secrets import choice
-from typing import Literal
-
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from pydantic import BaseModel, ConfigDict
 
 from app.cache import TTLCache
 from app.config import Settings
@@ -20,10 +15,42 @@ from app.media_tokens import MediaTokenService
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.infrastructure.email.smtp import SmtpDeliveryError
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
+from app.domain.mobile_card.errors import (
+    MobileCardDuplicatePersonError,
+    MobileCardError,
+    MobileCardInvalidAccessCodeError,
+    MobileCardInvalidSessionError,
+    MobileCardPersonNotFoundError,
+    MobileCardRateLimitedError,
+)
+from app.domain.mobile_card.models import (
+    DecodedMobileCardSession,
+    MobileCardCurrentCardResult,
+    MobileCardResponse,
+    MobileCardRole,
+    MobileCardRoleHistory,
+    MobileCardSession,
+)
 from app.domain.mobile_card.repository import MobileCardRepository, MobileCardSnapshot
+from app.domain.mobile_card.sessions import MobileCardSessionManager
 from app.infrastructure.formatting.semester import get_current_semester_code
 
-_UNKNOWN_SESSION_TOKEN = "Unknown session token."
+# Re-export for backward compatibility
+__all__ = [
+    "DecodedMobileCardSession",
+    "MobileCardCurrentCardResult",
+    "MobileCardDuplicatePersonError",
+    "MobileCardError",
+    "MobileCardInvalidAccessCodeError",
+    "MobileCardInvalidSessionError",
+    "MobileCardPersonNotFoundError",
+    "MobileCardRateLimitedError",
+    "MobileCardResponse",
+    "MobileCardRole",
+    "MobileCardRoleHistory",
+    "MobileCardService",
+    "MobileCardSession",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -106,136 +133,6 @@ _LEGACY_PENGUIN_WORD_PREFIXES = [
 ]
 
 
-class MobileCardError(RuntimeError):
-    pass
-
-
-class MobileCardDuplicatePersonError(MobileCardError):
-    pass
-
-
-class MobileCardPersonNotFoundError(MobileCardError):
-    pass
-
-
-class MobileCardInvalidAccessCodeError(MobileCardError):
-    pass
-
-
-class MobileCardInvalidSessionError(MobileCardInvalidAccessCodeError):
-    def __init__(
-        self, message: str, *, reason: Literal["bad_signature", "expired", "malformed"]
-    ) -> None:
-        super().__init__(message)
-        self.reason = reason
-
-
-class MobileCardRateLimitedError(MobileCardError):
-    pass
-
-
-class MobileCardRole(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    group: str
-    discount_level: int | None = None
-    pingvin_points: int = 0
-    signed_contract: bool = False
-
-
-class MobileCardRoleHistory(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    group: str
-    discount_level: int | None = None
-    pingvin_points: int = 0
-    signed_contract: bool = False
-    year: int
-    term: int
-    semester: str
-    is_active: bool = False
-
-
-class MobileCardResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    person_id: int
-    first_name: str
-    last_name: str
-    birth_date: date | None = None
-    created_at: datetime
-    valid_until: datetime
-    photo_url: str | None = None
-    pingvin_points: int
-    active_roles: list[MobileCardRole]
-    role_history: list[MobileCardRoleHistory] | None = None
-    word_of_the_day: str
-
-    def to_legacy_dict(self) -> dict:
-        payload = {
-            "id": self.person_id,
-            "fornavn": self.first_name,
-            "etternavn": self.last_name,
-            "fodselsdato": self.birth_date.isoformat() if self.birth_date else None,
-            "opprettet": self.created_at.isoformat(),
-            "gyldigTil": self.valid_until.isoformat(),
-            "bildeUrl": self.photo_url,
-            "pingvinPoengSum": self.pingvin_points,
-            "aktiveVerv": [
-                {
-                    "navn": role.name,
-                    "gruppe": role.group,
-                    "rabattTrinn": role.discount_level,
-                    "pingvinPoeng": role.pingvin_points,
-                    "signertKontrakt": role.signed_contract,
-                }
-                for role in self.active_roles
-            ],
-            "dagensOrd": self.word_of_the_day,
-        }
-
-        if self.role_history is not None:
-            payload["vervHistorikk"] = [
-                {
-                    "navn": role.name,
-                    "gruppe": role.group,
-                    "rabattTrinn": role.discount_level,
-                    "pingvinPoeng": role.pingvin_points,
-                    "signertKontrakt": role.signed_contract,
-                    "ar": role.year,
-                    "semester": role.semester,
-                    "aktiv": role.is_active,
-                    "startet": None,
-                    "sluttet": None,
-                }
-                for role in self.role_history
-            ]
-
-        return payload
-
-
-@dataclass(slots=True)
-class MobileCardSession:
-    session_token: str
-    card: MobileCardResponse
-
-
-@dataclass(slots=True)
-class MobileCardCurrentCardResult:
-    card: MobileCardResponse
-    renewed_session_token: str | None = None
-
-
-@dataclass(slots=True)
-class DecodedMobileCardSession:
-    age_seconds: int
-    is_review: bool
-    person_id: int | None
-    remaining_seconds: int
-
-
 class MobileCardService:
     def __init__(
         self,
@@ -254,9 +151,7 @@ class MobileCardService:
         self.email_template_renderer = (
             email_template_renderer or MobileCardEmailTemplateRenderer()
         )
-        self.serializer = URLSafeTimedSerializer(
-            settings.app_secret_key, salt="kvarteret-mobile-card"
-        )
+        self.sessions = MobileCardSessionManager(settings)
         self._access_code_request_counts: TTLCache[str, int] = TTLCache(
             ttl_seconds=settings.mobile_card_access_code_request_window_seconds,
             max_entries=4096,
@@ -353,7 +248,7 @@ class MobileCardService:
         normalized_access_code = access_code.strip()
         if self._is_review_request(normalized_email, normalized_access_code):
             card = self._build_review_card(include_role_history=include_role_history)
-            token = self._build_session_token({"person_id": 0, "review": True})
+            token = self.sessions.build_token({"person_id": 0, "review": True})
             return MobileCardSession(session_token=token, card=card)
         attempt_keys = _build_rate_limit_keys(normalized_email, source_key)
         self._enforce_rate_limit(
@@ -375,7 +270,7 @@ class MobileCardService:
         if volunteer_row is None:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         self._clear_rate_limit(self._session_attempt_counts, attempt_keys)
-        token = self._build_session_token({"person_id": volunteer_row["id"]})
+        token = self.sessions.build_token({"person_id": volunteer_row["id"]})
         card = await self._build_card(
             volunteer_row["id"], include_role_history=include_role_history
         )
@@ -384,7 +279,7 @@ class MobileCardService:
     async def get_current_card(
         self, session_token: str, *, include_role_history: bool = False
     ) -> MobileCardCurrentCardResult:
-        decoded = self._decode_session_token(session_token)
+        decoded = self.sessions.decode_token(session_token)
 
         if decoded.is_review:
             card = self._build_review_card(include_role_history=include_role_history)
@@ -393,7 +288,7 @@ class MobileCardService:
                 decoded.person_id or 0, include_role_history=include_role_history
             )
 
-        renewed_session_token = self._maybe_renew_session_token(decoded)
+        renewed_session_token = self.sessions.maybe_renew(decoded)
         return MobileCardCurrentCardResult(
             card=card,
             renewed_session_token=renewed_session_token,
@@ -483,102 +378,6 @@ class MobileCardService:
             else ""
         )
         return f"{prefix}/static/images/april/{filename}"
-
-    def _build_session_token(self, payload: dict[str, int | bool]) -> str:
-        return self.serializer.dumps(payload)
-
-    def _decode_session_token(self, session_token: str) -> DecodedMobileCardSession:
-        now = datetime.now(UTC)
-
-        try:
-            payload, issued_at = self.serializer.loads(
-                session_token,
-                max_age=self._session_ttl_seconds(),
-                return_timestamp=True,
-            )
-        except SignatureExpired as exc:
-            self._log_invalid_session("expired")
-            raise MobileCardInvalidSessionError(
-                _UNKNOWN_SESSION_TOKEN, reason="expired"
-            ) from exc
-        except BadSignature as exc:
-            self._log_invalid_session("bad_signature")
-            raise MobileCardInvalidSessionError(
-                _UNKNOWN_SESSION_TOKEN,
-                reason="bad_signature",
-            ) from exc
-
-        if not isinstance(payload, dict):
-            self._log_invalid_session("malformed")
-            raise MobileCardInvalidSessionError(
-                _UNKNOWN_SESSION_TOKEN, reason="malformed"
-            )
-
-        is_review = payload.get("review") is True
-        person_id = payload.get("person_id")
-
-        if not is_review and not isinstance(person_id, int):
-            self._log_invalid_session("malformed")
-            raise MobileCardInvalidSessionError(
-                _UNKNOWN_SESSION_TOKEN, reason="malformed"
-            )
-
-        age_seconds = max(0, int((now - issued_at).total_seconds()))
-        remaining_seconds = max(0, self._session_ttl_seconds() - age_seconds)
-
-        return DecodedMobileCardSession(
-            age_seconds=age_seconds,
-            is_review=is_review,
-            person_id=person_id if isinstance(person_id, int) else None,
-            remaining_seconds=remaining_seconds,
-        )
-
-    def _maybe_renew_session_token(
-        self, decoded: DecodedMobileCardSession
-    ) -> str | None:
-        if decoded.remaining_seconds > self._session_renewal_threshold_seconds():
-            return None
-
-        payload = (
-            {"person_id": 0, "review": True}
-            if decoded.is_review
-            else {"person_id": decoded.person_id or 0}
-        )
-        renewed_session_token = self._build_session_token(payload)
-        logger.info(
-            "mobile-card session renewed",
-            extra={
-                "event": "mobile_card.session.renewed",
-                "event_data": {
-                    "age_seconds": decoded.age_seconds,
-                    "is_review": decoded.is_review,
-                    "person_id": decoded.person_id,
-                    "remaining_seconds": decoded.remaining_seconds,
-                    "renewal_threshold_seconds": self._session_renewal_threshold_seconds(),
-                    "ttl_seconds": self._session_ttl_seconds(),
-                },
-            },
-        )
-        return renewed_session_token
-
-    def _session_ttl_seconds(self) -> int:
-        return self.settings.mobile_card_session_ttl_days * 24 * 3600
-
-    def _session_renewal_threshold_seconds(self) -> int:
-        return self.settings.mobile_card_session_renewal_threshold_days * 24 * 3600
-
-    def _log_invalid_session(
-        self, reason: Literal["bad_signature", "expired", "malformed"]
-    ) -> None:
-        logger.warning(
-            "mobile-card session invalid",
-            extra={
-                "event": "mobile_card.session.invalid",
-                "event_data": {
-                    "reason": reason,
-                },
-            },
-        )
 
     def _is_review_request(self, email: str, access_code: str | None) -> bool:
         if not self.settings.review_bypass_enabled:

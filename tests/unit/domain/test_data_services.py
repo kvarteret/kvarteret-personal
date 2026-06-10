@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.config import Settings
+from app.domain.courses.repository import CoursesRepository
 from app.domain.courses.service import (
     CoursesService,
     DuplicateCourseCompletionError,
@@ -470,7 +471,7 @@ async def test_groups_service_archive_marks_group_inactive(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
-    service = CoursesService()
+    service = CoursesService(repository=CoursesRepository())
     captured = {}
 
     async def fake_fetch_all_mappings(stmt):
@@ -484,7 +485,7 @@ async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
             }
         ]
 
-    monkeypatch.setattr(service, "fetch_all_mappings", fake_fetch_all_mappings)
+    monkeypatch.setattr(service.repository, "fetch_all_mappings", fake_fetch_all_mappings)
 
     rows = await service.list_courses(query="ordens", limit=15)
 
@@ -495,7 +496,7 @@ async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None:
-    service = CoursesService()
+    service = CoursesService(repository=CoursesRepository())
     captured = {}
 
     async def fake_course_exists(course_id: int) -> bool:
@@ -525,16 +526,16 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
     async def fake_execute_in_transaction(callback):
         return await callback(FakeSession())
 
-    monkeypatch.setattr(service, "_course_exists", fake_course_exists)
+    monkeypatch.setattr(service.repository, "course_exists", fake_course_exists)
     monkeypatch.setattr(
-        service, "_list_existing_volunteer_ids", fake_list_existing_volunteer_ids
+        service.repository, "list_existing_volunteer_ids", fake_list_existing_volunteer_ids
     )
     monkeypatch.setattr(
-        service,
-        "_list_existing_course_completion_volunteer_ids",
+        service.repository,
+        "list_existing_course_completion_volunteer_ids",
         fake_list_existing_course_completion_volunteer_ids,
     )
-    monkeypatch.setattr(service, "execute_in_transaction", fake_execute_in_transaction)
+    monkeypatch.setattr(service.repository, "execute_in_transaction", fake_execute_in_transaction)
 
     created_count = await service.create_course_completions(
         course_id=4, volunteer_ids=[12, 13], year=2026, term=1
@@ -552,7 +553,7 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
 async def test_courses_service_bulk_create_rejects_duplicate_selected_volunteers() -> (
     None
 ):
-    service = CoursesService()
+    service = CoursesService(repository=CoursesRepository())
 
     with pytest.raises(InvalidCourseCompletionError):
         await service.create_course_completions(
@@ -564,7 +565,7 @@ async def test_courses_service_bulk_create_rejects_duplicate_selected_volunteers
 async def test_courses_service_bulk_create_rejects_existing_same_semester_completion(
     monkeypatch,
 ) -> None:
-    service = CoursesService()
+    service = CoursesService(repository=CoursesRepository())
 
     async def fake_course_exists(course_id: int) -> bool:
         return True
@@ -577,13 +578,13 @@ async def test_courses_service_bulk_create_rejects_existing_same_semester_comple
     ) -> set[int]:
         return {13}
 
-    monkeypatch.setattr(service, "_course_exists", fake_course_exists)
+    monkeypatch.setattr(service.repository, "course_exists", fake_course_exists)
     monkeypatch.setattr(
-        service, "_list_existing_volunteer_ids", fake_list_existing_volunteer_ids
+        service.repository, "list_existing_volunteer_ids", fake_list_existing_volunteer_ids
     )
     monkeypatch.setattr(
-        service,
-        "_list_existing_course_completion_volunteer_ids",
+        service.repository,
+        "list_existing_course_completion_volunteer_ids",
         fake_list_existing_course_completion_volunteer_ids,
     )
 
@@ -1191,7 +1192,7 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
         email_sender=FakeEmailSender(),
     )
 
-    token = service.serializer.dumps({"person_id": 12})
+    token = service.sessions.serializer.dumps({"person_id": 12})
 
     result = await service.get_current_card(token)
 
@@ -1210,7 +1211,7 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
         email_sender=FakeEmailSender(),
     )
 
-    token = service.serializer.dumps({"person_id": 12})
+    token = service.sessions.serializer.dumps({"person_id": 12})
 
     result = await service.get_current_card(token, include_role_history=True)
 
@@ -1253,7 +1254,7 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
         april_state_service=FakeMobileCardAprilStateService(False),
     )
 
-    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+    result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
 
     assert result.card.photo_url == "/media/photos/abc123.jpg?token=test"
 
@@ -1271,7 +1272,7 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
         april_state_service=FakeMobileCardAprilStateService(True),
     )
 
-    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+    result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
 
     assert result.card.photo_url == "/static/images/april/skjenkeetaten.webp"
 
@@ -1314,7 +1315,7 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
         april_state_service=FakeMobileCardAprilStateService(True),
     )
 
-    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+    result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
 
     assert result.card.photo_url == "/static/images/april/pr.jpg"
 
@@ -1349,7 +1350,7 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
         april_state_service=FakeMobileCardAprilStateService(True),
     )
 
-    result = await service.get_current_card(service.serializer.dumps({"person_id": 12}))
+    result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
 
     assert result.card.photo_url == "/static/images/april/default.jpg"
 
@@ -1378,7 +1379,7 @@ async def test_mobile_card_service_renews_session_when_token_is_near_expiry(
         "time",
         lambda: now_timestamp - sixty_five_days_in_seconds,
     )
-    token = service.serializer.dumps({"person_id": 12})
+    token = service.sessions.serializer.dumps({"person_id": 12})
     monkeypatch.setattr(itsdangerous.timed.time, "time", lambda: now_timestamp)
 
     result = await service.get_current_card(token)
@@ -1406,7 +1407,7 @@ async def test_mobile_card_service_reports_expired_token_reason(monkeypatch) -> 
         "time",
         lambda: now_timestamp - two_days_in_seconds,
     )
-    token = service.serializer.dumps({"person_id": 12})
+    token = service.sessions.serializer.dumps({"person_id": 12})
     monkeypatch.setattr(itsdangerous.timed.time, "time", lambda: now_timestamp)
 
     with pytest.raises(MobileCardInvalidSessionError) as exc_info:
@@ -1429,7 +1430,7 @@ async def test_mobile_card_service_reports_bad_signature_reason() -> None:
         email_sender=FakeEmailSender(),
     )
 
-    token = other_service.serializer.dumps({"person_id": 12})
+    token = other_service.sessions.serializer.dumps({"person_id": 12})
 
     with pytest.raises(MobileCardInvalidSessionError) as exc_info:
         await service.get_current_card(token)
@@ -1446,7 +1447,7 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         email_sender=FakeEmailSender(),
     )
 
-    token = service.serializer.dumps({"review": False})
+    token = service.sessions.serializer.dumps({"review": False})
 
     with pytest.raises(MobileCardInvalidSessionError) as exc_info:
         await service.get_current_card(token)
