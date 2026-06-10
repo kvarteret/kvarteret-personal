@@ -38,6 +38,7 @@ from app.domain.spotify.now_playing import NowPlayingService
 from app.domain.volunteers.repository import VolunteersRepository
 from app.domain.volunteer_applications.repository import VolunteerApplicationsRepository
 from app.domain.courses.service import CoursesService
+from app.domain.courses.repository import CoursesRepository
 from app.domain.groups.service import GroupsService
 from app.domain.mobile_card.service import MobileCardService
 from app.domain.volunteers.service import VolunteersService
@@ -46,6 +47,7 @@ from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
 from app.domain.volunteers.semester_transfer import SemesterTransferService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
+from app.domain.admin_accounts.repository import AdminAccountsRepository
 
 # Keep the app bootable in local and test environments that do not have live
 # Supabase credentials, while still failing fast once a protected auth path is used.
@@ -175,12 +177,14 @@ def build_application_container(
             photo_max_dimension=resolved_settings.photo_max_dimension,
         ),
         groups_service=GroupsService(session_factory=session_factory),
-        courses_service=CoursesService(session_factory=session_factory),
+        courses_service=CoursesService(
+            repository=CoursesRepository(session_factory=session_factory)
+        ),
         volunteer_search_service=VolunteerSearchService(
             VolunteerSearchRepository(session_factory=session_factory)
         ),
         admin_accounts_service=AdminAccountsService(
-            session_factory=session_factory,
+            repository=AdminAccountsRepository(session_factory=session_factory),
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
         ),
         mobile_card_april_state_service=mobile_card_april_state_service,
@@ -188,7 +192,6 @@ def build_application_container(
             resolved_settings,
             repository=MobileCardRepository(session_factory=session_factory),
             email_sender=email_sender,
-            rate_limiter=rate_limiter,
             media_token_service=media_token_service,
             april_state_service=mobile_card_april_state_service,
             email_template_renderer=mobile_card_email_renderer,
