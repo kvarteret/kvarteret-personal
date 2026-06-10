@@ -2,15 +2,24 @@
 root_packages =
     app
 
-[importlinter:contract:domain-independence]
-name = Domain module independence
-type = independence
-modules =
-    app.domain.groups
-    app.domain.courses
-    app.domain.volunteers
-    app.domain.volunteer_applications
-    app.domain.mobile_card
-    app.domain.spotify
-    app.domain.admin_accounts
-    app.domain.search
+[importlinter:contract:layers]
+name = Layered architecture
+type = layers
+layers =
+    app.web
+    app.api
+    app.domain
+    app.db
+    app.infrastructure
+    app.shared
+ignore_imports =
+    app.domain -> app.db
+    app.domain -> app.db.tables
+    app.domain -> app.db.repository
+    app.domain -> app.db.table_defs
+    app.web -> app.domain
+    app.web -> app.infrastructure
+    app.web -> app.shared
+    app.domain -> app.infrastructure
+    app.domain -> app.shared
+    app.db -> app.domain

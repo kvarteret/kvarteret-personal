@@ -12,6 +12,7 @@ from app.domain.courses.tables import course_completions, courses, group_course_
 from app.domain.volunteers.tables import volunteer_cards, volunteer_next_of_kin, volunteer_photos, volunteer_records
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
 from app.domain.volunteer_applications.tables import (
+    domain_events,
     volunteer_application_group_members,
     volunteer_application_groups,
     volunteer_application_invites,
@@ -34,6 +35,7 @@ __all__ = [
     "public_metadata",
     "role_assignments",
     "user_accounts",
+    "domain_events",
     "volunteer_application_group_members",
     "volunteer_application_groups",
     "volunteer_application_invites",
