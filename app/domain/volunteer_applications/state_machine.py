@@ -4,12 +4,18 @@ Encodes the application lifecycle as explicit states, actions, and
 transitions.  Every state/action pair is either legal (produces a
 ``TransitionResult``) or illegal (raises ``IllegalTransition``).
 
-The state diagram::
+The state diagram (verified against production data and the live routes
+on 2026-06-10; the public-signup flow approves prospects after a trial
+shift, and the post-approval profile-completion email reuses the same
+/apply/{token} link, so SUBMIT_PROFILE is legal from PROMOTED)::
 
-    prospect  ──invite/submit-profile──►  submitted
+    prospect  ──submit-profile────────►  submitted
     invited   ──submit-profile────────►  submitted
+    submitted ──submit-profile────────►  submitted   (edits before approval)
+    promoted  ──submit-profile────────►  promoted    (post-approval completion)
     invited   ──resend-invitation─────►  invited
-    submitted ──mark-trial-shift──────►  submitted
+    {prospect,invited,submitted} ──mark-trial-shift──► (unchanged)
+    prospect  ──approve───────────────►  promoted    (requires submission row)
     submitted ──approve───────────────►  promoted
     submitted ──reject────────────────►  rejected
     {prospect,invited,submitted} ──delete──► (removed)
@@ -70,8 +76,13 @@ _TRANSITIONS: dict[
 ] = {
     (ApplicationState.PROSPECT, ApplicationAction.SUBMIT_PROFILE): ApplicationState.SUBMITTED,
     (ApplicationState.INVITED, ApplicationAction.SUBMIT_PROFILE): ApplicationState.SUBMITTED,
+    (ApplicationState.SUBMITTED, ApplicationAction.SUBMIT_PROFILE): ApplicationState.SUBMITTED,
+    (ApplicationState.PROMOTED, ApplicationAction.SUBMIT_PROFILE): ApplicationState.PROMOTED,
     (ApplicationState.INVITED, ApplicationAction.RESEND_INVITATION): ApplicationState.INVITED,
+    (ApplicationState.PROSPECT, ApplicationAction.MARK_TRIAL_SHIFT): ApplicationState.PROSPECT,
+    (ApplicationState.INVITED, ApplicationAction.MARK_TRIAL_SHIFT): ApplicationState.INVITED,
     (ApplicationState.SUBMITTED, ApplicationAction.MARK_TRIAL_SHIFT): ApplicationState.SUBMITTED,
+    (ApplicationState.PROSPECT, ApplicationAction.APPROVE): ApplicationState.PROMOTED,
     (ApplicationState.SUBMITTED, ApplicationAction.APPROVE): ApplicationState.PROMOTED,
     (ApplicationState.SUBMITTED, ApplicationAction.REJECT): ApplicationState.REJECTED,
 }
@@ -155,10 +166,14 @@ class TransitionResult:
 @dataclass(frozen=True, slots=True)
 class TransitionContext:
     actor_user_account_id: int | None = None
-    # Whether the application is part of an active group registration.
-    # Used by the APPROVE guard: per-person approval of an active
-    # group member is illegal.
+    # Whether the application is part of an active group registration
+    # with other active members. Used by the APPROVE guard: per-person
+    # approval of an active group member is illegal; only the group
+    # action may promote them (and it passes False here).
     is_part_of_active_group: bool = False
+    # Whether a submission row (applicant details) exists. APPROVE
+    # requires one: there is nothing to promote without it.
+    has_submission: bool = True
 
 
 # ── Public API ─────────────────────────────────────────────────────
@@ -189,15 +204,18 @@ def application_transition(
             ),
         )
 
-    # Guard: per-person approval of active group members is illegal.
-    if (
-        action == ApplicationAction.APPROVE
-        and ctx.is_part_of_active_group
-    ):
-        raise IllegalTransition(
-            "Cannot approve an individual application that is part of "
-            "an active group registration. Use group approval instead."
-        )
+    # Guards: per-person approval of active group members is illegal,
+    # and approval requires applicant details to promote from.
+    if action == ApplicationAction.APPROVE:
+        if ctx.is_part_of_active_group:
+            raise IllegalTransition(
+                "Cannot approve an individual application that is part of "
+                "an active group registration. Use group approval instead."
+            )
+        if not ctx.has_submission:
+            raise IllegalTransition(
+                "Cannot approve an application without submitted details."
+            )
 
     # Standard transitions.
     new_state = _TRANSITIONS.get((state, action))
@@ -210,12 +228,14 @@ def application_transition(
     event: DomainEventRecord | None = None
 
     if action == ApplicationAction.SUBMIT_PROFILE:
-        effects = (SendApplicantEmail(
-            template="profile_submitted",
-            registration_id=0,  # caller fills in
-        ),)
         event = DomainEventRecord(
-            event_type="application_submitted",
+            # A promoted applicant re-submitting is completing their
+            # volunteer profile, not re-applying.
+            event_type=(
+                "profile_completed"
+                if state == ApplicationState.PROMOTED
+                else "application_submitted"
+            ),
             actor_user_account_id=ctx.actor_user_account_id,
             subject_type="application",
             subject_id=0,
@@ -236,9 +256,6 @@ def application_transition(
         )
 
     elif action == ApplicationAction.REJECT:
-        effects = (SendRejectionEmail(
-            registration_id=0,  # caller fills in
-        ),)
         event = DomainEventRecord(
             event_type="application_rejected",
             actor_user_account_id=ctx.actor_user_account_id,
@@ -250,6 +267,15 @@ def application_transition(
     elif action == ApplicationAction.MARK_TRIAL_SHIFT:
         event = DomainEventRecord(
             event_type="trial_shift_marked",
+            actor_user_account_id=ctx.actor_user_account_id,
+            subject_type="application",
+            subject_id=0,
+            payload={"previous_state": state.value},
+        )
+
+    elif action == ApplicationAction.RESEND_INVITATION:
+        event = DomainEventRecord(
+            event_type="invitation_resent",
             actor_user_account_id=ctx.actor_user_account_id,
             subject_type="application",
             subject_id=0,

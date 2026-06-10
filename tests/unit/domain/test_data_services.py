@@ -144,7 +144,7 @@ class FakeVolunteerApplicationsRepository:
             created_at=datetime.fromisoformat("2026-03-13T12:00:00+00:00"),
             submitted=True,
             source="invite",
-            status="submitted",
+            status=getattr(self, "detail_status", "submitted"),
             pending_volunteer_id=8,
             first_name="Sample",
             last_name="Registrant",
@@ -203,6 +203,10 @@ class FakeVolunteerApplicationsRepository:
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         self.deleted_registration_ids.append(registration_id)
+
+    async def append_domain_event(self, event, *, subject_id: int) -> None:
+        self.domain_events = getattr(self, "domain_events", [])
+        self.domain_events.append((event.event_type, subject_id))
 
 
 class FakeMobileCardRepository:
@@ -1010,6 +1014,7 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
 @pytest.mark.asyncio
 async def test_volunteer_applications_service_can_resend_invitation_email() -> None:
     repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "invited"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
         settings=Settings(

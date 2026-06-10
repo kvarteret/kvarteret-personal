@@ -33,6 +33,12 @@
               </button>
             </form>
 
+            {% if volunteer_application.is_part_of_active_group %}
+            <p class="text-sm text-stone-600">
+              Denne søknaden er del av en aktiv grupperegistrering og godkjennes
+              sammen med gruppen fra søknadslisten.
+            </p>
+            {% else %}
             <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end" method="post">
               <label class="grid gap-1 text-left">
                 <span class="text-sm text-stone-500">Velg gruppe ved promotering</span>
@@ -48,6 +54,7 @@
               </label>
               <button class="app-button w-full xl:w-auto" type="submit" {% if not promotion_group_options %}disabled{% endif %}>Promoter til frivillig</button>
             </form>
+            {% endif %}
           </div>
         {% else %}
           <div></div>

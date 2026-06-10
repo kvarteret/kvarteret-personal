@@ -13,12 +13,16 @@ class _Record:
 class FakeWorkflowOperations:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
+        self.detail_status = "submitted"
 
     async def create_public_prospect_registration_record(
         self, registration, *, base_url: str | None
     ):
         self.calls.append(("register", base_url))
-        return _Record(detail=_Record(registration_id=7), friend_invites=[])
+        return _Record(
+            detail=_Record(registration_id=7, email="applicant@example.test"),
+            friend_invites=[],
+        )
 
     async def create_invitation_record(
         self,
@@ -63,7 +67,9 @@ class FakeWorkflowOperations:
 
     async def delete_application_record(self, registration_id: int):
         self.calls.append(("delete", registration_id))
-        return _Record(registration_id=registration_id)
+        return _Record(
+            registration_id=registration_id, email="applicant@example.test"
+        )
 
     async def resend_invitation_record(self, registration_id: int):
         self.calls.append(("resend", registration_id))
@@ -71,7 +77,37 @@ class FakeWorkflowOperations:
 
     async def get_volunteer_application_detail(self, registration_id: int):
         self.calls.append(("get", registration_id))
-        return _Record(registration_id=registration_id)
+        return _Record(
+            registration_id=registration_id,
+            status=self.detail_status,
+            email="applicant@example.test",
+            pending_volunteer_id=8,
+            group_id=None,
+            group_status=None,
+            group_members=None,
+            is_part_of_active_group=False,
+        )
+
+    async def get_volunteer_application_by_token(self, token: str):
+        self.calls.append(("get_by_token", token))
+        return _Record(
+            registration_id=7,
+            status="invited",
+            email="applicant@example.test",
+            pending_volunteer_id=None,
+            group_id=None,
+            group_status=None,
+            group_members=None,
+            is_part_of_active_group=False,
+        )
+
+    async def list_active_group_members(self, group_id: int):
+        self.calls.append(("list_members", group_id))
+        return []
+
+    async def append_domain_event(self, event, *, subject_id: int):
+        self.events = getattr(self, "events", [])
+        self.events.append((event.event_type, subject_id))
 
 
 class FakeWorkflowSideEffects:
@@ -124,8 +160,9 @@ async def test_workflow_submit_coordinates_record_then_side_effect() -> None:
     )
 
     assert detail.registration_id == 7
-    assert operations.calls == [("submit", "token-123")]
+    assert operations.calls == [("get_by_token", "token-123"), ("submit", "token-123")]
     assert side_effects.calls == [("after_submitted", 7)]
+    assert operations.events == [("application_submitted", 7)]
 
 
 @pytest.mark.asyncio
@@ -141,8 +178,9 @@ async def test_workflow_approve_coordinates_record_then_side_effect() -> None:
     )
 
     assert volunteer_id == 12
-    assert operations.calls == [("approve", 7)]
+    assert operations.calls == [("get", 7), ("approve", 7)]
     assert side_effects.calls == [("after_approved", 12)]
+    assert operations.events == [("application_approved", 7)]
 
 
 @pytest.mark.asyncio
@@ -181,12 +219,16 @@ async def test_workflow_register_mark_delete_and_resend_are_traceable() -> None:
     )
     await workflow.mark_trial_shift_attended(7, attended=True)
     await workflow.delete(7)
+    operations.detail_status = "invited"
     await workflow.resend_invitation(7, base_url="https://personal.example.test")
 
     assert operations.calls == [
         ("register", "https://personal.example.test"),
+        ("get", 7),
         ("mark_trial", 7),
+        ("get", 7),
         ("delete", 7),
+        ("get", 7),
         ("resend", 7),
     ]
     assert side_effects.calls == [
