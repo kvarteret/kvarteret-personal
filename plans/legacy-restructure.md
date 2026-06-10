@@ -29,9 +29,18 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 - [x] (2026-06-10) Research pass 1: schema inventory, dead-table audit, API surface audit, client boundary audit, CI audit.
 - [x] (2026-06-10) Research pass 2: data-access layer audit and state-machine audit of `volunteer_applications`.
 - [x] (2026-06-10) Research pass 3: security review (auth surface, session handling, public endpoints, rate limiting, headers, secrets, RLS posture) and platform/architecture evaluation (framework, database vendor, auth vendor, architecture alternatives). Findings in `Surprises & Discoveries`; decisions in `Decision Log`.
-- [ ] M0: Schema baseline and drift audit.
-- [ ] M1: CI pipeline and guardrails.
-- [ ] M2: Drop dead legacy structures.
+- [x] (2026-06-10 09:56Z) Plan correction before implementation: user confirmed the event API tables are retired and may be dropped; execution risks from review recorded below.
+- [x] (2026-06-10 10:00Z) Repo-local M2 event retirement slice: removed event API/domain/table definitions/tests/docs, added a drop migration, regenerated `openapi.json`, and verified with tests locally.
+- [x] (2026-06-10 10:23Z) M0 production schema snapshot captured at `docs/reference/schema-snapshots/20260610-pre-restructure.sql`; inventory/dispositions recorded in `20260610-pre-restructure-inventory.md`.
+- [x] (2026-06-10 10:34Z) Added `scripts/check_schema_drift.py` and `make schema-drift`; production drift now reports only objects/columns with explicit drop/archive or keep-and-rename dispositions.
+- [x] (2026-06-10 10:44Z) M2 archive export written outside the repo at `/Users/kluvin/dev/kvarteret/private-archives/kvarteret-personal/20260610-m2-drop-candidates.sql` with `0600` permissions.
+- [x] (2026-06-10 10:50Z) M2 migration rehearsed against a production-shaped disposable Postgres 17 database loaded from the schema snapshot, stamped to `20260521_1200`, and upgraded to `20260610_1000`; all M2 drop tables were absent afterward.
+- [x] (2026-06-10 11:15Z) M0 baseline authored as `20260313_0900_legacy_schema_baseline.py`, with `20260313_1015_initial_auth_support.py` re-parented onto it. Empty Postgres 17 upgrade to head succeeds after Supabase-compatible roles/auth/storage stubs are created.
+- [x] (2026-06-10 11:20Z) M1 guardrails added: GitHub Actions CI, Dependabot, `make lint`, `make lint-imports`, `make audit`, minimal `.importlinter`, and dependency upgrades until `pip-audit` reports no known vulnerabilities.
+- [x] (2026-06-10 11:24Z) M2 local drop migration expanded to remove production-only columns (`personal.arb_status`, `personal.brukerkonto`, `personal.email`, `personal.temp_column`, `nytt_personal.arb_status`) in addition to retired tables and event-image storage policies. Empty Postgres head schema matches SQLAlchemy metadata.
+- [x] M0: Schema baseline and drift audit.
+- [x] M1: CI pipeline and guardrails.
+- [x] M2: Drop dead legacy structures (repo-local implementation and rehearsal complete; production destructive application still requires explicit approval).
 - [ ] M3: Rename the database to English and fix column types.
 - [ ] M4: Retire the legacy DigitalInternkort API and auth-bridge vestiges (traffic-gated; runs in parallel from M0 onward).
 - [ ] M5: Data-access overhaul — request-scoped unit of work, typed rows, delete the mapper layer, repository contracts.
@@ -44,26 +53,34 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 
 Findings from the research passes (2026-06-10). Update as implementation reveals more.
 
-- Observation: The legacy ASP.NET Identity tables are dead code. `aspnetusers`, `aspnetroles`, and `aspnetuserroles` are defined in `app/db/table_defs/public.py` but nothing queries them. Migration `20260319_1215_drop_unused_legacy_identity_tables.py` already dropped the empty claims/logins/tokens tables and `__efmigrationshistory`, but kept these three.
+- Observation: The legacy ASP.NET Identity tables are dead code. Before the M2 local cleanup, `aspnetusers`, `aspnetroles`, and `aspnetuserroles` were defined in `app/db/table_defs/public.py` but nothing queried them. Migration `20260319_1215_drop_unused_legacy_identity_tables.py` already dropped the empty claims/logins/tokens tables and `__efmigrationshistory`, but kept these three.
   Evidence: `grep -rn "aspnet" app --include='*.py'` matches only `table_defs` and `tables.py`.
 
 - Observation: Login no longer touches legacy password hashes. `app/auth/login_service.py` authenticates directly against Supabase Auth; the method is still named `login_with_bridge` but contains no bridge. `user_accounts.legacy_user_id` and `auth_migration_events` are write-only vestiges.
 
-- Observation: `grupper_admin_kobling` is unused (replaced by `group_admin_memberships`), and its alias `group_hierarchy` in `app/db/table_defs/__init__.py` is a misnomer — group hierarchy actually lives in `grupper.id_overgruppe`.
+- Observation: `grupper_admin_kobling` is unused (replaced by `group_admin_memberships`). Its former alias `group_hierarchy` in `app/db/table_defs/__init__.py` was a misnomer — group hierarchy actually lives in `grupper.id_overgruppe`.
 
-- Observation: `personal_fil` is dead. The documents feature was removed (commit `13d26ad`, ADR-001 "Cleanup Decisions"), and a web test asserts the routes are gone. The table and its `volunteer_documents` alias remain defined.
+- Observation: `personal_fil` is dead. The documents feature was removed (commit `13d26ad`, ADR-001 "Cleanup Decisions"), and a web test asserts the routes are gone. The table and its former `volunteer_documents` alias were removed from metadata in the M2 local cleanup.
 
 - Observation: The Python alias layer translates table names but not columns. Every query still reads Norwegian columns and re-labels per query, e.g. `volunteer_cards.c.kortnummer.label("primary_text")` in `app/domain/volunteers/repository.py`.
 
-- Observation: Alembic has no baseline. The chain starts at `20260313_1015_initial_auth_support.py`, which assumes the copied legacy schema already exists. The SQLAlchemy table definitions only declare the columns the app uses, so production tables almost certainly carry additional legacy columns not visible anywhere in this repository.
+- Observation: Alembic had no baseline. The chain now starts at `20260313_0900_legacy_schema_baseline.py`, which creates the legacy personnel tables and the retired legacy structures needed for a complete empty-database replay before later migrations add app-owned tables and drop retired objects.
 
-- Observation: There is no CI. `.github/workflows/` does not exist. `sonar-project.properties` exists, but nothing runs tests, `openapi-check`, or migrations on push. `ruff` is already a dev dependency in `pyproject.toml` but has no config and no enforcement.
+- Observation: Mechanical baseline derivation by downgrading a replayed production schema is blocked. The production schema snapshot was loaded into a disposable Postgres 17 container, stamped to `20260521_1200`, and downgraded. Downgrade stopped at `20260325_1300_reconcile_event_schema_under_alembic.py` because that migration intentionally raises `RuntimeError("Downgrade is not supported for reconciled event schema ownership.")`. The baseline must be authored directly from the M0 inventory.
+
+- Observation: There was no CI before M1. `.github/workflows/ci.yml` now runs tests, OpenAPI contract checks, Ruff, import-linter, `pip-audit`, and an empty Postgres migration/schema-drift job on push, PR, and weekly schedule.
+
+- Observation: The Makefile previously included `.env`, which could override an explicit one-off `DATABASE_URL=... make ...` local invocation. The application already loads `.env` via `pydantic-settings`, so the Makefile include was removed and shell-provided environment variables now win normally.
 
 - Observation: The deprecated mobile API is still served. `app/api/legacy/mobile_card.py` adapts two `/api/DigitalInternkort/*` endpoints onto the mobile-card service. The legacy backend it mirrored was declared archive-safe on 2026-05-05, but no measurement proves installed app versions have stopped calling the old paths.
 
-- Observation: `frontend-eventside` is the only client that touches the database by table name (supabase-js string queries), and only the event tables. Those are already English and not renamed by this plan. The other clients speak only HTTP to this app.
+- Observation: The event API and event tables are now classified as retired, not deferred. Before the local cleanup, source contained `app/api/v1/events.py`, `app/domain/events/`, event table definitions, API tests, OpenAPI paths, and docs that described event read APIs; those have now been removed from this branch. Sibling source still contains stale/generated event client surfaces in `samfunnetibergen` and `kvarteret-internbevis-rn`. The retired `frontend-eventside` repo still contains direct Supabase event-table code (`src/lib/services/events.ts`, `api/events/_service.ts`, `src/lib/services/slugify.ts`), but those files are historical evidence only. The user confirmed on 2026-06-10 that event table support can be dropped because it is no longer used.
 
-- Observation: Type-level defects in otherwise-new tables: `events.updated_at` is nullable `DateTime` without timezone; `grupper.id_overgruppe` and `registrering_gruppe_medlem.droppet_av_user_id` lack foreign keys; `historie_kurs.gjennomfort_dato` is an `Integer` semester code misleadingly named "dato".
+- Observation: Retired event storage policies still exist on `storage.objects` for the `event-images` bucket (`Anyone can upload/update/delete event images`, plus public read). Those policies must be dropped with M2's event-table removal; leaving them behind would preserve unauthenticated event-image writes after the event feature is gone.
+
+- Observation: Production contains two public tables absent from code and migrations: `board_game_open_invite` (0 rows) and `volunteer_signup` (1 row, public insert policy). No app or sibling source references were found. Both get M2 drop dispositions, with `volunteer_signup` exported privately first.
+
+- Observation: Type-level defects in otherwise-new tables: `grupper.id_overgruppe` and `registrering_gruppe_medlem.droppet_av_user_id` lack foreign keys; `historie_kurs.gjennomfort_dato` is an `Integer` semester code misleadingly named "dato". The former `events.updated_at` type issue disappeared with the event-table retirement.
 
 - Observation: Every repository call opens its own database session, and production uses `NullPool` (`app/db/session.py`), so each call is a fresh connection to the Supabase pooler. There is no request-level transaction: multi-step writes are atomic only when routed through `SqlAlchemyRepository.execute_in_transaction(callback)`.
   Evidence: every `fetch_*` helper in `app/db/repository.py` wraps `async with self.session_factory() as session`.
@@ -101,6 +118,14 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
 
 - Observation (architecture): The domain's core table already follows "history as truth": `historie`/`role_assignments` is an append-only record from which "currently active volunteer" is derived, and the group-registration ADR's "mark dropped, never delete" follows the same instinct. The audit direction in M7 (domain-event log) extends an existing domain pattern rather than importing a foreign one.
 
+- Observation (execution risk): M5 changes transaction timing. Today most write repository methods commit before workflow side effects run because each repository call owns its transaction. A request-scoped unit of work would otherwise send email or other external effects before the database commit succeeds. M5 and M7 must preserve the current commit-before-effect behavior until the deferred transactional outbox exists.
+
+- Observation (execution risk): M3 was previously described as exactly reversible, but the planned migration mixed renames with type changes and foreign keys. Exact rollback is only true for pure rename migrations. Type and constraint fixes must be split into separate migrations or carry weaker recovery language.
+
+- Observation (execution risk): M8 cannot hash mobile-card access codes in place without changing reuse semantics. The current service reuses a recent plaintext code during the cooldown window; once only a hash is stored, the service must generate and send a new code instead of trying to resend the previous value.
+
+- Observation (execution risk): Mobile-card bearer session tokens are already stateless signed tokens (`URLSafeTimedSerializer` in `app/domain/mobile_card/service.py`), not server-side rows. M8 must either explicitly accept that risk or move them to a revocable table.
+
 ## Decision Log
 
 - Decision: Database tables are renamed to exactly the Python alias names that already exist in `app/db/table_defs/__init__.py` (e.g. `personal` → `volunteer_records`, `kurs` → `courses`).
@@ -115,11 +140,27 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
   Rationale: Traffic is the only honest signal that old installed app versions are gone; `docs/reference/api-boundaries.md` already mandates this gate.
   Date/Author: 2026-06-10 / Claude
 
-- Decision: The April mobile-card feature is kept; bringing `frontend-eventside` event writes through this backend stays out of scope for the numbered milestones (see Deferred Work).
+- Decision: The April mobile-card feature is kept. `frontend-eventside` event writes are not brought through this backend because the entire event-table surface is retired.
   Date/Author: 2026-06-10 / Claude
 
-- Decision: Extra production columns discovered by the M0 audit that no code reads are dropped in M3, each with its own Decision Log line naming the column and the evidence.
+- Decision: Event API and event-table support is retired and will be removed in this plan. Drop `events`, `event_types`, `event_organizer_groups`, `event_organizer_group_memberships`, and `rooms`; remove `/api/v1/events*`, `app/domain/events/`, event API tests, OpenAPI event paths, and stale event documentation. `frontend-eventside` itself is retired, so its stale direct Supabase event code is not a live dependency and does not require coordination before deleting the tables from `kvarteret-personal`.
+  Rationale: The user confirmed on 2026-06-10 that the events table is no longer used and support can be dropped.
+  Date/Author: 2026-06-10 / Codex
+
+- Decision: `historie.opprettet`, `historie_kurs.opprettet`, `personal_bilde.opprettet`, and `verv.opprettet` carry historical timestamps and are kept. They are now represented in SQLAlchemy metadata and will be renamed to `created_at` in M3 with the rest of the schema.
+  Date/Author: 2026-06-10 / Codex
+
+- Decision: `board_game_open_invite`, `volunteer_signup`, `personal.arb_status`, `personal.brukerkonto`, `personal.email`, `personal.temp_column`, and `nytt_personal.arb_status` are production-only legacy leftovers. Export the non-empty objects/columns privately where noted in the M0 inventory, then drop them in M2/M3 rather than adding runtime support.
+  Date/Author: 2026-06-10 / Codex
+
+- Decision: Extra production columns discovered by the M0 audit that no code reads are dropped after the M0 disposition, each with its own Decision Log line naming the column and the evidence.
   Date/Author: 2026-06-10 / Claude
+
+- Decision: Drop `personal.arb_status`, `personal.brukerkonto`, `personal.email`, `personal.temp_column`, and `nytt_personal.arb_status` in M2. The M0 inventory recorded either zero use, near-duplicate legacy email values, or no code references; private archive/disposition exists before the destructive migration.
+  Date/Author: 2026-06-10 / Codex
+
+- Decision: The CI migration job creates minimal Supabase-compatible `anon`, `authenticated`, and `service_role` roles plus `auth.uid()` and `storage` schema stubs before running Alembic on vanilla Postgres. These are compatibility fixtures for local/CI replay, not application-owned production schema.
+  Date/Author: 2026-06-10 / Codex
 
 - Decision: CI is M1, immediately after the baseline exists.
   Rationale: M5–M9 are large refactors that need the net first.
@@ -137,8 +178,8 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
   Rationale: Fixes the single ownership violation surviving the rename; the column is named `code_hash` because M8 mandates hashed storage.
   Date/Author: 2026-06-10 / Claude (revision 2)
 
-- Decision: Database access uses a request-scoped unit of work: one `AsyncSession` per HTTP request, injected via FastAPI dependency; repositories receive the session and never create their own; the dependency commits on success and rolls back on exception. `execute_in_transaction` and the session-per-method helpers are deleted.
-  Rationale: Under `NullPool` on Vercel, session-per-call means connection-per-call against a remote pooler. A request-scoped session makes multi-step writes atomic by default (M7's atomic group approval depends on it) and pulls transaction mechanics out of services.
+- Decision: Database access uses a request-scoped unit of work: one `AsyncSession` per HTTP request, created early enough for middleware and dependencies, shared by repositories, committed before external side effects run, and rolled back on exception. Repositories receive the session and never create their own; `execute_in_transaction` and the session-per-method helpers are deleted.
+  Rationale: Under `NullPool` on Vercel, session-per-call means connection-per-call against a remote pooler. A request-scoped session makes multi-step writes atomic by default (M7's atomic group approval depends on it) and pulls transaction mechanics out of services. The commit-before-effect rule preserves current email semantics until the deferred transactional outbox exists.
   Date/Author: 2026-06-10 / Claude (revision 2)
 
 - Decision: Repositories return typed rows (Pydantic models validated at the repository boundary, or frozen dataclasses for internal read models), not `dict[str, Any]`. The mapper layer is deleted except where real derivation happens. Workflow protocols replace every `Any` with the real model type.
@@ -150,7 +191,7 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
 - Decision: The backend stays on FastAPI/Python. Alternatives considered: Django (the honest counterpoint — much of this codebase is hand-rolled Django: CSRF, sessions, admin UI; but those parts are now built, tested, and reviewed, so their marginal cost is near zero, while a rewrite costs a year of total team capacity and re-rolls the dice on every non-framework-shaped problem), .NET (died here once for organizational reasons that haven't changed; doesn't run on Vercel, so it would force a host migration too), TypeScript unification (the only alternative with a real argument — every sibling repo is TS — but it's an argument for the *forced-rewrite* scenario, which this is not). Corollary adopted as a standing rule: stop hand-rolling framework parts going forward; take maintained middleware/libraries off the shelf (M8's security headers are the first application).
   Date/Author: 2026-06-10 / Claude (revision 3)
 
-- Decision: Supabase stays, used narrowly as managed Postgres + PITR + development branches + one storage bucket. Alternatives considered and rejected: Firebase (wrong shape for a relational domain; total query lock-in), Convex (TS-first, young vendor — wrong longevity risk profile for a system that outlives its builders), direct managed Postgres (loses branches/PITR/dashboard for no gain), SQLite (no persistent disk on Vercel; loses pg_trgm and JSON-aggregate features in active use). Standing target: this application becomes the only database client (see Deferred Work for the `frontend-eventside` migration), after which RLS is deny-all defense-in-depth.
+- Decision: Supabase stays, used narrowly as managed Postgres + PITR + development branches + one storage bucket. Alternatives considered and rejected: Firebase (wrong shape for a relational domain; total query lock-in), Convex (TS-first, young vendor — wrong longevity risk profile for a system that outlives its builders), direct managed Postgres (loses branches/PITR/dashboard for no gain), SQLite (no persistent disk on Vercel; loses pg_trgm and JSON-aggregate features in active use). Standing target: this application is the only live database client, after which RLS is deny-all defense-in-depth; retired sibling source references do not count as live clients.
   Date/Author: 2026-06-10 / Claude (revision 3)
 
 - Decision: Authorization lives entirely in the application's own Postgres — a `Permission` enum in code, roles as named permission bundles, a grants table with an optional `group_id` scope, and a `require_permission` dependency. No vendor RBAC (Clerk, WorkOS FGA, GoTrue JWT claims).
@@ -172,6 +213,10 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
   Rationale: The current fire-and-forget side effects (applicant emails) can be silently lost if the function dies after commit — a real durability hole — but building dispatcher infrastructure before cron exists would be premature.
   Date/Author: 2026-06-10 / Claude (revision 3)
 
+- Decision: Mobile-card session tokens move to revocable server-side rows in M8. The current stateless signed token format is the compatibility input during migration, but the end state stores session ids in Postgres with expiry and revocation so departed volunteers or lost phones can be cut off.
+  Rationale: M8's audit confirmed the tokens are stateless today; treating this as an open question would leave the revocation gap unresolved.
+  Date/Author: 2026-06-10 / Codex
+
 - Decision: Security hardening (M8) is a standalone milestone whose items are independent of the structural milestones and may ship in any order, immediately.
   Rationale: Plaintext codes and decorative rate limiting are production exposure now; they must not queue behind a schema rename.
   Date/Author: 2026-06-10 / Claude (revision 3)
@@ -192,7 +237,7 @@ Terms of art:
 - "Alias layer": the block of assignments at the bottom of `app/db/table_defs/__init__.py` giving Norwegian-named `Table` objects English Python names. Table names only; columns stay Norwegian.
 - "Baseline migration": an Alembic revision recording the complete pre-existing schema as the start of the chain. Does not exist today.
 - "Supabase development branch": Supabase's database branching feature cloning production schema into a disposable instance. Every destructive migration is rehearsed on a branch first.
-- "Unit of work": one database session whose lifetime equals one HTTP request, created by a FastAPI dependency, shared by every repository the request touches, committed once at the end.
+- "Unit of work": one database session whose lifetime equals one HTTP request, created before auth middleware and route dependencies need database access, shared by every repository the request touches, committed before external side effects run.
 - "Owned table": a table that exactly one domain module may write. Other modules may read it only inside read-model modules and must call the owning module's service to change it.
 - "Import contract": a rule in an `importlinter` configuration, checked in CI, that fails the build when a module imports something its layer or ownership rules forbid.
 - "State machine" (M7): a `StrEnum` of states plus an explicit table of legal transitions and a pure function that applies them, in one file, with a test for every state/action pair.
@@ -250,8 +295,6 @@ The table ownership map that M6 makes physical and machine-enforced:
     volunteer_applications  owns volunteer_application_invites, _submissions,
                                  _groups, _group_members, domain_events (from M7)
     mobile_card             owns mobile_card_april_state, mobile_card_access_codes (new)
-    events                  owns events, event_types, event_organizer_groups,
-                                 event_organizer_group_memberships, rooms
     admin_accounts + auth   own  user_accounts, web_sessions, group_admin_memberships,
                                  role_grants (new in M9)
     spotify                 owns integration_tokens
@@ -273,27 +316,27 @@ The volunteer application state machine that M7 encodes (current behavior, recon
     any-pre-promotion --delete-------->  (row archived/removed per current rules)
     membership: active --drop--------->  dropped      (audit preserved, row kept)
 
-Tables dropped outright (M2): `aspnetusers`, `aspnetroles`, `aspnetuserroles`, `grupper_admin_kobling`, `personal_fil`. Dropped in M4 after the bridge audit: `auth_migration_events` and `user_accounts.legacy_user_id`. Removed in M9: all volunteer rows in `auth.users`, then all admin rows once in-house passwords are cut over. Untouched: the event tables (except the `events.updated_at` type fix), `web_sessions`, `integration_tokens`, `mobile_card_april_state`.
+Tables dropped outright (M2): `aspnetusers`, `aspnetroles`, `aspnetuserroles`, `grupper_admin_kobling`, `personal_fil`, `events`, `event_types`, `event_organizer_groups`, `event_organizer_group_memberships`, `rooms`, `board_game_open_invite`, and `volunteer_signup`. Dropped in M4 after the bridge audit: `auth_migration_events` and `user_accounts.legacy_user_id`. Removed in M9: all volunteer rows in `auth.users`, then all admin rows once in-house passwords are cut over. Untouched: `web_sessions`, `integration_tokens`, `mobile_card_april_state`.
 
 ## Plan of Work
 
 ### M0 — Schema baseline and drift audit
 
-Capture the truth before changing it. Dump the full production schema (`pg_dump --schema-only` via the Supabase session pooler) and commit it under `docs/reference/schema-snapshots/<date>-pre-restructure.sql`. Inventory every table, column, index, constraint, RLS policy, trigger, view, and function in `public`, and diff three ways: against `app/db/table_defs/`, against the cumulative effect of `migrations/versions/`, and against the rename map above. Every production-only object gets a disposition (keep-and-define, rename, or drop) recorded in the Decision Log before M2 begins. The audit explicitly inventories two things later milestones depend on: every RLS policy and storage policy that references `auth.uid()` or the `authenticated` role (M9 must know what breaks when volunteer rows leave `auth.users`), and the policies on the event tables that `frontend-eventside` reads through the anon key (Deferred Work).
+Capture the truth before changing it. Dump the full production schema (`pg_dump --schema-only` via the Supabase session pooler) and commit it under `docs/reference/schema-snapshots/<date>-pre-restructure.sql`. Inventory every table, column, index, constraint, RLS policy, trigger, view, and function in `public`, and diff three ways: against `app/db/table_defs/`, against the cumulative effect of `migrations/versions/`, and against the rename map above. Every production-only object gets a disposition (keep-and-define, rename, or drop) recorded in the Decision Log before M2 begins. The audit explicitly inventories every RLS policy and storage policy that references `auth.uid()` or the `authenticated` role, because M9 must know what breaks when volunteer rows leave `auth.users`. The event-table objects get a drop disposition unless production evidence reveals an unexpected non-event dependency such as a trigger from an active personnel table.
 
 Create the baseline: a new first Alembic revision `<stamp>_baseline_legacy_schema.py` that creates the full pre-restructure schema, with `20260313_1015_initial_auth_support` re-parented onto it. Production is already at head, so the baseline is never executed there; its purpose is that `alembic upgrade head` on an empty Postgres reproduces production. Prove that against a local disposable Postgres. Verify Supabase point-in-time recovery is active (or take a manual data dump) so every later destructive step has a rollback path.
 
 ### M1 — CI pipeline and guardrails
 
-Create `.github/workflows/ci.yml` running on every push and PR, plus a weekly `schedule:` trigger so a low-activity repo still catches rot between pushes: `uv sync`; `uv run pytest` (the suite needs no database); `make openapi-check`; a migration job that starts a `postgres:17` service container and runs `alembic upgrade head` from empty; `ruff check` (ruff is already a dev dependency — add its config to `pyproject.toml` and fix initial findings in a dedicated commit); and `pip-audit` (via `uv run pip-audit`) for known-vulnerable dependencies. Enable Dependabot (or Renovate) for pip and GitHub Actions so dependency updates arrive as small reviewable PRs rather than a crisis. Add `scripts/check_schema_drift.py`, which reflects `public` from a live database and diffs it against the app's table metadata; run it in CI against the migrated container and document in `docs/how-to/` how to run it against production. From M6 the workflow also runs `lint-imports`. Add `lint`, `lint-imports`, and `audit` targets to the `Makefile`.
+Create `.github/workflows/ci.yml` running on every push and PR, plus a weekly `schedule:` trigger so a low-activity repo still catches rot between pushes: `uv sync --locked`; `make test`; `make openapi-check`; a migration job that starts a `postgres:17` service container and runs `alembic upgrade head` from empty; `make lint`; `make lint-imports`; and `make audit` (`pip-audit`) for known-vulnerable dependencies. Enable Dependabot (or Renovate) for Python, npm, and GitHub Actions so dependency updates arrive as small reviewable PRs rather than a crisis. Add `scripts/check_schema_drift.py`, which reflects `public` from a live database and diffs it against the app's table metadata; run it in CI against the migrated container and document in `docs/how-to/` how to run it against production. M6 fills the currently minimal import-linter config with real boundary contracts.
 
 ### M2 — Drop dead legacy structures
 
-One migration, `<stamp>_drop_dead_legacy_tables.py`, dropping `aspnetusers`, `aspnetroles`, `aspnetuserroles`, `grupper_admin_kobling`, and `personal_fil` — each preceded by a guard query proving the audit's "unused" claim still holds. Before dropping the aspnet tables, export their rows to a private archive outside this public repository (historical admin list and 66 password hashes); record the location in the Decision Log. Remove the corresponding `Table` definitions and the `volunteer_documents`/`group_hierarchy` aliases. Rehearse on a Supabase development branch, run `make test`, apply to production. Deliberately small: it proves the branch-rehearse-apply loop before the big rename.
+One migration, `<stamp>_drop_dead_legacy_tables.py`, dropping `aspnetusers`, `aspnetroles`, `aspnetuserroles`, `grupper_admin_kobling`, `personal_fil`, `event_organizer_group_memberships`, `events`, `event_organizer_groups`, `event_types`, `rooms`, `board_game_open_invite`, and `volunteer_signup` — each preceded by a guard query proving the audit's "unused" or "retired" claim still holds. Before dropping the aspnet tables, event tables, `personal_fil`, `grupper_admin_kobling`, and `volunteer_signup`, export their rows to a private archive outside this public repository (historical admin list and password hashes for aspnet; historical event data for events); record the locations in the Decision Log. Drop the retired `event-images` storage policies in the same milestone. Remove the corresponding `Table` definitions, the `volunteer_documents`/`group_hierarchy` aliases, `app/api/v1/events.py`, `app/domain/events/`, `tests/api/events/test_events_api.py`, the event router registration in `app/api/router.py`, and stale event docs. Regenerate `openapi.json` and record any stale sibling generated client snapshots as non-blocking cleanup notes. Rehearse on a Supabase development branch, run `make test`, apply to production.
 
 ### M3 — Rename the database to English and fix column types
 
-One migration, `<stamp>_rename_schema_to_english.py`, containing only `ALTER TABLE ... RENAME` statements per the rename map plus the type fixes: `events.updated_at` to `timestamptz NOT NULL DEFAULT now()` (backfill from `created_at`); a foreign key `groups.parent_group_id -> groups.id`; a foreign key `volunteer_application_group_members.dropped_by_user_account_id -> user_accounts.id` (`NOT VALID` + `VALIDATE` if orphans need cleanup); and renames of constraints/indexes whose names embed old table names (`uq_registrering_token`, the `ck_registrering_gruppe_medlem_*` checks, the pg_trgm and live-query indexes). Postgres rewrites stored references (views, policies, triggers) automatically on rename; re-check the M0 policy inventory on the branch afterward.
+One migration, `<stamp>_rename_schema_to_english.py`, containing only `ALTER TABLE ... RENAME` statements per the rename map plus renames of constraints/indexes whose names embed old table names (`uq_registrering_token`, the `ck_registrering_gruppe_medlem_*` checks, the pg_trgm and live-query indexes). Postgres rewrites stored references (views, policies, triggers) automatically on rename; re-check the M0 policy inventory on the branch afterward. Keep non-rename type and foreign-key fixes in a follow-up migration, `<stamp>_fix_remaining_column_types_and_foreign_keys.py`, so the rename rollback remains exact. That follow-up adds a foreign key `groups.parent_group_id -> groups.id`, a foreign key `volunteer_application_group_members.dropped_by_user_account_id -> user_accounts.id` (`NOT VALID` + `VALIDATE` if orphans need cleanup), and any additional type fixes found by M0. The former `events.updated_at` fix is gone because event tables are dropped in M2.
 
 In the same commit, rewrite `app/db/table_defs/public.py` with native English names, delete the alias block, and sweep the repositories: Norwegian column access becomes English, and per-query `.label()` anglicization is removed. Templates and Pydantic models already speak English; `make test` and `make openapi-check` are the safety net. Update scripts that reference old names (grep `scripts/`).
 
@@ -307,7 +350,7 @@ Instrument first: a structured log event `legacy.digital_internkort.hit` (with u
 
 This milestone changes how every query runs without changing what any query returns.
 
-First the unit of work. Add a request-scoped session dependency in `app/db/session.py` (`get_request_session`, yielding an `AsyncSession`, committing on success, rolling back on exception). `SqlAlchemyRepository` changes from holding a session *factory* to holding a *session*; its `fetch_*` helpers lose their `async with` blocks; `execute_in_transaction` and the per-method commit in `execute` are deleted. Repositories become cheap per-request objects constructed in `app/dependencies.py` with the request session; `app/runtime.py` keeps only genuinely process-lived things (settings, engine, caches, storage/email/Spotify adapters, session store). The seven call sites where services run transaction callbacks (`groups/service.py`, `courses/service.py`, `spotify/repository.py`, `mobile_card/april_state.py`) become plain sequential repository calls inside the request transaction. Background/script entry points (`scripts/`, smoke tests) get a small `session_scope()` async context manager so non-HTTP callers keep working.
+First the unit of work. Add request-session middleware or an equivalent outer dependency in `app/db/session.py` so a single `AsyncSession` exists before auth middleware loads sessions and before route dependencies construct repositories. `SqlAlchemyRepository` changes from holding a session *factory* to holding a *session*; its `fetch_*` helpers lose their `async with` blocks; `execute_in_transaction` and the per-method commit in `execute` are deleted. Repositories become cheap per-request objects constructed in `app/dependencies.py` with the request session; `app/runtime.py` keeps only genuinely process-lived things (settings, engine, caches, storage/email/Spotify adapters, session store). All current transaction-callback sites become plain sequential repository calls inside the request transaction; verify with `grep -rn "execute_in_transaction" app/domain app/auth app/db`. Background/script entry points (`scripts/`, smoke tests) get a small `session_scope()` async context manager so non-HTTP callers keep working. Workflow methods that send email or touch other external systems must run those effects after the request transaction commits; until the outbox exists, do this explicitly through post-commit effect execution rather than sending inside an uncommitted transaction.
 
 Then typed rows. Each repository method's return type changes from `dict | list[dict]` to a concrete model: where a Pydantic response model already matches the row shape (true nearly everywhere after M3), the repository returns `Model.model_validate(row)` directly; internal read shapes that never leave the domain get `@dataclass(frozen=True, slots=True)` rows next to the repository. Delete `app/domain/volunteers/mappers.py` except the real derivations (full name, semester labels, gender labels), which move to model validators or small pure functions in the owning module. Replace every `Any` in `volunteer_applications/workflow.py`'s protocols with the real types. Remove the `repository or SomeRepository()` hidden defaults from all service constructors — dependencies are required and wired explicitly.
 
@@ -329,11 +372,11 @@ The most important business process becomes readable from one file, fulfilling A
 
 Create `app/domain/volunteer_applications/state_machine.py`, pure and I/O-free: `ApplicationState(StrEnum)` (`PROSPECT`, `INVITED`, `SUBMITTED`, `PROMOTED`, `REJECTED`), `MembershipState(StrEnum)` (`ACTIVE`, `DROPPED`), `ApplicationAction(StrEnum)` (`SUBMIT_PROFILE`, `RESEND_INVITATION`, `MARK_TRIAL_SHIFT`, `APPROVE`, `REJECT`, `DELETE`, `DROP_MEMBER`), an explicit transition table `TRANSITIONS: dict[tuple[ApplicationState, ApplicationAction], ApplicationState]`, and a `transition(state, action, *, context) -> TransitionResult` function that returns the new state, the named side effects to fire, and the domain-event record to append — or raises `IllegalTransition`. Guards encode the rules that depend on more than the state — the central one from the group-registration ADR: `APPROVE` on an application whose group membership is `ACTIVE` and whose group has other active members is illegal as a per-person action and legal only as the group-level action. The module docstring carries the state diagram; a test parametrizes the full state × action matrix so every cell is either asserted legal with its expected result or asserted to raise.
 
-Side effects become data. `TransitionResult.effects` is a tuple of frozen, serializable effect records (e.g. `SendApplicantEmail(template=..., registration_id=...)`) that the workflow executes inline today, exactly as before — but because effects are named values chosen by the coordinator rather than method calls buried in service code, the deferred transactional outbox (see Deferred Work) becomes a localized change to *delivery*, not a redesign of *deciding*. No event bus, no subscribers: the coordinator remains the single place that says what happens.
+Side effects become data. `TransitionResult.effects` is a tuple of frozen, serializable effect records (e.g. `SendApplicantEmail(template=..., registration_id=...)`) that the request runner executes after the transaction commits, preserving today's commit-before-email behavior. Because effects are named values chosen by the coordinator rather than method calls buried in service code, the deferred transactional outbox (see Deferred Work) becomes a localized change to *delivery*, not a redesign of *deciding*. No event bus, no subscribers: the coordinator remains the single place that says what happens.
 
 The audit log. Migration `<stamp>_create_domain_events.py` adds the append-only `domain_events` table (`id`, `event_type`, `actor_user_account_id` nullable, `subject_type`, `subject_id`, `payload jsonb`, `occurred_at timestamptz`). The workflow inserts the event row returned by `transition()` in the same request transaction as the state change (M5's unit of work makes this one transaction by construction). This extends the domain's existing history-as-truth pattern (`role_assignments`) to the application lifecycle; state in columns remains the source of truth, and there is no replay or projection machinery. Record the decision and the deliberately-not-event-sourcing rationale as `docs/adr/003-domain-event-log.md`.
 
-Re-wire the flow. `workflow.py` methods become: load typed record (M5) → `state_machine.transition(...)` → persist new state + insert domain event via repositories → execute the named effects — all inside the request transaction, which is what finally makes group approval atomic and all-or-nothing: one transaction promotes every active member or none. Replace the 14+ scattered status string literals in `repository.py` and `service.py` with the enums; the greppable invariant is that `"submitted"`-style literals appear in exactly one file. Implement the remaining ADR hardening: per-person approve hidden/blocked for active grouped applications (route + template + workflow guard), `Godkjenn alle` renamed to `Godkjenn gruppen`, the admin application list grouped by `group_id`, and tests for grouped approval, partial historical states, dropped members, and direct route access to blocked actions.
+Re-wire the flow. `workflow.py` methods become: load typed record (M5) → `state_machine.transition(...)` → persist new state + insert domain event via repositories → return the named effects for post-commit execution. The database changes are all inside the request transaction, which is what finally makes group approval atomic and all-or-nothing: one transaction promotes every active member or none. External effects execute only after that transaction commits. Replace the 14+ scattered status string literals in `repository.py` and `service.py` with the enums; the greppable invariant is that `"submitted"`-style literals appear in exactly one file. Implement the remaining ADR hardening: per-person approve hidden/blocked for active grouped applications (route + template + workflow guard), `Godkjenn alle` renamed to `Godkjenn gruppen`, the admin application list grouped by `group_id`, and tests for grouped approval, partial historical states, dropped members, and direct route access to blocked actions.
 
 Constrain the database. Migration `<stamp>_application_state_constraints.py` adds `CHECK (status IN ('prospect','invited','submitted','promoted','rejected'))` on `volunteer_application_invites` (after an audit query confirms no other value exists in production — if one does, it is mapped and recorded in the Decision Log) and tightens transition-evidence columns where the audit allows (e.g. `promoted_at NOT NULL` when `status = 'promoted'` via a check constraint).
 
@@ -345,7 +388,7 @@ Security headers, off the shelf. Add a headers middleware (configure `starlette`
 
 Database-backed rate limiting. Replace the in-process `TTLCache` counters in `MobileCardService` with a small `rate_limits` table (key, window_start, count) using atomic `INSERT ... ON CONFLICT ... DO UPDATE` increments, behind the same interface so the service logic (including the existing TOCTOU-safe increment-before-validate order) is unchanged. Apply the same mechanism to the three other abuse surfaces: admin login (per-account and per-IP throttle with lockout backoff — currently unthrottled), the public prospect endpoint, and access-code requests (currently the per-IP/email window). On Vercel, in-process counters are per-instance and reset on recycle; Postgres is the only shared state this app has, and at this traffic the extra query is irrelevant.
 
-Hashed access codes. Store only a salted hash of mobile-card access codes (the 6-character codes are low-entropy, so use a slow hash or HMAC with a server key, not bare sha256); compare in constant time. Coordinate with M6: the new `mobile_card_access_codes.code_hash` column is the natural landing spot, but if M8 ships first, hash in place in the legacy columns. Audit the mobile session token mechanism at the same time: confirm whether bearer session tokens are server-side rows (revocable) or stateless; if stateless, move them to rows so a stolen phone or departed volunteer can be cut off, aligning with the session model the admin UI already uses.
+Hashed access codes and revocable mobile sessions. Store only a salted hash of mobile-card access codes (the 6-character codes are low-entropy, so use a slow hash or HMAC with a server key, not bare sha256); compare in constant time. Coordinate with M6: the new `mobile_card_access_codes.code_hash` column is the natural landing spot, but if M8 ships first, hash in place in the legacy columns. Once hashes are stored, the cooldown path must generate and email a new code instead of reusing the previous plaintext code. Mobile-card bearer session tokens are stateless signed tokens today, so M8 also adds server-side mobile session rows with expiry/revocation and migrates `/api/v1/mobile-card/sessions` and `/api/v1/mobile-card/me` to issue and validate revocable session ids.
 
 Enumeration and response hygiene. Stop returning `volunteer_id`/`registration_id` in the public prospect endpoint's `409` bodies — the conflict category alone is enough for the `samfunnetibergen` form copy (coordinate the contract change via `make openapi` and a sibling-repo client regeneration). Sweep the other public endpoints for the same pattern; the mobile-card access-code endpoint's always-`202` behavior is the house style to match. Confirm error handlers never emit stack traces or internal messages to clients, and that logs redact codes, tokens, and passwords (extend `app/observability.py`'s existing redaction list as needed).
 
@@ -369,8 +412,8 @@ Recorded so future quarters inherit decisions, not archaeology. None of this is 
 
 - Scheduled jobs (weekly, monthly, semester — wanted from next quarter). Design constraints agreed in advance: Vercel cron entries hitting thin `/internal/jobs/{name}` endpoints authenticated with the `CRON_SECRET` bearer header; job logic in `app/jobs/` calling module services like any other caller; a `job_runs` table keyed by (job name, period key — `2026-W24`, `2026-06`, `2026-autumn`) giving exactly-once-per-period idempotency despite cron double-fires, plus an admin-visible last-run status (for a team checking in 10 hours a week, "did the monthly job run?" must be visible, not archaeological). The semester rollover keeps a human on the apply trigger using the existing `semester_transfer` preview/apply split: cron prepares and notifies; an admin applies. Mechanical, reversible jobs (reminders, expiries, snapshots) run unattended.
 - Transactional outbox for side-effect durability. Direction decided (see Decision Log), contents not yet known, implementation waits for the cron dispatcher above. The M7 seam (effects as serializable named records) is the only preparation this plan makes.
-- `frontend-eventside` stops querying the database directly. Today it reads event tables via supabase-js with the anon key, which makes RLS policies on those tables production authorization code maintained outside any review process. The planned central events API (possibly fronting Sanity so all clients share one representation) retires the pattern naturally; afterward, set deny-all RLS on `public` as defense-in-depth. Until then, the M0 policy inventory is the review of record for those policies.
-- The Sanity events API itself, when it materializes, is the standing candidate for the codebase-split rule (Decision Log): it shares no tables and no auth with personnel, so module-in-this-repo and own-small-codebase are both legitimate; decide then, cheaply.
+- No `frontend-eventside` cleanup is required for this plan because the repo is retired. If it is ever resurrected, rebuild it against the then-current event source instead of restoring the retired tables.
+- If a future Sanity events API materializes, it shares no personnel tables and no admin auth with this repo, so it should be its own small codebase unless a new shared dependency appears.
 - SMS OTP delivery provider selection (Twilio/Vonage vs. Norwegian aggregator), when SMS login is adopted; the M9 port makes this a configuration decision, not a design one.
 
 ## Concrete Steps
@@ -391,6 +434,7 @@ Rehearse any migration on a Supabase development branch (M2, M3, M4, M6, M7, M9)
 Prove the baseline reproduces production on an empty database (M0, then CI forever):
 
     docker run -d --name pg-baseline -e POSTGRES_PASSWORD=x -p 55432:5432 postgres:17
+    # Create anon/authenticated/service_role, auth.uid(), and storage stubs as in .github/workflows/ci.yml
     DATABASE_URL=postgresql+asyncpg://postgres:x@localhost:55432/postgres uv run alembic upgrade head
     pg_dump postgresql://postgres:x@localhost:55432/postgres --schema-only --schema=public \
       --no-owner --no-privileges > /tmp/baseline-replay.sql
@@ -421,7 +465,8 @@ Security checks (M8):
 
     curl -sI https://personal.kvarteret.no/health | grep -i \
       "strict-transport\|x-content-type\|x-frame\|referrer-policy"
-    grep -rn "TTLCache" app/domain/mobile_card/   # acceptance: no rate-limit usage remains
+    grep -rn "_access_code_request_counts\|_session_attempt_counts\|_enforce_rate_limit" app/domain/mobile_card/
+    # acceptance: no in-process mobile-card rate-limit counters remain
     psql "$DATABASE_URL" -c "select internkortaccesstoken from personal limit 3"
     # acceptance after hashing (pre-M3 names shown): no plaintext 6-char codes
 
@@ -435,46 +480,79 @@ Full verification battery after each milestone:
 
 ## Validation and Acceptance
 
-M0: the schema snapshot is committed, every production-only object has a Decision Log disposition, the `auth.uid()`/storage-policy inventory exists, and `alembic upgrade head` on empty Postgres produces a schema structurally identical to the snapshot.
+M0: the schema snapshot is committed, every production-only object has a Decision Log disposition, the `auth.uid()`/storage-policy inventory exists, and `alembic upgrade head` on empty Postgres reaches head from the authored legacy baseline. The CI-migrated head schema must match SQLAlchemy metadata; the pre-M2 production snapshot remains the comparison artifact for destructive migration rehearsal.
 
-M1: a PR that breaks a test, stales `openapi.json`, fails ruff, fails pip-audit, or breaks the migration chain fails CI visibly on GitHub; the weekly scheduled run appears in the Actions history; Dependabot opens its first PRs; `scripts/check_schema_drift.py` exits zero against the CI-migrated container.
+M1: a PR that breaks a test, stales `openapi.json`, fails ruff, fails pip-audit, or breaks the migration chain fails CI visibly on GitHub; the weekly scheduled run appears in the Actions history; Dependabot opens update PRs; `scripts/check_schema_drift.py` exits zero against the CI-migrated container.
 
-M2: production no longer lists `aspnetusers`, `aspnetroles`, `aspnetuserroles`, `grupper_admin_kobling`, or `personal_fil`; the private archive export exists; `make test` passes with the definitions removed.
+M2: after approved production application, production no longer lists `aspnetusers`, `aspnetroles`, `aspnetuserroles`, `grupper_admin_kobling`, `personal_fil`, `events`, `event_types`, `event_organizer_groups`, `event_organizer_group_memberships`, `rooms`, `board_game_open_invite`, or `volunteer_signup`; the private archive exports exist; retired `event-images` storage policies are gone; event API routes return 404; `openapi.json` no longer contains `/api/v1/events`; `make test` passes with the definitions removed.
 
-M3: production contains only English names from the rename map; login, volunteer detail, and `POST /api/v1/mobile-card/sessions` work; `make openapi-check` is clean; `grep -rn "fornavn\|etternavn\|kortnummer\|grupper\b" app/` matches nothing outside migrations.
+M3: production contains only English names from the rename map; login, volunteer detail, and `POST /api/v1/mobile-card/sessions` work; `make openapi-check` is clean; `grep -rn "fornavn\|etternavn\|kortnummer\|grupper\b" app/` matches nothing outside migrations. The pure rename migration has an exact downgrade; the separate type/FK migration has its own recovery notes.
 
 M4: Vercel logs show four weeks of zero non-synthetic `legacy.digital_internkort.hit` events before removal; the DigitalInternkort routes 404 in production afterward; `openapi.json` no longer mentions them; `user_accounts` has no `legacy_user_id`.
 
-M5: `grep -rn "session_factory()" app/domain app/auth` matches nothing (sessions enter only through the request dependency or `session_scope()`); `grep -rn "dict\[str, Any\]" app/domain/*/repository.py` matches nothing; `app/domain/volunteers/mappers.py` is deleted; a contract test per module passes against fake and real repositories in CI; one warm admin page that previously issued N connections issues 1 (assert via the new engine event listener's log output in a local timing run, recorded in `Artifacts and Notes`).
+M5: `grep -rn "session_factory()" app/domain app/auth` matches nothing (sessions enter only through the request session or `session_scope()`); `grep -rn "execute_in_transaction" app/domain app/auth app/db` matches nothing; `grep -rn "dict\[str, Any\]" app/domain/*/repository.py` matches nothing; `app/domain/volunteers/mappers.py` is deleted; a contract test per module passes against fake and real repositories in CI; one warm admin page that previously issued N connections issues 1 (assert via the new engine event listener's log output in a local timing run, recorded in `Artifacts and Notes`); tests prove an induced commit failure prevents post-commit effects from sending.
 
 M6: every table definition lives in its owning module's `tables.py`; `make lint-imports` passes and CI fails on a deliberately introduced cross-module service import (verify once, then revert); `mobile_card_access_codes` exists and `volunteer_records` has no token columns; `app/domain/role_assignments/` exists; no domain directory exceeds ~1,200 lines (`find app/domain/* -name '*.py' | xargs wc -l`).
 
 M7: the state × action matrix test covers every combination; the status-literal grep returns no output; per-person approval of an active grouped member is rejected by the workflow and absent from the template; group approval promotes all active members in one transaction (test: induce a failure on the second member and assert the first is not promoted); every transition in a test run inserts exactly one `domain_events` row in the same transaction (test: induce a post-insert failure and assert neither the state change nor the event row persisted); the check constraint exists in production and an `UPDATE ... SET status='bogus'` is rejected; `docs/adr/003-domain-event-log.md` exists.
 
-M8: the header curl shows all five headers in production; `TTLCache` no longer backs any rate limit and two concurrent simulated instances share one limit (test against the CI Postgres container); admin login locks out after the configured failures and logs the event; access codes at rest are hashes and session creation still works end-to-end; the prospect endpoint's `409` bodies carry no internal ids and the regenerated sibling client compiles; the GoTrue-user-without-account regression test passes.
+M8: the header curl shows all five headers in production; `TTLCache` no longer backs any rate limit and two concurrent simulated instances share one limit (test against the CI Postgres container); admin login locks out after the configured failures and logs the event; access codes at rest are hashes and session creation still works end-to-end without reusing plaintext cooldown codes; mobile-card sessions are revocable server-side rows; the prospect endpoint's `409` bodies carry no internal ids and the regenerated sibling client compiles; the GoTrue-user-without-account regression test passes.
 
 M9: every admin route is guarded by `require_permission` (grep: no remaining ad-hoc `role ==` checks in `app/web/routes/`); the before/after permission-matrix test passes; all admins have logged in via argon2 verification and the GoTrue gateway code is deleted; `auth.users` is empty; `docs/adr/002-auth-consolidation.md` exists; the `SmsGateway` protocol exists with the email-code flow still the shipped credential.
 
 ## Idempotence and Recovery
 
-Every migration is rehearsed on a Supabase development branch before production, and production is touched only with a verified PITR window or manual dump. M2 and M4 drops are preceded by archival exports; recovery is restoring the export. The M3 rename migration is symmetric (`downgrade()` renames back exactly); recovery inside the window is `alembic downgrade -1` plus the still-live previous deployment. The M6 token-table migration copies before dropping, so its downgrade re-creates the columns and copies back. The M7 check constraints are preceded by audit queries and are droppable independently; `domain_events` is additive. M8 items are individually revertible (middleware removal, table-backed limiter behind the existing interface, re-issue of access codes if hashing migration must roll back — codes are short-lived by design). M9 keeps the GoTrue login path behind a setting until the argon2 path is proven, exports `auth.users` before any deletion, and migrates permissions with a before/after matrix test, so each cutover has a rollback that is configuration, not surgery. M5–M7 code changes are behavior-preserving refactors shipped behind the full suite, the contract tests, and (from M6) the import linter; each milestone ends with code and schema agreeing, so the plan can pause indefinitely at any milestone boundary.
+Every migration is rehearsed on a Supabase development branch before production, and production is touched only with a verified PITR window or manual dump. M2 and M4 drops are preceded by archival exports; recovery is restoring the export. The M3 rename migration is symmetric (`downgrade()` renames back exactly); recovery inside the window is `alembic downgrade -1` plus the still-live previous deployment. Non-rename type/FK fixes live in their own migration with independent downgrade notes. The M6 token-table migration copies before dropping, so its downgrade re-creates the columns and copies back. The M7 check constraints are preceded by audit queries and are droppable independently; `domain_events` is additive. M8 items are individually revertible (middleware removal, table-backed limiter behind the existing interface, re-issue of access codes if hashing migration must roll back — codes are short-lived by design, and revocable session rows can coexist with stateless token fallback during rollout). M9 keeps the GoTrue login path behind a setting until the argon2 path is proven, exports `auth.users` before any deletion, and migrates permissions with a before/after matrix test, so each cutover has a rollback that is configuration, not surgery. M5–M7 code changes are behavior-preserving refactors shipped behind the full suite, the contract tests, and (from M6) the import linter; each milestone ends with code and schema agreeing, so the plan can pause indefinitely at any milestone boundary.
 
 ## Artifacts and Notes
 
 Current measured state (2026-06-10), the "before" picture:
 
-    app python LOC: 18,388   tests LOC: 8,099   tests collected: 226
+    app python LOC: 18,388   tests LOC: 8,099   tests collected: 219
     domain module sizes: volunteer_applications 2,352  volunteers 2,318
                          groups 1,066  mobile_card 1,056
     volunteer_applications internals: repository.py 995, service.py 1,090,
                                       workflow.py 163, side_effects.py 104
     application status literals: 14+ sites across repository.py and service.py
     transaction callbacks in services: 7 sites (groups 5, courses 2)
-    migrations: 24 revisions, no baseline
+    migrations: 25 revisions including the new 20260313_0900 baseline
     dead tables in prod: aspnetusers (66 rows historically), aspnetroles,
-                         aspnetuserroles, grupper_admin_kobling, personal_fil (88 rows)
+                         aspnetuserroles, grupper_admin_kobling, personal_fil (88 rows),
+                         board_game_open_invite (0), volunteer_signup (1)
     deprecated API: 2 DigitalInternkort operations in openapi.json
-    CI: none (.github/workflows absent); Sonar config present; ruff installed, unconfigured
+    retired event API/table surface: 3 /api/v1/events operations, app/domain/events,
+                                     event table definitions/docs removed locally
+    M2 private archive:
+        /Users/kluvin/dev/kvarteret/private-archives/kvarteret-personal/20260610-m2-drop-candidates.sql
+    local validation after event retirement:
+        DATABASE_URL=sqlite+aiosqlite:////tmp/kvarteret-personal-tests.db uv run pytest -q
+        -> 219 passed, 11 warnings
+        DATABASE_URL=sqlite+aiosqlite:////tmp/kvarteret-personal-openapi.db make openapi-check
+        -> clean
+        uv run ruff check .
+        -> clean
+    validation after M0/M1/M2 guardrails:
+        DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55434/kvarteret_personal uv run alembic upgrade head
+        -> reached 20260610_1000 from empty Postgres 17 after Supabase compatibility prep
+        DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55434/kvarteret_personal make schema-drift
+        -> Schema matches SQLAlchemy metadata.
+        make lint
+        -> clean
+        make lint-imports
+        -> 0 contracts broken
+        make audit
+        -> No known vulnerabilities found
+        DATABASE_URL=sqlite+aiosqlite:////tmp/kvarteret-personal-tests.db make test
+        -> 219 passed, 11 warnings
+        DATABASE_URL=sqlite+aiosqlite:////tmp/kvarteret-personal-openapi.db make openapi-check
+        -> clean
+        -> All checks passed
+    production-shaped migration rehearsal after M2 expansion:
+        disposable Postgres 17 on localhost:55433 loaded from schema snapshot,
+        alembic stamp 20260521_1200, alembic upgrade head
+        -> reached 20260610_1000; M2 drop tables absent
+    CI: .github/workflows/ci.yml added; Sonar config present; ruff, import-linter,
+        pip-audit, tests, OpenAPI, migrations, and schema drift are guarded
     security posture: rate limits in-process (TTLCache), access codes plaintext,
                       no security headers, prospect 409s leak internal ids,
                       admin login unthrottled; sessions/CSRF/cookies sound
@@ -483,7 +561,7 @@ Current measured state (2026-06-10), the "before" picture:
 
 ## Interfaces and Dependencies
 
-Tooling additions: `import-linter`, `pip-audit`, `argon2-cffi` (M9), a maintained security-headers middleware (M8), `apgdiff` or an equivalent schema-diff approach, GitHub Actions with a `postgres:17` service container, Dependabot. `ruff` is already present. No new runtime infrastructure — no ORM adoption, no workflow engine, no queue, no identity vendor.
+Tooling additions: `import-linter`, `pip-audit`, GitHub Actions with a `postgres:17` service container, and Dependabot are now in this branch. Remaining planned tooling additions: `argon2-cffi` (M9), a maintained security-headers middleware (M8), and `apgdiff` or an equivalent schema-diff approach if a deeper normalized schema diff becomes necessary. No new runtime infrastructure — no ORM adoption, no workflow engine, no queue, no identity vendor.
 
 At the end of M3, `app/db/table_defs/public.py` defines `Table` objects whose SQL names equal their Python names, and `app/db/table_defs/__init__.py` contains imports only.
 
@@ -533,4 +611,6 @@ Revision note: Initial version authored from the 2026-06-10 research pass; no im
 
 Revision note (revision 2, 2026-06-10): Folded in the data-access overhaul (new M5), the architecture decision and table-ownership enforcement (new M6), and the volunteer-application state machine including the group-registration ADR's hardening list (new M7). CI moved from last to M1; former M1–M3 renumbered to M2–M4.
 
-Revision note (revision 3, 2026-06-10): Folded in the security review (new M8: database-backed rate limiting, hashed access codes, security headers, enumeration fixes, auth-invariant regression test — items shippable immediately and independent of M2–M7), the auth consolidation (new M9: in-application permission layer with scoped grants, in-house argon2 admin passwords, volunteers removed from `auth.users`, GoTrue retired, `SmsGateway` port defined), and the audit/durability direction from the CQRS and event-driven re-examination (M7 extended with the `domain_events` transactional audit log and side-effects-as-data; transactional outbox recorded as a deferred decision — direction fixed, contents and dispatcher deliberately not designed now, since scheduled jobs are not being added this quarter). Platform decisions recorded with alternatives (stay FastAPI, Supabase narrowed to managed Postgres + storage, no identity vendor, architecture tripwires and the codebase-split rule). M1 extended with weekly scheduled CI, pip-audit, and Dependabot for durable upkeep; M0 extended with the `auth.uid()`/storage-policy inventory M9 depends on; new Deferred Work section carries the next-quarter items (jobs, outbox, `frontend-eventside` API migration, Sanity events API split decision, SMS provider selection).
+Revision note (revision 3, 2026-06-10): Folded in the security review (new M8: database-backed rate limiting, hashed access codes, security headers, enumeration fixes, auth-invariant regression test — items shippable immediately and independent of M2–M7), the auth consolidation (new M9: in-application permission layer with scoped grants, in-house argon2 admin passwords, volunteers removed from `auth.users`, GoTrue retired, `SmsGateway` port defined), and the audit/durability direction from the CQRS and event-driven re-examination (M7 extended with the `domain_events` transactional audit log and side-effects-as-data; transactional outbox recorded as a deferred decision — direction fixed, contents and dispatcher deliberately not designed now, since scheduled jobs are not being added this quarter). Platform decisions recorded with alternatives (stay FastAPI, Supabase narrowed to managed Postgres + storage, no identity vendor, architecture tripwires and the codebase-split rule). M1 extended with weekly scheduled CI, pip-audit, and Dependabot for durable upkeep; M0 extended with the `auth.uid()`/storage-policy inventory M9 depends on; new Deferred Work section carries the next-quarter items (jobs, outbox, SMS provider selection).
+
+Revision note (revision 4, 2026-06-10): Recorded user decision that event API/table support is retired and should be dropped, despite stale sibling source references. Folded review issues into the executable plan: request-scoped sessions must exist before auth middleware and preserve commit-before-effect ordering, M3 pure renames are split from type/FK fixes for honest rollback, M8 treats stateless mobile-card sessions as a revocation gap to fix, hash-in-place code reuse semantics are specified, and broad TTLCache/transaction-callback acceptance checks were tightened.

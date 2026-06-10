@@ -29,7 +29,6 @@ logger = logging.getLogger("app.performance")
 class AdminAccountListItem:
     user_account_id: int
     auth_user_id: UUID
-    legacy_user_id: int | None
     username: str
     email: str
     display_name: str | None
@@ -43,7 +42,6 @@ class AdminAccountListItem:
 class AdminAccountDetail:
     user_account_id: int
     auth_user_id: UUID
-    legacy_user_id: int | None
     username: str
     email: str
     display_name: str | None
@@ -271,7 +269,6 @@ class AdminAccountsService(SqlAlchemyRepository):
             select(
                 user_accounts.c.id,
                 user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
                 user_accounts.c.username,
                 user_accounts.c.email,
                 user_accounts.c.display_name,
@@ -291,7 +288,6 @@ class AdminAccountsService(SqlAlchemyRepository):
             .group_by(
                 user_accounts.c.id,
                 user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
                 user_accounts.c.username,
                 user_accounts.c.email,
                 user_accounts.c.display_name,
@@ -315,8 +311,7 @@ class AdminAccountsService(SqlAlchemyRepository):
             AdminAccountListItem(
                 user_account_id=row["id"],
                 auth_user_id=row["auth_user_id"],
-                legacy_user_id=row.get("legacy_user_id"),
-                username=row["username"],
+                    username=row["username"],
                 email=row["email"],
                 display_name=row.get("display_name"),
                 role=UserRole(row["role"]),
@@ -334,7 +329,6 @@ class AdminAccountsService(SqlAlchemyRepository):
             select(
                 user_accounts.c.id,
                 user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
                 user_accounts.c.username,
                 user_accounts.c.email,
                 user_accounts.c.display_name,
@@ -353,7 +347,6 @@ class AdminAccountsService(SqlAlchemyRepository):
         return AdminAccountDetail(
             user_account_id=row["id"],
             auth_user_id=row["auth_user_id"],
-            legacy_user_id=row.get("legacy_user_id"),
             username=row["username"],
             email=row["email"],
             display_name=row.get("display_name"),

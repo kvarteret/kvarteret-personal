@@ -111,7 +111,7 @@ async def login_submit(
     settings=Depends(get_settings),
 ):
     try:
-        result = await login_service.login_with_bridge(
+        result = await login_service.login(
             identifier=identifier,
             password=password,
             ip_address=request.client.host if request.client else None,

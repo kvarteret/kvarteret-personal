@@ -32,7 +32,7 @@ class LoginService:
         self.supabase_auth = supabase_auth
         self.session_store = session_store
 
-    async def login_with_bridge(
+    async def login(
         self,
         *,
         identifier: str,

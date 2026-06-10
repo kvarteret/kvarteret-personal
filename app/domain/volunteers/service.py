@@ -335,7 +335,7 @@ class VolunteersService:
                 continue
             if normalized_name is None or normalized_phone is None:
                 raise InvalidVolunteerRelationsError(
-                    "Hver pårørende må ha både navn og telefon."
+                    "Hver pårørende må ha både name og phone."
                 )
             normalized_next_of_kin.append(
                 {
@@ -404,7 +404,7 @@ class VolunteersService:
         self, volunteer_id: int, completion_id: int
     ) -> None:
         row = await self.repository.fetch_course_completion_record(completion_id)
-        if not row or row["id_personal"] != volunteer_id:
+        if not row or row["volunteer_id"] != volunteer_id:
             raise CourseCompletionNotFoundError(
                 f"Course completion {completion_id} was not found."
             )
@@ -430,7 +430,7 @@ class VolunteersService:
             group_id=group_id, role_id=role_id
         ):
             raise InvalidRoleAssignmentError(
-                "Selected verv does not belong to the selected group."
+                "Selected name does not belong to the selected group."
             )
         if await self.repository.role_assignment_exists(
             volunteer_id=volunteer_id,
@@ -439,7 +439,7 @@ class VolunteersService:
             semester_code=semester_code,
         ):
             raise DuplicateRoleAssignmentError(
-                "This verv is already registered for the selected semester."
+                "This name is already registered for the selected semester."
             )
         await self.repository.create_role_assignment(
             volunteer_id=volunteer_id,
@@ -462,7 +462,7 @@ class VolunteersService:
         contract_signed: bool,
     ) -> None:
         row = await self.repository.fetch_role_assignment_record(history_id)
-        if not row or row["id_personal"] != volunteer_id:
+        if not row or row["volunteer_id"] != volunteer_id:
             raise RoleAssignmentNotFoundError(
                 f"Role assignment {history_id} was not found."
             )
@@ -473,7 +473,7 @@ class VolunteersService:
             group_id=group_id, role_id=role_id
         ):
             raise InvalidRoleAssignmentError(
-                "Selected verv does not belong to the selected group."
+                "Selected name does not belong to the selected group."
             )
         if await self.repository.role_assignment_exists(
             volunteer_id=volunteer_id,
@@ -483,7 +483,7 @@ class VolunteersService:
             exclude_history_id=history_id,
         ):
             raise DuplicateRoleAssignmentError(
-                "This verv is already registered for the selected semester."
+                "This name is already registered for the selected semester."
             )
         await self.repository.update_role_assignment(
             history_id,
@@ -498,7 +498,7 @@ class VolunteersService:
         self, volunteer_id: int, history_id: int
     ) -> None:
         row = await self.repository.fetch_role_assignment_record(history_id)
-        if not row or row["id_personal"] != volunteer_id:
+        if not row or row["volunteer_id"] != volunteer_id:
             raise RoleAssignmentNotFoundError(
                 f"Role assignment {history_id} was not found."
             )
@@ -718,8 +718,8 @@ def _encode_browse_cursor(row: dict[str, Any]) -> str:
     return _encode_cursor(
         {
             "mode": "browse",
-            "last_name": row["etternavn"],
-            "first_name": row.get("fornavn") or "",
+            "last_name": row["last_name"],
+            "first_name": row.get("first_name") or "",
             "volunteer_id": row["id"],
         }
     )

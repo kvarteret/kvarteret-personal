@@ -13,7 +13,6 @@ from app.media_tokens import MediaTokenService
 from app.runtime import ApplicationContainer
 from app.domain.feedback.service import FeedbackService
 from app.domain.courses.service import CoursesService
-from app.domain.events import EventsService
 from app.domain.groups.service import GroupsService
 from app.domain.mobile_card.service import MobileCardService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -132,10 +131,6 @@ def get_admin_accounts_service(request: Request) -> AdminAccountsService:
 
 def get_mobile_card_service(request: Request) -> MobileCardService:
     return get_container(request).mobile_card_service
-
-
-def get_events_service(request: Request) -> EventsService:
-    return get_container(request).events_service
 
 
 def get_mobile_card_april_state_service(

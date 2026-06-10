@@ -33,5 +33,5 @@ IDs, OpenAPI output, generated clients, or docs that explain sibling API use.
   operations still exist in `src/core/api/kvarteret-personal`.
 - `samfunnetibergen` currently posts volunteer prospects to this repo. Its public
   arrangement pages and feeds read Sanity.
-- `frontend-eventside` writes event tables through Supabase, so event schema
-  changes can affect it even when no personal API endpoint changes.
+- `frontend-eventside` is retired. Its stale direct Supabase event-table code is
+  historical evidence only and is not a live coordination blocker.

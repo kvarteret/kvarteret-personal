@@ -20,9 +20,9 @@ Consumers that generate typed clients should regenerate from `openapi.json`, pre
 
 | Consumer | Depends on | Boundary | Current state |
 | --- | --- | --- | --- |
-| `kvarteret-internbevis-rn` | `kvarteret-personal` and Sanity | Mobile-card, now-playing, generated personal API client, Sanity dashboard events | Mobile-card and now-playing are runtime API calls; current dashboard event reads are Sanity-backed |
+| `kvarteret-internbevis-rn` | `kvarteret-personal` and Sanity | Mobile-card, now-playing, generated personal API client, Sanity dashboard events | Mobile-card and now-playing are runtime API calls; current dashboard event reads are Sanity-backed; generated event operations are retired |
 | `samfunnetibergen` | `kvarteret-personal` and Sanity | Volunteer prospects, Sanity public arrangements | Server-side volunteer prospect proxy; public arrangement pages and feeds are Sanity-backed |
-| `frontend-eventside` | Supabase event tables owned by `kvarteret-personal` migrations | Event editing | Direct Supabase reads/writes, not yet routed through `kvarteret-personal` APIs |
+| `frontend-eventside` | Retired Supabase event tables | Retired event editing | Retired repo; stale source references are historical and not a live dependency |
 | `kvarteret-personal` | Supabase, Azure, Spotify, SMTP, Slack | Third-party services | Runtime adapters documented in [External systems](external-systems.md) |
 
 ## `kvarteret-internbevis-rn`
@@ -54,20 +54,9 @@ Accepts diagnostics when the mobile app logs a user out due to missing or invali
 
 ### Events API
 
-`GET /api/v1/events`
-
-The endpoint is present in `openapi.json` and in the generated mobile client.
-Current dashboard event reads in `kvarteret-internbevis-rn` are Sanity-backed in
-`src/features/dashboard/data/eventsRepository.ts`, so verify runtime usage before
-treating this endpoint as an active mobile display dependency.
-
-`GET /api/v1/events/taxonomy`
-
-Returns event types grouped by taxonomy, active organizer groups, and active rooms.
-
-`GET /api/v1/events/{event_id}`
-
-Returns one event detail. Public callers can only access public events; mobile callers use bearer auth for internal event access.
+The old `GET /api/v1/events`, `GET /api/v1/events/taxonomy`, and
+`GET /api/v1/events/{event_id}` operations are retired. They are intentionally
+absent from `openapi.json`.
 
 ### Now-playing API
 
@@ -93,23 +82,11 @@ Current public arrangement pages and feeds read from Sanity, not from
 
 ## `frontend-eventside`
 
-`frontend-eventside` is the event editing surface at `event.kvarteret.no`.
-
-Current direct Supabase tables:
-
-- `events`
-- `event_types`
-- `event_organizer_groups`
-- `event_organizer_group_memberships`
-- `rooms`
-
-Current direct Supabase storage:
-
-- event image upload and deletion through Supabase Storage
-
-Important boundary rule: `kvarteret-personal` owns migrations for these event tables. `frontend-eventside` consumes the schema and should not be treated as the schema authority.
-
-Known design gap: event writes do not currently go through `kvarteret-personal`. That means validation, write authorization, and publication workflows are split between Supabase policies and frontend code. Track follow-up work in [Current documentation issues](../issues/current-documentation-issues.md).
+`frontend-eventside` was the event editing surface at `event.kvarteret.no`.
+Its source still contains direct Supabase queries against the retired event
+tables. The repo is retired, so those source references are historical evidence
+only and are not a coordination requirement for `kvarteret-personal` table
+removal.
 
 ## Deprecated Compatibility Boundary
 

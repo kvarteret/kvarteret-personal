@@ -24,11 +24,11 @@ def map_volunteer_list_item(row: dict) -> VolunteerListItem:
     )
     return VolunteerListItem(
         volunteer_id=row["id"],
-        first_name=row["fornavn"],
-        last_name=row["etternavn"],
-        full_name=build_full_name(row["fornavn"], row["etternavn"]),
-        email=row["epost"],
-        phone=row["telefon"],
+        first_name=row["first_name"],
+        last_name=row["last_name"],
+        full_name=build_full_name(row["first_name"], row["last_name"]),
+        email=row["email"],
+        phone=row["phone"],
         photo_url=None,
         pingvin_points=int(row.get("pingvin_points") or 0),
         last_semester_code=last_semester_code,
@@ -37,20 +37,20 @@ def map_volunteer_list_item(row: dict) -> VolunteerListItem:
 
 
 def map_volunteer_detail(row: dict) -> VolunteerDetail:
-    gender_code = normalize_gender_code(row.get("kjonn"))
+    gender_code = normalize_gender_code(row.get("gender"))
     return VolunteerDetail(
         volunteer_id=row["id"],
-        first_name=row["fornavn"],
-        last_name=row["etternavn"],
-        full_name=build_full_name(row["fornavn"], row["etternavn"]),
-        email=row["epost"],
-        phone=row["telefon"],
-        birth_date=coerce_date(row.get("fodselsdato")),
-        created_at=require_datetime(row["opprettet"]),
+        first_name=row["first_name"],
+        last_name=row["last_name"],
+        full_name=build_full_name(row["first_name"], row["last_name"]),
+        email=row["email"],
+        phone=row["phone"],
+        birth_date=coerce_date(row.get("birth_date")),
+        created_at=require_datetime(row["created_at"]),
         gender_code=gender_code,
         gender_label=gender_label(gender_code),
-        address=row["gateadresse"],
-        postal_code=row["postnummerid"],
+        address=row["street_address"],
+        postal_code=row["postal_code"],
         pingvin_points=int(row.get("pingvin_points") or 0),
         photo_url=None,
         current_discount_level=int(row["current_discount_level"])
@@ -78,22 +78,22 @@ def map_role_assignment_item(row: dict) -> RoleAssignmentItem:
     semester_code = int(row["semester"])
     return RoleAssignmentItem(
         history_id=int(row["id"]),
-        group_id=int(row["id_gruppe"]),
-        group_name=row.get("group_name") or f"Group {row['id_gruppe']}",
-        role_id=row.get("id_verv"),
+        group_id=int(row["group_id"]),
+        group_name=row.get("group_name") or f"Group {row['group_id']}",
+        role_id=row.get("role_id"),
         role_name=row.get("role_name"),
-        pingvin_points=int(row.get("pingvinpoeng") or 0),
+        pingvin_points=int(row.get("penguin_points") or 0),
         semester_code=semester_code,
         semester_label=format_semester_code(semester_code) or str(semester_code),
-        contract_signed=bool(row["signert_kontrakt"]),
+        contract_signed=bool(row["contract_signed"]),
     )
 
 
 def map_course_completion_item(row: dict) -> VolunteerCourseCompletionItem:
-    semester_code = int(row["gjennomfort_dato"])
+    semester_code = int(row["completed_semester"])
     return VolunteerCourseCompletionItem(
         completion_id=int(row["id"]),
-        course_id=int(row["id_kurs"]),
+        course_id=int(row["course_id"]),
         course_name=row["course_name"],
         completed_semester_code=semester_code,
         completed_semester_label=format_semester_code(semester_code)
@@ -126,15 +126,15 @@ def map_relations(rows: list[dict]) -> VolunteerRelations:
 def map_group_option(row: dict) -> GroupOption:
     return GroupOption(
         group_id=int(row["id"]),
-        name=row["navn"],
-        active=bool(row["aktiv"]),
+        name=row["name"],
+        active=bool(row["is_active"]),
     )
 
 
 def map_role_option(row: dict) -> AssignmentRoleOption:
     return AssignmentRoleOption(
         role_id=int(row["id"]),
-        group_id=int(row["id_gruppe"]),
-        role_name=row["verv"] or "Uten navn",
-        pingvin_points=int(row.get("pingvinpoeng") or 0),
+        group_id=int(row["group_id"]),
+        role_name=row["name"] or "Uten navn",
+        pingvin_points=int(row.get("penguin_points") or 0),
     )

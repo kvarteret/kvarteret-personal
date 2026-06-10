@@ -6,7 +6,7 @@ This page documents third-party systems used by `kvarteret-personal` and related
 
 | System | Used for | Code owner path | Data direction |
 | --- | --- | --- | --- |
-| Supabase Postgres | Personnel data, web sessions, event schema, registration data, Spotify token storage | `app/db`, repositories, `migrations/` | read/write |
+| Supabase Postgres | Personnel data, web sessions, registration data, Spotify token storage | `app/db`, repositories, `migrations/` | read/write |
 | Supabase Auth | Admin account lifecycle, login bridge, password setup | `app/auth/supabase_auth.py` | read/write over HTTP |
 | Azure Blob Storage | Personnel photo storage | `app/infrastructure/storage/service.py` | read/write and signed read URLs |
 | Spotify Web API | Shared now-playing state and OAuth refresh token exchange | `app/domain/spotify/now_playing.py` | OAuth and read |
@@ -62,6 +62,6 @@ These systems are not direct runtime dependencies of `kvarteret-personal`, but t
 | Sanity | `samfunnetibergen` | recruitment/content data |
 | Expo/EAS | `kvarteret-internbevis-rn` | mobile builds, updates, release workflows |
 | Firebase App Distribution | `kvarteret-internbevis-rn` | installable preview binaries |
-| StudentBergen | `frontend-eventside` workflow context | external event publication and organization API context |
+| StudentBergen | retired `frontend-eventside` workflow context | historical external event publication and organization API context |
 
 When documenting a failure or integration change, be explicit about whether the dependency is direct to `kvarteret-personal` or belongs to a sibling repo.

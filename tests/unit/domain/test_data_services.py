@@ -339,12 +339,12 @@ async def test_groups_service_list_uses_database_query(monkeypatch) -> None:
         return [
             {
                 "id": 3,
-                "navn": "Bar",
-                "beskrivelse": "Drinks",
-                "aktiv": True,
-                "aktiv_til_og_med": 20262,
-                "id_overgruppe": None,
-                "rabatt_trinn": 1,
+                "name": "Bar",
+                "description": "Drinks",
+                "is_active": True,
+                "active_through_semester": 20262,
+                "parent_group_id": None,
+                "discount_tier": 1,
             }
         ]
 
@@ -432,7 +432,7 @@ async def test_group_detail_recent_members_are_scoped_to_current_semester(
     assert detail.recent_members[0].semester_code == 20262
     assert detail.recent_members[0].photo_url is not None
     assert detail.recent_members[0].photo_url.startswith("/media/photos/abc123.jpg")
-    assert "historie.semester = :semester_1" in captured["sql"]
+    assert "role_assignments.semester = :semester_1" in captured["sql"]
 
 
 @pytest.mark.asyncio
@@ -463,9 +463,9 @@ async def test_groups_service_archive_marks_group_inactive(monkeypatch) -> None:
     archived = await service.archive_group(7)
 
     assert archived is True
-    assert "UPDATE public.grupper SET aktiv=false" in captured["sql"]
-    assert "aktiv_til_og_med=CASE WHEN (public.grupper.aktiv_til_og_med > 20261) THEN 20261" in captured["sql"]
-    assert "WHERE public.grupper.id = 7" in captured["sql"]
+    assert "UPDATE public.groups SET is_active=false" in captured["sql"]
+    assert "active_through_semester=CASE WHEN (public.groups.active_through_semester > 20261) THEN 20261" in captured["sql"]
+    assert "WHERE public.groups.id = 7" in captured["sql"]
 
 
 @pytest.mark.asyncio
@@ -478,9 +478,9 @@ async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
         return [
             {
                 "id": 9,
-                "navn": "Ordensvakt",
-                "beskrivelse": "Security",
-                "opprettet": "2026-03-13T12:00:00+00:00",
+                "name": "Ordensvakt",
+                "description": "Security",
+                "created_at": "2026-03-13T12:00:00+00:00",
             }
         ]
 
@@ -543,8 +543,8 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
     assert created_count == 2
     assert captured["semester_code"] == 20261
     assert captured["params"] == [
-        {"id_personal": 12, "id_kurs": 4, "gjennomfort_dato": 20261},
-        {"id_personal": 13, "id_kurs": 4, "gjennomfort_dato": 20261},
+        {"volunteer_id": 12, "course_id": 4, "completed_semester": 20261},
+        {"volunteer_id": 13, "course_id": 4, "completed_semester": 20261},
     ]
 
 
@@ -599,12 +599,12 @@ async def test_volunteers_service_plain_listing_uses_repository() -> None:
         [
             {
                 "id": 10016,
-                "fornavn": "Martin",
-                "etternavn": "Kleiven",
-                "epost": "placeholder@example.test",
-                "telefon": None,
-                "fodselsdato": None,
-                "opprettet": "2026-03-13T12:00:00+00:00",
+                "first_name": "Martin",
+                "last_name": "Kleiven",
+                "email": "placeholder@example.test",
+                "phone": None,
+                "birth_date": None,
+                "created_at": "2026-03-13T12:00:00+00:00",
                 "sha1": None,
                 "filetype": None,
                 "last_semester": None,
@@ -705,11 +705,11 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
     repository = FakeVolunteerApplicationsRepository()
     inviter_row = {
         "id": 21,
-        "fornavn": "Inviter",
-        "etternavn": "Person",
-        "epost": "inviter@example.com",
-        "telefon": "11111111",
-        "opprettet": datetime(2026, 5, 21, tzinfo=UTC),
+        "first_name": "Inviter",
+        "last_name": "Person",
+        "email": "inviter@example.com",
+        "phone": "11111111",
+        "created_at": datetime(2026, 5, 21, tzinfo=UTC),
         "latest_group_name": "Skjenkegruppen",
         "latest_role_name": None,
         "latest_semester_code": 20261,
@@ -722,11 +722,11 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
     }
     invitee_row = {
         "id": 22,
-        "fornavn": "Invitee",
-        "etternavn": "Person",
-        "epost": "invitee@example.com",
-        "telefon": "22222222",
-        "opprettet": datetime(2026, 5, 21, tzinfo=UTC),
+        "first_name": "Invitee",
+        "last_name": "Person",
+        "email": "invitee@example.com",
+        "phone": "22222222",
+        "created_at": datetime(2026, 5, 21, tzinfo=UTC),
         "latest_group_name": "Skjenkegruppen",
         "latest_role_name": None,
         "latest_semester_code": 20261,
@@ -1116,8 +1116,8 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         volunteers_by_email=[
             {
                 "id": 12,
-                "fornavn": "Ada",
-                "etternavn": "Lovelace",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
                 "internkortaccesstoken": None,
                 "internkort_access_token_created_at": None,
             }
@@ -1154,8 +1154,8 @@ async def test_mobile_card_service_resends_recent_access_code_during_cooldown() 
         volunteers_by_email=[
             {
                 "id": 12,
-                "fornavn": "Ada",
-                "etternavn": "Lovelace",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
                 "internkortaccesstoken": "654321",
                 "internkort_access_token_created_at": datetime.now(UTC),
             }

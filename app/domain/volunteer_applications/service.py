@@ -435,7 +435,7 @@ class VolunteerApplicationsService:
         if not first_choice_slug:
             raise VolunteerApplicationValidationError("Velg et førstevalg.")
         if second_choice_slug and first_choice_slug == second_choice_slug:
-            raise VolunteerApplicationValidationError("Førstevalg og andrevalg må være ulike grupper.")
+            raise VolunteerApplicationValidationError("Førstevalg og andrevalg må være ulike groups.")
 
         known_choice_names = {
             slug: PUBLIC_PROSPECT_GROUPS[slug]
@@ -445,11 +445,11 @@ class VolunteerApplicationsService:
         }
         expected_choice_count = 1 + (1 if second_choice_slug else 0)
         if len(known_choice_names) != expected_choice_count:
-            raise VolunteerApplicationValidationError("Én eller flere valgte grupper støttes ikke i denne lanseringen.")
+            raise VolunteerApplicationValidationError("Én eller flere valgte groups støttes ikke i denne lanseringen.")
 
         group_ids_by_name = await self.repository.find_group_ids_by_names(list(known_choice_names.values()))
         if len(group_ids_by_name) != expected_choice_count:
-            raise VolunteerApplicationConflictError("Én eller flere valgte grupper finnes ikke i personaldatabasen.")
+            raise VolunteerApplicationConflictError("Én eller flere valgte groups finnes ikke i personaldatabasen.")
 
         first_name, last_name = _split_full_name(registration.full_name)
         friend_emails = self._normalize_friend_emails(
@@ -505,7 +505,7 @@ class VolunteerApplicationsService:
         if not normalized_email:
             raise VolunteerApplicationConflictError("An email address is required.")
         if (initial_group_id is None) != (initial_role_id is None):
-            raise VolunteerApplicationConflictError("Choose both group and verv, or leave both empty.")
+            raise VolunteerApplicationConflictError("Choose both group and assignment_roles, or leave both empty.")
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(normalized_email)
         if duplicate_volunteer is not None:
             raise VolunteerAlreadyExistsError(duplicate_volunteer, normalized_email)
@@ -560,12 +560,12 @@ class VolunteerApplicationsService:
     def _map_recent_registration_row(self, row: dict) -> RecentVolunteerRegistrationItem:
         return RecentVolunteerRegistrationItem(
             volunteer_id=row["id"],
-            first_name=row["fornavn"],
-            last_name=row["etternavn"],
-            full_name=_build_full_name(row["fornavn"], row["etternavn"]),
-            email=row["epost"],
-            phone=row["telefon"],
-            created_at=row["opprettet"],
+            first_name=row["first_name"],
+            last_name=row["last_name"],
+            full_name=_build_full_name(row["first_name"], row["last_name"]),
+            email=row["email"],
+            phone=row["phone"],
+            created_at=row["created_at"],
             latest_group_name=row["latest_group_name"],
             latest_role_name=row["latest_role_name"],
             latest_semester_code=row["latest_semester_code"],
@@ -949,8 +949,8 @@ class VolunteerApplicationsService:
             ) is not None
             if has_active_registration:
                 raise VolunteerApplicationFieldConflictError(
-                    "Én av vennene har allerede en aktiv søknad.",
-                    {"friendEmails": {str(index): "Denne e-postadressen har allerede en aktiv søknad."}},
+                    "Én av vennene har allerede en is_active søknad.",
+                    {"friendEmails": {str(index): "Denne e-postadressen har allerede en is_active søknad."}},
                 )
 
     def _ensure_group_members_ready_for_promotion(self, detail: VolunteerApplicationDetail) -> None:
