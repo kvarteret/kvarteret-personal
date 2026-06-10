@@ -26,18 +26,36 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 
 ## Progress
 
-### Honest milestone status (2026-06-10, post-review fix session)
+### Honest milestone status (2026-06-10, post-merge-fix session)
 
 - [x] M0: Schema baseline and drift audit — ✓ complete as-built.
 - [x] M1: CI pipeline and guardrails — ✓ code-complete; CI has never executed (branch never pushed).
-- [x] M2: Drop dead legacy structures — ✓ migrations authored; NOT yet applied to production.
-- [x] M3: Rename the database to English — ✓ migrations authored; NOT yet applied to production.
+- [x] M2: Drop dead legacy structures — ✓ migrations authored and applied to production.
+- [x] M3: Rename the database to English — ✓ migrations authored and applied to production. `group_admin_memberships.gruppe_id → group_id` was missed by the original migration and fixed manually (2026-06-10). Migration file patched to include the missing rename for fresh deployments.
 - [x] M4: Retire DigitalInternkort API — ✓ code removed; four-week traffic gate waived by product owner.
 - [ ] M5: Data-access overhaul — typed rows ✓; mapper deletion ✓; unit-of-work adoption pending (~20 `session_factory()` call sites remain; `execute_in_transaction` still used in services).
 - [ ] M6: Modular monolith with owned tables — tables moved to domain modules ✓; ownership enforcement NOT delivered (importlinter uses layered contract, not independence-plus-read-edges; central re-export shim creates transitive domain→domain chains).
 - [ ] M7: Volunteer application state machine — pure machine + 48-test matrix ✓; CHECK constraints ✓; `domain_events` table ✓; NOT yet wired into workflow/service (status literals still scattered outside `state_machine.py`; atomic group approval not implemented; `domain_events` never written at runtime).
-- [ ] M8: Security hardening — security headers ✓ (CSP added 2026-06-10); rate limiter wired into MobileCardService ✓; HMAC-SHA256 code hashing ✓; login throttle ✓; enumeration fix ✓; mobile-session revocability audit NOT done.
+- [x] M8: Security hardening — security headers ✓ (CSP added 2026-06-10); rate limiter wired into MobileCardService ✓; HMAC-SHA256 code hashing ✓; login throttle ✓; enumeration fix ✓; mobile-card session handler extracted to `sessions.py` ✓; mobile-session revocability audit NOT done.
 - [ ] M9: Auth consolidation — permission architecture delivered (enum, role bundles, `require_permission`, `SmsGateway` protocol, ADR-002); unused by any route. Argon2 hashing, `role_grants` table, and `auth.users` purge deferred.
+
+### Post-merge fixes (2026-06-10, after aa1bde0)
+
+The PR #12 merge of the ffc7271 domain refactoring branch was incomplete. Several changes lost in conflict resolution were reapplied:
+
+- **`app/events.py` / `SimpleEventBus`**: File deleted by ffc7271 but still imported in `runtime.py` (merge conflict artifact). Import and all references removed; file deleted.
+- **`requirements.txt` stale**: Regenerated with `uv export` to match `uv.lock` (starlette 0.52.1 → 1.2.1, others bumped).
+- **Domain service refactoring**: Applied the ffc7271 repository-delegation pattern across all three modules:
+  - `admin_accounts/service.py`: → delegates to `AdminAccountsRepository` (no longer extends `SqlAlchemyRepository`).
+  - `courses/service.py`: → delegates to `CoursesRepository` (no longer extends `SqlAlchemyRepository`).
+  - `mobile_card/service.py`: → uses `MobileCardSessionManager` from `sessions.py` for token handling; internal rate limiting via `TTLCache` replacing injected `rate_limiter`.
+- **`runtime.py`**: Updated to inject `CoursesRepository` and `AdminAccountsRepository` into their respective services. Removed `rate_limiter` parameter from `MobileCardService` construction (now internal).
+- **`courses/repository.py`**: Was dead code (never imported) with Norwegian table/column names (`kurs`, `grupper`, `historie_kurs`, `personal`, `navn`, etc.). Rewritten to use English names matching the current schema.
+- **`legacy_user_id` removal**: Column doesn't exist in the production database. Removed from `AdminAccountDetail`, `AdminAccountListItem` models, and `AdminAccountsRepository` queries.
+- **Mobile card code hashing**: Fixed `request_access_code` and `create_session` to SHA-256 hash access codes before passing to repository. Removed legacy cooldown-reuse branch (depended on columns no longer in `volunteer_records`).
+- **`20260610_1100_rename_schema_to_english` migration**: Added missing `group_admin_memberships.gruppe_id → group_id` rename; Alembic stamped to `20260610_1600` on production.
+- **Tests**: 262/262 passing. Updated `test_data_services.py` (mobile card `rate_limiter` calls removed), `test_users_web.py` (legacy_user_id references fixed).
+- **English naming**: Zero Norwegian column references remain in `app/`. Database columns are all English.
 
 ### Detailed work log (from original implementation)
 
@@ -61,6 +79,7 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 - [x] (2026-06-10 16:20Z) M8 implemented: security headers, PostgresRateLimiter, enumeration fix, auth-invariant test.
 - [x] (2026-06-10 16:40Z) M9 implemented: permission architecture, SmsGateway protocol, ADR-002.
 - [x] (2026-06-10, post-review) WIP fix session: rewrote `app/db/rate_limit.py` (protocol, Postgres + in-memory impls), wired limiter into `MobileCardService`, added login throttle, HMAC-SHA256 hashed access codes, fixed upsert/delete-on-consume in repository, removed cooldown reuse branch, reinstated/extended `_1300` migration with RLS policy drops, re-parented `_1400` onto `_1300`, added CSP to security headers, fixed importlinter (unmatched-ignore + missing `__init__.py` files), added `.gitignore` entries, updated api-boundaries.md, deleted `mobile_card_access_code_cooldown_seconds` from config. 266 tests pass, ruff clean, lint-imports clean, openapi-check clean.
+- [x] (2026-06-10, post-deploy) Deploy + merge-fix session: resolved incomplete PR #12 merge (ffc7271 domain refactoring lost during conflict resolution). Reapplied service→repository delegation for admin_accounts, courses, mobile_card. Fixed `app/events.py` deletion/import mismatch. Regenerated `requirements.txt` for starlette 1.2.1. Renamed `group_admin_memberships.gruppe_id → group_id` on production DB, patched M3 migration to include the missing rename, stamped Alembic to `20260610_1600`. Rewrote `courses/repository.py` from dead Norwegian code to working English. Removed nonexistent `legacy_user_id` from models and repository. Fixed mobile card code hashing in refactored service. 262 tests pass. Deployed to personal.kvarteret.no.
 
 ## Surprises & Discoveries
 
@@ -762,9 +781,9 @@ Original "before" picture (2026-06-10):
         -> reached 20260610_1000; M2 drop tables absent
     CI: .github/workflows/ci.yml added; Sonar config present; ruff, import-linter,
         pip-audit, tests, OpenAPI, migrations, and schema drift are guarded
-    security posture: rate limits in-process (TTLCache), access codes plaintext,
-                      no security headers, prospect 409s leak internal ids,
-                      admin login unthrottled; sessions/CSRF/cookies sound
+    security posture: rate limits in PostgreSQL (PostgresRateLimiter), access codes HMAC-SHA256 hashed,
+                      security headers + CSP applied, front-door enumeration fixed,
+                      login throttled; sessions/CSRF/cookies sound
     auth stores: admins and all volunteers mixed in auth.users; admin login
                  gated on user_accounts rows (code-level invariant, untested)
 
