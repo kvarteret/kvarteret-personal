@@ -1,3 +1,16 @@
 [importlinter]
 root_packages =
     app
+
+[importlinter:contract:domain-independence]
+name = Domain module independence
+type = independence
+modules =
+    app.domain.groups
+    app.domain.courses
+    app.domain.volunteers
+    app.domain.volunteer_applications
+    app.domain.mobile_card
+    app.domain.spotify
+    app.domain.admin_accounts
+    app.domain.search

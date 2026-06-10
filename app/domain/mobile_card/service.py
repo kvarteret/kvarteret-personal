@@ -251,8 +251,8 @@ class MobileCardService:
 
         volunteer_row = volunteers[0]
         now = datetime.now(UTC)
-        existing_created_at = volunteer_row["internkort_access_token_created_at"]
-        existing_access_code = volunteer_row["internkortaccesstoken"]
+        existing_created_at = volunteer_row["created_at"]
+        existing_access_code = volunteer_row["code_hash"]
         if (
             existing_access_code
             and existing_created_at
