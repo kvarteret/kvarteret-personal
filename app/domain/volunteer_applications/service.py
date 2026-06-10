@@ -24,6 +24,11 @@ from app.infrastructure.storage.service import StorageService
 from app.domain.volunteer_applications.side_effects import (
     VolunteerApplicationSideEffects,
 )
+from app.domain.volunteer_applications.state_machine import (
+    DomainEventRecord,
+    IllegalTransition,
+    MembershipState,
+)
 from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkflow
 
 _REGISTRATION_NOT_FOUND = "Registration was not found."
@@ -137,7 +142,7 @@ class VolunteerApplicationGroupMember:
 
     @property
     def active(self) -> bool:
-        return self.status == "active"
+        return self.status == MembershipState.ACTIVE
 
     @property
     def display_name(self) -> str:
@@ -214,6 +219,17 @@ class VolunteerApplicationDetail:
     group_role: str | None = None
     group_status: str | None = None
     group_members: list[VolunteerApplicationGroupMember] | None = None
+
+    @property
+    def is_part_of_active_group(self) -> bool:
+        """True when this application belongs to an active group with
+        other active members — per-person approval is then illegal."""
+        if not self.group_id or self.group_status != MembershipState.ACTIVE:
+            return False
+        return any(
+            member.active and member.registration_id != self.registration_id
+            for member in self.group_members or []
+        )
 
 
 @dataclass(slots=True)
@@ -487,12 +503,14 @@ class VolunteerApplicationsService:
         base_url: str | None = None,
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
+        actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationInvite:
         return await self.workflow.invite(
             email,
             base_url=base_url,
             initial_group_id=initial_group_id,
             initial_role_id=initial_role_id,
+            actor_user_account_id=actor_user_account_id,
         )
 
     async def create_invitation_record(
@@ -612,14 +630,17 @@ class VolunteerApplicationsService:
         photo_content: bytes | None = None,
         photo_content_type: str | None = None,
     ) -> VolunteerApplicationDetail:
-        return await self.workflow.submit(
-            token,
-            submission,
-            base_url=base_url,
-            photo_filename=photo_filename,
-            photo_content=photo_content,
-            photo_content_type=photo_content_type,
-        )
+        try:
+            return await self.workflow.submit(
+                token,
+                submission,
+                base_url=base_url,
+                photo_filename=photo_filename,
+                photo_content=photo_content,
+                photo_content_type=photo_content_type,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
 
     async def submit_application_record(
         self,
@@ -757,10 +778,16 @@ class VolunteerApplicationsService:
         registration_id: int,
         *,
         attended: bool,
+        actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationDetail:
-        return await self.workflow.mark_trial_shift_attended(
-            registration_id, attended=attended
-        )
+        try:
+            return await self.workflow.mark_trial_shift_attended(
+                registration_id,
+                attended=attended,
+                actor_user_account_id=actor_user_account_id,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
 
     async def mark_trial_shift_attended_record(
         self,
@@ -783,12 +810,17 @@ class VolunteerApplicationsService:
         *,
         accepted_group_id: int | None = None,
         base_url: str | None = None,
+        actor_user_account_id: int | None = None,
     ) -> int:
-        return await self.workflow.approve(
-            registration_id,
-            accepted_group_id=accepted_group_id,
-            base_url=base_url,
-        )
+        try:
+            return await self.workflow.approve(
+                registration_id,
+                accepted_group_id=accepted_group_id,
+                base_url=base_url,
+                actor_user_account_id=actor_user_account_id,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
 
     async def approve_application_record(
         self,
@@ -829,6 +861,7 @@ class VolunteerApplicationsService:
         *,
         accepted_group_id: int,
         base_url: str | None = None,
+        actor_user_account_id: int | None = None,
     ) -> list[int]:
         members = await self.repository.list_group_members(group_id, include_dropped=False)
         active_registration_ids = [
@@ -842,16 +875,15 @@ class VolunteerApplicationsService:
             raise VolunteerApplicationConflictError(
                 "Kan ikke godkjenne før alle gruppemedlemmer har sendt inn sin søknad."
             )
-        volunteer_ids: list[int] = []
-        for registration_id in active_registration_ids:
-            volunteer_ids.append(
-                await self.approve_volunteer_application(
-                    registration_id,
-                    accepted_group_id=accepted_group_id,
-                    base_url=base_url,
-                )
+        try:
+            return await self.workflow.approve_group(
+                active_registration_ids,
+                accepted_group_id=accepted_group_id,
+                base_url=base_url,
+                actor_user_account_id=actor_user_account_id,
             )
-        return volunteer_ids
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
 
     async def drop_group_invitee(
         self,
@@ -859,9 +891,12 @@ class VolunteerApplicationsService:
         *,
         dropped_by_user_id: int | None = None,
     ) -> None:
-        await self.workflow.drop_group_invitee(
-            registration_id, dropped_by_user_id=dropped_by_user_id
-        )
+        try:
+            await self.workflow.drop_group_invitee(
+                registration_id, dropped_by_user_id=dropped_by_user_id
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
 
     async def drop_group_invitee_record(
         self,
@@ -872,13 +907,23 @@ class VolunteerApplicationsService:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
-        if detail.group_role != "invitee" or detail.group_status != "active":
+        if detail.group_role != "invitee" or detail.group_status != MembershipState.ACTIVE:
             raise VolunteerApplicationConflictError("Only active group invitees can be removed from a group.")
         await self.repository.drop_group_invitee(registration_id, dropped_by_user_id=dropped_by_user_id)
         return detail
 
-    async def delete_volunteer_application(self, registration_id: int) -> None:
-        await self.workflow.delete(registration_id)
+    async def delete_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> None:
+        try:
+            await self.workflow.delete(
+                registration_id, actor_user_account_id=actor_user_account_id
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
 
     async def delete_application_record(
         self, registration_id: int
@@ -894,10 +939,16 @@ class VolunteerApplicationsService:
         registration_id: int,
         *,
         base_url: str | None = None,
+        actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationDetail:
-        return await self.workflow.resend_invitation(
-            registration_id, base_url=base_url
-        )
+        try:
+            return await self.workflow.resend_invitation(
+                registration_id,
+                base_url=base_url,
+                actor_user_account_id=actor_user_account_id,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
 
     async def resend_invitation_record(
         self,
@@ -907,6 +958,16 @@ class VolunteerApplicationsService:
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         return detail
+
+    async def list_active_group_members(
+        self, group_id: int
+    ) -> list[VolunteerApplicationGroupMember]:
+        return await self.repository.list_group_members(group_id, include_dropped=False)
+
+    async def append_domain_event(
+        self, event: DomainEventRecord, *, subject_id: int
+    ) -> None:
+        await self.repository.append_domain_event(event, subject_id=subject_id)
 
     def _normalize_friend_emails(
         self,
@@ -955,7 +1016,7 @@ class VolunteerApplicationsService:
                 )
 
     def _ensure_group_members_ready_for_promotion(self, detail: VolunteerApplicationDetail) -> None:
-        if not detail.group_id or detail.group_status != "active":
+        if not detail.group_id or detail.group_status != MembershipState.ACTIVE:
             return
         for member in detail.group_members or []:
             if member.registration_id == detail.registration_id or not member.active:

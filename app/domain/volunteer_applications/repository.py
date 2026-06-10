@@ -19,6 +19,12 @@ from app.db.tables import (
     user_accounts,
     assignment_roles,
 )
+from app.domain.volunteer_applications.state_machine import (
+    ApplicationState,
+    DomainEventRecord,
+    MembershipState,
+)
+from app.domain.volunteer_applications.tables import domain_events
 from app.domain.volunteer_applications.service import (
     PublicProspectRegistrationResult,
     VolunteerApplicationConflictError,
@@ -65,7 +71,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         token=token,
                         email=email,
                         source="public_signup",
-                        status="prospect",
+                        status=ApplicationState.PROSPECT,
                         first_choice_group_id=first_choice_group_id,
                         second_choice_group_id=second_choice_group_id,
                         trial_shift_attended=False,
@@ -96,7 +102,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     invite_id=inserted["id"],
                     applicant_email=email,
                     role="inviter",
-                    status="active",
+                    status=MembershipState.ACTIVE,
                     created_at=func.now(),
                 )
             )
@@ -121,7 +127,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             token=friend_token,
                             email=friend_email,
                             source="group_invite",
-                            status="invited",
+                            status=ApplicationState.INVITED,
                             first_choice_group_id=first_choice_group_id,
                             second_choice_group_id=second_choice_group_id,
                             trial_shift_attended=False,
@@ -143,7 +149,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     invite_id=friend_row["id"],
                     applicant_email=friend_row["email"],
                     role="invitee",
-                    status="active",
+                    status=MembershipState.ACTIVE,
                     created_at=func.now(),
                 )
             )
@@ -179,7 +185,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         token=token,
                         email=email,
                         source="invite",
-                        status="invited",
+                        status=ApplicationState.INVITED,
                         initial_group_id=initial_group_id,
                         initial_role_id=initial_role_id,
                         trial_shift_attended=False,
@@ -611,7 +617,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         await session.execute(
             update(volunteer_application_invites)
             .where(volunteer_application_invites.c.id == registration_id)
-            .values(status="submitted", full_profile_submitted_at=func.now())
+            .values(status=ApplicationState.SUBMITTED, full_profile_submitted_at=func.now())
         )
 
     async def set_trial_shift_attended(
@@ -643,7 +649,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 func.lower(func.coalesce(volunteer_application_invites.c.email, ""))
                 == email.lower(),
                 volunteer_application_invites.c.promoted_volunteer_id.is_(None),
-                volunteer_application_invites.c.status != "rejected",
+                volunteer_application_invites.c.status != ApplicationState.REJECTED,
             )
             .limit(1)
         )
@@ -681,7 +687,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .order_by(volunteer_application_group_members.c.id.asc())
         )
         if not include_dropped:
-            stmt = stmt.where(volunteer_application_group_members.c.status == "active")
+            stmt = stmt.where(volunteer_application_group_members.c.status == MembershipState.ACTIVE)
         session = self.session
         rows = (await session.execute(stmt)).mappings().all()
         return [
@@ -790,7 +796,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .values(
                 promoted_volunteer_id=inserted["id"],
                 promoted_at=func.now(),
-                status="promoted",
+                status=ApplicationState.PROMOTED,
                 initial_group_id=accepted_group_id,
             )
         )
@@ -819,12 +825,28 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(
                 volunteer_application_group_members.c.invite_id == registration_id,
                 volunteer_application_group_members.c.role == "invitee",
-                volunteer_application_group_members.c.status == "active",
+                volunteer_application_group_members.c.status == MembershipState.ACTIVE,
             )
             .values(
-                status="dropped",
+                status=MembershipState.DROPPED,
                 dropped_at=func.now(),
                 dropped_by_user_account_id=dropped_by_user_id,
+            )
+        )
+
+    async def append_domain_event(
+        self, event: DomainEventRecord, *, subject_id: int
+    ) -> None:
+        """Append one audit row; runs in the ambient request transaction
+        so the event commits or rolls back with the state change it records."""
+        await self.session.execute(
+            insert(domain_events).values(
+                event_type=event.event_type,
+                actor_user_account_id=event.actor_user_account_id,
+                subject_type=event.subject_type,
+                subject_id=subject_id,
+                payload=event.payload,
+                occurred_at=event.occurred_at,
             )
         )
 
