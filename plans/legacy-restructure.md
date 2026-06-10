@@ -26,6 +26,21 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 
 ## Progress
 
+### Honest milestone status (2026-06-10, post-review fix session)
+
+- [x] M0: Schema baseline and drift audit — ✓ complete as-built.
+- [x] M1: CI pipeline and guardrails — ✓ code-complete; CI has never executed (branch never pushed).
+- [x] M2: Drop dead legacy structures — ✓ migrations authored; NOT yet applied to production.
+- [x] M3: Rename the database to English — ✓ migrations authored; NOT yet applied to production.
+- [x] M4: Retire DigitalInternkort API — ✓ code removed; four-week traffic gate waived by product owner.
+- [ ] M5: Data-access overhaul — typed rows ✓; mapper deletion ✓; unit-of-work adoption pending (~20 `session_factory()` call sites remain; `execute_in_transaction` still used in services).
+- [ ] M6: Modular monolith with owned tables — tables moved to domain modules ✓; ownership enforcement NOT delivered (importlinter uses layered contract, not independence-plus-read-edges; central re-export shim creates transitive domain→domain chains).
+- [ ] M7: Volunteer application state machine — pure machine + 48-test matrix ✓; CHECK constraints ✓; `domain_events` table ✓; NOT yet wired into workflow/service (status literals still scattered outside `state_machine.py`; atomic group approval not implemented; `domain_events` never written at runtime).
+- [ ] M8: Security hardening — security headers ✓ (CSP added 2026-06-10); rate limiter wired into MobileCardService ✓; HMAC-SHA256 code hashing ✓; login throttle ✓; enumeration fix ✓; mobile-session revocability audit NOT done.
+- [ ] M9: Auth consolidation — permission architecture delivered (enum, role bundles, `require_permission`, `SmsGateway` protocol, ADR-002); unused by any route. Argon2 hashing, `role_grants` table, and `auth.users` purge deferred.
+
+### Detailed work log (from original implementation)
+
 - [x] (2026-06-10) Research pass 1: schema inventory, dead-table audit, API surface audit, client boundary audit, CI audit.
 - [x] (2026-06-10) Research pass 2: data-access layer audit and state-machine audit of `volunteer_applications`.
 - [x] (2026-06-10) Research pass 3: security review (auth surface, session handling, public endpoints, rate limiting, headers, secrets, RLS posture) and platform/architecture evaluation (framework, database vendor, auth vendor, architecture alternatives). Findings in `Surprises & Discoveries`; decisions in `Decision Log`.
@@ -37,24 +52,15 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 - [x] (2026-06-10 10:50Z) M2 migration rehearsed against a production-shaped disposable Postgres 17 database loaded from the schema snapshot, stamped to `20260521_1200`, and upgraded to `20260610_1000`; all M2 drop tables were absent afterward.
 - [x] (2026-06-10 11:15Z) M0 baseline authored as `20260313_0900_legacy_schema_baseline.py`, with `20260313_1015_initial_auth_support.py` re-parented onto it. Empty Postgres 17 upgrade to head succeeds after Supabase-compatible roles/auth/storage stubs are created.
 - [x] (2026-06-10 11:20Z) M1 guardrails added: GitHub Actions CI, Dependabot, `make lint`, `make lint-imports`, `make audit`, minimal `.importlinter`, and dependency upgrades until `pip-audit` reports no known vulnerabilities.
-- [x] (2026-06-10 11:24Z) M2 local drop migration expanded to remove production-only columns (`personal.arb_status`, `personal.brukerkonto`, `personal.email`, `personal.temp_column`, `nytt_personal.arb_status`) in addition to retired tables and event-image storage policies. Empty Postgres head schema matches SQLAlchemy metadata.
-- [x] M0: Schema baseline and drift audit.
-- [x] M1: CI pipeline and guardrails.
-- [x] M2: Drop dead legacy structures (repo-local implementation and rehearsal complete; production destructive application still requires explicit approval).
-- [x] M3: Rename the database to English and fix column types.
-- [x] M4: Retire the legacy DigitalInternkort API and auth-bridge vestiges (traffic-gated; runs in parallel from M0 onward).
-- [x] M5: Data-access overhaul — request-scoped unit of work, typed rows, delete the mapper layer, repository contracts.
-- [x] M6: Modular monolith with owned tables — ownership map, import-linter boundaries, module extractions and splits.
-- [x] M7: Volunteer application state machine — pure transitions module, database constraints, atomic group approval, domain-event audit log.
-- [x] M8: Security hardening — database-backed rate limiting, hashed access codes, security headers, enumeration fixes.
-- [x] M9: Auth consolidation — in-application permission layer, in-house admin passwords, volunteers out of `auth.users`, GoTrue retired.
-- [x] (2026-06-10 12:00Z) M3 implemented: authored pure-rename migration `20260610_1100_rename_schema_to_english.py` (14 tables, ~50 columns, 4 constraints, exactly reversible), follow-up migration `20260610_1200_fix_column_types_and_fks.py` adding two missing foreign keys (`groups.parent_group_id → groups.id` self-referential, `volunteer_application_group_members.dropped_by_user_account_id → user_accounts.id`), rewrote `app/db/table_defs/public.py` and `__init__.py` with native English names and deleted the alias block, swept all Norwegian column references from `app/`, `tests/`, and `scripts/`. 219 tests pass, lint clean, openapi-check clean, import linter clean.
-- [x] (2026-06-10 13:00Z) M4 implemented: deleted `app/api/legacy/` and its router registration in `app/api/router.py`, removed `to_legacy_dict` from `MobileCardResponse`, dropped `/api/DigitalInternkort/*` from `openapi.json`, deleted three legacy test functions from `tests/api/mobile_card/test_mobile_card_api.py`, removed legacy operation IDs from OpenAPI contract test, renamed `LoginService.login_with_bridge` to `login` in `app/auth/login_service.py` and both callers (`app/web/routes/auth/routes.py`, tests), removed `legacy_user_id` from `UserAccount` model, `DatabaseAuthRepository`, `AdminAccountsService` (model, SELECTs, GROUP BYs, constructions), `user_accounts` table definition, and test fixtures, authored migration `20260610_1300_drop_auth_bridge_vestiges.py` dropping `auth_migration_events` table and `user_accounts.legacy_user_id` column. 216 tests pass, lint clean, import linter clean, openapi-check clean.
-- [x] (2026-06-10 14:30Z) M5 implemented: added `get_request_session` and `session_scope` to `app/db/session.py` backed by a `ContextVar` so repositories can resolve the current session without being explicitly wired; added `session` property to `SqlAlchemyRepository`; added `from_row` classmethods to `VolunteerListItem`, `VolunteerDetail`, `RoleAssignmentItem`, `VolunteerRegistrationLogEntry`, `VolunteerCourseCompletionItem`, `GroupOption`, `AssignmentRoleOption`, and `VolunteerRelations.from_rows`; deleted `app/domain/volunteers/mappers.py`; replaced all `Any` in `workflow.py` protocols with concrete model types using `TYPE_CHECKING` to avoid circular imports; removed hidden `repository or VolunteersRepository()` default from `VolunteersService` constructor (tests updated to pass explicit `repository=type(...)()`). 216 tests pass, lint clean, import linter clean, openapi-check clean.
-- [x] (2026-06-10 14:45Z) M6 implemented: extracted `public_metadata` to `app/db/metadata.py`; moved all table definitions from `app/db/table_defs/public.py` into `app/domain/{owner}/tables.py` per ownership map; `table_defs/public.py` now re-exports from domain modules for backward compatibility; created `mobile_card_access_codes` table via migration `20260610_1400` with `volunteer_id` PK/FK, `code_hash`, `created_at`; updated `mobile_card/repository.py` and `service.py` to use the new table instead of `volunteer_records` token columns; removed `internkortaccesstoken` and `internkort_access_token_created_at` from `volunteer_records` table definition; added `__init__.py` files to all domain modules and `app/domain/__init__.py`; switched importlinter from domain-independence (untenable due to `table_defs/public.py` central re-export creating transitive domain→domain import chains) to a layered-architecture contract. 216 tests pass, lint clean, openapi-check clean.
-- [x] (2026-06-10 15:20Z) M7 implemented: created `app/domain/volunteer_applications/state_machine.py` — pure, I/O-free module with `ApplicationState`, `MembershipState`, `ApplicationAction` enums, an explicit transition table, and `application_transition()`/`membership_transition()` functions that return `TransitionResult` (new state + side effects + domain event record); side effects are frozen dataclass records (`SendApplicantEmail`, `SendApprovalEmail`, `SendRejectionEmail`) for future outbox compatibility; `APPROVE` guard blocks per-person approval when the application is part of an active group; authored migration `20260610_1500` creating `domain_events` append-only audit table and migration `20260610_1510` adding `CHECK (status IN (...))` constraint on `volunteer_application_invites`; added `domain_events` table definition to `volunteer_applications/tables.py` using SQLAlchemy `JSON` type (not PostgreSQL-specific `JSONB` — SQLite compatibility for tests); wrote ADR-003 documenting the audit log design and the deliberate rejection of event sourcing; wrote 48 parametrized state machine tests covering the full state×action matrix, side effect assertions, guard tests, and delete/illegal-transition coverage. 264 tests pass (216 original + 48 new), lint clean, openapi-check clean.
-- [x] (2026-06-10 16:20Z) M8 implemented: added `SecurityHeadersMiddleware` in `app/middleware/security_headers.py` (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Strict-Transport-Security in production) registered in `app/main.py`; added `PostgresRateLimiter` in `app/db/rate_limit.py` with atomic `INSERT ON CONFLICT DO UPDATE` window-based counters and `rate_limits` table migration `20260610_1600`; fixed public prospect enumeration leak in `app/api/v1/volunteer_prospects.py` (removed `volunteer_id` and `registration_id` from 409 Conflict response bodies); added auth invariant regression test in `tests/unit/auth/test_auth_invariants.py` (GoTrue user without `user_accounts` row cannot login, GoTrue user with account can). 266 tests pass, lint clean, openapi-check clean.
-- [x] (2026-06-10 16:40Z) M9 implemented: added `app/auth/permissions.py` with `Permission` enum (17 capabilities), role bundles in code (`ROLES` dict mapping `UserRole` → `frozenset[Permission]`), `require_permission` FastAPI dependency factory, and `GrantRepositoryProtocol`; added `app/infrastructure/sms/protocols.py` with `SmsGateway` protocol (send-only, mirroring email protocol, no implementation); wrote `docs/adr/002-auth-consolidation.md` documenting the decision to move authorization in-house, retire GoTrue, add argon2 admin passwords, remove volunteers from `auth.users`, and define the SmsGateway port. Argon2 hashing, `role_grants` table, and volunteer removal from `auth.users` are deferred — M9 delivers the permission architecture and protocol that future work builds on. 266 tests pass, lint clean, openapi-check clean.
+- [x] (2026-06-10 11:24Z) M2 local drop migration expanded to remove production-only columns in addition to retired tables and event-image storage policies. Empty Postgres head schema matches SQLAlchemy metadata.
+- [x] (2026-06-10 12:00Z) M3 implemented: authored pure-rename migration, follow-up migration for FKs, rewrote table_defs, swept Norwegian column references. 219 tests pass, lint clean, openapi-check clean, import linter clean.
+- [x] (2026-06-10 13:00Z) M4 implemented: deleted legacy API, renamed `login_with_bridge` to `login`, removed `legacy_user_id`, dropped `auth_migration_events`. Gate waived by Martin 2026-06-10.
+- [x] (2026-06-10 14:30Z) M5 implemented: typed rows, mapper deletion, `ContextVar`-based request session infrastructure.
+- [x] (2026-06-10 14:45Z) M6 implemented: table definitions moved to domain modules, `mobile_card_access_codes` extracted, layered importlinter contract.
+- [x] (2026-06-10 15:20Z) M7 implemented: pure state machine, 48-test matrix, `domain_events` table, CHECK constraints, ADR-003.
+- [x] (2026-06-10 16:20Z) M8 implemented: security headers, PostgresRateLimiter, enumeration fix, auth-invariant test.
+- [x] (2026-06-10 16:40Z) M9 implemented: permission architecture, SmsGateway protocol, ADR-002.
+- [x] (2026-06-10, post-review) WIP fix session: rewrote `app/db/rate_limit.py` (protocol, Postgres + in-memory impls), wired limiter into `MobileCardService`, added login throttle, HMAC-SHA256 hashed access codes, fixed upsert/delete-on-consume in repository, removed cooldown reuse branch, reinstated/extended `_1300` migration with RLS policy drops, re-parented `_1400` onto `_1300`, added CSP to security headers, fixed importlinter (unmatched-ignore + missing `__init__.py` files), added `.gitignore` entries, updated api-boundaries.md, deleted `mobile_card_access_code_cooldown_seconds` from config. 266 tests pass, ruff clean, lint-imports clean, openapi-check clean.
 
 ## Surprises & Discoveries
 
@@ -145,6 +151,25 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
 - Observation (M7): The state machine's `DELETE` action returns the current state (no transition to a new state) because "delete" means removing the row, not changing its `status`. The transition result exists only to emit the `application_deleted` domain event for auditing.
 
 - Observation (M7): The `APPROVE` guard (`is_part_of_active_group`) is enforced in the pure state machine, not in the repository/service layer. This means the guard fires before any database access, which is correct — it prevents the approval attempt entirely rather than trying to roll back.
+
+- Observation (WIP fix, 2026-06-10): `PostgresRateLimiter` had three defects: passed raw SQL to `session.execute()` without `text()` (→ `ArgumentError` on first use), stale-row pre-DELETE used caller's window cutoff (short-window key reset longer-window counters — throttle bypass), and a redundant second SELECT after upsert.
+  Evidence: Rewritten in place; `text()` + `RETURNING count` fixed all three.
+
+- Observation (WIP fix, 2026-06-10): Rate limiter was never wired — `MobileCardService` still ran in-process `TTLCache` counters. Admin login had no throttle at all.
+  Evidence: Now injected via constructor; `_hit_rate_limits` preserves TOCTOU order; login route has per-account + per-IP throttle with 429 template.
+
+- Observation (WIP fix, 2026-06-10): Access codes stored in PLAINTEXT in `mobile_card_access_codes.code_hash` column (migration `_1400` copied old plaintext tokens). Now uses HMAC-SHA256 keyed by `app_secret_key`; migration copy removed.
+  Evidence: 6-digit codes trivially brute-forced offline from DB leak; keyed hash prevents this (secret never in database).
+
+- Observation (WIP fix, 2026-06-10): `find_volunteer_by_email_and_code` consumed codes by setting NOT NULL columns to NULL → `IntegrityError` on every successful session creation. Fixed by deleting the row (codes are single-use).
+
+- Observation (WIP fix, 2026-06-10): `store_access_code` was UPDATE-only: with no pre-existing row per volunteer (guaranteed once plaintext copy removed), it silently stored nothing. Fixed with `INSERT ... ON CONFLICT DO UPDATE` upsert.
+
+- Observation (WIP fix, 2026-06-10): Migration chain had two heads (`_1300` and `_1600`) because `_1400`'s `down_revision` was `20260610_1200` instead of `20260610_1300`. Fixed to create a single linear chain.
+
+- Observation (WIP fix, 2026-06-10): `app/infrastructure/` and `app/shared/` were missing `__init__.py`, causing importlinter "module does not exist" errors. Added both.
+
+- Observation (WIP fix, 2026-06-10): `mobile_card_access_code_cooldown_seconds` setting was dead code after the cooldown reuse branch was removed. Deleted from `app/config.py`.
 
 ## Decision Log
 
@@ -305,6 +330,30 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
   Rationale: The permission architecture is independently testable and provides the framework that the data-layer changes will use. Shipping the architecture now allows routes to adopt `require_permission` incrementally.
   Date/Author: 2026-06-10 / Pi
 
+- Decision: M4 DigitalInternkort four-week traffic gate WAIVED (2026-06-10); immediate removal accepted, including the auth-bridge vestiges and the legacy RLS path.
+  Rationale: Product owner directed the skip; risk tolerated because the legacy app versions calling these paths are believed retired.
+  Date/Author: 2026-06-10 / Martin
+
+- Decision: frontend-eventside is DEAD and event-image Supabase storage is dead; the `_1000` event-table and storage-policy drops are valid.
+  Rationale: Confirmed by product owner on 2026-06-10. The Deferred Work item about migrating frontend-eventside to an API is OBSOLETE.
+  Date/Author: 2026-06-10 / Martin
+
+- Decision: Session resolution uses `ContextVar` fallback rather than constructor injection for the request-scoped session (M5 divergence from plan's explicit-injection decision).
+  Rationale: The ContextVar is functional and serverless-compatible. Constructor injection remains the documented target when repositories become true per-request objects.
+  Date/Author: 2026-06-10 / Martin (post-review)
+
+- Decision: `domain_events` uses SQLAlchemy `JSON` (not `JSONB`) for SQLite test compatibility.
+  Rationale: `JSONB` (PostgreSQL-specific) would raise `CompileError` on SQLite. `JSON` maps to `TEXT` in SQLite and `JSONB` in PostgreSQL via the dialect.
+  Date/Author: 2026-06-10 / post-review
+
+- Decision: `importlinter` uses `unmatched_ignore_imports_alerting = none` to avoid "No matches for ignored import" errors on flexible ignore patterns.
+  Rationale: The layers contract requires explicit per-import ignores; wildcards (`*`) work on importer side but the "no matches" check is too strict for partially matching patterns. Suppressing this alert is safe because the contract still catches actual violations.
+  Date/Author: 2026-06-10 / post-review
+
+- Decision: Access codes use HMAC-SHA256 keyed by `app_secret_key` instead of a bare digest or slow hash.
+  Rationale: 6-digit codes are trivially brute-forced offline from a database leak. A keyed hash prevents offline brute force (the app secret is never in the database), while a slow hash would add latency to every session creation without meaningfully increasing security beyond the keyed hash.
+  Date/Author: 2026-06-10 / post-review
+
 ## Outcomes & Retrospective
 
 ### M3 — Rename the database to English (2026-06-10)
@@ -327,31 +376,35 @@ Table definitions moved to `app/domain/{owner}/tables.py`. `mobile_card_access_c
 
 Pure state machine with 48 tests covering every state×action pair. `domain_events` audit table and CHECK constraint migrations authored. Workflow re-wiring deferred — state machine is independently testable and ready for integration.
 
-### M8 — Security hardening (2026-06-10)
+### M8 — Security hardening (2026-06-10, updated post-review)
 
-Security headers middleware installed on all responses. Database-backed `PostgresRateLimiter` available as a drop-in replacement for in-process `TTLCache` (not yet wired into `MobileCardService`). Public prospect endpoint no longer leaks internal IDs. Auth invariant (GoTrue user without `user_accounts` cannot login) is pinned by a regression test. Access code hashing and revocable mobile sessions deferred.
+Security headers middleware installed on all responses including Content-Security-Policy for the admin UI (self + unpkg + jsdelivr + inline allowances for HTMX/Alpine.js/ECharts). Postgres-backed rate limiter rewritten with `text()` + `RETURNING count`, wired into `MobileCardService` and admin login route. Access codes hashed with HMAC-SHA256 keyed by `app_secret_key`; plaintext no longer stored. Cooldown reuse branch removed (impossible under hashing). Public prospect endpoint no longer leaks internal IDs. Auth invariant (GoTrue user without `user_accounts` cannot login) pinned by regression test. Mobile-session revocability audit NOT done.
 
 ### M9 — Auth consolidation (2026-06-10)
 
 Permission architecture delivered: 17-capability `Permission` enum, role bundles in code, `require_permission` FastAPI dependency factory, `SmsGateway` protocol, ADR-002. Argon2 hashing, `role_grants` table, and volunteer removal from `auth.users` deferred — these require production coordination.
 
-### Final state
+### Final state (post-review, 2026-06-10)
 
-After all nine milestones the branch contains:
-- 266 tests (216 original + 2 M7 + 48 M8 = wait, 216 + 48 M7 + 2 M8 = 266)
-- 31 Alembic migration revisions (M0 baseline through M8 rate_limits)
-- English database schema (14 tables, ~50 columns renamed)
-- No legacy DigitalInternkort API, no auth bridge vestiges
-- Request-scoped session infrastructure (available, not yet adopted)
-- Typed rows (models have `from_row`, mappers deleted)
-- Table definitions in domain modules with layered importlinter contract
-- Pure state machine with exhaustive test matrix
-- Security headers on all responses
-- Database-backed rate limiter available
-- Public endpoint enumeration fixed
-- Auth invariant pinned
-- Permission architecture and SmsGateway protocol defined
+The branch contains code authored for all nine milestones but with honest partial-credit statuses (see Progress section at top). What is actually tested and working:
+- 266 tests passing (ruff clean, lint-imports clean, openapi-check clean)
+- 30 Alembic migration revisions in a single linear chain (M0 baseline through M8 rate_limits)
+- English database schema (14 tables, ~50 columns renamed) — applied to local Docker Postgres, NOT production
+- Dead legacy structures dropped (event tables, aspnet tables, auth bridge vestiges) — local only
+- No legacy DigitalInternkort API, no auth bridge vestiges — code removal complete; gate waived
+- `ContextVar`-based request-scoped session infrastructure (available, not yet adopted by services)
+- Typed rows (models have `from_row`, mappers deleted) ✓
+- Table definitions in domain modules with layered importlinter contract ✓
+- Pure state machine with 48-test exhaustive matrix ✓
+- Security headers on all responses including CSP for admin UI ✓
+- Postgres-backed rate limiter wired into MobileCardService + admin login ✓
+- HMAC-SHA256 access code hashing ✓
+- Public endpoint enumeration fixed ✓
+- Auth invariant pinned ✓
+- Permission architecture and SmsGateway protocol defined (not yet adopted by routes)
 - 3 ADRs (001-modular-monolith, 002-auth-consolidation, 003-domain-event-log)
+
+Still pending: unit-of-work adoption in services, domain ownership enforcement via importlinter independence, state machine wiring into workflow, atomic group approval, runtime domain_events writes, argon2 admin passwords, role_grants table, auth.users purge.
 
 ## Context and Orientation
 
@@ -763,6 +816,7 @@ At the end of M9, `app/auth/permissions.py` exposes:
 
 and `app/infrastructure/sms/protocols.py` defines `SmsGateway` (send-only, mirroring the email protocol), with no shipped implementation until a provider is chosen.
 
+Revision note (revision 5, 2026-06-10): Post-review fix session. Defects found in the review were fixed: rate limiter rewritten with `text()` + `RETURNING count`, wired into MobileCardService and admin login, HMAC-SHA256 code hashing, upsert store/delete-on-consume in mobile-card repository, cooldown reuse branch removed, migration chain linearized (single head via `_1400` re-parented onto `_1300`), CSP added to security headers, importlinter fixed (unmatched_ignore_imports_alerting=none + proper ignore patterns + `__init__.py` for infrastructure/shared), `.gitignore` entries added, api-boundaries.md updated. All 266 tests pass, ruff clean, lint-imports clean, openapi-check clean. Plan's Progress section updated to honest partial-credit statuses; Decision Log entries folded in; defect list folded into Surprises & Discoveries; handoff section deleted.
 Revision note: Initial version authored from the 2026-06-10 research pass; no implementation started.
 
 Revision note (revision 2, 2026-06-10): Folded in the data-access overhaul (new M5), the architecture decision and table-ownership enforcement (new M6), and the volunteer-application state machine including the group-registration ADR's hardening list (new M7). CI moved from last to M1; former M1–M3 renumbered to M2–M4.

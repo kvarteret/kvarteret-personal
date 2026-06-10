@@ -17,6 +17,7 @@ from app.auth.session_store import (
 )
 from app.auth.supabase_auth import SupabaseAuthGateway, SupabaseAuthGatewayProtocol
 from app.config import Settings, get_settings, validate_production_secrets
+from app.db.rate_limit import PostgresRateLimiter
 from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
@@ -112,6 +113,7 @@ class ApplicationContainer:
     admin_accounts_service: AdminAccountsService
     mobile_card_service: MobileCardService
     mobile_card_april_state_service: MobileCardAprilStateService
+    rate_limiter: PostgresRateLimiter
     now_playing_service: NowPlayingService
     volunteer_applications_service: VolunteerApplicationsService
     semester_transfer_service: SemesterTransferService
@@ -146,6 +148,7 @@ def build_application_container(
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
     event_bus = SimpleEventBus()
+    rate_limiter = PostgresRateLimiter(session_factory=session_factory)
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository(session_factory=session_factory)
     )
@@ -188,10 +191,12 @@ def build_application_container(
             resolved_settings,
             repository=MobileCardRepository(session_factory=session_factory),
             email_sender=email_sender,
+            rate_limiter=rate_limiter,
             media_token_service=media_token_service,
             april_state_service=mobile_card_april_state_service,
             email_template_renderer=mobile_card_email_renderer,
         ),
+        rate_limiter=rate_limiter,
         now_playing_service=NowPlayingService(
             resolved_settings,
             repository=IntegrationTokensRepository(session_factory=session_factory),

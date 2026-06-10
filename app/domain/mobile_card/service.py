@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -10,8 +11,8 @@ from typing import Literal
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, ConfigDict
 
-from app.cache import TTLCache
 from app.config import Settings
+from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
     MobileCardEmailTemplateRendererProtocol,
@@ -200,6 +201,7 @@ class MobileCardService:
         settings: Settings,
         repository: MobileCardRepository,
         email_sender: EmailSenderProtocol,
+        rate_limiter: RateLimiter,
         media_token_service: MediaTokenService | None = None,
         april_state_service: MobileCardAprilStateService | None = None,
         email_template_renderer: MobileCardEmailTemplateRendererProtocol | None = None,
@@ -207,6 +209,7 @@ class MobileCardService:
         self.settings = settings
         self.repository = repository
         self.email_sender = email_sender
+        self.rate_limiter = rate_limiter
         self.media_token_service = media_token_service
         self.april_state_service = april_state_service
         self.email_template_renderer = (
@@ -214,14 +217,6 @@ class MobileCardService:
         )
         self.serializer = URLSafeTimedSerializer(
             settings.app_secret_key, salt="kvarteret-mobile-card"
-        )
-        self._access_code_request_counts: TTLCache[str, int] = TTLCache(
-            ttl_seconds=settings.mobile_card_access_code_request_window_seconds,
-            max_entries=4096,
-        )
-        self._session_attempt_counts: TTLCache[str, int] = TTLCache(
-            ttl_seconds=settings.mobile_card_session_attempt_window_seconds,
-            max_entries=4096,
         )
 
     async def request_access_code(
@@ -231,13 +226,13 @@ class MobileCardService:
         if self._is_review_request(normalized_email, None):
             return None
         request_keys = _build_rate_limit_keys(normalized_email, source_key)
-        self._enforce_rate_limit(
-            cache=self._access_code_request_counts,
+        await self._hit_rate_limits(
+            prefix="mobile-card:request",
             keys=request_keys,
             limit=self.settings.mobile_card_access_code_request_limit,
+            window_seconds=self.settings.mobile_card_access_code_request_window_seconds,
             message="Too many access-code requests. Try again later.",
         )
-        self._increment_rate_limit(self._access_code_request_counts, request_keys)
 
         volunteers = await self.repository.find_volunteers_by_email(normalized_email)
         if len(volunteers) > 1:
@@ -251,30 +246,19 @@ class MobileCardService:
 
         volunteer_row = volunteers[0]
         now = datetime.now(UTC)
-        existing_created_at = volunteer_row["created_at"]
-        existing_access_code = volunteer_row["code_hash"]
-        if (
-            existing_access_code
-            and existing_created_at
-            and now - existing_created_at
-            <= timedelta(seconds=self.settings.mobile_card_access_code_cooldown_seconds)
-        ):
-            access_code = str(existing_access_code)
-            logger.info(
-                "Reused recent mobile-card access code for volunteer %s",
-                volunteer_row["id"],
-            )
-        else:
-            access_code = _generate_access_code()
-            await self.repository.store_access_code(
-                volunteer_id=volunteer_row["id"],
-                access_code=access_code,
-                created_at=now,
-            )
-            logger.info(
-                "Generated mobile-card access code for volunteer %s",
-                volunteer_row["id"],
-            )
+        # Codes are stored hashed, so the previous "reuse the recent code"
+        # cooldown branch is impossible by design: a new code is issued on
+        # every request, and the request rate limit above caps the frequency.
+        access_code = _generate_access_code()
+        await self.repository.store_access_code(
+            volunteer_id=volunteer_row["id"],
+            code_hash=self._hash_access_code(access_code),
+            created_at=now,
+        )
+        logger.info(
+            "Generated mobile-card access code for volunteer %s",
+            volunteer_row["id"],
+        )
 
         rendered_email = self.email_template_renderer.render_access_code_email(
             access_code=access_code,
@@ -314,25 +298,26 @@ class MobileCardService:
             token = self._build_session_token({"person_id": 0, "review": True})
             return MobileCardSession(session_token=token, card=card)
         attempt_keys = _build_rate_limit_keys(normalized_email, source_key)
-        self._enforce_rate_limit(
-            cache=self._session_attempt_counts,
+        # The limiter increments BEFORE validation, preventing TOCTOU races.
+        await self._hit_rate_limits(
+            prefix="mobile-card:session",
             keys=attempt_keys,
             limit=self.settings.mobile_card_session_attempt_limit,
+            window_seconds=self.settings.mobile_card_session_attempt_window_seconds,
             message="Too many access-code attempts. Try again later.",
         )
 
-        # Increment rate limit BEFORE validation to prevent TOCTOU races.
-        self._increment_rate_limit(self._session_attempt_counts, attempt_keys)
-
         volunteer_row = await self.repository.find_volunteer_by_email_and_code(
             email=normalized_email,
-            access_code=normalized_access_code,
+            code_hash=self._hash_access_code(normalized_access_code),
             expires_after=datetime.now(UTC)
             - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
         )
         if volunteer_row is None:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
-        self._clear_rate_limit(self._session_attempt_counts, attempt_keys)
+        await self.rate_limiter.clear(
+            *(f"mobile-card:session:{key}" for key in attempt_keys)
+        )
         token = self._build_session_token({"person_id": volunteer_row["id"]})
         card = await self._build_card(
             volunteer_row["id"], include_role_history=include_role_history
@@ -591,30 +576,37 @@ class MobileCardService:
             word_of_the_day=_word_of_the_day(),
         )
 
-    def _enforce_rate_limit(
+    async def _hit_rate_limits(
         self,
         *,
-        cache: TTLCache[str, int],
+        prefix: str,
         keys: tuple[str, ...],
         limit: int,
+        window_seconds: int,
         message: str,
     ) -> None:
         if limit < 1:
             return
-        if any((cache.get(key) or 0) >= limit for key in keys):
-            raise MobileCardRateLimitedError(message)
+        try:
+            for key in keys:
+                await self.rate_limiter.hit(
+                    f"{prefix}:{key}", limit=limit, window_seconds=window_seconds
+                )
+        except RateLimitExceeded as exc:
+            raise MobileCardRateLimitedError(message) from exc
 
-    def _increment_rate_limit(
-        self, cache: TTLCache[str, int], keys: tuple[str, ...]
-    ) -> None:
-        for key in keys:
-            cache.set(key, (cache.get(key) or 0) + 1)
+    def _hash_access_code(self, code: str) -> str:
+        """HMAC the short access code with the app secret.
 
-    def _clear_rate_limit(
-        self, cache: TTLCache[str, int], keys: tuple[str, ...]
-    ) -> None:
-        for key in keys:
-            cache.pop(key)
+        The 6-digit codes are low-entropy, so a keyed hash (not a bare
+        digest) is required: a database leak alone must not be enough to
+        brute-force codes offline.
+        """
+        return hmac.new(
+            self.settings.app_secret_key.encode("utf-8"),
+            msg=f"mobile-card-access-code:{code}".encode("utf-8"),
+            digestmod=sha256,
+        ).hexdigest()
 
 
 def _generate_access_code(length: int = 6) -> str:

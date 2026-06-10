@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Request, status
 
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
+from app.db.rate_limit import RateLimiter
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
 from app.media_tokens import MediaTokenService
@@ -99,6 +100,10 @@ def _require_admin_user(
 
 def get_login_service(request: Request) -> LoginService:
     return get_container(request).login_service
+
+
+def get_rate_limiter(request: Request) -> RateLimiter:
+    return get_container(request).rate_limiter
 
 
 def get_supabase_auth_gateway(request: Request):
