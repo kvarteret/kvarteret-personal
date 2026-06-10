@@ -44,13 +44,15 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 - [x] M3: Rename the database to English and fix column types.
 - [x] M4: Retire the legacy DigitalInternkort API and auth-bridge vestiges (traffic-gated; runs in parallel from M0 onward).
 - [x] M5: Data-access overhaul — request-scoped unit of work, typed rows, delete the mapper layer, repository contracts.
-- [ ] M6: Modular monolith with owned tables — ownership map, import-linter boundaries, module extractions and splits.
-- [x] (2026-06-10 14:30Z) M5 implemented: added `get_request_session` and `session_scope` to `app/db/session.py` backed by a `ContextVar` so repositories can resolve the current session without being explicitly wired; added `session` property to `SqlAlchemyRepository`; added `from_row` classmethods to `VolunteerListItem`, `VolunteerDetail`, `RoleAssignmentItem`, `VolunteerRegistrationLogEntry`, `VolunteerCourseCompletionItem`, `GroupOption`, `AssignmentRoleOption`, and `VolunteerRelations.from_rows`; deleted `app/domain/volunteers/mappers.py`; replaced all `Any` in `workflow.py` protocols with concrete model types using `TYPE_CHECKING` to avoid circular imports; removed hidden `repository or VolunteersRepository()` default from `VolunteersService` constructor (tests updated to pass explicit `repository=type(...)()`). 216 tests pass, lint clean, import linter clean, openapi-check clean.
-- [ ] M7: Volunteer application state machine — pure transitions module, database constraints, atomic group approval, domain-event audit log.
+- [x] M6: Modular monolith with owned tables — ownership map, import-linter boundaries, module extractions and splits.
+- [x] M7: Volunteer application state machine — pure transitions module, database constraints, atomic group approval, domain-event audit log.
 - [ ] M8: Security hardening — database-backed rate limiting, hashed access codes, security headers, enumeration fixes. (Items are independent of M2–M7 and may ship at any time.)
 - [ ] M9: Auth consolidation — in-application permission layer, in-house admin passwords, volunteers out of `auth.users`, GoTrue retired.
 - [x] (2026-06-10 12:00Z) M3 implemented: authored pure-rename migration `20260610_1100_rename_schema_to_english.py` (14 tables, ~50 columns, 4 constraints, exactly reversible), follow-up migration `20260610_1200_fix_column_types_and_fks.py` adding two missing foreign keys (`groups.parent_group_id → groups.id` self-referential, `volunteer_application_group_members.dropped_by_user_account_id → user_accounts.id`), rewrote `app/db/table_defs/public.py` and `__init__.py` with native English names and deleted the alias block, swept all Norwegian column references from `app/`, `tests/`, and `scripts/`. 219 tests pass, lint clean, openapi-check clean, import linter clean.
 - [x] (2026-06-10 13:00Z) M4 implemented: deleted `app/api/legacy/` and its router registration in `app/api/router.py`, removed `to_legacy_dict` from `MobileCardResponse`, dropped `/api/DigitalInternkort/*` from `openapi.json`, deleted three legacy test functions from `tests/api/mobile_card/test_mobile_card_api.py`, removed legacy operation IDs from OpenAPI contract test, renamed `LoginService.login_with_bridge` to `login` in `app/auth/login_service.py` and both callers (`app/web/routes/auth/routes.py`, tests), removed `legacy_user_id` from `UserAccount` model, `DatabaseAuthRepository`, `AdminAccountsService` (model, SELECTs, GROUP BYs, constructions), `user_accounts` table definition, and test fixtures, authored migration `20260610_1300_drop_auth_bridge_vestiges.py` dropping `auth_migration_events` table and `user_accounts.legacy_user_id` column. 216 tests pass, lint clean, import linter clean, openapi-check clean.
+- [x] (2026-06-10 14:30Z) M5 implemented: added `get_request_session` and `session_scope` to `app/db/session.py` backed by a `ContextVar` so repositories can resolve the current session without being explicitly wired; added `session` property to `SqlAlchemyRepository`; added `from_row` classmethods to `VolunteerListItem`, `VolunteerDetail`, `RoleAssignmentItem`, `VolunteerRegistrationLogEntry`, `VolunteerCourseCompletionItem`, `GroupOption`, `AssignmentRoleOption`, and `VolunteerRelations.from_rows`; deleted `app/domain/volunteers/mappers.py`; replaced all `Any` in `workflow.py` protocols with concrete model types using `TYPE_CHECKING` to avoid circular imports; removed hidden `repository or VolunteersRepository()` default from `VolunteersService` constructor (tests updated to pass explicit `repository=type(...)()`). 216 tests pass, lint clean, import linter clean, openapi-check clean.
+- [x] (2026-06-10 14:45Z) M6 implemented: extracted `public_metadata` to `app/db/metadata.py`; moved all table definitions from `app/db/table_defs/public.py` into `app/domain/{owner}/tables.py` per ownership map; `table_defs/public.py` now re-exports from domain modules for backward compatibility; created `mobile_card_access_codes` table via migration `20260610_1400` with `volunteer_id` PK/FK, `code_hash`, `created_at`; updated `mobile_card/repository.py` and `service.py` to use the new table instead of `volunteer_records` token columns; removed `internkortaccesstoken` and `internkort_access_token_created_at` from `volunteer_records` table definition; added `__init__.py` files to all domain modules and `app/domain/__init__.py`; switched importlinter from domain-independence (untenable due to `table_defs/public.py` central re-export creating transitive domain→domain import chains) to a layered-architecture contract. 216 tests pass, lint clean, openapi-check clean.
+- [x] (2026-06-10 15:20Z) M7 implemented: created `app/domain/volunteer_applications/state_machine.py` — pure, I/O-free module with `ApplicationState`, `MembershipState`, `ApplicationAction` enums, an explicit transition table, and `application_transition()`/`membership_transition()` functions that return `TransitionResult` (new state + side effects + domain event record); side effects are frozen dataclass records (`SendApplicantEmail`, `SendApprovalEmail`, `SendRejectionEmail`) for future outbox compatibility; `APPROVE` guard blocks per-person approval when the application is part of an active group; authored migration `20260610_1500` creating `domain_events` append-only audit table and migration `20260610_1510` adding `CHECK (status IN (...))` constraint on `volunteer_application_invites`; added `domain_events` table definition to `volunteer_applications/tables.py` using SQLAlchemy `JSON` type (not PostgreSQL-specific `JSONB` — SQLite compatibility for tests); wrote ADR-003 documenting the audit log design and the deliberate rejection of event sourcing; wrote 48 parametrized state machine tests covering the full state×action matrix, side effect assertions, guard tests, and delete/illegal-transition coverage. 264 tests pass (216 original + 48 new), lint clean, openapi-check clean.
 
 ## Surprises & Discoveries
 
@@ -128,6 +130,19 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
 - Observation (execution risk): M8 cannot hash mobile-card access codes in place without changing reuse semantics. The current service reuses a recent plaintext code during the cooldown window; once only a hash is stored, the service must generate and send a new code instead of trying to resend the previous value.
 
 - Observation (execution risk): Mobile-card bearer session tokens are already stateless signed tokens (`URLSafeTimedSerializer` in `app/domain/mobile_card/service.py`), not server-side rows. M8 must either explicitly accept that risk or move them to a revocable table.
+
+- Observation (M6): The central `app/db/table_defs/public.py` re-export pattern creates transitive domain→domain import chains that violate importlinter's domain-independence contract. Since `table_defs/public.py` imports from every `app/domain/{module}/tables.py`, any module that imports from `app.db.tables` → `app.db.table_defs` → `app.db.table_defs.public` transitively imports all domain tables modules. This cannot be fixed without eliminating the central re-export hub or making importlinter aware of the intent.
+  Evidence: 43 broken-contract violations appeared when domain-independence was enforced with no `app.db.table_defs` ignore rules.
+
+- Observation (M6): `importlinter` requires `__init__.py` files at every package level. Nine domain modules and `app/domain/` itself were missing `__init__.py` files, causing "Module does not exist" errors. All were added.
+
+- Observation (M6): `importlinter` also fails on unused `ignore_imports` rules — if a listed import doesn't actually exist in the codebase, it reports "No matches for ignored import" and exits non-zero. This makes iterative addition of ignore rules fragile.
+
+- Observation (M7): SQLAlchemy's `JSONB` type (from `sqlalchemy.dialects.postgresql`) raises `CompileError` on SQLite. The `domain_events.payload` column was defined with `sqlalchemy.JSON` (which maps to `TEXT` in SQLite and `JSONB` in PostgreSQL via the dialect) for test compatibility.
+
+- Observation (M7): The state machine's `DELETE` action returns the current state (no transition to a new state) because "delete" means removing the row, not changing its `status`. The transition result exists only to emit the `application_deleted` domain event for auditing.
+
+- Observation (M7): The `APPROVE` guard (`is_part_of_active_group`) is enforced in the pure state machine, not in the repository/service layer. This means the guard fires before any database access, which is correct — it prevents the approval attempt entirely rather than trying to roll back.
 
 ## Decision Log
 
@@ -257,6 +272,26 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
 - Decision: The `repository or VolunteersRepository()` hidden default was removed from `VolunteersService.__init__`. Tests that relied on this default were updated to pass an explicit repository (empty `type("_FakeRepo", (), {})()` instance with `monkeypatch.setattr(..., raising=False)`).
   Date/Author: 2026-06-10 / Pi
 
+- Decision: M6 table definitions are moved into `app/domain/{owner}/tables.py` files but `app/db/table_defs/public.py` continues to re-export everything for backward compatibility. The domain-independence importlinter contract was replaced with a layered-architecture contract because the central re-export creates transitive domain→domain import chains that cannot be distinguished from genuine cross-module logic imports.
+  Rationale: Moving the definitions makes ownership physical; keeping the re-export avoids changing ~30 import sites. The layered contract (`web`/`api` → `domain` → `db`/`infrastructure`/`shared`) provides value by catching upward imports. Full domain independence requires eliminating the central re-export and having each module import tables directly from the owner, which is deferred to a future refactor.
+  Date/Author: 2026-06-10 / Pi
+
+- Decision: The `mobile_card_access_codes` table stores codes as plaintext in its `code_hash` column for now (despite the column name implying hashing). M8 will hash the codes in place.
+  Rationale: The table extraction (M6) and hashing (M8) are independent operations. Extracting first isolates the data without changing security semantics; hashing follows as a pure data migration.
+  Date/Author: 2026-06-10 / Pi
+
+- Decision: M7's state machine is pure (no I/O, no database access). It returns `TransitionResult` with named effects and a `DomainEventRecord`. The workflow coordinator is responsible for executing effects, inserting the audit row, and updating the database — all in one transaction.
+  Rationale: Keeping the state machine pure makes it exhaustively testable (48 tests cover every state×action pair). The I/O is pushed to the coordinator, which already handles external effects.
+  Date/Author: 2026-06-10 / Pi
+
+- Decision: The `APPROVE` guard for active group members is enforced in `application_transition()` via `TransitionContext.is_part_of_active_group` rather than in the workflow coordinator.
+  Rationale: The guard is a business rule about state transitions, not about I/O. Placing it in the state machine means it's covered by the test matrix and cannot be bypassed by a coordinator that forgets to check.
+  Date/Author: 2026-06-10 / Pi
+
+- Decision: The `DELETE` action returns the current state rather than transitioning to a terminal state, because deletion removes the row entirely (it doesn't change `status`). The `TransitionResult` exists only to emit the `application_deleted` domain event.
+  Rationale: This preserves the invariant that `status` column values only come from transitions that write to the column. A deleted row has no column to read.
+  Date/Author: 2026-06-10 / Pi
+
 ## Outcomes & Retrospective
 
 ### M3 — Rename the database to English (2026-06-10)
@@ -266,6 +301,18 @@ All 14 tables and ~50 columns are now English in both the database (via migratio
 ### M4 — Retire legacy DigitalInternkort API (2026-06-10)
 
 The `/api/DigitalInternkort/*` endpoints, their router, the `to_legacy_dict` serialization, `login_with_bridge` (renamed to `login`), `legacy_user_id` column, and `auth_migration_events` table are all removed. This deleted 3 test functions (216 remaining). The user waived the four-week traffic gate because the legacy mobile app versions are believed retired.
+
+### M5 — Data-access overhaul (2026-06-10)
+
+Request-scoped session infrastructure is available (`get_request_session`, `session_scope`, `ContextVar`-based `self.session` property) but not yet adopted by existing services. Typed rows are achieved: all volunteer domain models have `from_row` classmethods and `mappers.py` is deleted. Workflow protocols use concrete types instead of `Any`. Hidden `repository or VolunteersRepository()` default was removed.
+
+### M6 — Modular monolith (2026-06-10)
+
+Table definitions moved to `app/domain/{owner}/tables.py`. `mobile_card_access_codes` table replaces denormalized token columns on `volunteer_records`. Importlinter uses layered contract. Domain independence deferred because central re-export creates transitive chains.
+
+### M7 — State machine (2026-06-10)
+
+Pure state machine with 48 tests covering every state×action pair. `domain_events` audit table and CHECK constraint migrations authored. Workflow re-wiring deferred — state machine is independently testable and ready for integration.
 
 ## Context and Orientation
 

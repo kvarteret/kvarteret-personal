@@ -75,17 +75,17 @@ async def create_public_volunteer_prospect(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"message": str(exc), "fieldErrors": exc.field_errors},
-        ) from exc
-    except VolunteerAlreadyExistsError as exc:
+        )
+    except VolunteerAlreadyExistsError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"En frivillig med denne e-postadressen finnes allerede (id={exc.volunteer_id}).",
-        ) from exc
-    except ActiveVolunteerRegistrationExistsError as exc:
+            detail="En frivillig med denne e-postadressen finnes allerede.",
+        )
+    except ActiveVolunteerRegistrationExistsError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"En aktiv søknad med denne e-postadressen finnes allerede (id={exc.registration_id}).",
-        ) from exc
+            detail="En aktiv søknad med denne e-postadressen finnes allerede.",
+        )
     except VolunteerApplicationValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
