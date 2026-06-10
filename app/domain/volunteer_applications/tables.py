@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    JSON,
     Table,
     Text,
     UniqueConstraint,
@@ -80,4 +81,17 @@ volunteer_application_submissions = Table(
     Column("studiested", Text),
     Column("bakgrunn", Text),
     Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+
+domain_events = Table(
+    "domain_events",
+    public_metadata,
+    Column("id", BigInteger, primary_key=True),
+    Column("event_type", Text, nullable=False),
+    Column("actor_user_account_id", BigInteger, nullable=True),
+    Column("subject_type", Text, nullable=False),
+    Column("subject_id", BigInteger, nullable=False),
+    Column("payload", JSON, nullable=False, server_default="{}"),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
 )
