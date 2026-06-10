@@ -21,7 +21,6 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
-from app.db.rate_limit import InMemoryRateLimiter
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardInvalidAccessCodeError,
