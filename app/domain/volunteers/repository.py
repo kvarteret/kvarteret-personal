@@ -345,7 +345,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                     )
                 )
 
-        await self.execute_in_transaction(save)
+        await save(self.session)
 
     async def update_volunteer_profile(
         self,
@@ -421,7 +421,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                     ],
                 )
 
-        await self.execute_in_transaction(replace)
+        await replace(self.session)
 
     async def course_completion_exists(
         self,
@@ -618,7 +618,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                 delete(volunteer_records).where(volunteer_records.c.id == volunteer_id)
             )
 
-        await self.execute_in_transaction(remove)
+        await remove(self.session)
 
 
 class _SearchColumns:

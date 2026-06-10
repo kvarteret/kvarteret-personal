@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, exists, func, insert, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import SqlAlchemyRepository
 from app.db.tables import (
@@ -35,12 +35,7 @@ from app.media_tokens import MediaTokenService
 
 
 class VolunteerApplicationsRepository(SqlAlchemyRepository):
-    def __init__(
-        self,
-        session_factory: async_sessionmaker[AsyncSession] | None = None,
-        media_token_service: MediaTokenService | None = None,
-    ) -> None:
-        super().__init__(session_factory=session_factory)
+    def __init__(self, media_token_service: MediaTokenService | None = None) -> None:
         self.media_token_service = media_token_service
 
     async def create_public_prospect_registration(
@@ -61,107 +56,106 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
     ) -> PublicProspectRegistrationResult:
         friend_invites = friend_invites or []
         created_friend_invites: list[VolunteerApplicationFriendInvite] = []
-        async with self.session_factory() as session:
-            async with session.begin():
-                inserted = (
-                    (
-                        await session.execute(
-                            insert(volunteer_application_invites)
-                            .values(
-                                token=token,
-                                email=email,
-                                source="public_signup",
-                                status="prospect",
-                                first_choice_group_id=first_choice_group_id,
-                                second_choice_group_id=second_choice_group_id,
-                                trial_shift_attended=False,
-                            )
-                            .returning(volunteer_application_invites.c.id)
-                        )
-                    )
-                    .mappings()
-                    .one()
-                )
-                group_id: int | None = None
-                if friend_invites:
-                    group_row = (
-                        (
-                            await session.execute(
-                                insert(volunteer_application_groups)
-                                .values(created_at=func.now())
-                                .returning(volunteer_application_groups.c.id)
-                            )
-                        )
-                        .mappings()
-                        .one()
-                    )
-                    group_id = group_row["id"]
-                    await session.execute(
-                        insert(volunteer_application_group_members).values(
-                            group_id=group_id,
-                            invite_id=inserted["id"],
-                            applicant_email=email,
-                            role="inviter",
-                            status="active",
-                            created_at=func.now(),
-                        )
-                    )
+        session = self.session
+        inserted = (
+            (
                 await session.execute(
-                    insert(volunteer_application_submissions).values(
-                        invite_id=inserted["id"],
-                        first_name=first_name,
-                        last_name=last_name,
+                    insert(volunteer_application_invites)
+                    .values(
+                        token=token,
                         email=email,
-                        phone=normalize_phone_number(phone),
-                        gender="A",
-                        studiested=study_institution,
-                        bakgrunn=background_details,
+                        source="public_signup",
+                        status="prospect",
+                        first_choice_group_id=first_choice_group_id,
+                        second_choice_group_id=second_choice_group_id,
+                        trial_shift_attended=False,
+                    )
+                    .returning(volunteer_application_invites.c.id)
+                )
+            )
+            .mappings()
+            .one()
+        )
+        group_id: int | None = None
+        if friend_invites:
+            group_row = (
+                (
+                    await session.execute(
+                        insert(volunteer_application_groups)
+                        .values(created_at=func.now())
+                        .returning(volunteer_application_groups.c.id)
                     )
                 )
-                for friend_email, friend_token in friend_invites:
-                    friend_row = (
-                        (
-                            await session.execute(
-                                insert(volunteer_application_invites)
-                                .values(
-                                    token=friend_token,
-                                    email=friend_email,
-                                    source="group_invite",
-                                    status="invited",
-                                    first_choice_group_id=first_choice_group_id,
-                                    second_choice_group_id=second_choice_group_id,
-                                    trial_shift_attended=False,
-                                )
-                                .returning(
-                                    volunteer_application_invites.c.id,
-                                    volunteer_application_invites.c.token,
-                                    volunteer_application_invites.c.email,
-                                )
-                            )
-                        )
-                        .mappings()
-                        .one()
-                    )
-                    assert group_id is not None
+                .mappings()
+                .one()
+            )
+            group_id = group_row["id"]
+            await session.execute(
+                insert(volunteer_application_group_members).values(
+                    group_id=group_id,
+                    invite_id=inserted["id"],
+                    applicant_email=email,
+                    role="inviter",
+                    status="active",
+                    created_at=func.now(),
+                )
+            )
+        await session.execute(
+            insert(volunteer_application_submissions).values(
+                invite_id=inserted["id"],
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                phone=normalize_phone_number(phone),
+                gender="A",
+                studiested=study_institution,
+                bakgrunn=background_details,
+            )
+        )
+        for friend_email, friend_token in friend_invites:
+            friend_row = (
+                (
                     await session.execute(
-                        insert(volunteer_application_group_members).values(
-                            group_id=group_id,
-                            invite_id=friend_row["id"],
-                            applicant_email=friend_row["email"],
-                            role="invitee",
-                            status="active",
-                            created_at=func.now(),
+                        insert(volunteer_application_invites)
+                        .values(
+                            token=friend_token,
+                            email=friend_email,
+                            source="group_invite",
+                            status="invited",
+                            first_choice_group_id=first_choice_group_id,
+                            second_choice_group_id=second_choice_group_id,
+                            trial_shift_attended=False,
+                        )
+                        .returning(
+                            volunteer_application_invites.c.id,
+                            volunteer_application_invites.c.token,
+                            volunteer_application_invites.c.email,
                         )
                     )
-                    created_friend_invites.append(
-                        VolunteerApplicationFriendInvite(
-                            registration_id=friend_row["id"],
-                            token=friend_row["token"],
-                            email=friend_row["email"],
-                            inviter_name=inviter_name or email,
-                            first_choice_group_name=first_choice_group_name or "",
-                        )
-                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert group_id is not None
+            await session.execute(
+                insert(volunteer_application_group_members).values(
+                    group_id=group_id,
+                    invite_id=friend_row["id"],
+                    applicant_email=friend_row["email"],
+                    role="invitee",
+                    status="active",
+                    created_at=func.now(),
+                )
+            )
+            created_friend_invites.append(
+                VolunteerApplicationFriendInvite(
+                    registration_id=friend_row["id"],
+                    token=friend_row["token"],
+                    email=friend_row["email"],
+                    inviter_name=inviter_name or email,
+                    first_choice_group_name=first_choice_group_name or "",
+                )
+            )
         detail = await self.get_volunteer_application_detail(inserted["id"])
         assert detail is not None
         return PublicProspectRegistrationResult(
@@ -176,39 +170,38 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite:
-        async with self.session_factory() as session:
-            async with session.begin():
-                row = (
-                    (
-                        await session.execute(
-                            insert(volunteer_application_invites)
-                            .values(
-                                token=token,
-                                email=email,
-                                source="invite",
-                                status="invited",
-                                initial_group_id=initial_group_id,
-                                initial_role_id=initial_role_id,
-                                trial_shift_attended=False,
-                            )
-                            .returning(
-                                volunteer_application_invites.c.id,
-                                volunteer_application_invites.c.token,
-                                volunteer_application_invites.c.email,
-                                volunteer_application_invites.c.created_at,
-                                volunteer_application_invites.c.initial_group_id,
-                                volunteer_application_invites.c.initial_role_id,
-                            )
-                        )
+        session = self.session
+        row = (
+            (
+                await session.execute(
+                    insert(volunteer_application_invites)
+                    .values(
+                        token=token,
+                        email=email,
+                        source="invite",
+                        status="invited",
+                        initial_group_id=initial_group_id,
+                        initial_role_id=initial_role_id,
+                        trial_shift_attended=False,
                     )
-                    .mappings()
-                    .one()
+                    .returning(
+                        volunteer_application_invites.c.id,
+                        volunteer_application_invites.c.token,
+                        volunteer_application_invites.c.email,
+                        volunteer_application_invites.c.created_at,
+                        volunteer_application_invites.c.initial_group_id,
+                        volunteer_application_invites.c.initial_role_id,
+                    )
                 )
-                names = await self._fetch_assignment_names(
-                    session,
-                    initial_group_id=row["initial_group_id"],
-                    initial_role_id=row["initial_role_id"],
-                )
+            )
+            .mappings()
+            .one()
+        )
+        names = await self._fetch_assignment_names(
+            session,
+            initial_group_id=row["initial_group_id"],
+            initial_role_id=row["initial_role_id"],
+        )
         return VolunteerApplicationInvite(
             registration_id=row["id"],
             token=row["token"],
@@ -283,8 +276,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(volunteer_application_invites.c.promoted_volunteer_id.is_(None))
             .order_by(volunteer_application_invites.c.created_at.desc(), volunteer_application_invites.c.id.desc())
         )
-        async with self.session_factory() as session:
-            rows = (await session.execute(stmt)).mappings().all()
+        session = self.session
+        rows = (await session.execute(stmt)).mappings().all()
         group_ids = {row["group_id"] for row in rows if row["group_id"] is not None}
         group_members_by_id = {
             group_id: await self.list_group_members(group_id) for group_id in group_ids
@@ -394,8 +387,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         )
         if before_volunteer_id is not None:
             stmt = stmt.where(volunteer_records.c.id < before_volunteer_id)
-        async with self.session_factory() as session:
-            rows = (await session.execute(stmt)).mappings().all()
+        session = self.session
+        rows = (await session.execute(stmt)).mappings().all()
         return [dict(row) for row in rows]
 
     async def list_recent_registration_group_members(self, group_id: int) -> list[dict]:
@@ -460,8 +453,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(volunteer_application_group_members.c.group_id == group_id)
             .order_by(volunteer_application_group_members.c.id.asc())
         )
-        async with self.session_factory() as session:
-            rows = (await session.execute(stmt)).mappings().all()
+        session = self.session
+        rows = (await session.execute(stmt)).mappings().all()
         return [dict(row) for row in rows]
 
     async def count_pending_volunteer_applications(self) -> int:
@@ -474,8 +467,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             )
             .where(volunteer_application_invites.c.promoted_volunteer_id.is_(None))
         )
-        async with self.session_factory() as session:
-            count = await session.scalar(stmt)
+        session = self.session
+        count = await session.scalar(stmt)
         return int(count or 0)
 
     async def get_volunteer_application_detail(
@@ -496,8 +489,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         if not names:
             return {}
         stmt = select(groups.c.id, groups.c.name).where(groups.c.name.in_(names))
-        async with self.session_factory() as session:
-            rows = (await session.execute(stmt)).mappings().all()
+        session = self.session
+        rows = (await session.execute(stmt)).mappings().all()
         return {row["name"]: row["id"] for row in rows}
 
     async def save_submission(
@@ -509,153 +502,151 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         photo_sha1: str | None,
         photo_filetype: str | None,
     ) -> None:
-        async with self.session_factory() as session:
-            async with session.begin():
-                registration_row = (
+        session = self.session
+        registration_row = (
+            (
+                await session.execute(
+                    select(volunteer_application_invites.c.promoted_volunteer_id)
+                    .where(volunteer_application_invites.c.id == registration_id)
+                    .limit(1)
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if registration_row is None:
+            return
+
+        volunteer_id = registration_row["promoted_volunteer_id"]
+        if volunteer_id is not None:
+            await session.execute(
+                update(volunteer_records)
+                .where(volunteer_records.c.id == volunteer_id)
+                .values(
+                    first_name=submission.first_name,
+                    last_name=submission.last_name,
+                    email=email,
+                    gender=submission.gender,
+                    birth_date=submission.birth_date,
+                    street_address=submission.address,
+                    postal_code=submission.postal_code,
+                    phone=normalize_phone_number(submission.phone),
+                )
+            )
+            if photo_sha1 and photo_filetype:
+                existing_photo = (
                     (
                         await session.execute(
-                            select(volunteer_application_invites.c.promoted_volunteer_id)
-                            .where(volunteer_application_invites.c.id == registration_id)
+                            select(volunteer_photos.c.volunteer_id)
+                            .where(volunteer_photos.c.volunteer_id == volunteer_id)
                             .limit(1)
                         )
                     )
                     .mappings()
                     .first()
                 )
-                if registration_row is None:
-                    return
-
-                volunteer_id = registration_row["promoted_volunteer_id"]
-                if volunteer_id is not None:
+                if existing_photo:
                     await session.execute(
-                        update(volunteer_records)
-                        .where(volunteer_records.c.id == volunteer_id)
-                        .values(
-                            first_name=submission.first_name,
-                            last_name=submission.last_name,
-                            email=email,
-                            gender=submission.gender,
-                            birth_date=submission.birth_date,
-                            street_address=submission.address,
-                            postal_code=submission.postal_code,
-                            phone=normalize_phone_number(submission.phone),
-                        )
-                    )
-                    if photo_sha1 and photo_filetype:
-                        existing_photo = (
-                            (
-                                await session.execute(
-                                    select(volunteer_photos.c.volunteer_id)
-                                    .where(volunteer_photos.c.volunteer_id == volunteer_id)
-                                    .limit(1)
-                                )
-                            )
-                            .mappings()
-                            .first()
-                        )
-                        if existing_photo:
-                            await session.execute(
-                                update(volunteer_photos)
-                                .where(volunteer_photos.c.volunteer_id == volunteer_id)
-                                .values(sha1=photo_sha1, filetype=photo_filetype)
-                            )
-                        else:
-                            await session.execute(
-                                insert(volunteer_photos).values(
-                                    volunteer_id=volunteer_id,
-                                    sha1=photo_sha1,
-                                    filetype=photo_filetype,
-                                )
-                            )
-                    await session.execute(
-                        update(volunteer_application_invites)
-                        .where(volunteer_application_invites.c.id == registration_id)
-                        .values(full_profile_submitted_at=func.now())
-                    )
-                    return
-
-                existing_row = (
-                    (
-                        await session.execute(
-                            select(
-                                volunteer_application_submissions.c.id,
-                                volunteer_application_submissions.c.studiested,
-                                volunteer_application_submissions.c.bakgrunn,
-                            )
-                            .where(volunteer_application_submissions.c.invite_id == registration_id)
-                            .limit(1)
-                        )
-                    )
-                    .mappings()
-                    .first()
-                )
-                payload = {
-                    "first_name": submission.first_name,
-                    "last_name": submission.last_name,
-                    "email": email,
-                    "gender": submission.gender,
-                    "birth_date": submission.birth_date,
-                    "street_address": submission.address,
-                    "postal_code": submission.postal_code,
-                    "phone": normalize_phone_number(submission.phone),
-                    "photo_sha1": photo_sha1,
-                    "photo_filetype": photo_filetype,
-                    "studiested": existing_row["studiested"] if existing_row else None,
-                    "bakgrunn": existing_row["bakgrunn"] if existing_row else None,
-                }
-                if existing_row:
-                    await session.execute(
-                        update(volunteer_application_submissions)
-                        .where(volunteer_application_submissions.c.invite_id == registration_id)
-                        .values(**payload)
+                        update(volunteer_photos)
+                        .where(volunteer_photos.c.volunteer_id == volunteer_id)
+                        .values(sha1=photo_sha1, filetype=photo_filetype)
                     )
                 else:
                     await session.execute(
-                        insert(volunteer_application_submissions).values(
-                            invite_id=registration_id,
-                            **payload,
+                        insert(volunteer_photos).values(
+                            volunteer_id=volunteer_id,
+                            sha1=photo_sha1,
+                            filetype=photo_filetype,
                         )
                     )
+            await session.execute(
+                update(volunteer_application_invites)
+                .where(volunteer_application_invites.c.id == registration_id)
+                .values(full_profile_submitted_at=func.now())
+            )
+            return
+
+        existing_row = (
+            (
                 await session.execute(
-                    update(volunteer_application_invites)
-                    .where(volunteer_application_invites.c.id == registration_id)
-                    .values(status="submitted", full_profile_submitted_at=func.now())
+                    select(
+                        volunteer_application_submissions.c.id,
+                        volunteer_application_submissions.c.studiested,
+                        volunteer_application_submissions.c.bakgrunn,
+                    )
+                    .where(volunteer_application_submissions.c.invite_id == registration_id)
+                    .limit(1)
                 )
+            )
+            .mappings()
+            .first()
+        )
+        payload = {
+            "first_name": submission.first_name,
+            "last_name": submission.last_name,
+            "email": email,
+            "gender": submission.gender,
+            "birth_date": submission.birth_date,
+            "street_address": submission.address,
+            "postal_code": submission.postal_code,
+            "phone": normalize_phone_number(submission.phone),
+            "photo_sha1": photo_sha1,
+            "photo_filetype": photo_filetype,
+            "studiested": existing_row["studiested"] if existing_row else None,
+            "bakgrunn": existing_row["bakgrunn"] if existing_row else None,
+        }
+        if existing_row:
+            await session.execute(
+                update(volunteer_application_submissions)
+                .where(volunteer_application_submissions.c.invite_id == registration_id)
+                .values(**payload)
+            )
+        else:
+            await session.execute(
+                insert(volunteer_application_submissions).values(
+                    invite_id=registration_id,
+                    **payload,
+                )
+            )
+        await session.execute(
+            update(volunteer_application_invites)
+            .where(volunteer_application_invites.c.id == registration_id)
+            .values(status="submitted", full_profile_submitted_at=func.now())
+        )
 
     async def set_trial_shift_attended(
         self, registration_id: int, *, attended: bool
     ) -> None:
-        async with self.session_factory() as session:
-            async with session.begin():
-                await session.execute(
-                    update(volunteer_application_invites)
-                    .where(volunteer_application_invites.c.id == registration_id)
-                    .values(
-                        trial_shift_attended=attended,
-                        trial_shift_marked_at=datetime.now(UTC) if attended else None,
-                    )
-                )
+        session = self.session
+        await session.execute(
+            update(volunteer_application_invites)
+            .where(volunteer_application_invites.c.id == registration_id)
+            .values(
+                trial_shift_attended=attended,
+                trial_shift_marked_at=datetime.now(UTC) if attended else None,
+            )
+        )
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
-        async with self.session_factory() as session:
-            return await session.scalar(
-                select(volunteer_records.c.id)
-                .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email.lower())
-                .limit(1)
-            )
+        session = self.session
+        return await session.scalar(
+            select(volunteer_records.c.id)
+            .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email.lower())
+            .limit(1)
+        )
 
     async def find_active_registration_id_by_email(self, email: str) -> int | None:
-        async with self.session_factory() as session:
-            return await session.scalar(
-                select(volunteer_application_invites.c.id)
-                .where(
-                    func.lower(func.coalesce(volunteer_application_invites.c.email, ""))
-                    == email.lower(),
-                    volunteer_application_invites.c.promoted_volunteer_id.is_(None),
-                    volunteer_application_invites.c.status != "rejected",
-                )
-                .limit(1)
+        session = self.session
+        return await session.scalar(
+            select(volunteer_application_invites.c.id)
+            .where(
+                func.lower(func.coalesce(volunteer_application_invites.c.email, ""))
+                == email.lower(),
+                volunteer_application_invites.c.promoted_volunteer_id.is_(None),
+                volunteer_application_invites.c.status != "rejected",
             )
+            .limit(1)
+        )
 
     async def list_group_members(
         self,
@@ -691,8 +682,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         )
         if not include_dropped:
             stmt = stmt.where(volunteer_application_group_members.c.status == "active")
-        async with self.session_factory() as session:
-            rows = (await session.execute(stmt)).mappings().all()
+        session = self.session
+        rows = (await session.execute(stmt)).mappings().all()
         return [
             VolunteerApplicationGroupMember(
                 group_id=row["group_id"],
@@ -729,8 +720,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .distinct()
             .order_by(func.lower(user_accounts.c.email))
         )
-        async with self.session_factory() as session:
-            return [row for row in await session.scalars(stmt)]
+        session = self.session
+        return [row for row in await session.scalars(stmt)]
 
     async def approve_volunteer_application(
         self,
@@ -738,85 +729,83 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         *,
         accepted_group_id: int | None,
     ) -> int:
-        async with self.session_factory() as session:
-            async with session.begin():
-                if (
-                    registration.initial_role_id is not None
-                    and accepted_group_id is not None
-                ):
-                    role_match = await session.scalar(
-                        select(
-                            exists().where(
-                                assignment_roles.c.id == registration.initial_role_id,
-                                assignment_roles.c.group_id == accepted_group_id,
-                            )
-                        )
+        session = self.session
+        if (
+            registration.initial_role_id is not None
+            and accepted_group_id is not None
+        ):
+            role_match = await session.scalar(
+                select(
+                    exists().where(
+                        assignment_roles.c.id == registration.initial_role_id,
+                        assignment_roles.c.group_id == accepted_group_id,
                     )
-                    if not role_match:
-                        raise VolunteerApplicationConflictError(
-                            "The selected initial assignment_roles is no longer valid for the chosen group."
-                        )
-                inserted = (
-                    (
-                        await session.execute(
-                            insert(volunteer_records)
-                            .values(
-                                first_name=registration.first_name,
-                                last_name=registration.last_name or "",
-                                email=registration.email,
-                                gender=registration.gender or "A",
-                                birth_date=registration.birth_date,
-                                street_address=registration.address,
-                                postal_code=registration.postal_code,
-                                phone=normalize_phone_number(registration.phone),
-                            )
-                            .returning(volunteer_records.c.id)
-                        )
-                    )
-                    .mappings()
-                    .one()
                 )
-                if registration.photo_sha1 and registration.photo_filetype:
-                    await session.execute(
-                        insert(volunteer_photos).values(
-                            volunteer_id=inserted["id"],
-                            sha1=registration.photo_sha1,
-                            filetype=registration.photo_filetype,
-                        )
-                    )
-                if accepted_group_id is not None:
-                    await session.execute(
-                        insert(role_assignments).values(
-                            volunteer_id=inserted["id"],
-                            group_id=accepted_group_id,
-                            role_id=registration.initial_role_id,
-                            semester=get_current_semester_code(),
-                            contract_signed=False,
-                        )
-                    )
+            )
+            if not role_match:
+                raise VolunteerApplicationConflictError(
+                    "The selected initial assignment_roles is no longer valid for the chosen group."
+                )
+        inserted = (
+            (
                 await session.execute(
-                    update(volunteer_application_invites)
-                    .where(volunteer_application_invites.c.id == registration.registration_id)
+                    insert(volunteer_records)
                     .values(
-                        promoted_volunteer_id=inserted["id"],
-                        promoted_at=func.now(),
-                        status="promoted",
-                        initial_group_id=accepted_group_id,
+                        first_name=registration.first_name,
+                        last_name=registration.last_name or "",
+                        email=registration.email,
+                        gender=registration.gender or "A",
+                        birth_date=registration.birth_date,
+                        street_address=registration.address,
+                        postal_code=registration.postal_code,
+                        phone=normalize_phone_number(registration.phone),
                     )
+                    .returning(volunteer_records.c.id)
                 )
+            )
+            .mappings()
+            .one()
+        )
+        if registration.photo_sha1 and registration.photo_filetype:
+            await session.execute(
+                insert(volunteer_photos).values(
+                    volunteer_id=inserted["id"],
+                    sha1=registration.photo_sha1,
+                    filetype=registration.photo_filetype,
+                )
+            )
+        if accepted_group_id is not None:
+            await session.execute(
+                insert(role_assignments).values(
+                    volunteer_id=inserted["id"],
+                    group_id=accepted_group_id,
+                    role_id=registration.initial_role_id,
+                    semester=get_current_semester_code(),
+                    contract_signed=False,
+                )
+            )
+        await session.execute(
+            update(volunteer_application_invites)
+            .where(volunteer_application_invites.c.id == registration.registration_id)
+            .values(
+                promoted_volunteer_id=inserted["id"],
+                promoted_at=func.now(),
+                status="promoted",
+                initial_group_id=accepted_group_id,
+            )
+        )
         return inserted["id"]
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
-        async with self.session_factory() as session:
-            async with session.begin():
-                await session.execute(
-                    delete(volunteer_application_submissions).where(
-                        volunteer_application_submissions.c.invite_id == registration_id
-                    )
-                )
-                await session.execute(
-                    delete(volunteer_application_invites).where(volunteer_application_invites.c.id == registration_id)
-                )
+        session = self.session
+        await session.execute(
+            delete(volunteer_application_submissions).where(
+                volunteer_application_submissions.c.invite_id == registration_id
+            )
+        )
+        await session.execute(
+            delete(volunteer_application_invites).where(volunteer_application_invites.c.id == registration_id)
+        )
 
     async def drop_group_invitee(
         self,
@@ -824,21 +813,20 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         *,
         dropped_by_user_id: int | None = None,
     ) -> None:
-        async with self.session_factory() as session:
-            async with session.begin():
-                await session.execute(
-                    update(volunteer_application_group_members)
-                    .where(
-                        volunteer_application_group_members.c.invite_id == registration_id,
-                        volunteer_application_group_members.c.role == "invitee",
-                        volunteer_application_group_members.c.status == "active",
-                    )
-                    .values(
-                        status="dropped",
-                        dropped_at=func.now(),
-                        dropped_by_user_account_id=dropped_by_user_id,
-                    )
-                )
+        session = self.session
+        await session.execute(
+            update(volunteer_application_group_members)
+            .where(
+                volunteer_application_group_members.c.invite_id == registration_id,
+                volunteer_application_group_members.c.role == "invitee",
+                volunteer_application_group_members.c.status == "active",
+            )
+            .values(
+                status="dropped",
+                dropped_at=func.now(),
+                dropped_by_user_account_id=dropped_by_user_id,
+            )
+        )
 
     async def _get_detail(self, id_query) -> VolunteerApplicationDetail | None:
         accepted_group = groups.alias("accepted_group")
@@ -910,8 +898,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(volunteer_application_invites.c.id.in_(id_query))
             .limit(1)
         )
-        async with self.session_factory() as session:
-            row = (await session.execute(detail_stmt)).mappings().first()
+        session = self.session
+        row = (await session.execute(detail_stmt)).mappings().first()
         if row is None:
             return None
         group_members = (

@@ -89,9 +89,32 @@ _request_session_ctx: ContextVar[AsyncSession | None] = ContextVar(
 )
 
 
+def set_request_session(session: AsyncSession):
+    """Bind *session* as the request-scoped session; returns a reset token."""
+    return _request_session_ctx.set(session)
+
+
+def reset_request_session(token) -> None:
+    _request_session_ctx.reset(token)
+
+
 def current_session() -> AsyncSession | None:
     """Return the request-scoped session if one is active, else None."""
     return _request_session_ctx.get()
+
+
+async def commit_request_session() -> None:
+    """Commit the request-scoped unit of work now.
+
+    Workflow coordinators call this before firing external side effects
+    (email, future SMS) so the commit-before-effect ordering holds: an
+    effect must never announce a state change the database can still
+    roll back. Statements executed afterwards start a new transaction
+    on the same session, committed at the request boundary as usual.
+    """
+    session = current_session()
+    if session is not None and session.in_transaction():
+        await session.commit()
 
 
 @asynccontextmanager

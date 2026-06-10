@@ -238,7 +238,7 @@ class CoursesRepository(SqlAlchemyRepository):
             row = result.first()
             return row[0] if row is not None else None
 
-        updated_course_id = await self.execute_in_transaction(callback)
+        updated_course_id = await callback(self.session)
         return updated_course_id == course_id
 
     async def delete_course(self, course_id: int) -> bool:
@@ -256,7 +256,7 @@ class CoursesRepository(SqlAlchemyRepository):
             row = result.first()
             return row[0] if row is not None else None
 
-        deleted_course_id = await self.execute_in_transaction(callback)
+        deleted_course_id = await callback(self.session)
         return deleted_course_id == course_id
 
     async def create_course_completion(
@@ -290,7 +290,7 @@ class CoursesRepository(SqlAlchemyRepository):
             )
             return result.scalars().all()
 
-        created_ids = await self.execute_in_transaction(callback)
+        created_ids = await callback(self.session)
         return len(created_ids)
 
     async def delete_course_completion(self, completion_id: int) -> None:

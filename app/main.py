@@ -9,6 +9,8 @@ from itsdangerous import BadSignature
 from starlette.types import Message
 
 from app.api.router import api_router
+from app.db.session import reset_request_session, set_request_session
+from app.errors import NotConfiguredError
 from app.media.router import router as media_router
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.observability import (
@@ -46,6 +48,7 @@ def create_app(container=None) -> FastAPI:
     _install_method_override_middleware(app)
     _install_csrf_middleware(app, resolved_container)
     _install_auth_context_middleware(app, resolved_container)
+    _install_request_session_middleware(app, resolved_container)
     _install_request_context_middleware(app)
     _install_http_exception_handler(app)
     _include_routers(app)
@@ -85,6 +88,43 @@ def _install_csrf_middleware(app: FastAPI, container) -> None:
         if request.state.csrf_cookie_needs_refresh:
             csrf_token_service.set_cookie(response, request, request.state.csrf_token)
         return response
+
+
+def _install_request_session_middleware(app: FastAPI, container) -> None:
+    """One AsyncSession per HTTP request — the unit of work.
+
+    Installed outside the auth-context middleware so session loading from
+    the database shares the request session. The session is lazy: no
+    connection is opened until the first statement executes, so requests
+    that never touch the database (static files, /health) cost nothing.
+    Commits on success, rolls back on exception. Workflows that fire
+    external side effects commit earlier via ``commit_request_session()``.
+    """
+
+    @app.middleware("http")
+    async def request_session_middleware(request: Request, call_next):
+        try:
+            session_factory = (
+                container.database_runtime_manager.get_session_factory()
+            )
+        except NotConfiguredError:
+            # DB-less environments (some tests, partial local setups):
+            # proceed without a session; repositories raise on first use.
+            return await call_next(request)
+
+        async with session_factory() as session:
+            token = set_request_session(session)
+            try:
+                response = await call_next(request)
+            except Exception:
+                await session.rollback()
+                raise
+            else:
+                if session.in_transaction():
+                    await session.commit()
+                return response
+            finally:
+                reset_request_session(token)
 
 
 def _install_auth_context_middleware(app: FastAPI, container) -> None:
