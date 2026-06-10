@@ -11,7 +11,6 @@ from app.auth.roles import UserRole
 class UserAccount:
     id: int
     auth_user_id: UUID
-    legacy_user_id: int | None
     username: str
     email: str
     display_name: str | None

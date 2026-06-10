@@ -7,13 +7,13 @@ from fastapi import Depends, HTTPException, Request, status
 
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
+from app.db.rate_limit import RateLimiter
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
 from app.media_tokens import MediaTokenService
 from app.runtime import ApplicationContainer
 from app.domain.feedback.service import FeedbackService
 from app.domain.courses.service import CoursesService
-from app.domain.events import EventsService
 from app.domain.groups.service import GroupsService
 from app.domain.mobile_card.service import MobileCardService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -102,6 +102,10 @@ def get_login_service(request: Request) -> LoginService:
     return get_container(request).login_service
 
 
+def get_rate_limiter(request: Request) -> RateLimiter:
+    return get_container(request).rate_limiter
+
+
 def get_supabase_auth_gateway(request: Request):
     return get_container(request).supabase_auth_gateway
 
@@ -132,10 +136,6 @@ def get_admin_accounts_service(request: Request) -> AdminAccountsService:
 
 def get_mobile_card_service(request: Request) -> MobileCardService:
     return get_container(request).mobile_card_service
-
-
-def get_events_service(request: Request) -> EventsService:
-    return get_container(request).events_service
 
 
 def get_mobile_card_april_state_service(

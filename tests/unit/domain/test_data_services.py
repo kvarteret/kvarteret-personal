@@ -21,6 +21,7 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
+from app.db.rate_limit import InMemoryRateLimiter
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardInvalidAccessCodeError,
@@ -219,12 +220,12 @@ class FakeMobileCardRepository:
         return list(self.volunteers_by_email)
 
     async def store_access_code(
-        self, *, volunteer_id: int, access_code: str, created_at: datetime
+        self, *, volunteer_id: int, code_hash: str, created_at: datetime
     ) -> None:
-        self.stored_access_codes.append((volunteer_id, access_code, created_at))
+        self.stored_access_codes.append((volunteer_id, code_hash, created_at))
 
     async def find_volunteer_by_email_and_code(
-        self, *, email: str, access_code: str, expires_after: datetime
+        self, *, email: str, code_hash: str, expires_after: datetime
     ) -> dict | None:
         return self.volunteer_by_email_and_code
 
@@ -340,12 +341,12 @@ async def test_groups_service_list_uses_database_query(monkeypatch) -> None:
         return [
             {
                 "id": 3,
-                "navn": "Bar",
-                "beskrivelse": "Drinks",
-                "aktiv": True,
-                "aktiv_til_og_med": 20262,
-                "id_overgruppe": None,
-                "rabatt_trinn": 1,
+                "name": "Bar",
+                "description": "Drinks",
+                "is_active": True,
+                "active_through_semester": 20262,
+                "parent_group_id": None,
+                "discount_tier": 1,
             }
         ]
 
@@ -433,7 +434,7 @@ async def test_group_detail_recent_members_are_scoped_to_current_semester(
     assert detail.recent_members[0].semester_code == 20262
     assert detail.recent_members[0].photo_url is not None
     assert detail.recent_members[0].photo_url.startswith("/media/photos/abc123.jpg")
-    assert "historie.semester = :semester_1" in captured["sql"]
+    assert "role_assignments.semester = :semester_1" in captured["sql"]
 
 
 @pytest.mark.asyncio
@@ -464,9 +465,9 @@ async def test_groups_service_archive_marks_group_inactive(monkeypatch) -> None:
     archived = await service.archive_group(7)
 
     assert archived is True
-    assert "UPDATE public.grupper SET aktiv=false" in captured["sql"]
-    assert "aktiv_til_og_med=CASE WHEN (public.grupper.aktiv_til_og_med > 20261) THEN 20261" in captured["sql"]
-    assert "WHERE public.grupper.id = 7" in captured["sql"]
+    assert "UPDATE public.groups SET is_active=false" in captured["sql"]
+    assert "active_through_semester=CASE WHEN (public.groups.active_through_semester > 20261) THEN 20261" in captured["sql"]
+    assert "WHERE public.groups.id = 7" in captured["sql"]
 
 
 @pytest.mark.asyncio
@@ -479,9 +480,9 @@ async def test_courses_service_list_uses_database_query(monkeypatch) -> None:
         return [
             {
                 "id": 9,
-                "navn": "Ordensvakt",
-                "beskrivelse": "Security",
-                "opprettet": "2026-03-13T12:00:00+00:00",
+                "name": "Ordensvakt",
+                "description": "Security",
+                "created_at": "2026-03-13T12:00:00+00:00",
             }
         ]
 
@@ -544,8 +545,8 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
     assert created_count == 2
     assert captured["semester_code"] == 20261
     assert captured["params"] == [
-        {"id_personal": 12, "id_kurs": 4, "gjennomfort_dato": 20261},
-        {"id_personal": 13, "id_kurs": 4, "gjennomfort_dato": 20261},
+        {"volunteer_id": 12, "course_id": 4, "completed_semester": 20261},
+        {"volunteer_id": 13, "course_id": 4, "completed_semester": 20261},
     ]
 
 
@@ -600,12 +601,12 @@ async def test_volunteers_service_plain_listing_uses_repository() -> None:
         [
             {
                 "id": 10016,
-                "fornavn": "Martin",
-                "etternavn": "Kleiven",
-                "epost": "placeholder@example.test",
-                "telefon": None,
-                "fodselsdato": None,
-                "opprettet": "2026-03-13T12:00:00+00:00",
+                "first_name": "Martin",
+                "last_name": "Kleiven",
+                "email": "placeholder@example.test",
+                "phone": None,
+                "birth_date": None,
+                "created_at": "2026-03-13T12:00:00+00:00",
                 "sha1": None,
                 "filetype": None,
                 "last_semester": None,
@@ -706,11 +707,11 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
     repository = FakeVolunteerApplicationsRepository()
     inviter_row = {
         "id": 21,
-        "fornavn": "Inviter",
-        "etternavn": "Person",
-        "epost": "inviter@example.com",
-        "telefon": "11111111",
-        "opprettet": datetime(2026, 5, 21, tzinfo=UTC),
+        "first_name": "Inviter",
+        "last_name": "Person",
+        "email": "inviter@example.com",
+        "phone": "11111111",
+        "created_at": datetime(2026, 5, 21, tzinfo=UTC),
         "latest_group_name": "Skjenkegruppen",
         "latest_role_name": None,
         "latest_semester_code": 20261,
@@ -723,11 +724,11 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
     }
     invitee_row = {
         "id": 22,
-        "fornavn": "Invitee",
-        "etternavn": "Person",
-        "epost": "invitee@example.com",
-        "telefon": "22222222",
-        "opprettet": datetime(2026, 5, 21, tzinfo=UTC),
+        "first_name": "Invitee",
+        "last_name": "Person",
+        "email": "invitee@example.com",
+        "phone": "22222222",
+        "created_at": datetime(2026, 5, 21, tzinfo=UTC),
         "latest_group_name": "Skjenkegruppen",
         "latest_role_name": None,
         "latest_semester_code": 20261,
@@ -1095,6 +1096,7 @@ async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts
         ),
         repository=FakeMobileCardRepository(),  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     with pytest.raises(MobileCardInvalidAccessCodeError):
@@ -1117,10 +1119,10 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         volunteers_by_email=[
             {
                 "id": 12,
-                "fornavn": "Ada",
-                "etternavn": "Lovelace",
-                "internkortaccesstoken": None,
-                "internkort_access_token_created_at": None,
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "code_hash": None,
+                "created_at": None,
             }
         ]
     )
@@ -1129,52 +1131,59 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         Settings(app_secret_key="test-secret", mobile_card_access_code_ttl_minutes=10),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
 
     assert len(repository.stored_access_codes) == 1
-    volunteer_id, access_code, created_at = repository.stored_access_codes[0]
+    volunteer_id, code_hash, created_at = repository.stored_access_codes[0]
     assert volunteer_id == 12
     assert created_at.tzinfo == UTC
-    assert len(access_code) == 6
+    assert len(code_hash) == 64  # SHA-256 hex digest
     assert email_sender.sent_emails[0]["recipient_email"] == "person@example.com"
     assert (
         email_sender.sent_emails[0]["subject"]
         == "Kvarteret Internkort is ready for you"
     )
     assert "Your verification code" in email_sender.sent_emails[0]["html_body"]
-    assert access_code in email_sender.sent_emails[0]["html_body"]
+    import re
+    assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"]), "expected a 6-digit code in the email"
     assert "This code expires in 10 minutes." in email_sender.sent_emails[0]["html_body"]
     assert "If you did not request this code" in email_sender.sent_emails[0]["html_body"]
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_resends_recent_access_code_during_cooldown() -> None:
+async def test_mobile_card_service_issues_new_code_on_every_request() -> None:
+    """Every access-code request generates and stores a new code (cooldown reuse is dead)."""
     repository = FakeMobileCardRepository(
         volunteers_by_email=[
             {
                 "id": 12,
-                "fornavn": "Ada",
-                "etternavn": "Lovelace",
-                "internkortaccesstoken": "654321",
-                "internkort_access_token_created_at": datetime.now(UTC),
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "code_hash": "some-old-hash",
+                "created_at": datetime.now(UTC),
             }
         ]
     )
     email_sender = FakeEmailSender()
     service = MobileCardService(
-        Settings(
-            app_secret_key="test-secret", mobile_card_access_code_cooldown_seconds=60
-        ),
+        Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
 
-    assert repository.stored_access_codes == []
-    assert email_sender.sent_emails[0]["html_body"].find("654321") != -1
+    # A new code was stored (not empty), even though an old one existed.
+    assert len(repository.stored_access_codes) == 1
+    _, code_hash_new, _ = repository.stored_access_codes[0]
+    assert code_hash_new != "some-old-hash"
+    # The email contains a 6-digit code.
+    import re
+    assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"])
 
 
 @pytest.mark.asyncio
@@ -1190,6 +1199,8 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.sessions.serializer.dumps({"person_id": 12})
@@ -1209,6 +1220,8 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.sessions.serializer.dumps({"person_id": 12})
@@ -1252,6 +1265,8 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
         email_sender=FakeEmailSender(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(False),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1270,6 +1285,8 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
         email_sender=FakeEmailSender(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(True),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1313,6 +1330,8 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         april_state_service=FakeMobileCardAprilStateService(True),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1348,6 +1367,8 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         april_state_service=FakeMobileCardAprilStateService(True),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1370,6 +1391,8 @@ async def test_mobile_card_service_renews_session_when_token_is_near_expiry(
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1398,6 +1421,8 @@ async def test_mobile_card_service_reports_expired_token_reason(monkeypatch) -> 
         Settings(app_secret_key="test-secret", mobile_card_session_ttl_days=1),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1423,11 +1448,15 @@ async def test_mobile_card_service_reports_bad_signature_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
     other_service = MobileCardService(
         Settings(app_secret_key="other-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = other_service.sessions.serializer.dumps({"person_id": 12})
@@ -1445,6 +1474,8 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+    
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.sessions.serializer.dumps({"review": False})

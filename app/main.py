@@ -10,6 +10,7 @@ from starlette.types import Message
 
 from app.api.router import api_router
 from app.media.router import router as media_router
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.observability import (
     bind_request_context,
     build_request_id,
@@ -41,6 +42,7 @@ def create_app(container=None) -> FastAPI:
     app.state.container = resolved_container
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+    _install_security_headers(app)
     _install_method_override_middleware(app)
     _install_csrf_middleware(app, resolved_container)
     _install_auth_context_middleware(app, resolved_container)
@@ -232,3 +234,7 @@ def _restore_request_body(request: Request, body: bytes) -> None:
         return {"type": "http.request", "body": body, "more_body": False}
 
     request._receive = receive  # type: ignore[attr-defined]
+
+
+def _install_security_headers(app: FastAPI) -> None:
+    app.add_middleware(SecurityHeadersMiddleware)

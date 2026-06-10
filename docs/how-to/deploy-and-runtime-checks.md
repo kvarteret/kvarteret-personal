@@ -35,14 +35,6 @@ Check health:
 
     curl https://personal.kvarteret.no/health
 
-Check public events:
-
-    curl -H 'Accept-Language: nb' 'https://personal.kvarteret.no/api/v1/events?include_internal=false&limit=5'
-
-Check taxonomy:
-
-    curl https://personal.kvarteret.no/api/v1/events/taxonomy
-
 Check now-playing shape:
 
     curl https://personal.kvarteret.no/api/now-playing

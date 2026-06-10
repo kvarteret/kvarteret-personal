@@ -24,26 +24,12 @@ def test_openapi_contains_stable_operation_ids() -> None:
     assert {
         "getHealth",
         "getNowPlaying",
-        "listEvents",
-        "getEvent",
-        "getEventTaxonomy",
         "requestMobileCardAccessCode",
         "createMobileCardSession",
         "getCurrentMobileCard",
         "logMobileCardSessionLogoutEvent",
         "createPublicVolunteerProspect",
-        "legacyRequestMobileCardAccessTokenOnEmail",
-        "legacyGetMobileCardInformation",
     }.issubset(operations)
-    assert schema["paths"]["/api/v1/events"]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]["$ref"].endswith("/EventList")
-    assert (
-        schema["paths"]["/api/DigitalInternkort/GetInternkortInformation"]["post"][
-            "deprecated"
-        ]
-        is True
-    )
 
 
 def test_exported_openapi_schema_is_current() -> None:

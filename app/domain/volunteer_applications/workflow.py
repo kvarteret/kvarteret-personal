@@ -1,59 +1,89 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from app.domain.volunteer_applications.service import (
+        PublicProspectRegistrationInput,
+        PublicProspectRegistrationResult,
+        VolunteerApplicationDetail,
+        VolunteerApplicationInvite,
+        VolunteerApplicationSubmissionInput,
+    )
 
 
 class VolunteerApplicationWorkflowOperations(Protocol):
     async def create_public_prospect_registration_record(
-        self, registration: Any, *, base_url: str | None
-    ) -> Any: ...
+        self,
+        registration: "PublicProspectRegistrationInput",
+        *,
+        base_url: str | None,
+    ) -> "PublicProspectRegistrationResult": ...
     async def create_invitation_record(
         self,
         email: str,
         *,
         initial_group_id: int | None,
         initial_role_id: int | None,
-    ) -> Any: ...
+    ) -> "VolunteerApplicationInvite": ...
     async def submit_application_record(
         self,
         token: str,
-        submission: Any,
+        submission: "VolunteerApplicationSubmissionInput",
         *,
         base_url: str | None,
         photo_filename: str | None,
         photo_content: bytes | None,
         photo_content_type: str | None,
-    ) -> Any: ...
+    ) -> "VolunteerApplicationDetail": ...
     async def mark_trial_shift_attended_record(
         self, registration_id: int, *, attended: bool
-    ) -> Any: ...
+    ) -> "VolunteerApplicationDetail": ...
     async def approve_application_record(
         self, registration_id: int, *, accepted_group_id: int | None
-    ) -> tuple[Any, int]: ...
+    ) -> "tuple[VolunteerApplicationDetail, int]": ...
     async def drop_group_invitee_record(
         self, registration_id: int, *, dropped_by_user_id: int | None
-    ) -> Any: ...
-    async def delete_application_record(self, registration_id: int) -> Any: ...
-    async def resend_invitation_record(self, registration_id: int) -> Any: ...
+    ) -> "VolunteerApplicationDetail": ...
+    async def delete_application_record(
+        self, registration_id: int
+    ) -> "VolunteerApplicationDetail": ...
+    async def resend_invitation_record(
+        self, registration_id: int
+    ) -> "VolunteerApplicationInvite": ...
     async def get_volunteer_application_detail(
         self, registration_id: int
-    ) -> Any | None: ...
+    ) -> "VolunteerApplicationDetail | None": ...
 
 
 class VolunteerApplicationSideEffectsProtocol(Protocol):
     async def after_public_prospect_registered(
-        self, result: Any, *, base_url: str | None
+        self, result: "PublicProspectRegistrationResult", *, base_url: str | None
     ) -> None: ...
-    async def after_invited(self, invite: Any, *, base_url: str | None) -> None: ...
-    async def after_submitted(self, detail: Any) -> None: ...
-    async def after_trial_shift_marked(self, detail: Any) -> None: ...
+    async def after_invited(
+        self, invite: "VolunteerApplicationInvite", *, base_url: str | None
+    ) -> None: ...
+    async def after_submitted(
+        self, detail: "VolunteerApplicationDetail",
+    ) -> None: ...
+    async def after_trial_shift_marked(
+        self, detail: "VolunteerApplicationDetail",
+    ) -> None: ...
     async def after_approved(
-        self, detail: Any, *, volunteer_id: int, base_url: str | None
+        self,
+        detail: "VolunteerApplicationDetail",
+        *,
+        volunteer_id: int,
+        base_url: str | None,
     ) -> None: ...
-    async def after_group_invitee_dropped(self, detail: Any) -> None: ...
-    async def after_deleted(self, detail: Any) -> None: ...
+    async def after_group_invitee_dropped(
+        self, detail: "VolunteerApplicationDetail",
+    ) -> None: ...
+    async def after_deleted(
+        self, detail: "VolunteerApplicationDetail",
+    ) -> None: ...
     async def after_invitation_resent(
-        self, detail: Any, *, base_url: str | None
+        self, detail: "VolunteerApplicationInvite", *, base_url: str | None
     ) -> None: ...
 
 
@@ -74,7 +104,7 @@ class VolunteerApplicationWorkflow:
         base_url: str | None,
         initial_group_id: int | None,
         initial_role_id: int | None,
-    ) -> Any:
+    ) -> "VolunteerApplicationInvite":
         invite = await self.operations.create_invitation_record(
             email,
             initial_group_id=initial_group_id,
@@ -88,8 +118,11 @@ class VolunteerApplicationWorkflow:
         return invite
 
     async def register_public_prospect(
-        self, registration: Any, *, base_url: str | None
-    ) -> Any:
+        self,
+        registration: "PublicProspectRegistrationInput",
+        *,
+        base_url: str | None,
+    ) -> "VolunteerApplicationDetail":
         result = await self.operations.create_public_prospect_registration_record(
             registration, base_url=base_url
         )
@@ -101,13 +134,13 @@ class VolunteerApplicationWorkflow:
     async def submit(
         self,
         token: str,
-        submission: Any,
+        submission: "VolunteerApplicationSubmissionInput",
         *,
         base_url: str | None,
         photo_filename: str | None,
         photo_content: bytes | None,
         photo_content_type: str | None,
-    ) -> Any:
+    ) -> "VolunteerApplicationDetail":
         detail = await self.operations.submit_application_record(
             token,
             submission,
@@ -121,7 +154,7 @@ class VolunteerApplicationWorkflow:
 
     async def mark_trial_shift_attended(
         self, registration_id: int, *, attended: bool
-    ) -> Any:
+    ) -> "VolunteerApplicationDetail":
         detail = await self.operations.mark_trial_shift_attended_record(
             registration_id, attended=attended
         )
@@ -157,7 +190,7 @@ class VolunteerApplicationWorkflow:
 
     async def resend_invitation(
         self, registration_id: int, *, base_url: str | None
-    ) -> Any:
+    ) -> "VolunteerApplicationInvite":
         detail = await self.operations.resend_invitation_record(registration_id)
         await self.side_effects.after_invitation_resent(detail, base_url=base_url)
         return detail

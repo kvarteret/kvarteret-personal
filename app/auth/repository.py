@@ -50,7 +50,6 @@ class AuthRepositoryProtocol(Protocol):
 USER_ACCOUNT_COLUMNS = (
     user_accounts.c.id,
     user_accounts.c.auth_user_id,
-    user_accounts.c.legacy_user_id,
     user_accounts.c.username,
     user_accounts.c.email,
     user_accounts.c.display_name,
@@ -190,7 +189,6 @@ def _map_user_account(row) -> UserAccount:
     return UserAccount(
         id=row["id"],
         auth_user_id=row["auth_user_id"],
-        legacy_user_id=row["legacy_user_id"],
         username=row["username"],
         email=row["email"],
         display_name=row["display_name"],

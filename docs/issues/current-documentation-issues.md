@@ -8,24 +8,9 @@ This is the running issue list for the documentation overhaul. Keep it current a
 - The old architecture page mixed stale migration-era statements with current runtime facts. It is being replaced by a pointer to the canonical architecture explanation under `docs/explanation/`.
 - API boundaries with `kvarteret-internbevis-rn`, `samfunnetibergen`, and `frontend-eventside` were not documented in one place. They are now canonical in `docs/reference/api-boundaries.md`.
 - Third-party systems were scattered across code and old prose. They are now canonical in `docs/reference/external-systems.md`.
+- `frontend-eventside` and its StudentBergen workflow context are now recorded as retired historical context, not current `kvarteret-personal` integration work.
 
 ## Open Issues
-
-### Event writes bypass `kvarteret-personal`
-
-`frontend-eventside` writes event rows directly through Supabase. `kvarteret-personal` owns migrations and public read APIs, but it does not yet own event write endpoints.
-
-Impact: validation, write authorization, image handling, and publication rules are split between frontend code, Supabase policies, and backend migrations.
-
-Suggested follow-up: design backend event write APIs or explicitly document the intended long-term direct-Supabase contract.
-
-### StudentBergen boundary is workflow-level, not implemented here
-
-`frontend-eventside` contains StudentBergen API docs and workflow context, but `kvarteret-personal` does not currently call StudentBergen directly.
-
-Impact: documentation can easily overstate this as a backend integration.
-
-Suggested follow-up: document the actual StudentBergen publication flow in `frontend-eventside`, then link to it from the system map.
 
 ### Legacy personaldatabase repos are archive-safe
 
