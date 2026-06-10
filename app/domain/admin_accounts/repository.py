@@ -29,7 +29,6 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             select(
                 user_accounts.c.id,
                 user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
                 user_accounts.c.username,
                 user_accounts.c.email,
                 user_accounts.c.display_name,
@@ -49,7 +48,6 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             .group_by(
                 user_accounts.c.id,
                 user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
                 user_accounts.c.username,
                 user_accounts.c.email,
                 user_accounts.c.display_name,
@@ -73,7 +71,6 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             AdminAccountListItem(
                 user_account_id=row["id"],
                 auth_user_id=row["auth_user_id"],
-                legacy_user_id=row.get("legacy_user_id"),
                 username=row["username"],
                 email=row["email"],
                 display_name=row.get("display_name"),
@@ -92,7 +89,6 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             select(
                 user_accounts.c.id,
                 user_accounts.c.auth_user_id,
-                user_accounts.c.legacy_user_id,
                 user_accounts.c.username,
                 user_accounts.c.email,
                 user_accounts.c.display_name,
@@ -111,7 +107,6 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         return AdminAccountDetail(
             user_account_id=row["id"],
             auth_user_id=row["auth_user_id"],
-            legacy_user_id=row.get("legacy_user_id"),
             username=row["username"],
             email=row["email"],
             display_name=row.get("display_name"),

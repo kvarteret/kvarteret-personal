@@ -1096,7 +1096,6 @@ async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts
         ),
         repository=FakeMobileCardRepository(),  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     with pytest.raises(MobileCardInvalidAccessCodeError):
@@ -1131,7 +1130,6 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         Settings(app_secret_key="test-secret", mobile_card_access_code_ttl_minutes=10),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
@@ -1172,7 +1170,6 @@ async def test_mobile_card_service_issues_new_code_on_every_request() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
@@ -1200,7 +1197,6 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.sessions.serializer.dumps({"person_id": 12})
@@ -1221,7 +1217,6 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.sessions.serializer.dumps({"person_id": 12})
@@ -1266,7 +1261,6 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(False),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1286,7 +1280,6 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(True),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1331,7 +1324,6 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
         email_sender=FakeEmailSender(),
         april_state_service=FakeMobileCardAprilStateService(True),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1368,7 +1360,6 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
         email_sender=FakeEmailSender(),
         april_state_service=FakeMobileCardAprilStateService(True),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1392,7 +1383,6 @@ async def test_mobile_card_service_renews_session_when_token_is_near_expiry(
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1422,7 +1412,6 @@ async def test_mobile_card_service_reports_expired_token_reason(monkeypatch) -> 
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1449,14 +1438,12 @@ async def test_mobile_card_service_reports_bad_signature_reason() -> None:
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
     other_service = MobileCardService(
         Settings(app_secret_key="other-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = other_service.sessions.serializer.dumps({"person_id": 12})
@@ -1475,7 +1462,6 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
     
-        rate_limiter=InMemoryRateLimiter(),
     )
 
     token = service.sessions.serializer.dumps({"review": False})
