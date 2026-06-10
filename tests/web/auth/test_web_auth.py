@@ -8,10 +8,12 @@ from fastapi.testclient import TestClient
 from app.auth.login_service import LoginResult
 from app.auth.models import WebSession
 from app.auth.roles import UserRole
+from app.db.rate_limit import InMemoryRateLimiter
 from app.dependencies import (
     get_current_user,
     get_login_service,
     get_mobile_card_april_state_service,
+    get_rate_limiter,
     get_session_store,
     get_volunteers_service,
     require_authenticated_user,
@@ -207,6 +209,7 @@ class FakePendingVolunteerApplicationsService:
 def test_login_sets_cookie_and_protected_page_renders() -> None:
     app = create_app()
     user = make_authenticated_user(UserRole.ADMIN)
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
     app.dependency_overrides[get_login_service] = lambda: FakeLoginService()
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_session_store] = lambda: FakeSessionStore()

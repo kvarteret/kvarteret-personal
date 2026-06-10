@@ -28,6 +28,7 @@ from app.db.table_defs.public import (
     volunteer_records,
     web_sessions,
 )
+from app.db.rate_limit import rate_limits
 from app.db.table_defs.storage import storage_metadata, storage_objects
 
 admin_account_group_memberships = group_admin_memberships
@@ -49,6 +50,7 @@ __all__ = [
     "mobile_card_access_codes",
     "mobile_card_april_state",
     "public_metadata",
+    "rate_limits",
     "role_assignments",
     "storage_metadata",
     "storage_objects",
