@@ -149,7 +149,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_application_invites.c.status.label("registration_status"),
                 first_choice_group.c.name.label("first_choice_group_name"),
                 second_choice_group.c.name.label("second_choice_group_name"),
-                volunteer_application_group_members.c.gruppe_id.label("registration_group_id"),
+                volunteer_application_group_members.c.group_id.label("registration_group_id"),
                 volunteer_application_group_members.c.role.label("registration_group_role"),
                 volunteer_application_group_members.c.status.label("registration_group_status"),
             )

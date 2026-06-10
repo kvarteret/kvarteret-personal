@@ -218,7 +218,7 @@ class GroupsService(GroupsQueries):
         async def callback(session):
             await session.execute(
                 delete(group_admin_memberships).where(
-                    group_admin_memberships.c.gruppe_id == group_id
+                    group_admin_memberships.c.group_id == group_id
                 )
             )
             await session.execute(

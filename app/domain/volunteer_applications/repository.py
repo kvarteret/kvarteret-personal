@@ -98,7 +98,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     group_id = group_row["id"]
                     await session.execute(
                         insert(volunteer_application_group_members).values(
-                            gruppe_id=group_id,
+                            group_id=group_id,
                             invite_id=inserted["id"],
                             applicant_email=email,
                             role="inviter",
@@ -145,7 +145,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     assert group_id is not None
                     await session.execute(
                         insert(volunteer_application_group_members).values(
-                            gruppe_id=group_id,
+                            group_id=group_id,
                             invite_id=friend_row["id"],
                             applicant_email=friend_row["email"],
                             role="invitee",
@@ -252,7 +252,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 accepted_role.c.name.label("initial_role_name"),
                 first_choice_group.c.name.label("first_choice_group_name"),
                 second_choice_group.c.name.label("second_choice_group_name"),
-                group_membership.c.gruppe_id.label("group_id"),
+                group_membership.c.group_id.label("group_id"),
                 group_membership.c.role.label("group_role"),
                 group_membership.c.status.label("group_status"),
             )
@@ -368,7 +368,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_photos.c.sha1.label("photo_sha1"),
                 volunteer_photos.c.filetype.label("photo_filetype"),
                 volunteer_application_invites.c.id.label("registration_id"),
-                volunteer_application_group_members.c.gruppe_id.label("group_id"),
+                volunteer_application_group_members.c.group_id.label("group_id"),
                 volunteer_application_group_members.c.role.label("group_role"),
                 volunteer_application_group_members.c.status.label("group_status"),
             )
@@ -438,7 +438,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_photos.c.sha1.label("photo_sha1"),
                 volunteer_photos.c.filetype.label("photo_filetype"),
                 volunteer_application_invites.c.id.label("registration_id"),
-                volunteer_application_group_members.c.gruppe_id.label("group_id"),
+                volunteer_application_group_members.c.group_id.label("group_id"),
                 volunteer_application_group_members.c.role.label("group_role"),
                 volunteer_application_group_members.c.status.label("group_status"),
             )
@@ -457,7 +457,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
                 )
             )
-            .where(volunteer_application_group_members.c.gruppe_id == group_id)
+            .where(volunteer_application_group_members.c.group_id == group_id)
             .order_by(volunteer_application_group_members.c.id.asc())
         )
         async with self.session_factory() as session:
@@ -665,7 +665,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
     ) -> list[VolunteerApplicationGroupMember]:
         stmt = (
             select(
-                volunteer_application_group_members.c.gruppe_id,
+                volunteer_application_group_members.c.group_id,
                 volunteer_application_group_members.c.invite_id,
                 volunteer_application_group_members.c.applicant_email,
                 volunteer_application_group_members.c.role,
@@ -686,7 +686,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     volunteer_application_submissions, volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id
                 )
             )
-            .where(volunteer_application_group_members.c.gruppe_id == group_id)
+            .where(volunteer_application_group_members.c.group_id == group_id)
             .order_by(volunteer_application_group_members.c.id.asc())
         )
         if not include_dropped:
@@ -695,7 +695,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             rows = (await session.execute(stmt)).mappings().all()
         return [
             VolunteerApplicationGroupMember(
-                group_id=row["gruppe_id"],
+                group_id=row["group_id"],
                 registration_id=row["invite_id"],
                 email=row["applicant_email"],
                 role=row["role"],
@@ -722,7 +722,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 )
             )
             .where(
-                group_admin_memberships.c.gruppe_id == group_id,
+                group_admin_memberships.c.group_id == group_id,
                 user_accounts.c.email.is_not(None),
                 user_accounts.c.email != "",
             )
@@ -879,7 +879,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 accepted_role.c.name.label("initial_role_name"),
                 first_choice_group.c.name.label("first_choice_group_name"),
                 second_choice_group.c.name.label("second_choice_group_name"),
-                group_membership.c.gruppe_id.label("group_id"),
+                group_membership.c.group_id.label("group_id"),
                 group_membership.c.role.label("group_role"),
                 group_membership.c.status.label("group_status"),
             )
