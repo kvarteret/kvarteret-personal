@@ -83,3 +83,20 @@ The admin UI uses signed session cookies. Supabase Auth is used for auth-user li
 The mobile app uses signed bearer tokens issued by `MobileCardService`, not Supabase user sessions. Mobile-card tokens identify a verified volunteer profile for a bounded lifetime.
 
 Web mutations require CSRF validation when a session cookie is present. JSON API routes do not use the web CSRF middleware; they rely on route-specific auth and validation.
+
+## Domain Module Convention
+
+Each domain module under `app/domain/` follows this structure:
+
+```
+models.py       — Pydantic/dataclass models, no logic
+errors.py       — domain-specific exception classes (optional)
+repository.py   — SQLAlchemy Core queries, no business logic
+service.py      — business logic, validation, orchestration
+```
+
+Additional files are documented in their module or the relevant ADR:
+- `workflow.py`, `side_effects.py` — `app/domain/volunteer_applications/` (see ADR-001)
+- `queries.py` — `app/domain/groups/` (read-model separated from write service)
+- `sessions.py` — `app/domain/mobile_card/` (token signing/decoding extracted from service)
+- `mappers.py`, `options.py` — `app/domain/volunteers/` (DB-to-model mapping and enum helpers)
