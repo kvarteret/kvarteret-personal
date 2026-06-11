@@ -589,6 +589,17 @@ class VolunteersRepository(SqlAlchemyRepository):
 
     async def delete_volunteer(self, volunteer_id: int) -> None:
         async def remove(session) -> None:
+            # Detach the application record instead of deleting it: the
+            # invite row is lifecycle history. Status stays 'promoted',
+            # so the application does not resurface as pending.
+            await session.execute(
+                update(volunteer_application_invites)
+                .where(
+                    volunteer_application_invites.c.promoted_volunteer_id
+                    == volunteer_id
+                )
+                .values(promoted_volunteer_id=None)
+            )
             await session.execute(
                 delete(role_assignments).where(
                     role_assignments.c.volunteer_id == volunteer_id

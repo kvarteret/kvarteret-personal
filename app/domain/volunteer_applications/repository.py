@@ -279,7 +279,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     second_choice_group.c.id == volunteer_application_invites.c.second_choice_group_id,
                 )
             )
-            .where(volunteer_application_invites.c.promoted_volunteer_id.is_(None))
+            .where(volunteer_application_invites.c.status != ApplicationState.PROMOTED)
             .order_by(volunteer_application_invites.c.created_at.desc(), volunteer_application_invites.c.id.desc())
         )
         session = self.session
@@ -471,7 +471,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     volunteer_application_submissions, volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id
                 )
             )
-            .where(volunteer_application_invites.c.promoted_volunteer_id.is_(None))
+            .where(volunteer_application_invites.c.status != ApplicationState.PROMOTED)
         )
         session = self.session
         count = await session.scalar(stmt)
@@ -648,7 +648,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(
                 func.lower(func.coalesce(volunteer_application_invites.c.email, ""))
                 == email.lower(),
-                volunteer_application_invites.c.promoted_volunteer_id.is_(None),
+                volunteer_application_invites.c.status != ApplicationState.PROMOTED,
                 volunteer_application_invites.c.status != ApplicationState.REJECTED,
             )
             .limit(1)
