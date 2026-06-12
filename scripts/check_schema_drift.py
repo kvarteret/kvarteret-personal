@@ -8,7 +8,7 @@ from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import get_settings
-from app.db.table_defs import public_metadata
+from app.db.tables import public_metadata
 
 DEFAULT_IGNORED_TABLES = frozenset({"alembic_version"})
 

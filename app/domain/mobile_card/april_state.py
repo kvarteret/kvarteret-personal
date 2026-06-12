@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cache import TTLCache
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import mobile_card_april_state
-
+from app.domain.mobile_card.tables import mobile_card_april_state
 
 @dataclass(slots=True)
 class MobileCardAprilState:
