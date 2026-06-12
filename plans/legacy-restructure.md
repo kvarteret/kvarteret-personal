@@ -26,6 +26,29 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 
 ## Progress
 
+### As-built update (2026-06-12, split session)
+
+The M6 deferrals were narrowed: the read/write splits and the
+position-management extraction are now DONE; only the
+approval-write-through-`VolunteersService` change remains deferred.
+
+- `volunteers` → `queries.py` (reads, detail cache, cursors) +
+  `search_sql.py` (ranking SQL) + write-only `repository.py` +
+  `service.py(VolunteersQueries)`. Largest file 639 lines.
+- Position management (role assignments + course completions) moved into
+  `app/domain/role_assignments/` with its own service/repository/errors;
+  the volunteers detail cache is invalidated through a callable injected
+  in `runtime.py` (no cross-module service import). Routes resolve
+  `get_role_assignments_service`.
+- `volunteer_applications` → `models.py` + `queries.py` (admin list,
+  recent-registrations feed, cached pending count) + write-side
+  service/repository. Largest file 752 lines.
+- M5's typed-rows acceptance is now met as scoped: no repository read
+  signatures return `dict[str, Any]`; queries validate into models at the
+  boundary.
+- Battery green: 264 unit/web tests, 2 e2e on migrated Postgres, ruff,
+  import-linter (layers + domain-independence kept), openapi-check.
+
 ### Honest milestone status (2026-06-11, M5–M7/M6 completion session)
 
 - [x] M0: Schema baseline and drift audit — ✓ complete as-built.
