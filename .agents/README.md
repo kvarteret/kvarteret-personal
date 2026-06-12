@@ -16,6 +16,13 @@ Verify cross-repo claims against code before editing durable docs.
 - Event API routes and table support are retired in this branch. `/api/v1/events`
   is intentionally absent from `openapi.json`; do not reintroduce it for stale
   generated clients.
+- The credential-free local harness is owned by `docker-compose.dev.yml`,
+  `scripts/dev/`, and adapter selection in `app/runtime.py`. Development auth
+  credentials are invalid outside `APP_ENV=development`; configured Supabase,
+  SMTP, and Azure adapters always take precedence.
+- `seeds/dev-snapshot.sql` is deliberately gitignored. The snapshot builder
+  excludes secret-bearing tables and verifies anonymization, but the resulting
+  organizational history must still be distributed out of band.
 - Current `samfunnetibergen` public arrangement pages and feeds are Sanity-backed
   in that sibling repo (`lib/sanity/fetch/events.ts`,
   `lib/sanity/queries/events.ts`, `app/[locale]/arrangementer/page.tsx`,

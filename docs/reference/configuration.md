@@ -12,6 +12,8 @@ Do not commit real secrets. The checked-in `.env.example` should contain names a
 | `APP_SECRET_KEY` | `change-me` | Signs web sessions, media tokens, mobile-card tokens, CSRF tokens, and Spotify OAuth state. Must be non-default in production. |
 | `APP_PUBLIC_BASE_URL` | unset | Public base URL used in email links, media URLs, and OAuth redirects. |
 | `LOG_LEVEL` | `INFO` | Application log level. |
+| `DEV_ADMIN_EMAIL` | unset | Development-harness admin email. Refused unless `APP_ENV=development`. |
+| `DEV_ADMIN_PASSWORD` | unset | Development-harness admin password. Refused unless `APP_ENV=development`. |
 
 ## Database and Supabase
 
@@ -38,6 +40,9 @@ Do not commit real secrets. The checked-in `.env.example` should contain names a
 | `PHOTO_MAX_DIMENSION` | `2048` | Maximum processed photo dimension. |
 | `PHOTO_DEFAULT_SIZE` | `512` | Default served photo size. |
 
+When `APP_ENV=development` and Azure is not configured, the local harness
+stores photos under `.devdata/photos/`.
+
 ## Email
 
 The app accepts both current `SMTP_*` names and legacy `EMAIL_*` or `Email__*` aliases for several settings.
@@ -51,6 +56,9 @@ The app accepts both current `SMTP_*` names and legacy `EMAIL_*` or `Email__*` a
 | `SMTP_ACCOUNT` | unset | SMTP username/account. |
 | `SMTP_PASSWORD` | unset | SMTP password. |
 | `SMTP_USE_STARTTLS` | `true` | Whether to start TLS before login. |
+
+When `APP_ENV=development` and `SMTP_SERVER` is unset, outbound HTML is written
+to `.devdata/outbox/` and links are logged.
 
 ## Spotify and Now Playing
 

@@ -1,6 +1,6 @@
 # Handoff: legacy restructure — what's left
 
-Updated 2026-06-12 (post-split session). Operational companion to `plans/legacy-restructure.md`
+Updated 2026-06-13 (PR finalization session). Operational companion to `plans/legacy-restructure.md`
 (read its `Progress` + `Decision Log` for the why; this file is the what).
 
 **Scope decisions (2026-06-11, recorded in the plan's Decision Log):**
@@ -11,11 +11,13 @@ Updated 2026-06-12 (post-split session). Operational companion to `plans/legacy-
 
 ## Branch and current state
 
-- Branch: `restructure/m5-m9-completion` (off `develop`). **Not yet pushed; no PR.**
+- Branch: `restructure/m5-m9-completion` (off `develop`), published as PR #21.
 - Commits (newest first): see `git log develop..` — M5/M6/M7 feature commits,
   the e2e suite, the M6 read/write splits (volunteers, role_assignments,
-  volunteer_applications), and the doc updates.
-- Working tree is **clean**.
+  volunteer_applications), stricter adapter boundaries, the credential-free
+  development harness, and the doc updates.
+- PR checks were green at commit `f24601d`. The final commit series is local
+  until explicitly pushed.
 
 ### What is DONE and verified on this branch
 
@@ -23,20 +25,25 @@ Updated 2026-06-12 (post-split session). Operational companion to `plans/legacy-
 |---|---|
 | M0–M4 | Done on earlier branch/merge (schema baseline, CI, drops, rename, DigitalInternkort retirement). |
 | **M5** Unit of work | **Done.** Request-scoped `AsyncSession` middleware (`_install_request_session_middleware` in `app/main.py`); repositories use `self.session`; `execute_in_transaction` and `session_factory()` gone from `app/domain`/`app/auth`; `commit_request_session()` enforces commit-before-effect; Postgres rate limiter re-wired into `MobileCardService`; HMAC-SHA256 access codes. |
-| **M6** Boundaries | **Done (as scoped).** Central `table_defs/public.py` hub deleted; `app/db/tables.py` is the single metadata aggregator; importlinter carries a **domain-independence** contract alongside the layers contract (2 kept, verified to catch a cross-module service import); `semester_transfer` lives in `app/domain/role_assignments/`. |
+| **M6** Boundaries | **Done.** Central `table_defs/public.py` hub deleted; `app/db/tables.py` is the metadata aggregator; import-linter enforces layers, domain independence, domain/infrastructure seams, and web/infrastructure seams. Pure semester and phone helpers live in `app/shared`; storage and photo processing are injected protocols. |
 | **M7** State machine wiring | **Done.** `workflow.py` drives `application_transition()`; `domain_events` written in the same request transaction; atomic all-or-nothing group approval with post-commit emails; per-person approval of active grouped members blocked (guard + template); status literals only in `state_machine.py`; 50-case matrix. |
 | **M8** Security | Done earlier; this branch restored the Postgres limiter wiring and keyed code hashing (both had regressed in the develop merge). Mobile-card session revocability is the one open M8 item (below). |
 | **E2E** | **Done** (`tests/e2e/`): two-friend signup → emails → atomic group approval → deletion, plus an induced-failure atomicity test. Skips without `E2E_DATABASE_URL`. |
 | **M9** Auth | **Out of scope** (product decision). `permissions.py`/`SmsGateway` scaffolding exists, deliberately unused. |
+| **Local development** | Docker Postgres 17, migrations, deterministic synthetic seed, development-only auth, filesystem photo storage, and file-backed email are available through `make dev-up` / `make dev-run`. |
 
-### Verification battery (all green as of 755840a)
+### Verification battery (all green on 2026-06-13)
 
 ```bash
-DATABASE_URL=sqlite+aiosqlite:////tmp/kv.db uv run pytest -q --ignore=tests/e2e   # 264 passed
+DATABASE_URL=sqlite+aiosqlite:////tmp/kv.db uv run pytest -q --ignore=tests/e2e   # 275 passed
 uv run ruff check .            # clean
-uv run lint-imports            # 2 contracts kept, 0 broken
+uv run lint-imports            # 4 contracts kept, 0 broken
 DATABASE_URL=sqlite+aiosqlite:////tmp/kv-oas.db make openapi-check   # clean
+uv sync --locked && uv run pip-audit   # no known vulnerabilities
 ```
+
+`make dev-reset` also replayed the full migration chain and restored the local
+snapshot/seed. The Postgres lifecycle suite passed `2 passed`.
 
 ### Running the e2e suite (needs a migrated Postgres)
 
@@ -61,11 +68,9 @@ the real stack.
 
 ## TODO — to finish THIS changeset
 
-1. [ ] Re-run the full battery (four commands above) + e2e against Postgres
-       at the final commit.
-2. [ ] Push `restructure/m5-m9-completion`; open PR to `develop`. PR body:
-       M5 + M6 (boundary enforcement) + M7 wiring + M8 regression fixes +
-       e2e delivered; deferred items listed below as tracked follow-ups.
+1. [x] Re-run the full battery + e2e against Postgres at the final commit.
+2. [ ] Push the final commit series to PR #21 and refresh its body with the
+       boundary-hardening and local-development additions.
 3. [ ] Confirm GitHub Actions green. Both previous CI failure modes are fixed
        on this branch (`setup-bun@v2` pin; `rate_limits` registered in
        metadata so `schema-drift` passes) — verify they actually pass.
