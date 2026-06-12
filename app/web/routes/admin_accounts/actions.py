@@ -10,7 +10,6 @@ from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
 from app.dependencies import (
     get_admin_accounts_service,
-    get_email_sender,
     get_mobile_card_april_state_service,
     get_session_cookie_signer,
     get_session_store,
@@ -23,9 +22,6 @@ from app.observability import log_admin_activity
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.errors import NotConfiguredError
-from app.infrastructure.email.admin_account_templates import (
-    AdminAccountEmailTemplateRenderer,
-)
 from app.web.route_helpers import redirect_to
 
 _ADMIN_ACCESS_REQUIRED = "Admin access is required."
@@ -36,7 +32,6 @@ _ADMIN_ACCOUNTS_NEW_PATH = "/admin-accounts/new"
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 logger = logging.getLogger(__name__)
-admin_account_email_renderer = AdminAccountEmailTemplateRenderer()
 
 
 def _redirect_with_error(path: str, message: str):
@@ -216,7 +211,6 @@ async def admin_account_create(
     role: str = Form(...),
     current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
-    email_sender=Depends(get_email_sender),
     settings=Depends(get_settings),
     supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
@@ -258,16 +252,12 @@ async def admin_account_create(
                 request, settings.app_public_base_url
             ),
         )
-        rendered_email = admin_account_email_renderer.render_onboarding_email(
+        await admin_accounts_service.send_onboarding_email(
+            recipient_email=email.strip(),
             setup_url=setup_url,
             display_name=normalized_display_name,
             username=normalized_username,
             role_name=role_value.value,
-        )
-        await email_sender.send_email(
-            recipient_email=email.strip(),
-            subject=rendered_email.subject,
-            html_body=rendered_email.html_body,
         )
     except NotConfiguredError as exc:
         await _cleanup_failed_admin_creation(

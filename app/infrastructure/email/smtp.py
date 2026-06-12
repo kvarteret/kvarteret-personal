@@ -7,9 +7,10 @@ from email.utils import formataddr
 
 from app.config import Settings
 from app.errors import NotConfiguredError
+from app.infrastructure.email.protocols import EmailDeliveryError
 
 
-class SmtpDeliveryError(RuntimeError):
+class SmtpDeliveryError(EmailDeliveryError):
     """Raised when an email cannot be delivered via SMTP."""
 
 

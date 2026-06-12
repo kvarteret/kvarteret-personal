@@ -13,9 +13,9 @@ from app.infrastructure.email.applicant_templates import (
     ApplicantEmailTemplateRendererProtocol,
 )
 from app.infrastructure.email.protocols import EmailSenderProtocol
-from app.infrastructure.media.photo_processing import process_uploaded_photo
-from app.infrastructure.contact.phone_numbers import normalize_phone_number, normalize_required_phone_number
-from app.infrastructure.storage.service import StorageService
+from app.infrastructure.media.protocols import PhotoProcessorProtocol
+from app.shared.phone_numbers import normalize_phone_number, normalize_required_phone_number
+from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.volunteer_applications.side_effects import (
     VolunteerApplicationSideEffects,
 )
@@ -78,7 +78,8 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         email_sender: EmailSenderProtocol,
         volunteer_creator: VolunteerCreatorProtocol,
         applicant_email_renderer: ApplicantEmailTemplateRendererProtocol | None = None,
-        storage_service: StorageService | None = None,
+        storage_service: StorageProtocol | None = None,
+        photo_processor: PhotoProcessorProtocol | None = None,
         pending_count_cache_ttl_seconds: int = 30,
     ) -> None:
         super().__init__(
@@ -90,6 +91,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         self.email_sender = email_sender
         self.applicant_email_renderer = applicant_email_renderer or ApplicantEmailTemplateRenderer()
         self.storage_service = storage_service
+        self.photo_processor = photo_processor
         self.workflow = VolunteerApplicationWorkflow(
             operations=self,
             side_effects=VolunteerApplicationSideEffects(
@@ -274,7 +276,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         old_storage_path = _build_photo_storage_path(existing.photo_sha1, existing.photo_filetype)
         new_storage_path = old_storage_path
         uploaded_new_photo = False
-        storage_service: StorageService | None = None
+        storage_service: StorageProtocol | None = None
 
         if has_new_photo:
             photo_sha1, photo_filetype, new_storage_path, storage_service = await self._upload_new_photo(
@@ -303,7 +305,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
     async def _upload_new_photo(
         self, photo_filename: str, photo_content: bytes
-    ) -> tuple[str, str, str, StorageService]:
+    ) -> tuple[str, str, str, StorageProtocol]:
         safe_filename = _sanitize_filename(photo_filename)
         extension = _normalize_extension(safe_filename)
         if extension not in {"jpg", "jpeg", "png", "webp"}:
@@ -312,7 +314,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             )
         storage_service = self._require_storage_service()
         photo_sha1 = token_hex(20)
-        processed = process_uploaded_photo(
+        processed = self._require_photo_processor()(
             photo_content,
             max_upload_bytes=self.settings.photo_upload_max_bytes,
             max_dimension=self.settings.photo_max_dimension,
@@ -336,7 +338,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         old_storage_path: str | None,
         new_storage_path: str | None,
         uploaded_new_photo: bool,
-        storage_service: StorageService | None,
+        storage_service: StorageProtocol | None,
     ) -> None:
         try:
             await self.repository.save_submission(
@@ -654,7 +656,12 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
                     "Kan ikke godkjenne før alle gruppemedlemmer har sendt inn sin søknad."
                 )
 
-    def _require_storage_service(self) -> StorageService:
+    def _require_photo_processor(self) -> PhotoProcessorProtocol:
+        if self.photo_processor is None:
+            raise NotConfiguredError("Photo processing is not configured yet.")
+        return self.photo_processor
+
+    def _require_storage_service(self) -> StorageProtocol:
         if self.storage_service is None:
             raise NotConfiguredError("Supabase credentials are required for storage integration.")
         return self.storage_service

@@ -26,7 +26,7 @@ from app.infrastructure.media.photo_processing import (
     ProcessedPhoto,
     render_photo_variant,
 )
-from app.infrastructure.storage.service import StorageService
+from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.volunteers.service import VolunteersService
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ PHOTO_VARIANT_CACHE: TTLCache[tuple[str, int], ProcessedPhoto] = TTLCache(
 )
 
 
-def _get_storage_service(request: Request) -> StorageService:
+def _get_storage_service(request: Request) -> StorageProtocol:
     storage_service = request.app.state.container.storage_service
     if storage_service is None:
         raise HTTPException(
@@ -146,7 +146,7 @@ def _resolve_photo_size(size: int | None, default_size: int) -> int:
 
 
 def _load_photo_variant(
-    storage_service: StorageService, photo_path: str, size: int
+    storage_service: StorageProtocol, photo_path: str, size: int
 ) -> ProcessedPhoto:
     cache_key = (photo_path, size)
     cached = PHOTO_VARIANT_CACHE.get(cache_key)

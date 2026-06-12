@@ -21,10 +21,14 @@ from app.db.rate_limit import PostgresRateLimiter
 from app.db.session import DatabaseRuntimeManager
 from app.errors import NotConfiguredError
 from app.media_tokens import MediaTokenService
+from app.infrastructure.email.admin_account_templates import (
+    AdminAccountEmailTemplateRenderer,
+)
 from app.infrastructure.email.applicant_templates import ApplicantEmailTemplateRenderer
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
 )
+from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.email.smtp import SmtpEmailSender
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.domain.feedback.service import FeedbackService
@@ -48,6 +52,7 @@ from app.domain.role_assignments.repository import RoleAssignmentsRepository
 from app.domain.role_assignments.semester_transfer import SemesterTransferService
 from app.domain.role_assignments.service import RoleAssignmentsService
 from app.infrastructure.storage.service import StorageService
+from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.admin_accounts.repository import AdminAccountsRepository
 
@@ -105,7 +110,7 @@ class ApplicationContainer:
     media_token_service: MediaTokenService
     auth_repository: DatabaseAuthRepository
     session_store: SessionStoreProtocol
-    storage_service: StorageService | None
+    storage_service: StorageProtocol | None
     email_sender: EmailSenderProtocol
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
@@ -159,6 +164,7 @@ def build_application_container(
         repository=VolunteersRepository(),
         storage_service=storage_service,
         media_token_service=media_token_service,
+        photo_processor=process_uploaded_photo,
         detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
         photo_upload_max_bytes=resolved_settings.photo_upload_max_bytes,
         photo_max_dimension=resolved_settings.photo_max_dimension,
@@ -195,6 +201,8 @@ def build_application_container(
         admin_accounts_service=AdminAccountsService(
             repository=AdminAccountsRepository(),
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
+            email_sender=email_sender,
+            onboarding_email_renderer=AdminAccountEmailTemplateRenderer(),
         ),
         mobile_card_april_state_service=mobile_card_april_state_service,
         mobile_card_service=MobileCardService(
@@ -220,6 +228,7 @@ def build_application_container(
             email_sender=email_sender,
             applicant_email_renderer=applicant_email_renderer,
             storage_service=storage_service,
+            photo_processor=process_uploaded_photo,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),
         semester_transfer_service=SemesterTransferService(),

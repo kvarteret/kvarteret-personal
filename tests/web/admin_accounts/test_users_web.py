@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.auth.models import WebSession
 from app.auth.roles import UserRole
-from app.dependencies import get_admin_accounts_service, get_email_sender, get_session_store, get_supabase_auth_gateway
+from app.dependencies import get_admin_accounts_service, get_session_store, get_supabase_auth_gateway
 from app.main import create_app
 from app.domain.admin_accounts.service import AdminAccountDetail, AdminAccountListItem
 from tests.support.helpers import make_authenticated_user, override_authenticated_user
@@ -17,6 +17,7 @@ class FakeAdminAccountsService:
     def __init__(self) -> None:
         self.created_account = None
         self.deleted_account = None
+        self.sent_onboarding_emails = []
         self._details = {
             5: AdminAccountDetail(
                 user_account_id=5,
@@ -91,6 +92,30 @@ class FakeAdminAccountsService:
     async def delete_admin_account(self, *, user_account_id: int, auth_user_id) -> None:
         self.deleted_account = (user_account_id, auth_user_id)
         self._details.pop(user_account_id, None)
+
+    async def send_onboarding_email(
+        self,
+        *,
+        recipient_email: str,
+        setup_url: str,
+        display_name: str | None,
+        username: str,
+        role_name: str,
+    ) -> None:
+        self.sent_onboarding_emails.append(
+            {
+                "recipient_email": recipient_email,
+                "setup_url": setup_url,
+                "display_name": display_name,
+                "username": username,
+                "role_name": role_name,
+            }
+        )
+
+
+class FailingOnboardingEmailAdminAccountsService(FakeAdminAccountsService):
+    async def send_onboarding_email(self, **kwargs) -> None:
+        raise RuntimeError("smtp send failed")
 
 class FakeSupabaseAuthGateway:
     def __init__(self) -> None:
@@ -184,31 +209,11 @@ class FakeSessionStore:
         self.deleted_sessions.append(session_id)
 
 
-class FakeEmailSender:
-    def __init__(self) -> None:
-        self.sent_emails = []
-
-    async def send_email(self, *, recipient_email: str, subject: str, html_body: str) -> None:
-        self.sent_emails.append(
-            {
-                "recipient_email": recipient_email,
-                "subject": subject,
-                "html_body": html_body,
-            }
-        )
-
-
-class FailingEmailSender(FakeEmailSender):
-    async def send_email(self, *, recipient_email: str, subject: str, html_body: str) -> None:
-        raise RuntimeError("smtp send failed")
-
-
 def _make_client(role: UserRole = UserRole.ADMIN) -> TestClient:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user(role))
     app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: FakeSupabaseAuthGateway()
-    app.dependency_overrides[get_email_sender] = lambda: FakeEmailSender()
     return TestClient(app)
 
 
@@ -258,10 +263,8 @@ def test_admin_account_create_redirects_and_calls_services() -> None:
     override_authenticated_user(app, make_authenticated_user())
     admin_accounts_service = FakeAdminAccountsService()
     supabase_auth_gateway = FakeSupabaseAuthGateway()
-    email_sender = FakeEmailSender()
     app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
-    app.dependency_overrides[get_email_sender] = lambda: email_sender
     client = TestClient(app)
 
     response = client.post(
@@ -299,17 +302,19 @@ def test_admin_account_create_redirects_and_calls_services() -> None:
         "New Admin",
         UserRole.ADMIN,
     )
-    assert email_sender.sent_emails[0]["recipient_email"] == "new.admin@example.test"
-    assert "Set up your Kvarteret admin account" in email_sender.sent_emails[0]["subject"]
-    assert "https://supabase.example.test/verify?token=setup-token" in email_sender.sent_emails[0]["html_body"]
+    sent_email = admin_accounts_service.sent_onboarding_emails[0]
+    assert sent_email["recipient_email"] == "new.admin@example.test"
+    assert sent_email["setup_url"] == "https://supabase.example.test/verify?token=setup-token"
+    assert sent_email["username"] == "new.admin"
+    assert sent_email["display_name"] == "New Admin"
+    assert sent_email["role_name"] == "Admin"
 
 
 def test_admin_account_create_cleans_up_when_email_send_fails() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
-    admin_accounts_service = FakeAdminAccountsService()
+    admin_accounts_service = FailingOnboardingEmailAdminAccountsService()
     supabase_auth_gateway = FakeSupabaseAuthGateway()
-    app.dependency_overrides[get_email_sender] = lambda: FailingEmailSender()
     app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
     client = TestClient(app)
@@ -417,7 +422,6 @@ def test_admin_account_create_uses_safe_error_message_on_provider_failure() -> N
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: FailingSupabaseAuthGateway()
-    app.dependency_overrides[get_email_sender] = lambda: FakeEmailSender()
     client = TestClient(app)
 
     response = client.post(

@@ -15,7 +15,7 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.courses.tables import course_completions
 from app.domain.role_assignments.tables import role_assignments
 from app.domain.volunteer_applications.tables import volunteer_application_invites
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.shared.semester import get_current_semester_code
 from app.domain.volunteers.tables import (
     volunteer_cards,
     volunteer_next_of_kin,

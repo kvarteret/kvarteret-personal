@@ -21,7 +21,7 @@ from sqlalchemy import (
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
 from app.domain.volunteers.tables import volunteer_photos, volunteer_records
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.shared.semester import get_current_semester_code
 
 
 class _SearchColumns:

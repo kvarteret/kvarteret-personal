@@ -29,7 +29,7 @@ from app.domain.groups.queries import (
     SemesterRetentionStats,
     SemesterStats,
 )
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.shared.semester import get_current_semester_code
 
 __all__ = [
     "GroupBreakdownItem",

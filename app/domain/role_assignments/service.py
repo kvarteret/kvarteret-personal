@@ -22,7 +22,7 @@ from app.domain.role_assignments.models import (
     VolunteerNotFoundError,
 )
 from app.domain.role_assignments.repository import RoleAssignmentsRepository
-from app.infrastructure.formatting.semester import format_semester_code
+from app.shared.semester import format_semester_code
 
 
 class RoleAssignmentsService:

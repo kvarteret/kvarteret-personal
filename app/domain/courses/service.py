@@ -5,7 +5,7 @@ from time import perf_counter
 from typing import Protocol
 
 from app.observability import log_operation_timing
-from app.infrastructure.formatting.semester import format_semester_code
+from app.shared.semester import format_semester_code
 
 from app.domain.courses.models import (
     CourseCompletionItem,

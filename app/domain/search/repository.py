@@ -11,7 +11,7 @@ from app.domain.volunteers.tables import volunteer_records
 from app.shared.coercion import coerce_date
 from app.shared.text import build_full_name
 from app.domain.search.models import SearchFilterList, SearchQuery, SearchResultItem
-from app.infrastructure.formatting.semester import format_semester_code
+from app.shared.semester import format_semester_code
 
 
 class VolunteerSearchRepository(SqlAlchemyRepository):

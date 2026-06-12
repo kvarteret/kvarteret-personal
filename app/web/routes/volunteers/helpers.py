@@ -5,7 +5,7 @@ from fastapi import HTTPException, Request, status
 from app.auth.roles import UserRole
 from app.domain.courses.service import CoursesService
 from app.domain.volunteers.models import CardItem, NextOfKinItem
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.shared.semester import get_current_semester_code
 from app.domain.volunteers.options import SEMESTER_TERM_OPTIONS
 from app.domain.volunteers.service import VolunteersService
 from app.web.templates import templates

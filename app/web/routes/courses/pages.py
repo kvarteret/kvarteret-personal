@@ -9,7 +9,7 @@ from app.dependencies import (
     require_management_user,
 )
 from app.errors import NotConfiguredError
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.shared.semester import get_current_semester_code
 from app.domain.volunteers.options import SEMESTER_TERM_OPTIONS
 from app.domain.courses.service import CoursesService
 from app.web.route_helpers import not_configured_http_exception

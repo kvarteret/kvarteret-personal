@@ -25,7 +25,7 @@ from app.domain.volunteer_applications.models import (
     VolunteerApplicationInvite,
     VolunteerApplicationSubmissionInput,
 )
-from app.infrastructure.contact.phone_numbers import normalize_phone_number
+from app.shared.phone_numbers import normalize_phone_number
 from app.media_tokens import MediaTokenService
 
 

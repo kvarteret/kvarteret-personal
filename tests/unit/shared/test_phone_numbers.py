@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.infrastructure.contact.phone_numbers import (
+from app.shared.phone_numbers import (
     analyze_phone_number,
     is_obviously_false_phone_number,
     normalize_phone_number,
