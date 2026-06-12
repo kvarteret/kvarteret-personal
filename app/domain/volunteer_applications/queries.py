@@ -27,7 +27,7 @@ from app.domain.volunteer_applications.models import (
     VolunteerApplicationListItem,
     build_full_name,
 )
-from app.infrastructure.formatting.semester import format_semester_code
+from app.shared.semester import format_semester_code
 
 
 class VolunteerApplicationsQueries(SqlAlchemyRepository):
@@ -294,7 +294,7 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
     ) -> RecentVolunteerRegistrationPage:
         safe_limit = max(1, min(limit, 100))
         before_volunteer_id = _parse_recent_registration_cursor(cursor)
-        rows = await self.repository.list_recent_volunteer_registrations(
+        rows = await self.list_recent_volunteer_registrations(
             limit=safe_limit + 1,
             before_volunteer_id=before_volunteer_id,
         )
@@ -306,7 +306,7 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
         for group_id in group_ids:
             group_members_by_id[group_id] = [
                 self._map_recent_registration_row(row)
-                for row in await self.repository.list_recent_registration_group_members(group_id)
+                for row in await self.list_recent_registration_group_members(group_id)
             ]
         for item in items:
             if item.group_id is not None:

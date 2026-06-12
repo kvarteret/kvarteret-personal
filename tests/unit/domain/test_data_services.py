@@ -769,6 +769,12 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
         email_sender=FakeEmailSender(),
         pending_count_cache_ttl_seconds=60,
     )
+    service.list_recent_volunteer_registrations = (  # type: ignore[method-assign]
+        repository.list_recent_volunteer_registrations
+    )
+    service.list_recent_registration_group_members = (  # type: ignore[method-assign]
+        repository.list_recent_registration_group_members
+    )
 
     page = await service.list_recent_volunteer_registrations_page()
 
