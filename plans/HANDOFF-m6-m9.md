@@ -79,7 +79,7 @@ the real stack.
 
 ## TODO — deferred follow-ups (separate PRs)
 
-### A. M6 mechanical splits — DONE (2026-06-12)
+### A. M6 splits — DONE in full, including A4 (2026-06-12)
 
 1. [x] `volunteers` read/write split: `queries.py` (reads, detail cache,
        cursors) + `search_sql.py` (ranking SQL) + write-only repository;
@@ -91,12 +91,15 @@ the real stack.
 3. [x] `volunteer_applications` split: `models.py` (dataclasses, errors,
        protocols), `queries.py` (admin list, recent feed, pending count),
        write-side service/repository. Every file under the 800-line cap.
-4. [ ] Approval write through `VolunteersService.create_from_application`
-       — still deferred (design change; see the plan's Decision Log
-       2026-06-11). Today `volunteer_applications/repository.py::
-       approve_volunteer_application` inserts into `volunteer_records`/
-       `role_assignments`/`volunteer_photos` directly; the independence
-       contract is the enforced boundary.
+4. [x] Approval write through `VolunteersService.create_from_application`
+       (2026-06-12): the applications service reaches the volunteers
+       module through `VolunteerCreatorProtocol`, injected in
+       `runtime.py` — no static cross-module import, so the
+       independence contract needs no exception. The applications
+       repository keeps only its own invite update (`mark_promoted`)
+       and the role-match read. The e2e atomicity test induces its
+       failure inside the volunteers port and proves the group
+       approval still rolls back across the module boundary.
 
 ### B. M5 leftover — RESOLVED with split A1 (2026-06-12)
 
