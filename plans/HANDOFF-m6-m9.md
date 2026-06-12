@@ -1,6 +1,6 @@
 # Handoff: legacy restructure — what's left
 
-Updated 2026-06-12. Operational companion to `plans/legacy-restructure.md`
+Updated 2026-06-12 (post-split session). Operational companion to `plans/legacy-restructure.md`
 (read its `Progress` + `Decision Log` for the why; this file is the what).
 
 **Scope decisions (2026-06-11, recorded in the plan's Decision Log):**
@@ -12,15 +12,9 @@ Updated 2026-06-12. Operational companion to `plans/legacy-restructure.md`
 ## Branch and current state
 
 - Branch: `restructure/m5-m9-completion` (off `develop`). **Not yet pushed; no PR.**
-- Commits (newest first):
-  - `755840a` docs: record M5–M7/M6 completion and M6/M9 scope decisions in the plan
-  - `232cbfe` refactor(M6): relocate semester transfer into the role_assignments module
-  - `504730e` feat(M6): enforce domain-independence; eliminate central table re-export hub
-  - `85b062b` docs: handoff for remaining restructure work
-  - `ec955b9` test(e2e): full two-friend volunteer lifecycle on real Postgres
-  - `72b0230` feat(M7): wire the state machine into the volunteer application workflow
-  - `b4e56ee` feat(M5): adopt request-scoped unit of work across all repositories
-  - `33eb239` fix: green the build — pin setup-bun@v2, register rate_limits in metadata, ruff fixes
+- Commits (newest first): see `git log develop..` — M5/M6/M7 feature commits,
+  the e2e suite, the M6 read/write splits (volunteers, role_assignments,
+  volunteer_applications), and the doc updates.
 - Working tree is **clean**.
 
 ### What is DONE and verified on this branch
@@ -85,40 +79,32 @@ the real stack.
 
 ## TODO — deferred follow-ups (separate PRs)
 
-### A. M6 mechanical splits (low risk, mostly file-shuffling; one PR)
+### A. M6 mechanical splits — DONE (2026-06-12)
 
-Current sizes: `volunteer_applications` 3148 lines/dir, `volunteers` 2162
-(plan caps: ~1200/dir, ~800/file). The seams, in dependency order:
+1. [x] `volunteers` read/write split: `queries.py` (reads, detail cache,
+       cursors) + `search_sql.py` (ranking SQL) + write-only repository;
+       `VolunteersService(VolunteersQueries)` mirrors the groups pattern.
+2. [x] Position management moved to `app/domain/role_assignments/`
+       (service + repository + models); volunteers cache notified via a
+       callable injected in `runtime.py`; routes use
+       `get_role_assignments_service`.
+3. [x] `volunteer_applications` split: `models.py` (dataclasses, errors,
+       protocols), `queries.py` (admin list, recent feed, pending count),
+       write-side service/repository. Every file under the 800-line cap.
+4. [ ] Approval write through `VolunteersService.create_from_application`
+       — still deferred (design change; see the plan's Decision Log
+       2026-06-11). Today `volunteer_applications/repository.py::
+       approve_volunteer_application` inserts into `volunteer_records`/
+       `role_assignments`/`volunteer_photos` directly; the independence
+       contract is the enforced boundary.
 
-1. [ ] **`volunteers` read/write split** (~mechanical): pull list/search/
-       detail read models + cursor/caching out of `service.py`+`repository.py`
-       into `queries.py` (mirror `groups/queries.py`). ~450 lines move.
-2. [ ] **Position management → `role_assignments`** (mechanical but wide):
-       move add/update/delete of role assignments + course completions
-       (~350 lines) from `volunteers` into `app/domain/role_assignments/`;
-       rewire `app/dependencies.py`, `app/runtime.py`, and the six
-       volunteer-management route files; move matching tests.
-3. [ ] **`volunteer_applications` read/write split** (~mechanical): same
-       `queries.py` extraction for its list/detail read side; `service.py`
-       and `repository.py` drop under the file cap.
-4. [ ] **Approval write through `VolunteersService.create_from_application`**
-       (NOT mechanical — do last): today
-       `volunteer_applications/repository.py::approve_volunteer_application`
-       (~line 724) inserts into `volunteer_records`/`role_assignments`/
-       `volunteer_photos` directly. Routing it through `VolunteersService`
-       re-introduces a cross-module service edge the independence contract
-       must explicitly allow; deferred because doing only this one write is
-       inconsistent while other cross-module table writes remain.
-5. [ ] Acceptance: suite green, `lint-imports` green (2 contracts),
-       `find app/domain/* -name '*.py' | xargs wc -l` under caps.
+### B. M5 leftover — RESOLVED with split A1 (2026-06-12)
 
-### B. M5 leftover (annotation hygiene, mechanical)
-
-- [ ] Replace the 10 `dict[str, Any]` returns in
-      `app/domain/volunteers/repository.py` with typed rows; the `from_row`
-      validation already happens at every call site, so this is moving the
-      validation one level down and fixing annotations. Entangled with the
-      cursor/photo-url row access — cleanest done together with split A1.
+- [x] The write-side `volunteers/repository.py` no longer carries
+      `dict[str, Any]` read signatures; reads live in `queries.py`, which
+      validates into typed models (`from_row`) before returning. The row
+      fetchers on the queries classes remain mapping-based internals —
+      they are the test seam, not public repository contract.
 
 ### C. M8 leftover
 
