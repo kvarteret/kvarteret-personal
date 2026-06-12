@@ -18,7 +18,7 @@ from app.domain.groups.service import (
     GroupRoleDeleteBlockedError,
     GroupsService,
 )
-from app.domain.volunteers.semester_transfer import (
+from app.domain.role_assignments.semester_transfer import (
     SemesterTransferEntry,
     SemesterTransferService,
 )

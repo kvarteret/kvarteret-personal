@@ -34,7 +34,7 @@ from app.domain.groups.service import (
     SemesterRetentionStats,
     SemesterStats,
 )
-from app.domain.volunteers.semester_transfer import SemesterTransferCandidate, SemesterTransferPreview
+from app.domain.role_assignments.semester_transfer import SemesterTransferCandidate, SemesterTransferPreview
 from app.domain.volunteers.models import VolunteerSearchOption
 from tests.support.helpers import make_authenticated_user, override_authenticated_user
 

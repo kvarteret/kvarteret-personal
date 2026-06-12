@@ -21,7 +21,7 @@ from app.domain.spotify.now_playing import NowPlayingService
 from app.domain.volunteers.service import VolunteersService
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
 from app.domain.search import VolunteerSearchService
-from app.domain.volunteers.semester_transfer import SemesterTransferService
+from app.domain.role_assignments.semester_transfer import SemesterTransferService
 from app.domain.admin_accounts.service import AdminAccountsService
 
 logger = logging.getLogger(__name__)
