@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.auth.roles import UserRole
 from app.dependencies import get_volunteer_applications_service, get_volunteers_service
 from app.main import create_app
-from app.domain.volunteer_applications.service import (
+from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationInput,
     RecentVolunteerRegistrationItem,
     RecentVolunteerRegistrationPage,
