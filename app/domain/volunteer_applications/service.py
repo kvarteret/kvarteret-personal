@@ -3,12 +3,8 @@ from __future__ import annotations
 import logging
 import re
 from asyncio import to_thread
-from dataclasses import dataclass
-from datetime import date, datetime
 from secrets import token_hex, token_urlsafe
-from typing import Protocol
 
-from app.cache import TTLCache
 from app.config import Settings
 from app.db.session import commit_request_session
 from app.errors import NotConfiguredError
@@ -19,7 +15,6 @@ from app.infrastructure.email.applicant_templates import (
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.contact.phone_numbers import normalize_phone_number, normalize_required_phone_number
-from app.infrastructure.formatting.semester import format_semester_code
 from app.infrastructure.storage.service import StorageService
 from app.domain.volunteer_applications.side_effects import (
     VolunteerApplicationSideEffects,
@@ -29,6 +24,24 @@ from app.domain.volunteer_applications.state_machine import (
     IllegalTransition,
     MembershipState,
 )
+from app.domain.volunteer_applications.models import (
+    ActiveVolunteerRegistrationExistsError,
+    PublicProspectRegistrationInput,
+    PublicProspectRegistrationResult,
+    VolunteerAlreadyExistsError,
+    VolunteerApplicationConflictError,
+    VolunteerApplicationDetail,
+    VolunteerApplicationFieldConflictError,
+    VolunteerApplicationFieldValidationError,
+    VolunteerApplicationGroupMember,
+    VolunteerApplicationInvite,
+    VolunteerApplicationNotFoundError,
+    VolunteerApplicationValidationError,
+    VolunteerApplicationsRepositoryProtocol,
+    VolunteerApplicationSubmissionInput,
+    build_full_name as _build_full_name,
+)
+from app.domain.volunteer_applications.queries import VolunteerApplicationsQueries
 from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkflow
 
 _REGISTRATION_NOT_FOUND = "Registration was not found."
@@ -56,342 +69,7 @@ PUBLIC_PROSPECT_GROUPS = {
 logger = logging.getLogger(__name__)
 
 
-class VolunteerApplicationsError(RuntimeError):
-    pass
-
-
-class VolunteerApplicationNotFoundError(VolunteerApplicationsError):
-    pass
-
-
-class VolunteerApplicationConflictError(VolunteerApplicationsError):
-    pass
-
-
-class VolunteerApplicationValidationError(VolunteerApplicationsError):
-    pass
-
-
-class VolunteerAlreadyExistsError(VolunteerApplicationConflictError):
-    def __init__(self, volunteer_id: int, email: str) -> None:
-        self.volunteer_id = volunteer_id
-        self.email = email
-        super().__init__(f"A volunteer with this email already exists (id={volunteer_id}).")
-
-
-class VolunteerApplicationFieldValidationError(VolunteerApplicationValidationError):
-    def __init__(self, message: str, field_errors: dict[str, object]) -> None:
-        self.field_errors = field_errors
-        super().__init__(message)
-
-
-class VolunteerApplicationFieldConflictError(VolunteerApplicationConflictError):
-    def __init__(self, message: str, field_errors: dict[str, object]) -> None:
-        self.field_errors = field_errors
-        super().__init__(message)
-
-
-class ActiveVolunteerRegistrationExistsError(VolunteerApplicationConflictError):
-    def __init__(self, registration_id: int, email: str) -> None:
-        self.registration_id = registration_id
-        self.email = email
-        super().__init__(f"An active volunteer application with this email already exists (id={registration_id}).")
-
-
-@dataclass(slots=True)
-class VolunteerApplicationInvite:
-    registration_id: int
-    token: str
-    email: str
-    created_at: datetime
-    initial_group_id: int | None = None
-    initial_group_name: str | None = None
-    initial_role_id: int | None = None
-    initial_role_name: str | None = None
-
-
-@dataclass(slots=True)
-class VolunteerApplicationFriendInvite:
-    registration_id: int
-    token: str
-    email: str
-    inviter_name: str
-    first_choice_group_name: str
-
-
-@dataclass(slots=True)
-class PublicProspectRegistrationResult:
-    detail: "VolunteerApplicationDetail"
-    friend_invites: list[VolunteerApplicationFriendInvite]
-
-
-@dataclass(slots=True)
-class VolunteerApplicationGroupMember:
-    group_id: int
-    registration_id: int | None
-    email: str
-    role: str
-    status: str
-    submitted: bool
-    pending_volunteer_id: int | None
-    first_name: str | None
-    last_name: str | None
-    trial_shift_attended: bool
-    promoted_volunteer_id: int | None
-    dropped_at: datetime | None = None
-
-    @property
-    def active(self) -> bool:
-        return self.status == MembershipState.ACTIVE
-
-    @property
-    def display_name(self) -> str:
-        return _build_full_name(self.first_name, self.last_name or "") or self.email
-
-
-@dataclass(slots=True)
-class VolunteerApplicationListItem:
-    registration_id: int
-    token: str
-    email: str
-    created_at: datetime
-    submitted: bool
-    source: str
-    status: str
-    pending_volunteer_id: int | None
-    first_name: str | None
-    last_name: str | None
-    phone: str | None
-    study_institution: str | None
-    background_details: str | None
-    initial_group_id: int | None = None
-    initial_group_name: str | None = None
-    initial_role_id: int | None = None
-    initial_role_name: str | None = None
-    first_choice_group_id: int | None = None
-    first_choice_group_name: str | None = None
-    second_choice_group_id: int | None = None
-    second_choice_group_name: str | None = None
-    trial_shift_attended: bool = False
-    promoted_volunteer_id: int | None = None
-    promoted_at: datetime | None = None
-    group_id: int | None = None
-    group_role: str | None = None
-    group_status: str | None = None
-    group_members: list[VolunteerApplicationGroupMember] | None = None
-
-
-@dataclass(slots=True)
-class VolunteerApplicationDetail:
-    registration_id: int
-    token: str
-    email: str
-    created_at: datetime
-    submitted: bool
-    source: str
-    status: str
-    pending_volunteer_id: int | None
-    first_name: str | None
-    last_name: str | None
-    phone: str | None
-    birth_date: date | None
-    gender: str | None
-    address: str | None
-    postal_code: str | None
-    photo_sha1: str | None
-    photo_filetype: str | None
-    photo_url: str | None
-    study_institution: str | None
-    background_details: str | None
-    initial_group_id: int | None = None
-    initial_group_name: str | None = None
-    initial_role_id: int | None = None
-    initial_role_name: str | None = None
-    first_choice_group_id: int | None = None
-    first_choice_group_name: str | None = None
-    second_choice_group_id: int | None = None
-    second_choice_group_name: str | None = None
-    trial_shift_attended: bool = False
-    trial_shift_marked_at: datetime | None = None
-    promoted_volunteer_id: int | None = None
-    promoted_at: datetime | None = None
-    group_id: int | None = None
-    group_role: str | None = None
-    group_status: str | None = None
-    group_members: list[VolunteerApplicationGroupMember] | None = None
-
-    @property
-    def is_part_of_active_group(self) -> bool:
-        """True when this application belongs to an active group with
-        other active members — per-person approval is then illegal."""
-        if not self.group_id or self.group_status != MembershipState.ACTIVE:
-            return False
-        return any(
-            member.active and member.registration_id != self.registration_id
-            for member in self.group_members or []
-        )
-
-
-@dataclass(slots=True)
-class RecentVolunteerRegistrationItem:
-    volunteer_id: int
-    first_name: str | None
-    last_name: str
-    full_name: str
-    email: str | None
-    phone: str | None
-    created_at: datetime
-    latest_group_name: str | None
-    latest_role_name: str | None
-    latest_semester_code: int | None = None
-    latest_semester_label: str | None = None
-    photo_url: str | None = None
-    registration_id: int | None = None
-    group_id: int | None = None
-    group_role: str | None = None
-    group_status: str | None = None
-    group_members: list[RecentVolunteerRegistrationItem] | None = None
-    renders_group: bool = False
-
-
-@dataclass(slots=True)
-class RecentVolunteerRegistrationPage:
-    items: list[RecentVolunteerRegistrationItem]
-    limit: int
-    cursor: str | None
-    next_cursor: str | None
-
-
-@dataclass(slots=True)
-class VolunteerApplicationSubmissionInput:
-    first_name: str | None
-    last_name: str
-    phone: str | None
-    birth_date: date | None
-    gender: str
-    address: str | None
-    postal_code: str | None
-
-
-@dataclass(slots=True)
-class PublicProspectRegistrationInput:
-    full_name: str
-    email: str
-    phone: str
-    study_institution: str
-    background_details: str | None
-    first_choice_group_slug: str
-    second_choice_group_slug: str | None
-    friend_emails: list[str] | None = None
-
-
-class VolunteerApplicationsServiceProtocol(Protocol):
-    async def create_public_prospect_registration(
-        self,
-        registration: PublicProspectRegistrationInput,
-        *,
-        base_url: str | None = None,
-    ) -> VolunteerApplicationDetail: ...
-    async def create_volunteer_application_invitation(
-        self,
-        email: str,
-        *,
-        base_url: str | None = None,
-        initial_group_id: int | None = None,
-        initial_role_id: int | None = None,
-    ) -> VolunteerApplicationInvite: ...
-    async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]: ...
-    async def list_recent_volunteer_registrations_page(
-        self,
-        limit: int = 20,
-        cursor: str | None = None,
-    ) -> RecentVolunteerRegistrationPage: ...
-    async def count_pending_volunteer_applications(self) -> int: ...
-    async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
-    async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
-    async def submit_volunteer_application(
-        self,
-        token: str,
-        submission: VolunteerApplicationSubmissionInput,
-        *,
-        base_url: str | None = None,
-        photo_filename: str | None = None,
-        photo_content: bytes | None = None,
-        photo_content_type: str | None = None,
-    ) -> VolunteerApplicationDetail: ...
-    async def mark_trial_shift_attended(self, registration_id: int, *, attended: bool) -> VolunteerApplicationDetail: ...
-    async def approve_volunteer_application(
-        self,
-        registration_id: int,
-        *,
-        accepted_group_id: int | None = None,
-        base_url: str | None = None,
-    ) -> int: ...
-    async def delete_volunteer_application(self, registration_id: int) -> None: ...
-    async def resend_volunteer_application_invitation(
-        self,
-        registration_id: int,
-        *,
-        base_url: str | None = None,
-    ) -> VolunteerApplicationDetail: ...
-
-
-class VolunteerApplicationsRepositoryProtocol(Protocol):
-    async def create_public_prospect_registration(
-        self,
-        *,
-        token: str,
-        email: str,
-        first_name: str | None,
-        last_name: str,
-        phone: str | None,
-        study_institution: str | None,
-        background_details: str | None,
-        first_choice_group_id: int,
-        second_choice_group_id: int | None,
-        friend_invites: list[tuple[str, str]] | None = None,
-        inviter_name: str | None = None,
-        first_choice_group_name: str | None = None,
-    ) -> PublicProspectRegistrationResult: ...
-    async def create_volunteer_application_invitation(
-        self,
-        *,
-        email: str,
-        token: str,
-        initial_group_id: int | None = None,
-        initial_role_id: int | None = None,
-    ) -> VolunteerApplicationInvite: ...
-    async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]: ...
-    async def list_recent_volunteer_registrations(self, *, limit: int, before_volunteer_id: int | None = None) -> list[dict]: ...
-    async def list_recent_registration_group_members(self, group_id: int) -> list[dict]: ...
-    async def count_pending_volunteer_applications(self) -> int: ...
-    async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
-    async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
-    async def find_group_ids_by_names(self, names: list[str]) -> dict[str, int]: ...
-    async def save_submission(
-        self,
-        *,
-        registration_id: int,
-        email: str,
-        submission: VolunteerApplicationSubmissionInput,
-        photo_sha1: str | None,
-        photo_filetype: str | None,
-    ) -> None: ...
-    async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None: ...
-    async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
-    async def find_active_registration_id_by_email(self, email: str) -> int | None: ...
-    async def list_group_members(self, group_id: int, *, include_dropped: bool = True) -> list[VolunteerApplicationGroupMember]: ...
-    async def drop_group_invitee(self, registration_id: int, *, dropped_by_user_id: int | None = None) -> None: ...
-    async def approve_volunteer_application(
-        self,
-        registration: VolunteerApplicationDetail,
-        *,
-        accepted_group_id: int | None,
-    ) -> int: ...
-    async def delete_volunteer_application(self, registration_id: int) -> None: ...
-
-
-class VolunteerApplicationsService:
+class VolunteerApplicationsService(VolunteerApplicationsQueries):
     def __init__(
         self,
         settings: Settings,
@@ -401,15 +79,14 @@ class VolunteerApplicationsService:
         storage_service: StorageService | None = None,
         pending_count_cache_ttl_seconds: int = 30,
     ) -> None:
+        super().__init__(
+            repository=repository,
+            pending_count_cache_ttl_seconds=pending_count_cache_ttl_seconds,
+        )
         self.settings = settings
-        self.repository = repository
         self.email_sender = email_sender
         self.applicant_email_renderer = applicant_email_renderer or ApplicantEmailTemplateRenderer()
         self.storage_service = storage_service
-        self._pending_count_cache: TTLCache[str, int] = TTLCache(
-            ttl_seconds=pending_count_cache_ttl_seconds,
-            max_entries=1,
-        )
         self.workflow = VolunteerApplicationWorkflow(
             operations=self,
             side_effects=VolunteerApplicationSideEffects(
@@ -536,83 +213,6 @@ class VolunteerApplicationsService:
             initial_role_id=initial_role_id,
         )
         return invite
-
-    async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
-        return await self.repository.list_volunteer_applications()
-
-    async def list_recent_volunteer_registrations_page(
-        self,
-        limit: int = 20,
-        cursor: str | None = None,
-    ) -> RecentVolunteerRegistrationPage:
-        safe_limit = max(1, min(limit, 100))
-        before_volunteer_id = _parse_recent_registration_cursor(cursor)
-        rows = await self.repository.list_recent_volunteer_registrations(
-            limit=safe_limit + 1,
-            before_volunteer_id=before_volunteer_id,
-        )
-        has_more = len(rows) > safe_limit
-        visible_rows = rows[:safe_limit]
-        items = [self._map_recent_registration_row(row) for row in visible_rows]
-        group_ids = sorted({item.group_id for item in items if item.group_id is not None})
-        group_members_by_id: dict[int, list[RecentVolunteerRegistrationItem]] = {}
-        for group_id in group_ids:
-            group_members_by_id[group_id] = [
-                self._map_recent_registration_row(row)
-                for row in await self.repository.list_recent_registration_group_members(group_id)
-            ]
-        for item in items:
-            if item.group_id is not None:
-                item.group_members = group_members_by_id.get(item.group_id, [])
-        seen_group_ids: set[int] = set()
-        for item in items:
-            if item.group_id is not None and item.group_id not in seen_group_ids:
-                item.renders_group = True
-                seen_group_ids.add(item.group_id)
-        return RecentVolunteerRegistrationPage(
-            items=items,
-            limit=safe_limit,
-            cursor=cursor,
-            next_cursor=str(visible_rows[-1]["id"]) if has_more and visible_rows else None,
-        )
-
-    def _map_recent_registration_row(self, row: dict) -> RecentVolunteerRegistrationItem:
-        return RecentVolunteerRegistrationItem(
-            volunteer_id=row["id"],
-            first_name=row["first_name"],
-            last_name=row["last_name"],
-            full_name=_build_full_name(row["first_name"], row["last_name"]),
-            email=row["email"],
-            phone=row["phone"],
-            created_at=row["created_at"],
-            latest_group_name=row["latest_group_name"],
-            latest_role_name=row["latest_role_name"],
-            latest_semester_code=row["latest_semester_code"],
-            latest_semester_label=(
-                format_semester_code(row["latest_semester_code"])
-                if row["latest_semester_code"] is not None
-                else None
-            ),
-            photo_url=(
-                self.repository.media_token_service.build_photo_media_url(
-                    f"{row['photo_sha1']}.{row['photo_filetype']}"
-                )
-                if row.get("photo_sha1") and row.get("photo_filetype") and self.repository.media_token_service is not None
-                else None
-            ),
-            registration_id=row.get("registration_id"),
-            group_id=row.get("group_id"),
-            group_role=row.get("group_role"),
-            group_status=row.get("group_status"),
-        )
-
-    async def count_pending_volunteer_applications(self) -> int:
-        cached_count = self._pending_count_cache.get("pending-count")
-        if cached_count is not None:
-            return cached_count
-        pending_count = await self.repository.count_pending_volunteer_applications()
-        self._pending_count_cache.set("pending-count", pending_count)
-        return pending_count
 
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None:
         return await self.repository.get_volunteer_application_detail(registration_id)
@@ -1031,13 +631,6 @@ class VolunteerApplicationsService:
             raise NotConfiguredError("Supabase credentials are required for storage integration.")
         return self.storage_service
 
-    def _invalidate_pending_count_cache(self) -> None:
-        self._pending_count_cache.pop("pending-count")
-
-    def invalidate_pending_count_cache(self) -> None:
-        """Public entry point for event handlers to invalidate the pending count cache."""
-        self._invalidate_pending_count_cache()
-
     async def _send_invitation_email(self, *, email: str, token: str, base_url: str | None = None) -> None:
         resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
         if not resolved_base_url:
@@ -1088,23 +681,6 @@ class VolunteerApplicationsService:
             subject=rendered_email.subject,
             html_body=rendered_email.html_body,
         )
-
-
-def _parse_recent_registration_cursor(cursor: str | None) -> int | None:
-    if cursor is None:
-        return None
-    stripped = cursor.strip()
-    if not stripped:
-        return None
-    try:
-        volunteer_id = int(stripped)
-    except ValueError:
-        return None
-    return volunteer_id if volunteer_id > 0 else None
-
-
-def _build_full_name(first_name: str | None, last_name: str) -> str:
-    return " ".join(part for part in [first_name or "", last_name] if part.strip()).strip() or last_name
 
 
 def _split_full_name(full_name: str) -> tuple[str | None, str]:
