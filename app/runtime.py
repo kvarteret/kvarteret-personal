@@ -44,7 +44,7 @@ from app.domain.mobile_card.service import MobileCardService
 from app.domain.volunteers.service import VolunteersService
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
 from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
-from app.domain.volunteers.semester_transfer import SemesterTransferService
+from app.domain.role_assignments.semester_transfer import SemesterTransferService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.admin_accounts.repository import AdminAccountsRepository
