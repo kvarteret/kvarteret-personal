@@ -1,0 +1,24 @@
+name: kvarteret-personal-dev
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: kvarteret_personal_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55432:5432"
+    volumes:
+      - dev-db-data:/var/lib/postgresql/data
+      # Supabase compatibility stubs (roles, auth.uid(), storage schema)
+      # run once on first init of the data volume.
+      - ./scripts/dev/supabase_stubs.sql:/docker-entrypoint-initdb.d/10-supabase-stubs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kvarteret_personal_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  dev-db-data:
