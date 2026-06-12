@@ -281,7 +281,6 @@ async def test_group_approval_is_atomic_when_second_member_fails(
     app, e2e_engine, email_outbox, monkeypatch
 ):
     group_id = await _seed_group(e2e_engine)
-    service = app.state.container.volunteer_applications_service
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
@@ -301,20 +300,19 @@ async def test_group_approval_is_atomic_when_second_member_fails(
             )
         emails_before = len(email_outbox.sent)
 
-        real_approve = service.repository.approve_volunteer_application
+        # Approval now creates volunteers through the volunteers module's
+        # onboarding port; fail there on the second member.
+        volunteers = app.state.container.volunteers_service
+        real_create = volunteers.create_from_application
         calls = {"n": 0}
 
-        async def flaky_approve(registration, *, accepted_group_id):
+        async def flaky_create(**kwargs):
             calls["n"] += 1
             if calls["n"] == 2:
                 raise RuntimeError("induced failure on second member")
-            return await real_approve(
-                registration, accepted_group_id=accepted_group_id
-            )
+            return await real_create(**kwargs)
 
-        monkeypatch.setattr(
-            service.repository, "approve_volunteer_application", flaky_approve
-        )
+        monkeypatch.setattr(volunteers, "create_from_application", flaky_create)
 
         group_row = await _fetch_all(
             e2e_engine, "SELECT id FROM public.volunteer_application_groups"

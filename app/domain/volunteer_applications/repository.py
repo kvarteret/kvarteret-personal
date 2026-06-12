@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repository import SqlAlchemyRepository
 from app.domain.admin_accounts.tables import group_admin_memberships, user_accounts
 from app.domain.groups.tables import groups
-from app.domain.role_assignments.tables import assignment_roles, role_assignments
+from app.domain.role_assignments.tables import assignment_roles
 from app.domain.volunteer_applications.tables import volunteer_application_group_members, volunteer_application_groups, volunteer_application_invites, volunteer_application_submissions
 from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.domain.volunteer_applications.state_machine import (
@@ -19,7 +19,6 @@ from app.domain.volunteer_applications.state_machine import (
 from app.domain.volunteer_applications.tables import domain_events
 from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationResult,
-    VolunteerApplicationConflictError,
     VolunteerApplicationDetail,
     VolunteerApplicationFriendInvite,
     VolunteerApplicationGroupMember,
@@ -27,7 +26,6 @@ from app.domain.volunteer_applications.models import (
     VolunteerApplicationSubmissionInput,
 )
 from app.infrastructure.contact.phone_numbers import normalize_phone_number
-from app.infrastructure.formatting.semester import get_current_semester_code
 from app.media_tokens import MediaTokenService
 
 
@@ -476,78 +474,35 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         session = self.session
         return [row for row in await session.scalars(stmt)]
 
-    async def approve_volunteer_application(
-        self,
-        registration: VolunteerApplicationDetail,
-        *,
-        accepted_group_id: int | None,
-    ) -> int:
-        session = self.session
-        if (
-            registration.initial_role_id is not None
-            and accepted_group_id is not None
-        ):
-            role_match = await session.scalar(
+    async def role_matches_group(self, *, role_id: int, group_id: int) -> bool:
+        return bool(
+            await self.fetch_scalar(
                 select(
                     exists().where(
-                        assignment_roles.c.id == registration.initial_role_id,
-                        assignment_roles.c.group_id == accepted_group_id,
+                        assignment_roles.c.id == role_id,
+                        assignment_roles.c.group_id == group_id,
                     )
                 )
             )
-            if not role_match:
-                raise VolunteerApplicationConflictError(
-                    "The selected initial assignment_roles is no longer valid for the chosen group."
-                )
-        inserted = (
-            (
-                await session.execute(
-                    insert(volunteer_records)
-                    .values(
-                        first_name=registration.first_name,
-                        last_name=registration.last_name or "",
-                        email=registration.email,
-                        gender=registration.gender or "A",
-                        birth_date=registration.birth_date,
-                        street_address=registration.address,
-                        postal_code=registration.postal_code,
-                        phone=normalize_phone_number(registration.phone),
-                    )
-                    .returning(volunteer_records.c.id)
-                )
-            )
-            .mappings()
-            .one()
         )
-        if registration.photo_sha1 and registration.photo_filetype:
-            await session.execute(
-                insert(volunteer_photos).values(
-                    volunteer_id=inserted["id"],
-                    sha1=registration.photo_sha1,
-                    filetype=registration.photo_filetype,
-                )
-            )
-        if accepted_group_id is not None:
-            await session.execute(
-                insert(role_assignments).values(
-                    volunteer_id=inserted["id"],
-                    group_id=accepted_group_id,
-                    role_id=registration.initial_role_id,
-                    semester=get_current_semester_code(),
-                    contract_signed=False,
-                )
-            )
-        await session.execute(
+
+    async def mark_promoted(
+        self,
+        *,
+        registration_id: int,
+        volunteer_id: int,
+        accepted_group_id: int,
+    ) -> None:
+        await self.execute(
             update(volunteer_application_invites)
-            .where(volunteer_application_invites.c.id == registration.registration_id)
+            .where(volunteer_application_invites.c.id == registration_id)
             .values(
-                promoted_volunteer_id=inserted["id"],
+                promoted_volunteer_id=volunteer_id,
                 promoted_at=func.now(),
                 status=ApplicationState.PROMOTED,
                 initial_group_id=accepted_group_id,
             )
         )
-        return inserted["id"]
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         session = self.session

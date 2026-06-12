@@ -295,6 +295,31 @@ class VolunteerApplicationsServiceProtocol(Protocol):
     ) -> VolunteerApplicationDetail: ...
 
 
+class VolunteerCreatorProtocol(Protocol):
+    """Port to the volunteers module: onboarding on approval.
+
+    Satisfied by ``VolunteersService``; wired in ``app/runtime.py`` so
+    the applications module never imports another module's service.
+    """
+
+    async def create_from_application(
+        self,
+        *,
+        first_name: str | None,
+        last_name: str,
+        email: str | None,
+        gender: str,
+        birth_date: date | None,
+        street_address: str | None,
+        postal_code: str | None,
+        phone: str | None,
+        photo_sha1: str | None,
+        photo_filetype: str | None,
+        group_id: int,
+        role_id: int | None,
+    ) -> int: ...
+
+
 class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def create_public_prospect_registration(
         self,
@@ -341,10 +366,8 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def find_active_registration_id_by_email(self, email: str) -> int | None: ...
     async def list_group_members(self, group_id: int, *, include_dropped: bool = True) -> list[VolunteerApplicationGroupMember]: ...
     async def drop_group_invitee(self, registration_id: int, *, dropped_by_user_id: int | None = None) -> None: ...
-    async def approve_volunteer_application(
-        self,
-        registration: VolunteerApplicationDetail,
-        *,
-        accepted_group_id: int | None,
-    ) -> int: ...
+    async def role_matches_group(self, *, role_id: int, group_id: int) -> bool: ...
+    async def mark_promoted(
+        self, *, registration_id: int, volunteer_id: int, accepted_group_id: int
+    ) -> None: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...

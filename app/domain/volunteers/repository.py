@@ -15,6 +15,7 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.courses.tables import course_completions
 from app.domain.role_assignments.tables import role_assignments
 from app.domain.volunteer_applications.tables import volunteer_application_invites
+from app.infrastructure.formatting.semester import get_current_semester_code
 from app.domain.volunteers.tables import (
     volunteer_cards,
     volunteer_next_of_kin,
@@ -137,6 +138,63 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_photos.c.volunteer_id == volunteer_id
             )
         )
+
+    async def create_from_application(
+        self,
+        *,
+        first_name: str | None,
+        last_name: str,
+        email: str | None,
+        gender: str,
+        birth_date,
+        street_address: str | None,
+        postal_code: str | None,
+        phone: str | None,
+        photo_sha1: str | None,
+        photo_filetype: str | None,
+        group_id: int,
+        role_id: int | None,
+    ) -> int:
+        """Onboard a volunteer promoted from an application.
+
+        Creates the volunteer record with its photo and the initial role
+        assignment — the same row family ``delete_volunteer`` removes on
+        offboarding. Called by the applications workflow through the
+        ``VolunteerCreatorProtocol`` port wired in ``app/runtime.py``.
+        """
+        inserted = await self.execute_one_mapping(
+            insert(volunteer_records)
+            .values(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                gender=gender,
+                birth_date=birth_date,
+                street_address=street_address,
+                postal_code=postal_code,
+                phone=phone,
+            )
+            .returning(volunteer_records.c.id)
+        )
+        volunteer_id = int(inserted["id"])
+        if photo_sha1 and photo_filetype:
+            await self.execute(
+                insert(volunteer_photos).values(
+                    volunteer_id=volunteer_id,
+                    sha1=photo_sha1,
+                    filetype=photo_filetype,
+                )
+            )
+        await self.execute(
+            insert(role_assignments).values(
+                volunteer_id=volunteer_id,
+                group_id=group_id,
+                role_id=role_id,
+                semester=get_current_semester_code(),
+                contract_signed=False,
+            )
+        )
+        return volunteer_id
 
     async def delete_volunteer(self, volunteer_id: int) -> None:
         # Detach the application record instead of deleting it: the

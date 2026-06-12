@@ -213,6 +213,7 @@ def build_application_container(
         ),
         volunteer_applications_service=VolunteerApplicationsService(
             settings=resolved_settings,
+            volunteer_creator=volunteers_service,
             repository=VolunteerApplicationsRepository(
                 media_token_service=media_token_service,
             ),
