@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from asyncio import to_thread
 from typing import Any, Awaitable, Callable
-from app.infrastructure.storage.service import StorageService
+from app.infrastructure.storage.protocols import StorageProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class VolunteerApplicationSideEffects:
         send_invitation_email: SendInvitationEmail,
         send_friend_invitation_email: SendFriendInvitationEmail,
         send_profile_completion_email: SendProfileCompletionEmail,
-        storage_service: StorageService | None = None,
+        storage_service: StorageProtocol | None = None,
     ) -> None:
         self.invalidate_pending_count_cache = invalidate_pending_count_cache
         self.send_invitation_email = send_invitation_email

@@ -10,6 +10,7 @@ from app.domain.volunteers.service import (
     VolunteersService,
     VolunteerDetail,
 )
+from app.infrastructure.media.photo_processing import process_uploaded_photo
 
 
 def _build_png_bytes() -> bytes:
@@ -176,6 +177,7 @@ async def test_upload_photo_normalizes_to_jpeg_before_storage() -> None:
         repository=FakeRepository(),  # type: ignore[arg-type]
         storage_service=FakeStorage(),  # type: ignore[arg-type]
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
+        photo_processor=process_uploaded_photo,
     )
 
     result = await service.upload_photo(

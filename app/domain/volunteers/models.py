@@ -7,7 +7,7 @@ from typing import Any, Protocol
 from app.shared.coercion import coerce_date, require_datetime
 from app.shared.text import build_full_name
 from app.domain.volunteers.options import gender_label, normalize_gender_code
-from app.infrastructure.formatting.semester import format_semester_code
+from app.shared.semester import format_semester_code
 
 
 class VolunteersServiceError(RuntimeError):

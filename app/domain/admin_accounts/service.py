@@ -8,10 +8,15 @@ from uuid import UUID
 
 from app.auth.roles import UserRole
 from app.cache import TTLCache
+from app.errors import NotConfiguredError
 from app.observability import log_operation_timing
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem
 from app.domain.admin_accounts.repository import AdminAccountsRepository
+from app.infrastructure.email.admin_account_templates import (
+    AdminAccountEmailTemplateRendererProtocol,
+)
+from app.infrastructure.email.protocols import EmailSenderProtocol
 
 # Re-export for backward compatibility
 __all__ = [
@@ -55,6 +60,15 @@ class AdminAccountsServiceProtocol(Protocol):
     async def delete_admin_account(
         self, *, user_account_id: int, auth_user_id: UUID
     ) -> None: ...
+    async def send_onboarding_email(
+        self,
+        *,
+        recipient_email: str,
+        setup_url: str,
+        display_name: str | None,
+        username: str,
+        role_name: str,
+    ) -> None: ...
 
 
 class AdminAccountsService:
@@ -62,8 +76,13 @@ class AdminAccountsService:
         self,
         repository: AdminAccountsRepository,
         cache_ttl_seconds: int = 60,
+        email_sender: EmailSenderProtocol | None = None,
+        onboarding_email_renderer: AdminAccountEmailTemplateRendererProtocol
+        | None = None,
     ) -> None:
         self.repository = repository
+        self.email_sender = email_sender
+        self.onboarding_email_renderer = onboarding_email_renderer
         self._list_cache: TTLCache[
             tuple[str | None, int], list[AdminAccountListItem]
         ] = TTLCache(ttl_seconds=cache_ttl_seconds, max_entries=128)
@@ -182,6 +201,29 @@ class AdminAccountsService:
         )
         self._detail_cache.pop(user_account_id)
         self._list_cache.clear()
+
+    async def send_onboarding_email(
+        self,
+        *,
+        recipient_email: str,
+        setup_url: str,
+        display_name: str | None,
+        username: str,
+        role_name: str,
+    ) -> None:
+        if self.email_sender is None or self.onboarding_email_renderer is None:
+            raise NotConfiguredError("Admin onboarding email is not configured.")
+        rendered = self.onboarding_email_renderer.render_onboarding_email(
+            setup_url=setup_url,
+            display_name=display_name,
+            username=username,
+            role_name=role_name,
+        )
+        await self.email_sender.send_email(
+            recipient_email=recipient_email,
+            subject=rendered.subject,
+            html_body=rendered.html_body,
+        )
 
 
 def _normalize_query(query: str | None) -> str | None:

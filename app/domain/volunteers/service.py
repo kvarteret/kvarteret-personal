@@ -28,9 +28,9 @@ from app.domain.volunteers.queries import (
 )
 from app.domain.volunteers.repository import VolunteersRepository
 from app.errors import NotConfiguredError
-from app.infrastructure.contact.phone_numbers import normalize_phone_number
-from app.infrastructure.media.photo_processing import process_uploaded_photo
-from app.infrastructure.storage.service import StorageService
+from app.shared.phone_numbers import normalize_phone_number
+from app.infrastructure.media.protocols import PhotoProcessorProtocol
+from app.infrastructure.storage.protocols import StorageProtocol
 from app.media_tokens import MediaTokenService
 
 cleanup_logger = logging.getLogger(__name__)
@@ -40,8 +40,9 @@ class VolunteersService(VolunteersQueries):
     def __init__(
         self,
         repository: VolunteersRepository | None = None,
-        storage_service: StorageService | None = None,
+        storage_service: StorageProtocol | None = None,
         media_token_service: MediaTokenService | None = None,
+        photo_processor: PhotoProcessorProtocol | None = None,
         detail_cache_ttl_seconds: int | None = None,
         photo_upload_max_bytes: int = 40 * 1024 * 1024,
         photo_max_dimension: int = 2048,
@@ -52,6 +53,7 @@ class VolunteersService(VolunteersQueries):
         )
         self.repository = repository
         self.storage_service = storage_service
+        self.photo_processor = photo_processor
         self.photo_upload_max_bytes = photo_upload_max_bytes
         self.photo_max_dimension = photo_max_dimension
 
@@ -195,7 +197,7 @@ class VolunteersService(VolunteersQueries):
         if not await self.repository.volunteer_exists(volunteer_id):
             raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
 
-        processed_photo = process_uploaded_photo(
+        processed_photo = self._require_photo_processor()(
             content,
             max_upload_bytes=self.photo_upload_max_bytes,
             max_dimension=self.photo_max_dimension,
@@ -262,12 +264,17 @@ class VolunteersService(VolunteersQueries):
         )
         self.invalidate_volunteer_cache(volunteer_id)
 
-    def _require_storage_service(self) -> StorageService:
+    def _require_storage_service(self) -> StorageProtocol:
         if self.storage_service is None:
             raise NotConfiguredError(
                 "Storage-backed volunteer writes are not configured yet."
             )
         return self.storage_service
+
+    def _require_photo_processor(self) -> PhotoProcessorProtocol:
+        if self.photo_processor is None:
+            raise NotConfiguredError("Photo processing is not configured yet.")
+        return self.photo_processor
 
 
 def _sanitize_filename(filename: str) -> str:

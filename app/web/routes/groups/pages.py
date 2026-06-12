@@ -14,7 +14,7 @@ from app.dependencies import (
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.domain.groups.service import GroupsService
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.shared.semester import get_current_semester_code
 from app.domain.role_assignments.semester_transfer import SemesterTransferService
 from app.domain.volunteers.options import SEMESTER_TERM_OPTIONS
 from app.web.route_helpers import not_configured_http_exception

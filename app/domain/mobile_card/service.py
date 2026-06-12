@@ -9,13 +9,6 @@ from secrets import choice
 from app.config import Settings
 from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.db.session import commit_request_session
-from app.infrastructure.email.mobile_card_templates import (
-    MobileCardEmailTemplateRenderer,
-    MobileCardEmailTemplateRendererProtocol,
-)
-from app.media_tokens import MediaTokenService
-from app.infrastructure.email.protocols import EmailSenderProtocol
-from app.infrastructure.email.smtp import SmtpDeliveryError
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.domain.mobile_card.errors import (
     MobileCardDuplicatePersonError,
@@ -35,7 +28,13 @@ from app.domain.mobile_card.models import (
 )
 from app.domain.mobile_card.repository import MobileCardRepository, MobileCardSnapshot
 from app.domain.mobile_card.sessions import MobileCardSessionManager
-from app.infrastructure.formatting.semester import get_current_semester_code
+from app.infrastructure.email.mobile_card_templates import (
+    MobileCardEmailTemplateRenderer,
+    MobileCardEmailTemplateRendererProtocol,
+)
+from app.infrastructure.email.protocols import EmailDeliveryError, EmailSenderProtocol
+from app.media_tokens import MediaTokenService
+from app.shared.semester import get_current_semester_code
 
 # Re-export for backward compatibility
 __all__ = [
@@ -208,7 +207,7 @@ class MobileCardService:
                 subject=rendered_email.subject,
                 html_body=rendered_email.html_body,
             )
-        except SmtpDeliveryError:
+        except EmailDeliveryError:
             logger.exception(
                 "Failed to deliver access code email for volunteer %s",
                 volunteer_row["id"],

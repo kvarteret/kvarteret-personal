@@ -2,6 +2,9 @@
 root_packages =
     app
 
+# Layer ordering (top may import bottom, never the reverse). Note that this
+# contract only forbids UPWARD imports; the forbidden contracts below restrict
+# specific downward edges that the ordering alone would allow.
 [importlinter:contract:layers]
 name = Layered architecture
 type = layers
@@ -12,28 +15,10 @@ layers =
     app.db
     app.infrastructure
     app.shared
-unmatched_ignore_imports_alerting = none
 ignore_imports =
-    app.domain.* -> app.db.metadata
-    app.domain.* -> app.db.repository
-    app.domain.* -> app.db.tables
-    app.domain.* -> app.db.rate_limit
-    app.domain.* -> app.infrastructure.formatting.semester
-    app.domain.mobile_card.service -> app.infrastructure.email.mobile_card_templates
-    app.domain.mobile_card.service -> app.infrastructure.email.protocols
-    app.domain.mobile_card.service -> app.infrastructure.email.smtp
-    app.domain.volunteers.service -> app.infrastructure.media.photo_processing
-    app.domain.volunteers.service -> app.infrastructure.contact.phone_numbers
-    app.domain.volunteers.service -> app.infrastructure.storage.service
-    app.domain.volunteer_applications.service -> app.infrastructure.email.applicant_templates
-    app.domain.volunteer_applications.service -> app.infrastructure.email.protocols
-    app.domain.volunteer_applications.service -> app.infrastructure.media.photo_processing
-    app.domain.volunteer_applications.service -> app.infrastructure.contact.phone_numbers
-    app.domain.volunteers.models -> app.infrastructure.formatting.semester
+    # Intentional: app.db.tables aggregates the per-domain table definitions
+    # into one metadata registry. Schema-only; no behaviour crosses here.
     app.db.tables -> app.domain.*.tables
-    app.web.* -> app.domain.*
-    app.web.* -> app.infrastructure.*
-    app.web.* -> app.shared.*
 
 [importlinter:contract:domain-independence]
 name = Domain modules are independent (shared tables only)
@@ -56,3 +41,48 @@ unmatched_ignore_imports_alerting = none
 # contract forbids; the schema seam below is the only allowed edge.
 ignore_imports =
     app.domain.** -> app.domain.*.tables
+
+# Domain must not depend on infrastructure (I/O adapters). Each exception
+# below is a declared seam; add new ones only with justification, and prefer
+# defining a protocol in the domain (or next to the adapter, like
+# email.protocols) with the concrete adapter injected at wiring time
+# in app/runtime.py.
+[importlinter:contract:domain-infrastructure]
+name = Domain does not import infrastructure (declared seams only)
+type = forbidden
+allow_indirect_imports = True
+source_modules =
+    app.domain
+forbidden_modules =
+    app.infrastructure
+ignore_imports =
+    # Intentional: protocol interfaces and pure template renderers.
+    app.domain.admin_accounts.service -> app.infrastructure.email.protocols
+    app.domain.admin_accounts.service -> app.infrastructure.email.admin_account_templates
+    app.domain.mobile_card.service -> app.infrastructure.email.protocols
+    app.domain.mobile_card.service -> app.infrastructure.email.mobile_card_templates
+    app.domain.volunteer_applications.service -> app.infrastructure.email.protocols
+    app.domain.volunteer_applications.service -> app.infrastructure.email.applicant_templates
+    app.domain.volunteer_applications.service -> app.infrastructure.media.protocols
+    app.domain.volunteer_applications.service -> app.infrastructure.storage.protocols
+    app.domain.volunteer_applications.side_effects -> app.infrastructure.storage.protocols
+    app.domain.volunteers.service -> app.infrastructure.media.protocols
+    app.domain.volunteers.service -> app.infrastructure.storage.protocols
+
+# Web composes domain services and must not reach past them into
+# infrastructure. Exceptions are exception types raised through domain
+# calls.
+[importlinter:contract:web-infrastructure]
+name = Web does not import infrastructure (declared seams only)
+type = forbidden
+allow_indirect_imports = True
+source_modules =
+    app.web
+forbidden_modules =
+    app.infrastructure
+ignore_imports =
+    # Intentional: upload error types surface through domain service calls
+    # and are translated to user-facing messages in the web layer.
+    app.web.upload_helpers -> app.infrastructure.media.photo_processing
+    app.web.routes.volunteers.actions -> app.infrastructure.media.photo_processing
+    app.web.routes.volunteer_applications.actions -> app.infrastructure.media.photo_processing
