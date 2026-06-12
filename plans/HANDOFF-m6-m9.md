@@ -1,47 +1,46 @@
-# Handoff: finishing the legacy restructure (M6, M9, finalize)
+# Handoff: legacy restructure — what's left
 
-> **UPDATE 2026-06-11:** M6 **boundary enforcement is DONE** — the central
-> `table_defs/public.py` hub is deleted, domain modules import tables from
-> owners, and a verified domain-independence importlinter contract is in
-> place; `semester_transfer` moved into `role_assignments`. The strict
-> file-size splits, position-management extraction, and write-through-service
-> were **deliberately deferred** (see the plan's Decision Log, 2026-06-11).
-> **M9 is entirely out of scope** for this changeset (product decision) and
-> stays a separate PR. The "REMAINING WORK → M6" steps below are kept for the
-> deferred items only; the hub-kill / independence-contract steps are done.
+Updated 2026-06-12. Operational companion to `plans/legacy-restructure.md`
+(read its `Progress` + `Decision Log` for the why; this file is the what).
 
-Written 2026-06-11 for the next agent picking up `plans/legacy-restructure.md`.
-This is the operational companion to that plan — it records exactly where the
-work stands, what's left, and how to run things. Read the plan's `Progress`
-and `Decision Log` sections too; this file does not repeat them.
+**Scope decisions (2026-06-11, recorded in the plan's Decision Log):**
+- M6 is delivered as **boundary enforcement**; the file-size splits are
+  deferred mechanical follow-ups, not part of this changeset.
+- **M9 (auth) is entirely out of scope** for this changeset — dedicated
+  follow-up PR; no unused auth scaffolding ships now.
 
 ## Branch and current state
 
 - Branch: `restructure/m5-m9-completion` (off `develop`). **Not yet pushed; no PR.**
-- Latest commits (newest first):
+- Commits (newest first):
+  - `755840a` docs: record M5–M7/M6 completion and M6/M9 scope decisions in the plan
+  - `232cbfe` refactor(M6): relocate semester transfer into the role_assignments module
+  - `504730e` feat(M6): enforce domain-independence; eliminate central table re-export hub
+  - `85b062b` docs: handoff for remaining restructure work
   - `ec955b9` test(e2e): full two-friend volunteer lifecycle on real Postgres
   - `72b0230` feat(M7): wire the state machine into the volunteer application workflow
   - `b4e56ee` feat(M5): adopt request-scoped unit of work across all repositories
   - `33eb239` fix: green the build — pin setup-bun@v2, register rate_limits in metadata, ruff fixes
-- Working tree is **clean** as of this handoff.
+- Working tree is **clean**.
 
 ### What is DONE and verified on this branch
 
 | Milestone | Status |
 |---|---|
 | M0–M4 | Done on earlier branch/merge (schema baseline, CI, drops, rename, DigitalInternkort retirement). |
-| **M5** Unit of work | **Done.** Request-scoped `AsyncSession` middleware in `app/main.py` (`_install_request_session_middleware`); `SqlAlchemyRepository` uses `self.session` (no factory, no `execute_in_transaction`); `commit_request_session()` enforces commit-before-effect. `grep -rn "session_factory()" app/domain app/auth` → 0; `execute_in_transaction` → 0. |
-| **M7** State machine wiring | **Done.** `workflow.py` drives `state_machine.application_transition()`; `domain_events` written in the same request transaction via `repository.append_domain_event`; atomic group approval in `workflow.approve_group` (all-or-nothing, emails post-commit); per-person approval of an active grouped member is blocked (guard + template). Status string literals appear only in `state_machine.py` within `app/domain`. Matrix test: 50 cases. |
-| **M8** Security | Done on earlier work; M5 re-wired the Postgres rate limiter into `MobileCardService` (constructor now takes `rate_limiter`); access codes HMAC-SHA256 keyed by `app_secret_key`. |
-| **E2E** lifecycle | **Done** (`tests/e2e/`). Two-friend signup → emails → atomic group approval → deletion, plus an atomicity/rollback test. Skips cleanly without `E2E_DATABASE_URL`. |
+| **M5** Unit of work | **Done.** Request-scoped `AsyncSession` middleware (`_install_request_session_middleware` in `app/main.py`); repositories use `self.session`; `execute_in_transaction` and `session_factory()` gone from `app/domain`/`app/auth`; `commit_request_session()` enforces commit-before-effect; Postgres rate limiter re-wired into `MobileCardService`; HMAC-SHA256 access codes. |
+| **M6** Boundaries | **Done (as scoped).** Central `table_defs/public.py` hub deleted; `app/db/tables.py` is the single metadata aggregator; importlinter carries a **domain-independence** contract alongside the layers contract (2 kept, verified to catch a cross-module service import); `semester_transfer` lives in `app/domain/role_assignments/`. |
+| **M7** State machine wiring | **Done.** `workflow.py` drives `application_transition()`; `domain_events` written in the same request transaction; atomic all-or-nothing group approval with post-commit emails; per-person approval of active grouped members blocked (guard + template); status literals only in `state_machine.py`; 50-case matrix. |
+| **M8** Security | Done earlier; this branch restored the Postgres limiter wiring and keyed code hashing (both had regressed in the develop merge). Mobile-card session revocability is the one open M8 item (below). |
+| **E2E** | **Done** (`tests/e2e/`): two-friend signup → emails → atomic group approval → deletion, plus an induced-failure atomicity test. Skips without `E2E_DATABASE_URL`. |
+| **M9** Auth | **Out of scope** (product decision). `permissions.py`/`SmsGateway` scaffolding exists, deliberately unused. |
 
-### Verification battery (all green right now)
+### Verification battery (all green as of 755840a)
 
 ```bash
-# unit + integration (sqlite), excludes e2e
 DATABASE_URL=sqlite+aiosqlite:////tmp/kv.db uv run pytest -q --ignore=tests/e2e   # 264 passed
 uv run ruff check .            # clean
-uv run lint-imports            # 1 contract kept, 0 broken
+uv run lint-imports            # 2 contracts kept, 0 broken
 DATABASE_URL=sqlite+aiosqlite:////tmp/kv-oas.db make openapi-check   # clean
 ```
 
@@ -53,69 +52,120 @@ docker run -d --name kvarteret-e2e-pg -e POSTGRES_DB=kvarteret_personal \
 sleep 5
 # Apply the Supabase compat stubs (anon/authenticated/service_role roles,
 # auth.uid(), storage schema) — copy the SQL block from .github/workflows/ci.yml
-docker exec -i kvarteret-e2e-pg psql -U postgres -d kvarteret_personal -v ON_ERROR_STOP=1 < <stubs.sql>
+docker exec -i kvarteret-e2e-pg psql -U postgres -d kvarteret_personal -v ON_ERROR_STOP=1 < stubs.sql
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55440/kvarteret_personal uv run alembic upgrade head
 E2E_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55440/kvarteret_personal \
   DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55440/kvarteret_personal \
   uv run pytest tests/e2e -q   # 2 passed
 ```
 
-The e2e fixtures fake only the boundaries: SMTP (`app.runtime.SmtpEmailSender`)
-and Azure storage (`app.runtime._build_storage_service`). Everything else is the
-real stack. `tests/e2e/conftest.py` has `FakeStorageService`, `CapturingEmailSender`,
-`make_test_jpeg()`, and the per-test truncation fixture.
+E2e fixtures fake only the boundaries: SMTP (`app.runtime.SmtpEmailSender`)
+and Azure storage (`app.runtime._build_storage_service`). Everything else is
+the real stack.
 
 ---
 
-## REMAINING WORK
+## TODO — to finish THIS changeset
 
-### M6 — Modular monolith with owned tables (NOT done)
+1. [ ] Re-run the full battery (four commands above) + e2e against Postgres
+       at the final commit.
+2. [ ] Push `restructure/m5-m9-completion`; open PR to `develop`. PR body:
+       M5 + M6 (boundary enforcement) + M7 wiring + M8 regression fixes +
+       e2e delivered; deferred items listed below as tracked follow-ups.
+3. [ ] Confirm GitHub Actions green. Both previous CI failure modes are fixed
+       on this branch (`setup-bun@v2` pin; `rate_limits` registered in
+       metadata so `schema-drift` passes) — verify they actually pass.
+4. [ ] After merge to develop: deploy, then smoke-check production —
+       `/health` headers, login, volunteer list, `POST
+       /api/v1/mobile-card/access-codes`. No new Alembic migrations on this
+       branch (production is already at `20260610_1600`), so the deploy is
+       code-only.
+5. [ ] Tidy: drop the local e2e container when done
+       (`docker rm -f kvarteret-e2e-pg`).
 
-Current state:
-- Table definitions already live in `app/domain/{module}/tables.py` (ownership is physical). ✅
-- `app/db/table_defs/public.py` is **still a central re-export hub** (re-exports every module's tables). This is the blocker for true domain independence — it creates transitive `domain → app.db.table_defs.public → domain.*.tables` chains.
-- `.importlinter` currently uses a **layered** contract (`web → api → domain → db → infrastructure → shared`), NOT a domain-independence contract. See the `ignore_imports` list — note `app.db.table_defs.public -> app.domain.*.tables`.
-- `app/domain/role_assignments/` exists but holds **only `tables.py`** — the role-history queries / position management / semester-transfer logic is still inside `app/domain/volunteers/`.
-- Read/write split: only `app/domain/groups/queries.py` exists. `volunteers` and `volunteer_applications` are NOT split.
-- Module sizes (dir totals): `volunteer_applications` **3156**, `volunteers` **2347** — both over the plan's ~1200/dir, ~800/file caps. (`service.py` and `repository.py` in `volunteer_applications` are the big files.)
+## TODO — deferred follow-ups (separate PRs)
 
-Steps (in order):
-1. **Kill the central hub.** Make each consumer import tables from the owning module (`from app.domain.groups.tables import groups`), or have `app/db/tables.py` be the single aggregator that imports from owners and is itself ignored by the contract. Then delete `app/db/table_defs/public.py` and its re-exports. ~30 import sites; `grep -rn "from app.db.table_defs import\|from app.db.tables import" app`.
-2. **Swap the contract.** Replace the `layers` contract in `.importlinter` with: (a) a layered contract still catching upward imports, plus (b) an `independence` contract between domain modules' service/repository/workflow, plus (c) explicit allowed read edges so `{module}/queries.py` may import other modules' `tables.py` but never their services/repositories. Expect to iterate — `unmatched_ignore_imports_alerting = none` is already set because unused ignores otherwise fail the build.
-3. **Extract `role_assignments` logic** out of `volunteers` (role-history queries, position management, semester-transfer preview/apply). Wire through `app/dependencies.py` and `app/runtime.py`; move the matching tests.
-4. **Read/write split** `volunteers` and `volunteer_applications`: pull list/search/detail read models into `queries.py` (mirror `groups/queries.py`); services keep writes. Target: no domain dir > ~1200 lines, no file > ~800.
-5. Acceptance: suite green, `lint-imports` green, CI fails on a deliberately-introduced cross-module service import (verify once, revert). `find app/domain/* -name '*.py' | xargs wc -l`.
+### A. M6 mechanical splits (low risk, mostly file-shuffling; one PR)
 
-**Gotcha:** the one real cross-module write is application approval creating a volunteer. The plan wants this as `VolunteerApplicationWorkflow` → `VolunteersService.create_from_application(...)` rather than the applications repository inserting into `volunteer_records` directly. Today `volunteer_applications/repository.py::approve_volunteer_application` inserts into `volunteer_records`/`role_assignments`/`volunteer_photos` itself — see `app/domain/volunteer_applications/repository.py` ~line 735. Routing that through `VolunteersService` is the M6 ownership change and will need the independence contract to allow it.
+Current sizes: `volunteer_applications` 3148 lines/dir, `volunteers` 2162
+(plan caps: ~1200/dir, ~800/file). The seams, in dependency order:
 
-### M9 — Auth consolidation (architecture only; NOT adopted)
+1. [ ] **`volunteers` read/write split** (~mechanical): pull list/search/
+       detail read models + cursor/caching out of `service.py`+`repository.py`
+       into `queries.py` (mirror `groups/queries.py`). ~450 lines move.
+2. [ ] **Position management → `role_assignments`** (mechanical but wide):
+       move add/update/delete of role assignments + course completions
+       (~350 lines) from `volunteers` into `app/domain/role_assignments/`;
+       rewire `app/dependencies.py`, `app/runtime.py`, and the six
+       volunteer-management route files; move matching tests.
+3. [ ] **`volunteer_applications` read/write split** (~mechanical): same
+       `queries.py` extraction for its list/detail read side; `service.py`
+       and `repository.py` drop under the file cap.
+4. [ ] **Approval write through `VolunteersService.create_from_application`**
+       (NOT mechanical — do last): today
+       `volunteer_applications/repository.py::approve_volunteer_application`
+       (~line 724) inserts into `volunteer_records`/`role_assignments`/
+       `volunteer_photos` directly. Routing it through `VolunteersService`
+       re-introduces a cross-module service edge the independence contract
+       must explicitly allow; deferred because doing only this one write is
+       inconsistent while other cross-module table writes remain.
+5. [ ] Acceptance: suite green, `lint-imports` green (2 contracts),
+       `find app/domain/* -name '*.py' | xargs wc -l` under caps.
 
-Current state:
-- `app/auth/permissions.py` exists: `Permission` enum, `ROLES: dict[UserRole, frozenset[Permission]]`, `require_permission(...)` factory.
-- `require_permission` is used in **0** routes. There are **72** ad-hoc `require_admin_user` / `require_management_user` / `role ==` checks in `app/web/routes` + `app/api`.
-- `SmsGateway` protocol exists (`app/infrastructure/sms/protocols.py`), no implementation (intended).
-- **No `role_grants` table** (only named in `permissions.py`), **no migration**.
-- **No argon2 / `password_hash`** anywhere — admin passwords still verified via Supabase GoTrue (`LoginService` → `SupabaseAuthGatewayProtocol`).
-- ADR-002 exists.
+### B. M5 leftover (annotation hygiene, mechanical)
 
-Steps (each independently shippable; needs production coordination — confirm with Martin before touching `auth.users`):
-1. **`role_grants` table** (`user_account_id`, `role`, `group_id` nullable, `granted_by`, `granted_at`) as a real `Table` in `app/auth/` (owned by auth module) + Alembic migration. Data migration mapping current `user_accounts.role` + `group_admin_memberships` onto grants. Add a before/after permission-matrix test asserting no admin's effective access changes.
-2. **Adopt `require_permission`** in routes, replacing the 72 ad-hoc checks. Grep target afterwards: no remaining `role ==` checks in `app/web/routes`.
-3. **Argon2 admin passwords:** add `password_hash` (argon2-cffi) to `user_accounts`; `LoginService` verifies locally behind a setting, GoTrue path kept as fallback until every admin has logged in once. Choose cutover (import bcrypt + verify-then-rehash, OR password-reset emails) and record it.
-4. **Purge volunteers from `auth.users`** (export first, confirm PITR, confirm no RLS/storage/FK references via the M0 inventory). Then retire the GoTrue gateway once both populations are off it.
+- [ ] Replace the 10 `dict[str, Any]` returns in
+      `app/domain/volunteers/repository.py` with typed rows; the `from_row`
+      validation already happens at every call site, so this is moving the
+      validation one level down and fixing annotations. Entangled with the
+      cursor/photo-url row access — cleanest done together with split A1.
 
-**Gotcha:** M8's auth-invariant regression test (GoTrue user without a `user_accounts` row cannot get an admin session) must keep passing through M9's password migration.
+### C. M8 leftover
 
-### Finalize (task #7)
+- [ ] Mobile-card session revocability: sessions are stateless signed tokens
+      (`MobileCardSessionManager`); plan calls for revocable server-side
+      session rows (expiry + revocation for departed volunteers/lost
+      phones). Needs a table + migration + `/api/v1/mobile-card/sessions`
+      + `/me` changes; coordinate with the app (`kvarteret-internbevis-rn`).
 
-1. Update `plans/legacy-restructure.md` `Progress` + `Outcomes` to reflect M5/M7 done, e2e added, and the honest M6/M9 status above.
-2. Full battery green (the four commands above) + e2e against Postgres.
-3. Push `restructure/m5-m9-completion`, open PR to `develop`. PR body should list M5/M7/E2E as delivered and M6/M9 as the remaining tracked work (or split them into their own PRs — they're large and independent).
-4. Confirm GitHub Actions is green. **Watch the CI matrix `schema-drift` job** — `rate_limits` is registered in metadata now (commit `33eb239`); the earlier drift failure was that table missing from metadata. The `setup-bun@v2` pin is also in `33eb239` (v3 didn't exist).
+### D. M9 — auth consolidation (own PR; needs production coordination)
+
+All out of scope for the current changeset by explicit product decision.
+Each step independently shippable, in order:
+
+1. [ ] `role_grants` table + Alembic migration + data migration from
+       `user_accounts.role` / `group_admin_memberships`; before/after
+       permission-matrix test (no admin's effective access changes).
+2. [ ] Adopt `require_permission` across the ~72 ad-hoc
+       `require_admin_user`/`require_management_user`/`role ==` checks in
+       `app/web/routes` + `app/api` (mechanical once 1 lands).
+3. [ ] Argon2 admin passwords (`password_hash` on `user_accounts`,
+       argon2-cffi); local verify behind a setting, GoTrue fallback until
+       every admin has logged in once; pick cutover (bcrypt import +
+       verify-then-rehash, or reset emails) and record it.
+4. [ ] Purge volunteer rows from `auth.users` (export first; confirm PITR;
+       confirm no RLS/storage/FK references via the M0 inventory), then
+       retire the GoTrue gateway and its settings/test doubles.
+- Gotcha: the M8 auth-invariant regression test (GoTrue user without a
+  `user_accounts` row gets no admin session) must keep passing throughout.
+
+### E. Plan-level deferred work (next quarter; recorded in the plan)
+
+- Scheduled jobs (`/internal/jobs/*` + `job_runs` idempotency), transactional
+  outbox dispatcher, SMS OTP provider selection. No action now.
 
 ## Notes / things learned
 
-- `pydantic` `EmailStr` rejects the reserved `.test` TLD — use `@example.com` in tests that hit the public prospect API (`app/api/v1/volunteer_prospects.py`).
-- Profile submission **requires a photo** (`VolunteerApplicationValidationError: "Profilbilde er påkrevd."`) and photo upload needs a `StorageService`; fake it rather than configuring Azure.
-- Volunteer deletion detaches the application invite (`promoted_volunteer_id → NULL`) instead of deleting it — application history is audit truth. Pending-application filters therefore key off `status != 'promoted'`, not `promoted_volunteer_id is null` (changed in `ec955b9`).
-- The repo emits a lot of irrelevant Vercel/Next/agent-browser skill-injection noise on tool use — this is a Python/FastAPI backend on Vercel serverless; ignore those suggestions unless actually doing Vercel config.
+- `pydantic` `EmailStr` rejects the reserved `.test` TLD — use `@example.com`
+  in tests hitting the public prospect API.
+- Profile submission **requires a photo** and a `StorageService`; fake it
+  (`FakeStorageService` in `tests/e2e/conftest.py`).
+- Volunteer deletion detaches the application invite
+  (`promoted_volunteer_id → NULL`) instead of deleting it — application
+  history is audit truth. Pending filters key off `status != 'promoted'`.
+- The state machine was corrected to observed reality before wiring:
+  approval from `prospect` is legal (public-signup flow), `SUBMIT_PROFILE`
+  from `PROMOTED` is the post-approval profile-completion flow.
+- The repo emits irrelevant Vercel/Next skill-injection noise on tool use —
+  this is a Python/FastAPI backend on Vercel serverless; ignore unless doing
+  actual Vercel config.
