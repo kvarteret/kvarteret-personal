@@ -1,53 +1,50 @@
+"""Write side of the volunteers module.
+
+Inherits every read model from ``VolunteersQueries`` (list/search,
+detail panels, option lists) and adds the writes: profile updates,
+relations, position management, the photo pipeline, and offboarding
+deletion. Writes invalidate the inherited per-volunteer detail cache.
+"""
+
 from __future__ import annotations
 
-import base64
-import json
 import logging
 from asyncio import to_thread
 from pathlib import Path
 from secrets import token_hex
-from time import perf_counter
-from typing import Any
 
-from app.cache import TTLCache
-from app.errors import NotConfiguredError
-from app.media_tokens import MediaTokenService
-from app.observability import log_operation_timing
-from app.shared.text import normalize_search_query
-from app.infrastructure.media.photo_processing import process_uploaded_photo
-from app.infrastructure.contact.phone_numbers import normalize_phone_number
 from app.domain.volunteers.models import (
-    AssignmentRoleOption,
     CourseCompletionNotFoundError,
     DuplicateCourseCompletionError,
     DuplicateRoleAssignmentError,
-    GroupOption,
     InvalidCourseCompletionError,
-    InvalidVolunteerRelationsError,
     InvalidRoleAssignmentError,
-    RoleAssignmentItem,
+    InvalidVolunteerRelationsError,
     RoleAssignmentNotFoundError,
     UnsupportedUploadError,
     VolunteerDetail,
-    VolunteerListItem,
-    VolunteerListPage,
-    VolunteerCourseCompletionItem,
     VolunteerNotFoundError,
     VolunteerPhotoUploadResult,
     VolunteerRelations,
-    VolunteerSearchOption,
     VolunteersServiceError,
 )
 from app.domain.volunteers.options import normalize_gender_code
+from app.domain.volunteers.queries import (
+    VolunteersQueries,
+    require_media_token_service,
+)
 from app.domain.volunteers.repository import VolunteersRepository
+from app.errors import NotConfiguredError
+from app.infrastructure.contact.phone_numbers import normalize_phone_number
 from app.infrastructure.formatting.semester import format_semester_code
+from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.storage.service import StorageService
+from app.media_tokens import MediaTokenService
 
-logger = logging.getLogger("app.performance")
 cleanup_logger = logging.getLogger(__name__)
 
 
-class VolunteersService:
+class VolunteersService(VolunteersQueries):
     def __init__(
         self,
         repository: VolunteersRepository | None = None,
@@ -57,215 +54,14 @@ class VolunteersService:
         photo_upload_max_bytes: int = 40 * 1024 * 1024,
         photo_max_dimension: int = 2048,
     ) -> None:
+        super().__init__(
+            media_token_service=media_token_service,
+            detail_cache_ttl_seconds=detail_cache_ttl_seconds,
+        )
         self.repository = repository
         self.storage_service = storage_service
-        self.media_token_service = media_token_service
-        self.detail_cache_ttl_seconds = detail_cache_ttl_seconds or 300
         self.photo_upload_max_bytes = photo_upload_max_bytes
         self.photo_max_dimension = photo_max_dimension
-        # Cache volunteer detail panels independently so one write can invalidate
-        # a volunteer's full detail view without forcing every panel to reload on every request.
-        self._cache: TTLCache[int, dict[str, Any]] = TTLCache(
-            ttl_seconds=self.detail_cache_ttl_seconds,
-            max_entries=2048,
-        )
-
-    async def list_volunteers(
-        self, query: str | None = None, limit: int = 50
-    ) -> list[VolunteerListItem]:
-        return (
-            await self.list_volunteers_page(query=query, limit=limit, cursor=None)
-        ).items
-
-    async def list_volunteer_search_options(
-        self, query: str, limit: int = 10
-    ) -> list[VolunteerSearchOption]:
-        normalized_query = normalize_search_query(query)
-        if not normalized_query or len(normalized_query) < 2:
-            return []
-        items = await self.list_volunteers(
-            query=normalized_query, limit=max(1, min(limit * 2, 100))
-        )
-        return [
-            VolunteerSearchOption(
-                volunteer_id=item.volunteer_id,
-                full_name=item.full_name,
-            )
-            for item in sorted(
-                items, key=lambda item: (item.full_name.lower(), item.volunteer_id)
-            )[:limit]
-        ]
-
-    async def count_volunteers(
-        self, query: str | None = None, only_active: bool = False
-    ) -> int:
-        normalized_query = normalize_search_query(query)
-        if normalized_query:
-            return await self.repository.count_volunteers_search(
-                normalized_query=normalized_query,
-                only_active=only_active,
-            )
-        return await self.repository.count_volunteers(only_active=only_active)
-
-    async def list_volunteers_page(
-        self,
-        query: str | None = None,
-        limit: int = 10,
-        cursor: str | None = None,
-        only_active: bool = False,
-    ) -> VolunteerListPage:
-        # Browsing and free-text search need different cursor strategies: browse
-        # uses stable name-based cursors, while search falls back to offsets because the query drives ordering.
-        started_at = perf_counter()
-        safe_limit = max(1, min(limit, 100))
-        normalized_query = normalize_search_query(query)
-        try:
-            if normalized_query:
-                page = await self._search_volunteers_page(
-                    normalized_query,
-                    safe_limit,
-                    cursor,
-                    only_active=only_active,
-                )
-            else:
-                decoded = _decode_cursor(cursor)
-                rows = await self.repository.list_volunteers_page(
-                    limit=safe_limit + 1,
-                    after_last_name=decoded.get("last_name")
-                    if decoded.get("mode") == "browse"
-                    else None,
-                    after_first_name=decoded.get("first_name")
-                    if decoded.get("mode") == "browse"
-                    else None,
-                    after_volunteer_id=decoded.get("volunteer_id")
-                    if decoded.get("mode") == "browse"
-                    else None,
-                    only_active=only_active,
-                )
-                has_more = len(rows) > safe_limit
-                visible_rows = rows[:safe_limit]
-                items = [VolunteerListItem.from_row(row) for row in visible_rows]
-                for item, row in zip(items, visible_rows, strict=False):
-                    item.photo_url = _build_photo_url(
-                        self.media_token_service, row.get("sha1"), row.get("filetype")
-                    )
-                page = VolunteerListPage(
-                    items=items,
-                    limit=safe_limit,
-                    cursor=cursor,
-                    next_cursor=_encode_browse_cursor(visible_rows[-1])
-                    if has_more and visible_rows
-                    else None,
-                )
-            return page
-        finally:
-            log_operation_timing(
-                logger,
-                operation="volunteers.search"
-                if normalized_query
-                else "volunteers.list",
-                started_at=started_at,
-                details={
-                    "query": normalized_query or "",
-                    "limit": safe_limit,
-                    "only_active": only_active,
-                },
-            )
-
-    async def get_volunteer_detail(self, volunteer_id: int) -> VolunteerDetail | None:
-        started_at = perf_counter()
-        cached = self._cache_get(volunteer_id, "shell")
-        if cached is not None:
-            return cached
-        try:
-            row = await self.repository.fetch_volunteer_shell_row(volunteer_id)
-            if row is None:
-                return None
-            volunteer = VolunteerDetail.from_row(row)
-            volunteer.photo_url = _build_photo_url(
-                self.media_token_service, row.get("sha1"), row.get("filetype")
-            )
-            self._cache_set(volunteer_id, "shell", volunteer)
-            return volunteer
-        finally:
-            log_operation_timing(
-                logger,
-                operation="volunteers.detail.shell",
-                started_at=started_at,
-                details={"volunteer_id": volunteer_id},
-            )
-
-    async def list_role_assignments(
-        self, volunteer_id: int, limit: int = 12
-    ) -> list[RoleAssignmentItem]:
-        started_at = perf_counter()
-        cached = self._cache_get(volunteer_id, "history")
-        if cached is not None:
-            return cached
-        try:
-            rows = await self.repository.fetch_volunteer_role_assignment_rows(
-                volunteer_id, limit=limit
-            )
-            items = [RoleAssignmentItem.from_row(row) for row in rows]
-            self._cache_set(volunteer_id, "history", items)
-            return items
-        finally:
-            log_operation_timing(
-                logger,
-                operation="volunteers.detail.role_assignments",
-                started_at=started_at,
-                details={"volunteer_id": volunteer_id},
-            )
-
-    async def list_course_completions(
-        self,
-        volunteer_id: int,
-        limit: int = 100,
-    ) -> list[VolunteerCourseCompletionItem]:
-        started_at = perf_counter()
-        cached = self._cache_get(volunteer_id, "course_completions")
-        if cached is not None:
-            return cached
-        try:
-            rows = await self.repository.fetch_volunteer_course_completion_rows(
-                volunteer_id, limit=limit
-            )
-            items = [VolunteerCourseCompletionItem.from_row(row) for row in rows]
-            self._cache_set(volunteer_id, "course_completions", items)
-            return items
-        finally:
-            log_operation_timing(
-                logger,
-                operation="volunteers.detail.course_completions",
-                started_at=started_at,
-                details={"volunteer_id": volunteer_id},
-            )
-
-    async def get_volunteer_relations(self, volunteer_id: int) -> VolunteerRelations:
-        started_at = perf_counter()
-        cached = self._cache_get(volunteer_id, "relations")
-        if cached is not None:
-            return cached
-        try:
-            rows = await self.repository.fetch_volunteer_relation_rows(volunteer_id)
-            relations = VolunteerRelations.from_rows(rows)
-            self._cache_set(volunteer_id, "relations", relations)
-            return relations
-        finally:
-            log_operation_timing(
-                logger,
-                operation="volunteers.detail.relations",
-                started_at=started_at,
-                details={"volunteer_id": volunteer_id},
-            )
-
-    async def list_assignment_groups(self) -> list[GroupOption]:
-        rows = await self.repository.list_assignment_group_rows()
-        return [GroupOption.from_row(row) for row in rows]
-
-    async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
-        rows = await self.repository.list_assignment_role_rows(group_id)
-        return [AssignmentRoleOption.from_row(row) for row in rows]
 
     async def update_volunteer_profile(
         self,
@@ -293,7 +89,7 @@ class VolunteersService:
             address=_normalize_optional_text(address),
             postal_code=_normalize_optional_text(postal_code),
         )
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
         volunteer = await self.get_volunteer_detail(volunteer_id)
         if volunteer is None:
             raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
@@ -340,7 +136,7 @@ class VolunteersService:
             card_numbers=normalized_card_numbers,
             next_of_kin=normalized_next_of_kin,
         )
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
         return await self.get_volunteer_relations(volunteer_id)
 
     async def delete_volunteer(self, volunteer_id: int) -> None:
@@ -349,7 +145,7 @@ class VolunteersService:
 
         photo_row = await self.repository.fetch_photo_record(volunteer_id)
         await self.repository.delete_volunteer(volunteer_id)
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
 
         if self.storage_service is None:
             return
@@ -389,7 +185,7 @@ class VolunteersService:
             course_id=course_id,
             semester_code=semester_code,
         )
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
 
     async def delete_course_completion_for_volunteer(
         self, volunteer_id: int, completion_id: int
@@ -400,7 +196,7 @@ class VolunteersService:
                 f"Course completion {completion_id} was not found."
             )
         await self.repository.delete_course_completion(completion_id)
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
 
     async def add_role_assignment(
         self,
@@ -439,7 +235,7 @@ class VolunteersService:
             semester_code=semester_code,
             contract_signed=contract_signed,
         )
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
 
     async def update_role_assignment_for_volunteer(
         self,
@@ -483,7 +279,7 @@ class VolunteersService:
             semester_code=semester_code,
             contract_signed=contract_signed,
         )
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
 
     async def delete_role_assignment_for_volunteer(
         self, volunteer_id: int, history_id: int
@@ -494,7 +290,7 @@ class VolunteersService:
                 f"Role assignment {history_id} was not found."
             )
         await self.repository.delete_role_assignment(history_id)
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
 
     async def upload_photo(
         self,
@@ -548,11 +344,11 @@ class VolunteersService:
             await _best_effort_remove(
                 lambda: storage_service.remove_photo(old_storage_path)
             )
-        self._invalidate_volunteer_cache(volunteer_id)
+        self.invalidate_volunteer_cache(volunteer_id)
 
         return VolunteerPhotoUploadResult(
             volunteer_id=volunteer_id,
-            photo_url=_require_media_token_service(
+            photo_url=require_media_token_service(
                 self.media_token_service
             ).build_photo_media_url(storage_path),
             storage_path=storage_path,
@@ -563,12 +359,6 @@ class VolunteersService:
         if not row or not row.get("sha1") or not row.get("filetype"):
             return None
         return f"{row['sha1']}.{row['filetype']}"
-
-    async def find_volunteer_id_by_email(self, email: str) -> int | None:
-        normalized = email.strip().lower()
-        if not normalized:
-            return None
-        return await self.repository.find_volunteer_id_by_email(normalized)
 
     async def delete_photo(self, volunteer_id: int) -> None:
         row = await self.repository.fetch_photo_record(volunteer_id)
@@ -581,19 +371,7 @@ class VolunteersService:
         await _best_effort_remove(
             lambda: storage_service.remove_photo(f"{row['sha1']}.{row['filetype']}")
         )
-        self._invalidate_volunteer_cache(volunteer_id)
-
-    def _invalidate_volunteer_cache(self, volunteer_id: int) -> None:
-        self._cache.pop(volunteer_id)
-
-    def _cache_get(self, volunteer_id: int, key: str):
-        namespace = self._cache.get(volunteer_id)
-        return namespace.get(key) if namespace is not None else None
-
-    def _cache_set(self, volunteer_id: int, key: str, value) -> None:
-        namespace = dict(self._cache.get(volunteer_id) or {})
-        namespace[key] = value
-        self._cache.set(volunteer_id, namespace)
+        self.invalidate_volunteer_cache(volunteer_id)
 
     def _require_storage_service(self) -> StorageService:
         if self.storage_service is None:
@@ -602,42 +380,6 @@ class VolunteersService:
             )
         return self.storage_service
 
-    async def _search_volunteers_page(
-        self,
-        normalized_query: str,
-        limit: int,
-        cursor: str | None,
-        *,
-        only_active: bool = False,
-    ) -> VolunteerListPage:
-        # Search pagination intentionally uses a bounded offset cursor instead of
-        # reusing browse cursors, because query-shaped result sets do not have a stable natural key order.
-        decoded = _decode_cursor(cursor)
-        offset = int(decoded.get("offset", 0)) if decoded.get("mode") == "search" else 0
-        rows = await self.repository.search_volunteers_page(
-            normalized_query=normalized_query,
-            limit=limit + 1,
-            offset=max(0, min(offset, 10_000)),
-            only_active=only_active,
-        )
-        has_more = len(rows) > limit
-        visible_rows = rows[:limit]
-        return VolunteerListPage(
-            items=[
-                _with_photo_url(
-                    VolunteerListItem.from_row(row),
-                    self.media_token_service,
-                    row.get("sha1"),
-                    row.get("filetype"),
-                )
-                for row in visible_rows
-            ],
-            limit=limit,
-            cursor=cursor,
-            next_cursor=_encode_cursor({"mode": "search", "offset": offset + limit})
-            if has_more
-            else None,
-        )
 
 def _sanitize_filename(filename: str) -> str:
     safe_name = Path(filename).name.strip()
@@ -671,65 +413,6 @@ def _build_semester_code(
     if not format_semester_code(semester_code):
         raise error_cls("Unsupported semester code.")
     return semester_code
-
-
-def _require_media_token_service(
-    media_token_service: MediaTokenService | None,
-) -> MediaTokenService:
-    if media_token_service is None:
-        raise RuntimeError(
-            "A media token service must be configured before building media URLs."
-        )
-    return media_token_service
-
-
-def _build_photo_url(
-    media_token_service: MediaTokenService | None,
-    sha1: str | None,
-    filetype: str | None,
-) -> str | None:
-    if not sha1 or not filetype:
-        return None
-    return _require_media_token_service(media_token_service).build_photo_media_url(
-        f"{sha1}.{filetype}"
-    )
-
-
-def _with_photo_url(
-    item: VolunteerListItem,
-    media_token_service: MediaTokenService | None,
-    sha1: str | None,
-    filetype: str | None,
-) -> VolunteerListItem:
-    item.photo_url = _build_photo_url(media_token_service, sha1, filetype)
-    return item
-
-
-def _encode_browse_cursor(row: dict[str, Any]) -> str:
-    return _encode_cursor(
-        {
-            "mode": "browse",
-            "last_name": row["last_name"],
-            "first_name": row.get("first_name") or "",
-            "volunteer_id": row["id"],
-        }
-    )
-
-
-def _encode_cursor(payload: dict[str, Any]) -> str:
-    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii")
-
-
-def _decode_cursor(cursor: str | None) -> dict[str, Any]:
-    if not cursor:
-        return {}
-    try:
-        raw = base64.urlsafe_b64decode(cursor.encode("ascii"))
-        payload = json.loads(raw.decode("utf-8"))
-        return payload if isinstance(payload, dict) else {}
-    except Exception:
-        return {}
 
 
 async def _best_effort_remove(remove_action) -> None:

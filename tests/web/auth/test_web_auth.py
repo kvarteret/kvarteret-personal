@@ -20,7 +20,7 @@ from app.dependencies import (
 )
 from app.main import create_app
 from app.runtime import build_application_container
-from app.domain.volunteers.service import VolunteerListItem, VolunteerListPage
+from app.domain.volunteers.models import VolunteerListItem, VolunteerListPage
 from tests.support.helpers import csrf_headers, make_authenticated_user, prime_csrf
 
 

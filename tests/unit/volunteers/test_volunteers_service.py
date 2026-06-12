@@ -65,7 +65,7 @@ async def test_person_detail_shell_uses_cache(monkeypatch):
             "filetype": None,
         }
 
-    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch, raising=False)
+    monkeypatch.setattr(service, "fetch_volunteer_shell_row", fake_fetch)
 
     first = await service.get_volunteer_detail(1)
     second = await service.get_volunteer_detail(1)
@@ -102,7 +102,7 @@ async def test_person_detail_shell_refetches_after_cache_expiry(monkeypatch):
             "filetype": None,
         }
 
-    monkeypatch.setattr(service.repository, "fetch_volunteer_shell_row", fake_fetch_row, raising=False)
+    monkeypatch.setattr(service, "fetch_volunteer_shell_row", fake_fetch_row)
 
     cached = await service.get_volunteer_detail(1)
     service._cache.force_expire(1)
@@ -123,7 +123,7 @@ async def test_search_cursor_offset_is_clamped(monkeypatch):
         seen["offset"] = offset
         return []
 
-    monkeypatch.setattr(service.repository, "search_volunteers_page", fake_search, raising=False)
+    monkeypatch.setattr(service, "search_volunteers_page", fake_search)
 
     cursor = "eyJtb2RlIjoic2VhcmNoIiwib2Zmc2V0Ijo5OTk5OTl9"
     page = await service.list_volunteers_page(query="person", limit=10, cursor=cursor)
@@ -218,19 +218,21 @@ async def test_add_course_completion_invalidates_course_completion_cache() -> No
             )
             return {"id": 99}
 
-        async def fetch_volunteer_course_completion_rows(self, volunteer_id: int, *, limit: int = 100):
-            nonlocal fetch_calls
-            fetch_calls += 1
-            return [
-                {
-                    "id": fetch_calls,
-                    "course_id": 4,
-                    "completed_semester": 20261 + fetch_calls,
-                    "course_name": "Fire safety",
-                }
-            ]
-
     service = VolunteersService(repository=FakeRepository())  # type: ignore[arg-type]
+
+    async def fake_completion_rows(volunteer_id: int, *, limit: int = 100):
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return [
+            {
+                "id": fetch_calls,
+                "course_id": 4,
+                "completed_semester": 20261 + fetch_calls,
+                "course_name": "Fire safety",
+            }
+        ]
+
+    service.fetch_volunteer_course_completion_rows = fake_completion_rows  # type: ignore[method-assign]
 
     first = await service.list_course_completions(1)
     second = await service.list_course_completions(1)
