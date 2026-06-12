@@ -47,6 +47,9 @@ Run focused tests while working on one surface:
     uv run pytest tests/api/mobile_card/test_mobile_card_api.py
     uv run pytest tests/web/volunteers/test_volunteers_web.py
 
+For the full layer-by-layer testing guide, including the Postgres-backed e2e
+suite, see [Run the tests](run-tests.md).
+
 ## Regenerate OpenAPI
 
     make openapi
@@ -63,9 +66,9 @@ Compare the configured database schema to the SQLAlchemy table metadata:
 
     make schema-drift
 
-Before the legacy restructure is complete, production is expected to report the
-drift recorded in `docs/reference/schema-snapshots/`. CI runs this against a
-migrated disposable Postgres database.
+The restructure is complete: production and the SQLAlchemy metadata agree, so
+this should report no drift against production or against a freshly migrated
+database. CI runs it against a migrated disposable Postgres on every push.
 
 ## Common Local Failure Modes
 
