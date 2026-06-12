@@ -8,12 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.roles import UserRole
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import (
-    group_admin_memberships,
-    integration_tokens,
-    user_accounts,
-    web_sessions,
-)
+from app.domain.admin_accounts.tables import group_admin_memberships, user_accounts, web_sessions
+from app.domain.spotify.tables import integration_tokens
 from app.shared.coercion import coerce_datetime, require_datetime
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem

@@ -18,13 +18,9 @@ from sqlalchemy import (
 )
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import (
-    course_completions,
-    courses,
-    group_course_requirements,
-    groups,
-    volunteer_records,
-)
+from app.domain.courses.tables import course_completions, courses, group_course_requirements
+from app.domain.groups.tables import groups
+from app.domain.volunteers.tables import volunteer_records
 from app.infrastructure.formatting.semester import format_semester_code
 from app.shared.coercion import coerce_datetime
 from app.shared.text import build_full_name

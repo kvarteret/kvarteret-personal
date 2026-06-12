@@ -6,8 +6,7 @@ from datetime import datetime
 from sqlalchemy import delete, insert, select, update
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import integration_tokens
-
+from app.domain.spotify.tables import integration_tokens
 
 @dataclass(slots=True)
 class StoredIntegrationToken:

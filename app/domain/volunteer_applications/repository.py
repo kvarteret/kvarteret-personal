@@ -6,19 +6,11 @@ from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import (
-    group_admin_memberships,
-    groups,
-    role_assignments,
-    volunteer_application_submissions,
-    volunteer_records,
-    volunteer_photos,
-    volunteer_application_invites,
-    volunteer_application_groups,
-    volunteer_application_group_members,
-    user_accounts,
-    assignment_roles,
-)
+from app.domain.admin_accounts.tables import group_admin_memberships, user_accounts
+from app.domain.groups.tables import groups
+from app.domain.role_assignments.tables import assignment_roles, role_assignments
+from app.domain.volunteer_applications.tables import volunteer_application_group_members, volunteer_application_groups, volunteer_application_invites, volunteer_application_submissions
+from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.domain.volunteer_applications.state_machine import (
     ApplicationState,
     DomainEventRecord,

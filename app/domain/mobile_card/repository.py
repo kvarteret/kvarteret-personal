@@ -9,7 +9,9 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import groups, role_assignments, volunteer_records, volunteer_photos, assignment_roles
+from app.domain.groups.tables import groups
+from app.domain.role_assignments.tables import assignment_roles, role_assignments
+from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.domain.mobile_card.tables import mobile_card_access_codes
 from app.observability import log_operation_timing
 
