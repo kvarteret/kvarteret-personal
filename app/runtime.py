@@ -44,7 +44,9 @@ from app.domain.mobile_card.service import MobileCardService
 from app.domain.volunteers.service import VolunteersService
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
 from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
+from app.domain.role_assignments.repository import RoleAssignmentsRepository
 from app.domain.role_assignments.semester_transfer import SemesterTransferService
+from app.domain.role_assignments.service import RoleAssignmentsService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.admin_accounts.repository import AdminAccountsRepository
@@ -108,6 +110,7 @@ class ApplicationContainer:
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
     volunteers_service: VolunteersService
+    role_assignments_service: RoleAssignmentsService
     groups_service: GroupsService
     courses_service: CoursesService
     volunteer_search_service: VolunteerSearchService
@@ -152,6 +155,15 @@ def build_application_container(
         repository=MobileCardAprilStateRepository()
     )
 
+    volunteers_service = VolunteersService(
+        repository=VolunteersRepository(),
+        storage_service=storage_service,
+        media_token_service=media_token_service,
+        detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
+        photo_upload_max_bytes=resolved_settings.photo_upload_max_bytes,
+        photo_max_dimension=resolved_settings.photo_max_dimension,
+    )
+
     container = ApplicationContainer(
         settings=resolved_settings,
         database_runtime_manager=database_runtime_manager,
@@ -168,13 +180,10 @@ def build_application_container(
             supabase_auth=supabase_auth_gateway,
             session_store=session_store,
         ),
-        volunteers_service=VolunteersService(
-            repository=VolunteersRepository(),
-            storage_service=storage_service,
-            media_token_service=media_token_service,
-            detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
-            photo_upload_max_bytes=resolved_settings.photo_upload_max_bytes,
-            photo_max_dimension=resolved_settings.photo_max_dimension,
+        volunteers_service=volunteers_service,
+        role_assignments_service=RoleAssignmentsService(
+            repository=RoleAssignmentsRepository(),
+            invalidate_volunteer_cache=volunteers_service.invalidate_volunteer_cache,
         ),
         groups_service=GroupsService(),
         courses_service=CoursesService(

@@ -14,19 +14,12 @@ from pathlib import Path
 from secrets import token_hex
 
 from app.domain.volunteers.models import (
-    CourseCompletionNotFoundError,
-    DuplicateCourseCompletionError,
-    DuplicateRoleAssignmentError,
-    InvalidCourseCompletionError,
-    InvalidRoleAssignmentError,
     InvalidVolunteerRelationsError,
-    RoleAssignmentNotFoundError,
     UnsupportedUploadError,
     VolunteerDetail,
     VolunteerNotFoundError,
     VolunteerPhotoUploadResult,
     VolunteerRelations,
-    VolunteersServiceError,
 )
 from app.domain.volunteers.options import normalize_gender_code
 from app.domain.volunteers.queries import (
@@ -36,7 +29,6 @@ from app.domain.volunteers.queries import (
 from app.domain.volunteers.repository import VolunteersRepository
 from app.errors import NotConfiguredError
 from app.infrastructure.contact.phone_numbers import normalize_phone_number
-from app.infrastructure.formatting.semester import format_semester_code
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.storage.service import StorageService
 from app.media_tokens import MediaTokenService
@@ -157,141 +149,6 @@ class VolunteersService(VolunteersQueries):
                 )
             )
 
-    async def add_course_completion(
-        self,
-        *,
-        volunteer_id: int,
-        course_id: int,
-        year: int,
-        term: int,
-    ) -> None:
-        semester_code = _build_semester_code(
-            year=year, term=term, error_cls=InvalidCourseCompletionError
-        )
-        if not await self.repository.volunteer_exists(volunteer_id):
-            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
-        if not await self.repository.course_exists(course_id):
-            raise InvalidCourseCompletionError("Selected course was not found.")
-        if await self.repository.course_completion_exists(
-            volunteer_id=volunteer_id,
-            course_id=course_id,
-            semester_code=semester_code,
-        ):
-            raise DuplicateCourseCompletionError(
-                "Dette kurset er allerede registrert for valgt semester."
-            )
-        await self.repository.create_course_completion(
-            volunteer_id=volunteer_id,
-            course_id=course_id,
-            semester_code=semester_code,
-        )
-        self.invalidate_volunteer_cache(volunteer_id)
-
-    async def delete_course_completion_for_volunteer(
-        self, volunteer_id: int, completion_id: int
-    ) -> None:
-        row = await self.repository.fetch_course_completion_record(completion_id)
-        if not row or row["volunteer_id"] != volunteer_id:
-            raise CourseCompletionNotFoundError(
-                f"Course completion {completion_id} was not found."
-            )
-        await self.repository.delete_course_completion(completion_id)
-        self.invalidate_volunteer_cache(volunteer_id)
-
-    async def add_role_assignment(
-        self,
-        *,
-        volunteer_id: int,
-        group_id: int,
-        role_id: int,
-        year: int,
-        term: int,
-        contract_signed: bool,
-    ) -> None:
-        semester_code = _build_semester_code(
-            year=year, term=term, error_cls=InvalidRoleAssignmentError
-        )
-        if not await self.repository.volunteer_exists(volunteer_id):
-            raise VolunteerNotFoundError(f"Volunteer {volunteer_id} was not found.")
-        if not await self.repository.role_belongs_to_group(
-            group_id=group_id, role_id=role_id
-        ):
-            raise InvalidRoleAssignmentError(
-                "Selected name does not belong to the selected group."
-            )
-        if await self.repository.role_assignment_exists(
-            volunteer_id=volunteer_id,
-            group_id=group_id,
-            role_id=role_id,
-            semester_code=semester_code,
-        ):
-            raise DuplicateRoleAssignmentError(
-                "This name is already registered for the selected semester."
-            )
-        await self.repository.create_role_assignment(
-            volunteer_id=volunteer_id,
-            group_id=group_id,
-            role_id=role_id,
-            semester_code=semester_code,
-            contract_signed=contract_signed,
-        )
-        self.invalidate_volunteer_cache(volunteer_id)
-
-    async def update_role_assignment_for_volunteer(
-        self,
-        volunteer_id: int,
-        history_id: int,
-        *,
-        group_id: int,
-        role_id: int,
-        year: int,
-        term: int,
-        contract_signed: bool,
-    ) -> None:
-        row = await self.repository.fetch_role_assignment_record(history_id)
-        if not row or row["volunteer_id"] != volunteer_id:
-            raise RoleAssignmentNotFoundError(
-                f"Role assignment {history_id} was not found."
-            )
-        semester_code = _build_semester_code(
-            year=year, term=term, error_cls=InvalidRoleAssignmentError
-        )
-        if not await self.repository.role_belongs_to_group(
-            group_id=group_id, role_id=role_id
-        ):
-            raise InvalidRoleAssignmentError(
-                "Selected name does not belong to the selected group."
-            )
-        if await self.repository.role_assignment_exists(
-            volunteer_id=volunteer_id,
-            group_id=group_id,
-            role_id=role_id,
-            semester_code=semester_code,
-            exclude_history_id=history_id,
-        ):
-            raise DuplicateRoleAssignmentError(
-                "This name is already registered for the selected semester."
-            )
-        await self.repository.update_role_assignment(
-            history_id,
-            group_id=group_id,
-            role_id=role_id,
-            semester_code=semester_code,
-            contract_signed=contract_signed,
-        )
-        self.invalidate_volunteer_cache(volunteer_id)
-
-    async def delete_role_assignment_for_volunteer(
-        self, volunteer_id: int, history_id: int
-    ) -> None:
-        row = await self.repository.fetch_role_assignment_record(history_id)
-        if not row or row["volunteer_id"] != volunteer_id:
-            raise RoleAssignmentNotFoundError(
-                f"Role assignment {history_id} was not found."
-            )
-        await self.repository.delete_role_assignment(history_id)
-        self.invalidate_volunteer_cache(volunteer_id)
-
     async def upload_photo(
         self,
         volunteer_id: int,
@@ -400,19 +257,6 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
-
-
-def _build_semester_code(
-    *, year: int, term: int, error_cls: type[VolunteersServiceError]
-) -> int:
-    if year < 1900 or year > 3000:
-        raise error_cls("Year must be between 1900 and 3000.")
-    if term not in {1, 2}:
-        raise error_cls("Semester must be Vår or Høst.")
-    semester_code = year * 10 + term
-    if not format_semester_code(semester_code):
-        raise error_cls("Unsupported semester code.")
-    return semester_code
 
 
 async def _best_effort_remove(remove_action) -> None:

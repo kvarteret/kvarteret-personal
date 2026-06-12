@@ -4,8 +4,9 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
+from app.domain.role_assignments.models import DuplicateCourseCompletionError
+from app.domain.role_assignments.service import RoleAssignmentsService
 from app.domain.volunteers.service import (
-    DuplicateCourseCompletionError,
     VolunteersService,
     VolunteerDetail,
 )
@@ -218,7 +219,7 @@ async def test_add_course_completion_invalidates_course_completion_cache() -> No
             )
             return {"id": 99}
 
-    service = VolunteersService(repository=FakeRepository())  # type: ignore[arg-type]
+    volunteers = VolunteersService()
 
     async def fake_completion_rows(volunteer_id: int, *, limit: int = 100):
         nonlocal fetch_calls
@@ -232,12 +233,16 @@ async def test_add_course_completion_invalidates_course_completion_cache() -> No
             }
         ]
 
-    service.fetch_volunteer_course_completion_rows = fake_completion_rows  # type: ignore[method-assign]
+    volunteers.fetch_volunteer_course_completion_rows = fake_completion_rows  # type: ignore[method-assign]
+    service = RoleAssignmentsService(
+        repository=FakeRepository(),  # type: ignore[arg-type]
+        invalidate_volunteer_cache=volunteers.invalidate_volunteer_cache,
+    )
 
-    first = await service.list_course_completions(1)
-    second = await service.list_course_completions(1)
+    first = await volunteers.list_course_completions(1)
+    second = await volunteers.list_course_completions(1)
     await service.add_course_completion(volunteer_id=1, course_id=4, year=2026, term=2)
-    third = await service.list_course_completions(1)
+    third = await volunteers.list_course_completions(1)
 
     assert fetch_calls == 2
     assert first is second
@@ -263,7 +268,10 @@ async def test_add_course_completion_rejects_same_course_same_semester() -> None
         async def course_completion_exists(self, *, volunteer_id: int, course_id: int, semester_code: int) -> bool:
             return True
 
-    service = VolunteersService(repository=FakeRepository())  # type: ignore[arg-type]
+    service = RoleAssignmentsService(
+        repository=FakeRepository(),  # type: ignore[arg-type]
+        invalidate_volunteer_cache=lambda volunteer_id: None,
+    )
 
     with pytest.raises(DuplicateCourseCompletionError):
         await service.add_course_completion(volunteer_id=1, course_id=4, year=2026, term=2)
