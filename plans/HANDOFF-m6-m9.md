@@ -1,5 +1,15 @@
 # Handoff: finishing the legacy restructure (M6, M9, finalize)
 
+> **UPDATE 2026-06-11:** M6 **boundary enforcement is DONE** — the central
+> `table_defs/public.py` hub is deleted, domain modules import tables from
+> owners, and a verified domain-independence importlinter contract is in
+> place; `semester_transfer` moved into `role_assignments`. The strict
+> file-size splits, position-management extraction, and write-through-service
+> were **deliberately deferred** (see the plan's Decision Log, 2026-06-11).
+> **M9 is entirely out of scope** for this changeset (product decision) and
+> stays a separate PR. The "REMAINING WORK → M6" steps below are kept for the
+> deferred items only; the hub-kill / independence-contract steps are done.
+
 Written 2026-06-11 for the next agent picking up `plans/legacy-restructure.md`.
 This is the operational companion to that plan — it records exactly where the
 work stands, what's left, and how to run things. Read the plan's `Progress`

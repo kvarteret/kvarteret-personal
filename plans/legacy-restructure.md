@@ -26,18 +26,20 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 
 ## Progress
 
-### Honest milestone status (2026-06-10, post-merge-fix session)
+### Honest milestone status (2026-06-11, M5–M7/M6 completion session)
 
 - [x] M0: Schema baseline and drift audit — ✓ complete as-built.
-- [x] M1: CI pipeline and guardrails — ✓ code-complete; CI has never executed (branch never pushed).
+- [x] M1: CI pipeline and guardrails — ✓ code-complete; `setup-bun` pinned to `@v2` and `rate_limits` registered in metadata so the CI `schema-drift` job passes (2026-06-11).
 - [x] M2: Drop dead legacy structures — ✓ migrations authored and applied to production.
 - [x] M3: Rename the database to English — ✓ migrations authored and applied to production. `group_admin_memberships.gruppe_id → group_id` was missed by the original migration and fixed manually (2026-06-10). Migration file patched to include the missing rename for fresh deployments.
 - [x] M4: Retire DigitalInternkort API — ✓ code removed; four-week traffic gate waived by product owner.
-- [ ] M5: Data-access overhaul — typed rows ✓; mapper deletion ✓; unit-of-work adoption pending (~20 `session_factory()` call sites remain; `execute_in_transaction` still used in services).
-- [ ] M6: Modular monolith with owned tables — tables moved to domain modules ✓; ownership enforcement NOT delivered (importlinter uses layered contract, not independence-plus-read-edges; central re-export shim creates transitive domain→domain chains).
-- [ ] M7: Volunteer application state machine — pure machine + 48-test matrix ✓; CHECK constraints ✓; `domain_events` table ✓; NOT yet wired into workflow/service (status literals still scattered outside `state_machine.py`; atomic group approval not implemented; `domain_events` never written at runtime).
+- [x] M5: Data-access overhaul — ✓ **complete** (2026-06-11). Typed rows ✓; mapper deletion ✓; request-scoped unit of work adopted across all repositories — `session_factory()` and `execute_in_transaction` are gone from `app/domain`/`app/auth`; one `AsyncSession` per request via `_install_request_session_middleware`; `commit_request_session()` enforces commit-before-effect; Postgres rate limiter re-wired into `MobileCardService`.
+- [x] M6: Modular monolith with owned tables — ✓ **boundary enforcement complete** (2026-06-11). Tables owned physically by their modules; central `table_defs/public.py` re-export hub **deleted**; domain modules import tables from owners; `app/db/tables.py` is the single metadata aggregator (the one db-layer module allowed to import `app.domain.*.tables`). importlinter now carries a **domain-independence** contract (verified to catch a cross-module service import) alongside the layers contract. `semester_transfer` relocated into the `role_assignments` module. **Deliberately deferred** (see Decision Log 2026-06-11): the strict ~1200-line/dir split of `volunteer_applications`/`volunteers`, extracting volunteer position-management out of `volunteers` (entangled with the volunteer-management UI across 6 route files), and routing the one cross-module write (approval → `volunteer_records`) through `VolunteersService` (inconsistent while other cross-module table writes remain; the independence contract already provides the enforceable boundary).
+- [x] M7: Volunteer application state machine — ✓ **complete** (2026-06-11). Pure machine + exhaustive matrix ✓; CHECK constraints ✓; `domain_events` table ✓; **wired into `workflow.py`**: every transition goes through `application_transition()`, `domain_events` rows are written in the same request transaction, status literals appear only in `state_machine.py` within `app/domain`, atomic all-or-nothing group approval, per-person approval of an active grouped member blocked (guard + template), effects fired post-commit.
 - [x] M8: Security hardening — security headers ✓ (CSP added 2026-06-10); rate limiter wired into MobileCardService ✓; HMAC-SHA256 code hashing ✓; login throttle ✓; enumeration fix ✓; mobile-card session handler extracted to `sessions.py` ✓; mobile-session revocability audit NOT done.
-- [ ] M9: Auth consolidation — permission architecture delivered (enum, role bundles, `require_permission`, `SmsGateway` protocol, ADR-002); unused by any route. Argon2 hashing, `role_grants` table, and `auth.users` purge deferred.
+- [ ] M9: Auth consolidation — **out of scope for this changeset** (product decision 2026-06-11: keep auth/GoTrue work in a separate PR; do not ship unused auth scaffolding). Permission architecture (enum, role bundles, `require_permission`, `SmsGateway` protocol, ADR-002) exists from earlier work but remains **unused by any route**; `role_grants` table, route adoption, argon2 admin passwords, and the `auth.users` purge are all deferred to a dedicated follow-up.
+
+**E2E coverage (new, 2026-06-11):** `tests/e2e/` runs the full two-friend volunteer lifecycle against a real migrated Postgres — public signup with a friend → invitation/profile-submission emails → atomic group approval into a committee → deletion — plus an atomicity test proving group approval is all-or-nothing. Skips cleanly without `E2E_DATABASE_URL`.
 
 ### Post-merge fixes (2026-06-10, after aa1bde0)
 
@@ -191,6 +193,14 @@ Findings from the research passes (2026-06-10). Update as implementation reveals
 - Observation (WIP fix, 2026-06-10): `mobile_card_access_code_cooldown_seconds` setting was dead code after the cooldown reuse branch was removed. Deleted from `app/config.py`.
 
 ## Decision Log
+
+- Decision: M6 is delivered as **boundary enforcement** (eliminate the central table re-export hub; domain-independence importlinter contract allowing shared table reads but forbidding cross-module service/repository/workflow imports) plus the clean `semester_transfer` relocation into `role_assignments`. The strict ~1200-line/dir file splitting, the extraction of volunteer position-management into `role_assignments`, and routing the approval write through `VolunteersService.create_from_application` are **deferred**.
+  Rationale: The independence contract is the high-value, machine-enforced deliverable and is verified to catch violations. The deferred items are either mechanical file-shuffling with regression risk and low architectural value (line-count splits), or entangled with the volunteer-management UI across six route files (position-management extraction), or inconsistent-if-partial and contract-undermining (only one of several cross-module table writes routed through a service, which also reintroduces a cross-module service edge). Product steer was explicitly minimal — no churn without clear payoff.
+  Date/Author: 2026-06-11 / Claude (Opus 4.8)
+
+- Decision: M9 (auth consolidation) is **entirely out of scope** for this changeset and moves to a dedicated follow-up PR. No `role_grants` table, no route adoption of `require_permission`, no argon2 passwords, no `auth.users` purge, no GoTrue retirement. The existing `permissions.py`/`SmsGateway` scaffolding stays as-is and unused.
+  Rationale: Product decision — the team is committed to the modular-monolith refactor but not to rolling its own auth in this PR. M6 and M9 are orthogonal: nothing in this changeset touches `app/auth/`, the GoTrue gateway, or login, so completing M6 commits the team to no auth direction. Shipping unused auth scaffolding now was explicitly declined.
+  Date/Author: 2026-06-11 / Martin (product) + Claude
 
 - Decision: Database tables are renamed to exactly the Python alias names that already exist in `app/db/table_defs/__init__.py` (e.g. `personal` → `volunteer_records`, `kurs` → `courses`).
   Rationale: The codebase already chose its English vocabulary; reusing it deletes the alias layer with near-zero churn.
