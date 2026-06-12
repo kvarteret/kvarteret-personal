@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     )
 
     app_env: str = Field(default="development")
+    # Development-harness credentials; refused in production.
+    dev_admin_email: str | None = Field(default=None)
+    dev_admin_password: str | None = Field(default=None)
     app_secret_key: str = Field(default="change-me")
     app_public_base_url: str | None = Field(default=None)
     supabase_url: str | None = Field(default=None)
@@ -100,6 +103,8 @@ class Settings(BaseSettings):
 
     @field_validator(
         "app_env",
+        "dev_admin_email",
+        "dev_admin_password",
         "app_secret_key",
         "app_public_base_url",
         "supabase_url",
@@ -147,6 +152,11 @@ class Settings(BaseSettings):
 def validate_production_secrets(settings: Settings) -> Settings:
     if settings.app_env == "production" and settings.app_secret_key == "change-me":
         msg = "APP_SECRET_KEY must be set to a non-default value in production."
+        raise ValueError(msg)
+    if settings.app_env != "development" and (
+        settings.dev_admin_email or settings.dev_admin_password
+    ):
+        msg = "DEV_ADMIN_EMAIL/DEV_ADMIN_PASSWORD are development-only settings."
         raise ValueError(msg)
     return settings
 

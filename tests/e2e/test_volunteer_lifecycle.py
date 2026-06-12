@@ -51,7 +51,7 @@ GROUP_SLUG = "skjenkegruppen"
 @pytest.fixture
 def email_outbox(monkeypatch) -> CapturingEmailSender:
     outbox = CapturingEmailSender()
-    monkeypatch.setattr("app.runtime.SmtpEmailSender", lambda settings: outbox)
+    monkeypatch.setattr("app.runtime._build_email_sender", lambda settings: outbox)
     return outbox
 
 

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.cookies import SessionCookieSigner
+from app.auth.dev_auth import DevAuthGateway
 from app.auth.login_service import LoginService
 from app.auth.repository import DatabaseAuthRepository
 from app.auth.session_store import (
@@ -28,6 +29,7 @@ from app.infrastructure.email.applicant_templates import ApplicantEmailTemplateR
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
 )
+from app.infrastructure.email.console import ConsoleEmailSender
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.email.smtp import SmtpEmailSender
 from app.infrastructure.email.protocols import EmailSenderProtocol
@@ -51,6 +53,7 @@ from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
 from app.domain.role_assignments.repository import RoleAssignmentsRepository
 from app.domain.role_assignments.semester_transfer import SemesterTransferService
 from app.domain.role_assignments.service import RoleAssignmentsService
+from app.infrastructure.storage.local_dir import LocalDirectoryStorage
 from app.infrastructure.storage.service import StorageService
 from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.admin_accounts.service import AdminAccountsService
@@ -152,7 +155,7 @@ def build_application_container(
     )
     storage_service = _build_storage_service(resolved_settings)
     supabase_auth_gateway = _build_supabase_auth_gateway(resolved_settings)
-    email_sender = SmtpEmailSender(resolved_settings)
+    email_sender = _build_email_sender(resolved_settings)
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
     rate_limiter = PostgresRateLimiter(session_factory=session_factory)
@@ -248,13 +251,32 @@ async def app_lifespan(app: FastAPI):
         await app.state.container.aclose()
 
 
-def _build_storage_service(settings: Settings) -> StorageService | None:
-    if not settings.azure_blob_connection_string:
-        return None
-    return StorageService(settings)
+def _build_storage_service(settings: Settings):
+    if settings.azure_blob_connection_string:
+        return StorageService(settings)
+    if settings.app_env == "development":
+        # Local harness: photos land in .devdata/photos so the upload
+        # pipeline and media proxy work without Azure credentials.
+        return LocalDirectoryStorage()
+    return None
+
+
+def _build_email_sender(settings: Settings) -> EmailSenderProtocol:
+    smtp_sender = SmtpEmailSender(settings)
+    if settings.app_env == "development" and not settings.smtp_server:
+        # Local harness: emails are logged and written to .devdata/outbox
+        # so apply links and access codes are usable without SMTP.
+        return ConsoleEmailSender()
+    return smtp_sender
 
 
 def _build_supabase_auth_gateway(settings: Settings) -> SupabaseAuthGatewayProtocol:
-    if not settings.supabase_url or not settings.supabase_secret_key:
-        return UnconfiguredSupabaseAuthGateway()
-    return SupabaseAuthGateway(settings)
+    if settings.supabase_url and settings.supabase_secret_key:
+        return SupabaseAuthGateway(settings)
+    if (
+        settings.app_env == "development"
+        and settings.dev_admin_email
+        and settings.dev_admin_password
+    ):
+        return DevAuthGateway(settings)
+    return UnconfiguredSupabaseAuthGateway()
