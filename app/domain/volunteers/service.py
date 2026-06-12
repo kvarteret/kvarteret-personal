@@ -55,6 +55,38 @@ class VolunteersService(VolunteersQueries):
         self.photo_upload_max_bytes = photo_upload_max_bytes
         self.photo_max_dimension = photo_max_dimension
 
+    async def create_from_application(
+        self,
+        *,
+        first_name: str | None,
+        last_name: str,
+        email: str | None,
+        gender: str,
+        birth_date,
+        street_address: str | None,
+        postal_code: str | None,
+        phone: str | None,
+        photo_sha1: str | None,
+        photo_filetype: str | None,
+        group_id: int,
+        role_id: int | None,
+    ) -> int:
+        """Create a volunteer from an approved application; returns the id."""
+        return await self.repository.create_from_application(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            gender=gender,
+            birth_date=birth_date,
+            street_address=street_address,
+            postal_code=postal_code,
+            phone=phone,
+            photo_sha1=photo_sha1,
+            photo_filetype=photo_filetype,
+            group_id=group_id,
+            role_id=role_id,
+        )
+
     async def update_volunteer_profile(
         self,
         *,

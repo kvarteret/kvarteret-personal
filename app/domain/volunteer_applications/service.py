@@ -38,6 +38,7 @@ from app.domain.volunteer_applications.models import (
     VolunteerApplicationNotFoundError,
     VolunteerApplicationValidationError,
     VolunteerApplicationsRepositoryProtocol,
+    VolunteerCreatorProtocol,
     VolunteerApplicationSubmissionInput,
     build_full_name as _build_full_name,
 )
@@ -75,6 +76,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         settings: Settings,
         repository: VolunteerApplicationsRepositoryProtocol,
         email_sender: EmailSenderProtocol,
+        volunteer_creator: VolunteerCreatorProtocol,
         applicant_email_renderer: ApplicantEmailTemplateRendererProtocol | None = None,
         storage_service: StorageService | None = None,
         pending_count_cache_ttl_seconds: int = 30,
@@ -84,6 +86,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             pending_count_cache_ttl_seconds=pending_count_cache_ttl_seconds,
         )
         self.settings = settings
+        self.volunteer_creator = volunteer_creator
         self.email_sender = email_sender
         self.applicant_email_renderer = applicant_email_renderer or ApplicantEmailTemplateRenderer()
         self.storage_service = storage_service
@@ -449,8 +452,33 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationConflictError("Choose a group before promoting this prospect.")
         if allowed_group_ids and resolved_group_id not in allowed_group_ids:
             raise VolunteerApplicationConflictError("The chosen group is not one of the registered committee choices.")
-        volunteer_id = await self.repository.approve_volunteer_application(
-            detail,
+        if detail.initial_role_id is not None and not (
+            await self.repository.role_matches_group(
+                role_id=detail.initial_role_id, group_id=resolved_group_id
+            )
+        ):
+            raise VolunteerApplicationConflictError(
+                "The selected initial assignment_roles is no longer valid for the chosen group."
+            )
+        # The volunteers module owns onboarding; this module only flips
+        # its own invite row once the owning service reports the new id.
+        volunteer_id = await self.volunteer_creator.create_from_application(
+            first_name=detail.first_name,
+            last_name=detail.last_name or "",
+            email=detail.email,
+            gender=detail.gender or "A",
+            birth_date=detail.birth_date,
+            street_address=detail.address,
+            postal_code=detail.postal_code,
+            phone=normalize_phone_number(detail.phone),
+            photo_sha1=detail.photo_sha1,
+            photo_filetype=detail.photo_filetype,
+            group_id=resolved_group_id,
+            role_id=detail.initial_role_id,
+        )
+        await self.repository.mark_promoted(
+            registration_id=detail.registration_id,
+            volunteer_id=volunteer_id,
             accepted_group_id=resolved_group_id,
         )
         return detail, volunteer_id

@@ -66,6 +66,17 @@ class FakeVolunteersRepository:
         return self.list_rows
 
 
+class FakeVolunteerCreator:
+    """Stands in for VolunteersService behind VolunteerCreatorProtocol."""
+
+    def __init__(self) -> None:
+        self.created: list[dict[str, object | None]] = []
+
+    async def create_from_application(self, **kwargs) -> int:
+        self.created.append(kwargs)
+        return 12
+
+
 class FakeVolunteerApplicationsRepository:
     def __init__(self) -> None:
         self.pending_count = 3
@@ -192,14 +203,17 @@ class FakeVolunteerApplicationsRepository:
         self.group_admin_recipient_lookup_group_ids.append(group_id)
         return list(self.group_admin_email_recipients.get(group_id, []))
 
-    async def approve_volunteer_application(
+    async def role_matches_group(self, *, role_id: int, group_id: int) -> bool:
+        return True
+
+    async def mark_promoted(
         self,
-        registration: VolunteerApplicationDetail,
         *,
-        accepted_group_id: int | None,
-    ) -> int:
-        self.approved_registration_ids.append(registration.registration_id)
-        return 12
+        registration_id: int,
+        volunteer_id: int,
+        accepted_group_id: int,
+    ) -> None:
+        self.approved_registration_ids.append(registration_id)
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         self.deleted_registration_ids.append(registration_id)
@@ -691,6 +705,7 @@ async def test_volunteers_service_search_queries_use_ranked_database_path(
 async def test_volunteer_applications_pending_count_is_cached() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -748,6 +763,7 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
     repository.recent_registration_rows = [invitee_row, inviter_row]
     repository.recent_registration_group_rows = {9: [inviter_row, invitee_row]}
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -772,6 +788,7 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
     repository.application_photo_filetype = "jpg"
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -814,6 +831,7 @@ async def test_volunteer_applications_submit_does_not_notify_group_admins() -> (
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -850,6 +868,7 @@ async def test_volunteer_applications_submit_normalizes_local_phone_number() -> 
     repository.application_photo_filetype = "jpg"
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -876,6 +895,7 @@ async def test_volunteer_applications_submit_normalizes_local_phone_number() -> 
 async def test_volunteer_applications_submit_rejects_invalid_phone_number() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -903,6 +923,7 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
 ):
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -931,6 +952,7 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -963,6 +985,7 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
 async def test_volunteer_applications_delete_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -985,6 +1008,7 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -1018,6 +1042,7 @@ async def test_volunteer_applications_service_can_resend_invitation_email() -> N
     repository.detail_status = "invited"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -1047,6 +1072,7 @@ async def test_volunteer_applications_service_can_use_explicit_base_url_without_
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=email_sender,
@@ -1074,6 +1100,7 @@ async def test_volunteer_applications_service_rejects_duplicate_email_before_cre
     repository.existing_volunteer_ids_by_email = {"existing@example.test": 42}
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
