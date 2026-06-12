@@ -620,6 +620,7 @@ async def test_volunteers_service_plain_listing_uses_repository() -> None:
         ]
     )
     service = VolunteersService(repository=cast(VolunteersRepository, repository))
+    service.list_volunteer_page_rows = repository.list_volunteers_page  # type: ignore[method-assign]
 
     rows = await service.list_volunteers_page(query=None, limit=10, cursor=None)
 

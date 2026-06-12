@@ -4,7 +4,7 @@ from sqlalchemy.dialects import postgresql
 
 from app.domain.search.models import SearchQuery
 from app.domain.search.repository import _build_filters, _pingvin_points_subquery
-from app.domain.volunteers.repository import _build_volunteer_search_stmt
+from app.domain.volunteers.search_sql import build_volunteer_search_stmt
 
 
 def test_build_filters_can_require_current_signed_contract() -> None:
@@ -24,7 +24,7 @@ def test_build_filters_can_require_current_signed_contract() -> None:
 
 
 def test_volunteer_search_stmt_includes_group_role_and_email_matching() -> None:
-    stmt = _build_volunteer_search_stmt(normalized_query="bar", limit=20, offset=0)
+    stmt = build_volunteer_search_stmt(normalized_query="bar", limit=20, offset=0)
 
     compiled = str(
         stmt.compile(
@@ -43,7 +43,7 @@ def test_volunteer_search_stmt_includes_group_role_and_email_matching() -> None:
 
 
 def test_volunteer_search_stmt_can_require_active_signed_contract() -> None:
-    stmt = _build_volunteer_search_stmt(normalized_query="bar", limit=20, offset=0, only_active=True)
+    stmt = build_volunteer_search_stmt(normalized_query="bar", limit=20, offset=0, only_active=True)
 
     compiled = str(
         stmt.compile(
