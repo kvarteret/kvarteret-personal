@@ -26,6 +26,21 @@ A reader can verify the end state by running `make test`, `make lint`, `make lin
 
 ## Progress
 
+### PR finalization update (2026-06-13)
+
+- Import-linter now enforces four contracts: layers, domain independence,
+  domain-to-infrastructure declared seams, and web-to-infrastructure declared
+  seams. Pure semester and phone utilities moved to `app/shared`; storage and
+  photo processing are protocol-injected at runtime.
+- A credential-free local development harness now provides Docker Postgres 17,
+  full migration replay, deterministic synthetic data, development-only admin
+  auth, filesystem photo storage, and a file-backed email outbox.
+- Maintainers may build an anonymized production-derived seed out of band. The
+  builder excludes secret-bearing/session/audit/photo tables, verifies every
+  rewritten identifying field, and writes only to gitignored `seeds/`.
+- PR #21 is open against `develop`; remote checks were green at `f24601d`
+  before this final local commit series.
+
 ### As-built update (2026-06-12, split session)
 
 The M6 deferrals were narrowed: the read/write splits and the

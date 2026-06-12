@@ -49,6 +49,12 @@ flowchart TB
     domain --> feedback
 ```
 
+In local development the same protocols are satisfied by
+`LocalDirectoryStorage`, `ConsoleEmailSender`, and `DevAuthGateway`. The runtime
+selects those adapters only when `APP_ENV=development` and the corresponding
+external service is not configured; production secret validation rejects the
+development auth credentials.
+
 ## Request Lifecycle: One Session, One Transaction
 
 Every HTTP request runs inside one unit of work. The request-session middleware opens a single lazy `AsyncSession`, binds it to a `ContextVar`, and every repository the request touches shares it through `SqlAlchemyRepository.session`. The middleware commits on success and rolls back on exception. Repositories never open sessions and never commit.
@@ -91,10 +97,16 @@ Two deliberate exceptions to the shared session:
 
 Each domain module owns its tables. Table definitions live in `app/domain/{module}/tables.py`, all bound to the single shared `MetaData` in `app/db/metadata.py` so Alembic autogeneration and cross-module read joins keep working. `app/db/tables.py` is the one sanctioned aggregator (used by Alembic and scripts); domain code imports tables directly from the owning module.
 
-Two import-linter contracts run in CI and fail the build on violations:
+Four import-linter contracts run in CI and fail the build on violations:
 
 1. **Layers** — `web`/`api` → `domain` → `db`/`infrastructure`/`shared`; nothing imports upward.
 2. **Domain independence** — domain modules may not import each other's services, repositories, or workflows. The only allowed cross-module import is another module's `tables.py` (tables are the shared read seam).
+3. **Domain/infrastructure seams** — domain code may use only declared adapter
+   protocols and pure renderers; concrete SMTP, storage, and photo-processing
+   implementations are selected in `app/runtime.py`.
+4. **Web/infrastructure seams** — routes compose domain services and may not
+   reach directly into infrastructure except for declared upload error types
+   translated to user-facing responses.
 
 Where one module genuinely needs another module's behavior, the dependency is a small protocol injected in `app/runtime.py`, never an import:
 
@@ -171,4 +183,10 @@ Supabase Postgres is the primary database; this repository owns the schema throu
 
 ## Deployment Shape
 
-Vercel loads `api/index.py`, which imports `create_app()` and exposes a module-level ASGI `app`. Static assets are prepared by `scripts/prepare_vercel_static.py`. Local development runs `make run` (Uvicorn factory). The database engine uses `NullPool` on Vercel; the request-scoped session keeps that to at most one connection per request.
+Vercel loads `api/index.py`, which imports `create_app()` and exposes a
+module-level ASGI `app`. Static assets are prepared by
+`scripts/prepare_vercel_static.py`. Local development runs `make dev-up` and
+`make dev-run`: Docker Postgres, synthetic seed data, deterministic development
+auth, filesystem-backed photos, and a file-backed email outbox. The database
+engine uses `NullPool` on Vercel; the request-scoped session keeps that to at
+most one connection per request.

@@ -8,9 +8,13 @@ Use these commands from `/Users/kluvin/dev/kvarteret/kvarteret-personal`.
 
 This installs Python dependencies with `uv` and frontend dependencies with `bun`.
 
-## Run the Server
+## Start the Local Stack
 
-    make run
+The default development harness runs Postgres 17 in Docker, applies every
+Alembic migration, and loads deterministic synthetic data:
+
+    make dev-up
+    make dev-run
 
 The app should listen on `http://127.0.0.1:8000`.
 
@@ -21,6 +25,41 @@ Check health:
 Expected body:
 
     {"status":"ok"}
+
+The seeded admin login is:
+
+    dev@kvarteret.dev / dev-password
+
+Override it with `DEV_ADMIN_EMAIL` and `DEV_ADMIN_PASSWORD`. These settings are
+refused outside `APP_ENV=development`.
+
+When external services are not configured, development uses local adapters:
+
+- email HTML is written to `.devdata/outbox/`
+- uploaded photos are written to `.devdata/photos/`
+- the configured development admin is authenticated without Supabase Auth
+
+Reset or stop the database with:
+
+    make dev-reset
+    make dev-down
+
+`make run` remains available for developers who already have a complete `.env`
+and external service credentials.
+
+## Development Data
+
+The harness uses `scripts/dev/seed_synthetic.py` unless
+`seeds/dev-snapshot.sql` exists. The synthetic seed is fake and deterministic.
+
+Maintainers with production access may generate an anonymized snapshot:
+
+    make dev-snapshot
+
+The snapshot tool excludes sessions, integration tokens, access codes, rate
+limits, audit payloads, and photos, then verifies identifying fields before
+writing the file. `seeds/` is gitignored; snapshots contain organizational
+history and must be distributed out of band, never committed.
 
 ## Build or Watch CSS
 
@@ -72,7 +111,10 @@ database. CI runs it against a migrated disposable Postgres on every push.
 
 ## Common Local Failure Modes
 
-If protected pages fail because auth or storage is not configured, check the relevant environment variables in [Configuration](../reference/configuration.md).
+If Docker is unavailable, use `make run` with a configured `.env`. If a local
+adapter is unexpectedly inactive, check `APP_ENV` and the external-service
+variables in [Configuration](../reference/configuration.md); configured
+Supabase, SMTP, and Azure adapters take precedence over local fallbacks.
 
 If `make run` is blocked by frontend tooling, a direct Python fallback is:
 
