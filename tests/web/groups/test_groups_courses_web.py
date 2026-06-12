@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.auth.roles import UserRole
 from app.dependencies import (
+    get_role_assignments_service,
     get_courses_service,
     get_groups_service,
     get_semester_transfer_service,
@@ -315,6 +316,7 @@ def test_groups_and_courses_pages_render() -> None:
     app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     app.dependency_overrides[get_semester_transfer_service] = lambda: FakeSemesterTransferService()
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
     client = TestClient(app)
 
     groups_response = client.get("/groups")
@@ -489,6 +491,7 @@ def test_group_role_assignment_create_redirects_and_calls_service() -> None:
     override_authenticated_user(app, make_authenticated_user())
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
     client = TestClient(app)
 
     response = client.post(
@@ -513,6 +516,7 @@ def test_group_role_assignment_requires_exactly_one_volunteer() -> None:
     override_authenticated_user(app, make_authenticated_user())
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
     client = TestClient(app)
 
     response = client.post(
@@ -536,6 +540,7 @@ def test_group_role_assignment_missing_semester_redirects_with_inline_error() ->
     override_authenticated_user(app, make_authenticated_user())
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
     client = TestClient(app)
 
     response = client.post(
@@ -561,6 +566,7 @@ def test_course_completion_volunteer_search_returns_matches() -> None:
     override_authenticated_user(app, make_authenticated_user())
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
     client = TestClient(app)
 
     response = client.get("/volunteers/search/options/typeahead?q=sample")
@@ -583,6 +589,7 @@ def test_course_completion_volunteer_search_short_query_returns_empty_list() -> 
     override_authenticated_user(app, make_authenticated_user())
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
+    app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
     client = TestClient(app)
 
     response = client.get("/volunteers/search/options/typeahead?q=s")
@@ -624,6 +631,7 @@ def test_group_admin_can_manage_their_group() -> None:
     groups_service = FakeGroupsService()
     app.dependency_overrides[get_groups_service] = lambda: groups_service
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
     client = TestClient(app)
 
     group_detail_response = client.get("/groups/7")

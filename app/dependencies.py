@@ -18,6 +18,7 @@ from app.domain.groups.service import GroupsService
 from app.domain.mobile_card.service import MobileCardService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.domain.spotify.now_playing import NowPlayingService
+from app.domain.role_assignments.service import RoleAssignmentsService
 from app.domain.volunteers.service import VolunteersService
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
 from app.domain.search import VolunteerSearchService
@@ -116,6 +117,10 @@ def get_email_sender(request: Request):
 
 def get_volunteers_service(request: Request) -> VolunteersService:
     return get_container(request).volunteers_service
+
+
+def get_role_assignments_service(request: Request) -> RoleAssignmentsService:
+    return get_container(request).role_assignments_service
 
 
 def get_groups_service(request: Request) -> GroupsService:
