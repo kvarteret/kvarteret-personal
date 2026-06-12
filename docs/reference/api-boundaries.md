@@ -38,7 +38,7 @@ It generates a client from `openapi.json` into `src/core/api/kvarteret-personal`
 
 `POST /api/v1/mobile-card/access-codes`
 
-Requests a one-time access code for an email address. The endpoint intentionally returns `202` for unknown or duplicate people so the caller cannot use it to enumerate valid volunteer emails. Rate limits return `429`.
+Requests a one-time access code for an email address. The endpoint intentionally returns `202` for unknown or duplicate people so the caller cannot use it to enumerate valid volunteer emails. Rate limits are Postgres-backed (they hold across serverless instances) and return `429`. Codes are single-use and stored only as keyed hashes; a new code is generated for every request.
 
 `POST /api/v1/mobile-card/sessions`
 
@@ -79,6 +79,8 @@ Current public arrangement pages and feeds read from Sanity, not from
 `app/api/ical/route.ts`.
 
 `app/api/volunteer-prospects/route.ts` validates the public recruitment form, then posts to `POST /api/v1/volunteer-prospects`. It returns upstream validation errors to the browser and records PostHog server-side events when a PostHog distinct id is provided by the client.
+
+The request body accepts `friend_emails` (up to two). When present, the backend creates an application group: the submitter becomes the group's inviter, each friend gets their own invitation with a personal `/apply/{token}` link delivered by email, and admins later approve the whole group atomically. Field-level validation errors for friend emails come back under `fieldErrors.friendEmails`.
 
 ## `frontend-eventside`
 

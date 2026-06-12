@@ -49,6 +49,22 @@ approval-write-through-`VolunteersService` change remains deferred.
 - Battery green: 264 unit/web tests, 2 e2e on migrated Postgres, ruff,
   import-linter (layers + domain-independence kept), openapi-check.
 
+### Documentation refresh (2026-06-12)
+
+Diataxis docs brought up to the as-built state and extended with Mermaid
+diagrams: the architecture explanation now covers the unit of work,
+import contracts, module ownership map, and read/write split (with
+runtime, request-lifecycle, and ownership diagrams); a new
+`explanation/volunteer-application-lifecycle.md` documents the state
+machine, guards, audit trail, and atomic group approval (state +
+sequence diagrams); a new `how-to/run-tests.md` documents all four test
+layers including the Postgres e2e harness. Stale claims removed
+(DigitalInternkort as live, mappers.py, expected schema drift). The
+organization profile README in `.github-private` was refreshed in step:
+event flows removed (retired boundary), login flow updated for hashed
+single-use codes and Postgres rate limiting, registration flow extended
+with group signup, application-lifecycle state diagram added.
+
 ### Honest milestone status (2026-06-11, M5–M7/M6 completion session)
 
 - [x] M0: Schema baseline and drift audit — ✓ complete as-built.
