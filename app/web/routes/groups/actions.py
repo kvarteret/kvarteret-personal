@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from app.dependencies import (
     get_groups_service,
     get_semester_transfer_service,
-    get_volunteers_service,
+    get_role_assignments_service,
     require_management_user,
 )
 from app.domain.groups.service import (
@@ -18,16 +18,16 @@ from app.domain.groups.service import (
     GroupRoleDeleteBlockedError,
     GroupsService,
 )
-from app.domain.volunteers.semester_transfer import (
+from app.domain.role_assignments.semester_transfer import (
     SemesterTransferEntry,
     SemesterTransferService,
 )
-from app.domain.volunteers.service import (
+from app.domain.role_assignments.models import (
     DuplicateRoleAssignmentError,
     InvalidRoleAssignmentError,
     VolunteerNotFoundError,
-    VolunteersService,
 )
+from app.domain.role_assignments.service import RoleAssignmentsService
 from app.web.route_helpers import blocked_http_exception, log_and_redirect
 from app.web.templates import templates
 
@@ -208,7 +208,7 @@ async def group_role_assignments_create(
     term: str | None = Form(default=None),
     contract_signed: bool = Form(default=False),
     current_user=Depends(require_management_user),
-    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    role_assignments_service: RoleAssignmentsService = Depends(get_role_assignments_service),
 ):
     parsed_role_id = _parse_required_int(role_id)
     parsed_year = _parse_required_int(year)
@@ -225,7 +225,7 @@ async def group_role_assignments_create(
         return _redirect_group_assignment_error(group_id, "Velg nøyaktig én frivillig.")
     parsed_volunteer_id = volunteer_ids[0]
     try:
-        await volunteers_service.add_role_assignment(
+        await role_assignments_service.add_role_assignment(
             volunteer_id=parsed_volunteer_id,
             group_id=group_id,
             role_id=parsed_role_id,

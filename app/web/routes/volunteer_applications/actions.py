@@ -66,6 +66,7 @@ async def volunteer_applications_create_invite(
             base_url=str(request.base_url).rstrip("/"),
             initial_group_id=parsed_group_id,
             initial_role_id=parsed_role_id,
+            actor_user_account_id=current_user.user_account_id,
         )
     except VolunteerAlreadyExistsError as exc:
         return RedirectResponse(url=f"/volunteers/{exc.volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
@@ -97,6 +98,7 @@ async def volunteer_application_approve(
             application_id,
             accepted_group_id=parsed_group_id,
             base_url=str(request.base_url).rstrip("/"),
+            actor_user_account_id=current_user.user_account_id,
         )
     except VolunteerAlreadyExistsError as exc:
         return RedirectResponse(
@@ -132,6 +134,7 @@ async def volunteer_application_group_approve(
             group_id,
             accepted_group_id=parsed_group_id,
             base_url=str(request.base_url).rstrip("/"),
+            actor_user_account_id=current_user.user_account_id,
         )
     except (VolunteerApplicationNotFoundError, VolunteerApplicationConflictError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -158,9 +161,12 @@ async def volunteer_application_mark_trial_attendance(
         detail = await volunteer_applications_service.mark_trial_shift_attended(
             application_id,
             attended=attended == "true",
+            actor_user_account_id=current_user.user_account_id,
         )
     except VolunteerApplicationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     log_admin_activity(
         request=request,
         user=current_user,
@@ -212,9 +218,14 @@ async def volunteer_application_delete(
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
-        await volunteer_applications_service.delete_volunteer_application(application_id)
+        await volunteer_applications_service.delete_volunteer_application(
+            application_id,
+            actor_user_account_id=current_user.user_account_id,
+        )
     except VolunteerApplicationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     log_admin_activity(
         request=request,
         user=current_user,
@@ -246,9 +257,12 @@ async def volunteer_application_resend(
         detail = await volunteer_applications_service.resend_volunteer_application_invitation(
             application_id,
             base_url=str(request.base_url).rstrip("/"),
+            actor_user_account_id=current_user.user_account_id,
         )
     except VolunteerApplicationNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except NotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     log_admin_activity(

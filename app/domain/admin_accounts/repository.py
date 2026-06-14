@@ -8,12 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.roles import UserRole
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import (
-    group_admin_memberships,
-    integration_tokens,
-    user_accounts,
-    web_sessions,
-)
+from app.domain.admin_accounts.tables import group_admin_memberships, user_accounts, web_sessions
+from app.domain.spotify.tables import integration_tokens
 from app.shared.coercion import coerce_datetime, require_datetime
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem
@@ -218,7 +214,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 delete(user_accounts).where(user_accounts.c.id == user_account_id)
             )
 
-        await self.execute_in_transaction(delete_account)
+        await delete_account(self.session)
 
     async def _load_group_admin_ids(
         self, auth_user_ids: list[UUID]

@@ -8,7 +8,7 @@ from sqlalchemy import engine_from_config, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import get_settings
-from app.db.table_defs import auth_metadata, public_metadata, storage_metadata
+from app.db.tables import auth_metadata, public_metadata, storage_metadata
 
 config = context.config
 settings = get_settings()

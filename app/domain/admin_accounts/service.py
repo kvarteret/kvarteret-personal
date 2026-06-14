@@ -5,7 +5,6 @@ from time import perf_counter
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.roles import UserRole
 from app.cache import TTLCache

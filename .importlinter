@@ -30,7 +30,29 @@ ignore_imports =
     app.domain.volunteer_applications.service -> app.infrastructure.media.photo_processing
     app.domain.volunteer_applications.service -> app.infrastructure.contact.phone_numbers
     app.domain.volunteers.models -> app.infrastructure.formatting.semester
-    app.db.table_defs.public -> app.domain.*.tables
+    app.db.tables -> app.domain.*.tables
     app.web.* -> app.domain.*
     app.web.* -> app.infrastructure.*
     app.web.* -> app.shared.*
+
+[importlinter:contract:domain-independence]
+name = Domain modules are independent (shared tables only)
+type = independence
+modules =
+    app.domain.admin_accounts
+    app.domain.courses
+    app.domain.feedback
+    app.domain.groups
+    app.domain.mobile_card
+    app.domain.role_assignments
+    app.domain.search
+    app.domain.spotify
+    app.domain.volunteer_applications
+    app.domain.volunteers
+unmatched_ignore_imports_alerting = none
+# Tables are shared read models: a module may import another module's
+# table definitions (for joins and read models), but never its service,
+# repository, or workflow. That behavioural coupling is what this
+# contract forbids; the schema seam below is the only allowed edge.
+ignore_imports =
+    app.domain.** -> app.domain.*.tables

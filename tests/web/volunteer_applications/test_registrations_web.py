@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.auth.roles import UserRole
 from app.dependencies import get_volunteer_applications_service, get_volunteers_service
 from app.main import create_app
-from app.domain.volunteer_applications.service import (
+from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationInput,
     RecentVolunteerRegistrationItem,
     RecentVolunteerRegistrationPage,
@@ -99,6 +99,7 @@ class FakeVolunteerApplicationsService:
         base_url: str | None = None,
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
+        actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationInvite:
         self.created_invites.append(
             {
@@ -237,6 +238,7 @@ class FakeVolunteerApplicationsService:
         *,
         accepted_group_id: int | None = None,
         base_url: str | None = None,
+        actor_user_account_id: int | None = None,
     ) -> int:
         return 12
 
@@ -245,13 +247,19 @@ class FakeVolunteerApplicationsService:
         registration_id: int,
         *,
         base_url: str | None = None,
+        actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationDetail:
         self.resent_registration_ids.append(registration_id)
         detail = await self.get_volunteer_application_detail(registration_id)
         assert detail is not None
         return detail
 
-    async def delete_volunteer_application(self, registration_id: int) -> None:
+    async def delete_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> None:
         self.deleted_registration_ids.append(registration_id)
         self.volunteer_applications = [
             application
@@ -280,6 +288,7 @@ class DuplicateApprovalVolunteerApplicationsService(FakeVolunteerApplicationsSer
         *,
         accepted_group_id: int | None = None,
         base_url: str | None = None,
+        actor_user_account_id: int | None = None,
     ) -> int:
         raise VolunteerAlreadyExistsError(10017, "sebbesgh@gmail.com")
 
@@ -292,6 +301,7 @@ class DuplicateInviteVolunteerApplicationsService(FakeVolunteerApplicationsServi
         base_url: str | None = None,
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
+        actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationInvite:
         raise VolunteerAlreadyExistsError(10017, email)
 

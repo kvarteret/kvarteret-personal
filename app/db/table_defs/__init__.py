@@ -1,3 +1,10 @@
+"""Auth and storage schema reflections (external Supabase schemas).
+
+Public-schema tables live in their owning domain modules; import them
+from there or via the ``app.db.tables`` aggregator. This package keeps
+only the non-public schema reflections.
+"""
+
 from app.db.table_defs.auth import (
     auth_identities,
     auth_metadata,
@@ -5,61 +12,14 @@ from app.db.table_defs.auth import (
     auth_sessions,
     auth_users,
 )
-from app.db.table_defs.public import (
-    assignment_roles,
-    course_completions,
-    courses,
-    group_admin_memberships,
-    group_course_requirements,
-    groups,
-    integration_tokens,
-    mobile_card_access_codes,
-    mobile_card_april_state,
-    public_metadata,
-    role_assignments,
-    user_accounts,
-    volunteer_application_group_members,
-    volunteer_application_groups,
-    volunteer_application_invites,
-    volunteer_application_submissions,
-    volunteer_cards,
-    volunteer_next_of_kin,
-    volunteer_photos,
-    volunteer_records,
-    web_sessions,
-)
 from app.db.table_defs.storage import storage_metadata, storage_objects
 
-admin_account_group_memberships = group_admin_memberships
-
 __all__ = [
-    "admin_account_group_memberships",
-    "assignment_roles",
     "auth_identities",
     "auth_metadata",
     "auth_refresh_tokens",
     "auth_sessions",
     "auth_users",
-    "course_completions",
-    "courses",
-    "group_admin_memberships",
-    "group_course_requirements",
-    "groups",
-    "integration_tokens",
-    "mobile_card_access_codes",
-    "mobile_card_april_state",
-    "public_metadata",
-    "role_assignments",
     "storage_metadata",
     "storage_objects",
-    "user_accounts",
-    "volunteer_application_group_members",
-    "volunteer_application_groups",
-    "volunteer_application_invites",
-    "volunteer_application_submissions",
-    "volunteer_cards",
-    "volunteer_next_of_kin",
-    "volunteer_photos",
-    "volunteer_records",
-    "web_sessions",
 ]

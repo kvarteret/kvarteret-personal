@@ -16,6 +16,7 @@ from fastapi.responses import RedirectResponse
 
 from app.dependencies import (
     get_courses_service,
+    get_role_assignments_service,
     get_settings,
     get_volunteers_service,
     require_management_user,
@@ -26,14 +27,20 @@ from app.infrastructure.media.photo_processing import (
     InvalidPhotoError,
     PhotoUploadTooLargeError,
 )
-from app.domain.volunteers.service import (
+from app.domain.role_assignments.models import (
     CourseCompletionNotFoundError,
     DuplicateCourseCompletionError,
     DuplicateRoleAssignmentError,
     InvalidCourseCompletionError,
-    InvalidVolunteerRelationsError,
     InvalidRoleAssignmentError,
     RoleAssignmentNotFoundError,
+)
+from app.domain.role_assignments.models import (
+    VolunteerNotFoundError as PositionVolunteerNotFoundError,
+)
+from app.domain.role_assignments.service import RoleAssignmentsService
+from app.domain.volunteers.service import (
+    InvalidVolunteerRelationsError,
     UnsupportedUploadError,
     VolunteersService,
     VolunteerNotFoundError,
@@ -177,16 +184,17 @@ async def volunteer_add_course_completion(
     term: int = Form(...),
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    role_assignments_service: RoleAssignmentsService = Depends(get_role_assignments_service),
     courses_service: CoursesService = Depends(get_courses_service),
 ):
     try:
-        await volunteers_service.add_course_completion(
+        await role_assignments_service.add_course_completion(
             volunteer_id=volunteer_id,
             course_id=course_id,
             year=year,
             term=term,
         )
-    except VolunteerNotFoundError as exc:
+    except PositionVolunteerNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
@@ -223,10 +231,11 @@ async def volunteer_delete_course_completion(
     completion_id: int,
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    role_assignments_service: RoleAssignmentsService = Depends(get_role_assignments_service),
     courses_service: CoursesService = Depends(get_courses_service),
 ):
     try:
-        await volunteers_service.delete_course_completion_for_volunteer(
+        await role_assignments_service.delete_course_completion_for_volunteer(
             volunteer_id, completion_id
         )
     except CourseCompletionNotFoundError as exc:
@@ -266,9 +275,10 @@ async def volunteer_add_role_assignment(
     contract_signed: bool = Form(default=False),
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    role_assignments_service: RoleAssignmentsService = Depends(get_role_assignments_service),
 ):
     try:
-        await volunteers_service.add_role_assignment(
+        await role_assignments_service.add_role_assignment(
             volunteer_id=volunteer_id,
             group_id=group_id,
             role_id=role_id,
@@ -276,7 +286,7 @@ async def volunteer_add_role_assignment(
             term=term,
             contract_signed=contract_signed,
         )
-    except VolunteerNotFoundError as exc:
+    except PositionVolunteerNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
@@ -317,9 +327,10 @@ async def volunteer_update_role_assignment(
     contract_signed: bool = Form(default=False),
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    role_assignments_service: RoleAssignmentsService = Depends(get_role_assignments_service),
 ):
     try:
-        await volunteers_service.update_role_assignment_for_volunteer(
+        await role_assignments_service.update_role_assignment_for_volunteer(
             volunteer_id,
             assignment_id,
             group_id=group_id,
@@ -370,9 +381,10 @@ async def volunteer_delete_role_assignment(
     assignment_id: int,
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    role_assignments_service: RoleAssignmentsService = Depends(get_role_assignments_service),
 ):
     try:
-        await volunteers_service.delete_role_assignment_for_volunteer(
+        await role_assignments_service.delete_role_assignment_for_volunteer(
             volunteer_id, assignment_id
         )
     except RoleAssignmentNotFoundError as exc:

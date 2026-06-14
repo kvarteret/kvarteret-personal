@@ -44,7 +44,9 @@ from app.domain.mobile_card.service import MobileCardService
 from app.domain.volunteers.service import VolunteersService
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
 from app.domain.search import VolunteerSearchRepository, VolunteerSearchService
-from app.domain.volunteers.semester_transfer import SemesterTransferService
+from app.domain.role_assignments.repository import RoleAssignmentsRepository
+from app.domain.role_assignments.semester_transfer import SemesterTransferService
+from app.domain.role_assignments.service import RoleAssignmentsService
 from app.infrastructure.storage.service import StorageService
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.admin_accounts.repository import AdminAccountsRepository
@@ -108,6 +110,7 @@ class ApplicationContainer:
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
     volunteers_service: VolunteersService
+    role_assignments_service: RoleAssignmentsService
     groups_service: GroupsService
     courses_service: CoursesService
     volunteer_search_service: VolunteerSearchService
@@ -138,7 +141,7 @@ def build_application_container(
     session_factory = database_runtime_manager.get_session_factory()
     session_cookie_signer = SessionCookieSigner(resolved_settings)
     media_token_service = MediaTokenService(resolved_settings)
-    auth_repository = DatabaseAuthRepository(session_factory=session_factory)
+    auth_repository = DatabaseAuthRepository()
     session_store = SessionStore(
         cast(SessionRepositoryProtocol, auth_repository), resolved_settings
     )
@@ -149,7 +152,16 @@ def build_application_container(
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
     rate_limiter = PostgresRateLimiter(session_factory=session_factory)
     mobile_card_april_state_service = MobileCardAprilStateService(
-        repository=MobileCardAprilStateRepository(session_factory=session_factory)
+        repository=MobileCardAprilStateRepository()
+    )
+
+    volunteers_service = VolunteersService(
+        repository=VolunteersRepository(),
+        storage_service=storage_service,
+        media_token_service=media_token_service,
+        detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
+        photo_upload_max_bytes=resolved_settings.photo_upload_max_bytes,
+        photo_max_dimension=resolved_settings.photo_max_dimension,
     )
 
     container = ApplicationContainer(
@@ -168,30 +180,28 @@ def build_application_container(
             supabase_auth=supabase_auth_gateway,
             session_store=session_store,
         ),
-        volunteers_service=VolunteersService(
-            repository=VolunteersRepository(session_factory=session_factory),
-            storage_service=storage_service,
-            media_token_service=media_token_service,
-            detail_cache_ttl_seconds=resolved_settings.volunteer_detail_cache_ttl_seconds,
-            photo_upload_max_bytes=resolved_settings.photo_upload_max_bytes,
-            photo_max_dimension=resolved_settings.photo_max_dimension,
+        volunteers_service=volunteers_service,
+        role_assignments_service=RoleAssignmentsService(
+            repository=RoleAssignmentsRepository(),
+            invalidate_volunteer_cache=volunteers_service.invalidate_volunteer_cache,
         ),
-        groups_service=GroupsService(session_factory=session_factory),
+        groups_service=GroupsService(),
         courses_service=CoursesService(
-            repository=CoursesRepository(session_factory=session_factory)
+            repository=CoursesRepository()
         ),
         volunteer_search_service=VolunteerSearchService(
-            VolunteerSearchRepository(session_factory=session_factory)
+            VolunteerSearchRepository()
         ),
         admin_accounts_service=AdminAccountsService(
-            repository=AdminAccountsRepository(session_factory=session_factory),
+            repository=AdminAccountsRepository(),
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
         ),
         mobile_card_april_state_service=mobile_card_april_state_service,
         mobile_card_service=MobileCardService(
             resolved_settings,
-            repository=MobileCardRepository(session_factory=session_factory),
+            repository=MobileCardRepository(),
             email_sender=email_sender,
+            rate_limiter=rate_limiter,
             media_token_service=media_token_service,
             april_state_service=mobile_card_april_state_service,
             email_template_renderer=mobile_card_email_renderer,
@@ -199,12 +209,12 @@ def build_application_container(
         rate_limiter=rate_limiter,
         now_playing_service=NowPlayingService(
             resolved_settings,
-            repository=IntegrationTokensRepository(session_factory=session_factory),
+            repository=IntegrationTokensRepository(),
         ),
         volunteer_applications_service=VolunteerApplicationsService(
             settings=resolved_settings,
+            volunteer_creator=volunteers_service,
             repository=VolunteerApplicationsRepository(
-                session_factory=session_factory,
                 media_token_service=media_token_service,
             ),
             email_sender=email_sender,
@@ -212,9 +222,7 @@ def build_application_container(
             storage_service=storage_service,
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),
-        semester_transfer_service=SemesterTransferService(
-            session_factory=session_factory
-        ),
+        semester_transfer_service=SemesterTransferService(),
         feedback_service=FeedbackService(resolved_settings),
     )
 
