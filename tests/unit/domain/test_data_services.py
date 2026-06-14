@@ -7,6 +7,8 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.config import Settings
+from app.db.rate_limit import InMemoryRateLimiter
+from app.db.session import reset_request_session, set_request_session
 from app.domain.courses.repository import CoursesRepository
 from app.domain.courses.service import (
     CoursesService,
@@ -21,7 +23,6 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
-from app.db.rate_limit import InMemoryRateLimiter
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardInvalidAccessCodeError,
@@ -63,6 +64,17 @@ class FakeVolunteersRepository:
             }
         )
         return self.list_rows
+
+
+class FakeVolunteerCreator:
+    """Stands in for VolunteersService behind VolunteerCreatorProtocol."""
+
+    def __init__(self) -> None:
+        self.created: list[dict[str, object | None]] = []
+
+    async def create_from_application(self, **kwargs) -> int:
+        self.created.append(kwargs)
+        return 12
 
 
 class FakeVolunteerApplicationsRepository:
@@ -143,7 +155,7 @@ class FakeVolunteerApplicationsRepository:
             created_at=datetime.fromisoformat("2026-03-13T12:00:00+00:00"),
             submitted=True,
             source="invite",
-            status="submitted",
+            status=getattr(self, "detail_status", "submitted"),
             pending_volunteer_id=8,
             first_name="Sample",
             last_name="Registrant",
@@ -191,17 +203,24 @@ class FakeVolunteerApplicationsRepository:
         self.group_admin_recipient_lookup_group_ids.append(group_id)
         return list(self.group_admin_email_recipients.get(group_id, []))
 
-    async def approve_volunteer_application(
+    async def role_matches_group(self, *, role_id: int, group_id: int) -> bool:
+        return True
+
+    async def mark_promoted(
         self,
-        registration: VolunteerApplicationDetail,
         *,
-        accepted_group_id: int | None,
-    ) -> int:
-        self.approved_registration_ids.append(registration.registration_id)
-        return 12
+        registration_id: int,
+        volunteer_id: int,
+        accepted_group_id: int,
+    ) -> None:
+        self.approved_registration_ids.append(registration_id)
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
         self.deleted_registration_ids.append(registration_id)
+
+    async def append_domain_event(self, event, *, subject_id: int) -> None:
+        self.domain_events = getattr(self, "domain_events", [])
+        self.domain_events.append((event.event_type, subject_id))
 
 
 class FakeMobileCardRepository:
@@ -456,13 +475,13 @@ async def test_groups_service_archive_marks_group_inactive(monkeypatch) -> None:
             )
             return FakeResult()
 
-    async def fake_execute_in_transaction(callback):
-        return await callback(FakeSession())
-
-    monkeypatch.setattr(service, "execute_in_transaction", fake_execute_in_transaction)
     monkeypatch.setattr("app.domain.groups.service.get_current_semester_code", lambda: 20261)
 
-    archived = await service.archive_group(7)
+    token = set_request_session(FakeSession())
+    try:
+        archived = await service.archive_group(7)
+    finally:
+        reset_request_session(token)
 
     assert archived is True
     assert "UPDATE public.groups SET is_active=false" in captured["sql"]
@@ -524,9 +543,6 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
             captured["params"] = params
             return FakeResult()
 
-    async def fake_execute_in_transaction(callback):
-        return await callback(FakeSession())
-
     monkeypatch.setattr(service.repository, "course_exists", fake_course_exists)
     monkeypatch.setattr(
         service.repository, "list_existing_volunteer_ids", fake_list_existing_volunteer_ids
@@ -536,11 +552,14 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
         "list_existing_course_completion_volunteer_ids",
         fake_list_existing_course_completion_volunteer_ids,
     )
-    monkeypatch.setattr(service.repository, "execute_in_transaction", fake_execute_in_transaction)
 
-    created_count = await service.create_course_completions(
-        course_id=4, volunteer_ids=[12, 13], year=2026, term=1
-    )
+    token = set_request_session(FakeSession())
+    try:
+        created_count = await service.create_course_completions(
+            course_id=4, volunteer_ids=[12, 13], year=2026, term=1
+        )
+    finally:
+        reset_request_session(token)
 
     assert created_count == 2
     assert captured["semester_code"] == 20261
@@ -615,6 +634,7 @@ async def test_volunteers_service_plain_listing_uses_repository() -> None:
         ]
     )
     service = VolunteersService(repository=cast(VolunteersRepository, repository))
+    service.list_volunteer_page_rows = repository.list_volunteers_page  # type: ignore[method-assign]
 
     rows = await service.list_volunteers_page(query=None, limit=10, cursor=None)
 
@@ -685,6 +705,7 @@ async def test_volunteers_service_search_queries_use_ranked_database_path(
 async def test_volunteer_applications_pending_count_is_cached() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -742,6 +763,7 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
     repository.recent_registration_rows = [invitee_row, inviter_row]
     repository.recent_registration_group_rows = {9: [inviter_row, invitee_row]}
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -766,6 +788,7 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
     repository.application_photo_filetype = "jpg"
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -808,6 +831,7 @@ async def test_volunteer_applications_submit_does_not_notify_group_admins() -> (
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -844,6 +868,7 @@ async def test_volunteer_applications_submit_normalizes_local_phone_number() -> 
     repository.application_photo_filetype = "jpg"
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -870,6 +895,7 @@ async def test_volunteer_applications_submit_normalizes_local_phone_number() -> 
 async def test_volunteer_applications_submit_rejects_invalid_phone_number() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -897,6 +923,7 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
 ):
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -925,6 +952,7 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -957,6 +985,7 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
 async def test_volunteer_applications_delete_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=FakeEmailSender(),
@@ -979,6 +1008,7 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -1009,8 +1039,10 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
 @pytest.mark.asyncio
 async def test_volunteer_applications_service_can_resend_invitation_email() -> None:
     repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "invited"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -1040,6 +1072,7 @@ async def test_volunteer_applications_service_can_use_explicit_base_url_without_
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
         email_sender=email_sender,
@@ -1067,6 +1100,7 @@ async def test_volunteer_applications_service_rejects_duplicate_email_before_cre
     repository.existing_volunteer_ids_by_email = {"existing@example.test": 42}
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
             app_secret_key="test-secret",
             app_public_base_url="https://personal.kvarteret.no",
@@ -1096,6 +1130,7 @@ async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts
         ),
         repository=FakeMobileCardRepository(),  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     with pytest.raises(MobileCardInvalidAccessCodeError):
@@ -1130,6 +1165,7 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         Settings(app_secret_key="test-secret", mobile_card_access_code_ttl_minutes=10),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
@@ -1170,6 +1206,7 @@ async def test_mobile_card_service_issues_new_code_on_every_request() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=email_sender,
+        rate_limiter=InMemoryRateLimiter(),
     )
 
     await service.request_access_code("person@example.com")
@@ -1196,6 +1233,7 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1216,6 +1254,7 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1258,6 +1297,7 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(False),
     
@@ -1277,6 +1317,7 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(True),
     
@@ -1322,6 +1363,7 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         april_state_service=FakeMobileCardAprilStateService(True),
     
     )
@@ -1358,6 +1400,7 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
         april_state_service=FakeMobileCardAprilStateService(True),
     
     )
@@ -1382,6 +1425,7 @@ async def test_mobile_card_service_renews_session_when_token_is_near_expiry(
         ),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1411,6 +1455,7 @@ async def test_mobile_card_service_reports_expired_token_reason(monkeypatch) -> 
         Settings(app_secret_key="test-secret", mobile_card_session_ttl_days=1),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1437,12 +1482,14 @@ async def test_mobile_card_service_reports_bad_signature_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
     other_service = MobileCardService(
         Settings(app_secret_key="other-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 
@@ -1461,6 +1508,7 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         Settings(app_secret_key="test-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
     
     )
 

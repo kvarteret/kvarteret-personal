@@ -12,13 +12,10 @@ from sqlalchemy import (
     update,
 )
 
-from app.db.tables import (
-    group_admin_memberships,
-    groups,
-    group_course_requirements,
-    role_assignments,
-    assignment_roles,
-)
+from app.domain.admin_accounts.tables import group_admin_memberships
+from app.domain.courses.tables import group_course_requirements
+from app.domain.groups.tables import groups
+from app.domain.role_assignments.tables import assignment_roles, role_assignments
 from app.domain.groups.queries import (
     GroupBreakdownItem,
     GroupDetail,
@@ -182,7 +179,7 @@ class GroupsService(GroupsQueries):
             row = result.first()
             return row[0] if row is not None else None
 
-        updated_group_id = await self.execute_in_transaction(callback)
+        updated_group_id = await callback(self.session)
         return updated_group_id == group_id
 
     async def archive_group(self, group_id: int) -> bool:
@@ -207,7 +204,7 @@ class GroupsService(GroupsQueries):
             row = result.first()
             return row[0] if row is not None else None
 
-        archived_group_id = await self.execute_in_transaction(callback)
+        archived_group_id = await callback(self.session)
         return archived_group_id == group_id
 
     async def delete_group(self, group_id: int) -> bool:
@@ -233,7 +230,7 @@ class GroupsService(GroupsQueries):
             row = result.first()
             return row[0] if row is not None else None
 
-        deleted_group_id = await self.execute_in_transaction(callback)
+        deleted_group_id = await callback(self.session)
         return deleted_group_id == group_id
 
     async def create_group_role(
@@ -273,7 +270,7 @@ class GroupsService(GroupsQueries):
             row = result.first()
             return row[0] if row is not None else None
 
-        updated_role_id = await self.execute_in_transaction(callback)
+        updated_role_id = await callback(self.session)
         return updated_role_id == role_id
 
     async def delete_group_role(self, group_id: int, role_id: int) -> bool:
@@ -290,7 +287,7 @@ class GroupsService(GroupsQueries):
             row = result.first()
             return row[0] if row is not None else None
 
-        deleted_role_id = await self.execute_in_transaction(callback)
+        deleted_role_id = await callback(self.session)
         return deleted_role_id == role_id
 
     async def delete_group_history_entry(self, group_id: int, history_id: int) -> None:

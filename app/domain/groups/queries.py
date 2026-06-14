@@ -22,7 +22,9 @@ from sqlalchemy import (
 )
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import groups, role_assignments, volunteer_records, volunteer_photos, assignment_roles
+from app.domain.groups.tables import groups
+from app.domain.role_assignments.tables import assignment_roles, role_assignments
+from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.infrastructure.formatting.semester import (
     format_semester_code,
     get_current_semester_code,

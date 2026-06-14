@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import insert, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cache import TTLCache
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import mobile_card_april_state
-
+from app.domain.mobile_card.tables import mobile_card_april_state
 
 @dataclass(slots=True)
 class MobileCardAprilState:
@@ -19,11 +18,6 @@ class MobileCardAprilState:
 
 
 class MobileCardAprilStateRepository(SqlAlchemyRepository):
-    def __init__(
-        self, session_factory: async_sessionmaker[AsyncSession] | None = None
-    ) -> None:
-        super().__init__(session_factory=session_factory)
-
     async def get_state(self) -> MobileCardAprilState:
         row = await self.fetch_first_mapping(
             select(
@@ -62,7 +56,7 @@ class MobileCardAprilStateRepository(SqlAlchemyRepository):
                     )
                 )
 
-        await self.execute_in_transaction(_write)
+        await _write(self.session)
 
 
 class MobileCardAprilStateService:

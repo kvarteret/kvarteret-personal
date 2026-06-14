@@ -16,7 +16,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
 
       - name: Install Bun
-        uses: oven-sh/setup-bun@v3
+        uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: |

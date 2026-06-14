@@ -16,11 +16,13 @@ The docs are organized by purpose:
 - [Local development](how-to/local-development.md)
 - [Update OpenAPI clients](how-to/update-openapi-clients.md)
 - [Deploy and runtime checks](how-to/deploy-and-runtime-checks.md)
+- [Run the tests](how-to/run-tests.md)
 - [API boundaries](reference/api-boundaries.md)
 - [External systems](reference/external-systems.md)
 - [Configuration](reference/configuration.md)
 - [Kvarteret system map](explanation/kvarteret-system-map.md)
 - [Kvarteret Personal architecture](explanation/kvarteret-personal-architecture.md)
+- [The volunteer application lifecycle](explanation/volunteer-application-lifecycle.md)
 - [ADR: Group volunteer registration](explanation/group-volunteer-registration-adr.md)
 - [Current documentation issues](issues/current-documentation-issues.md)
 
@@ -33,8 +35,7 @@ The docs are organized by purpose:
 - Supabase Postgres migrations under `migrations/`
 - the personnel admin UI
 - the mobile-card API used by the volunteer app
-- event read APIs exposed in `openapi.json`
-- public volunteer prospect registration
+- public volunteer prospect registration (including group signup with friend invitations)
 - media proxy routes for private personnel photos
 - the Spotify-backed now-playing API
 

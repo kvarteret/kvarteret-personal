@@ -23,7 +23,7 @@
                     <option value="{{ volunteer_application.second_choice_group_id }}">{{ volunteer_application.second_choice_group_name }}</option>
                   {% endif %}
                 </select>
-                <button class="app-button" type="submit" {% if volunteer_application.group_members | selectattr("active") | selectattr("submitted", "equalto", false) | list %}disabled{% endif %}>Godkjenn alle</button>
+                <button class="app-button" type="submit" {% if volunteer_application.group_members | selectattr("active") | selectattr("submitted", "equalto", false) | list %}disabled{% endif %}>Godkjenn gruppen</button>
               </form>
             </div>
             <div class="grid gap-3">

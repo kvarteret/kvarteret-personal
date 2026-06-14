@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hmac
 import logging
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from secrets import choice
 
-from app.cache import TTLCache
 from app.config import Settings
+from app.db.rate_limit import RateLimiter, RateLimitExceeded
+from app.db.session import commit_request_session
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
     MobileCardEmailTemplateRendererProtocol,
@@ -139,6 +141,7 @@ class MobileCardService:
         settings: Settings,
         repository: MobileCardRepository,
         email_sender: EmailSenderProtocol,
+        rate_limiter: RateLimiter,
         media_token_service: MediaTokenService | None = None,
         april_state_service: MobileCardAprilStateService | None = None,
         email_template_renderer: MobileCardEmailTemplateRendererProtocol | None = None,
@@ -146,20 +149,13 @@ class MobileCardService:
         self.settings = settings
         self.repository = repository
         self.email_sender = email_sender
+        self.rate_limiter = rate_limiter
         self.media_token_service = media_token_service
         self.april_state_service = april_state_service
         self.email_template_renderer = (
             email_template_renderer or MobileCardEmailTemplateRenderer()
         )
         self.sessions = MobileCardSessionManager(settings)
-        self._access_code_request_counts: TTLCache[str, int] = TTLCache(
-            ttl_seconds=settings.mobile_card_access_code_request_window_seconds,
-            max_entries=4096,
-        )
-        self._session_attempt_counts: TTLCache[str, int] = TTLCache(
-            ttl_seconds=settings.mobile_card_session_attempt_window_seconds,
-            max_entries=4096,
-        )
 
     async def request_access_code(
         self, email: str, *, source_key: str | None = None
@@ -168,13 +164,13 @@ class MobileCardService:
         if self._is_review_request(normalized_email, None):
             return None
         request_keys = _build_rate_limit_keys(normalized_email, source_key)
-        self._enforce_rate_limit(
-            cache=self._access_code_request_counts,
-            keys=request_keys,
+        await self._hit_rate_limits(
+            "request",
+            request_keys,
             limit=self.settings.mobile_card_access_code_request_limit,
+            window_seconds=self.settings.mobile_card_access_code_request_window_seconds,
             message="Too many access-code requests. Try again later.",
         )
-        self._increment_rate_limit(self._access_code_request_counts, request_keys)
 
         volunteers = await self.repository.find_volunteers_by_email(normalized_email)
         if len(volunteers) > 1:
@@ -189,16 +185,18 @@ class MobileCardService:
         volunteer_row = volunteers[0]
         now = datetime.now(UTC)
         access_code = _generate_access_code()
-        code_hash = sha256(access_code.encode("utf-8")).hexdigest()
         await self.repository.store_access_code(
             volunteer_id=volunteer_row["id"],
-            code_hash=code_hash,
+            code_hash=self._hash_access_code(access_code),
             created_at=now,
         )
         logger.info(
             "Generated mobile-card access code for volunteer %s",
             volunteer_row["id"],
         )
+
+        # The code must be durably stored before the email announces it.
+        await commit_request_session()
 
         rendered_email = self.email_template_renderer.render_access_code_email(
             access_code=access_code,
@@ -238,26 +236,26 @@ class MobileCardService:
             token = self.sessions.build_token({"person_id": 0, "review": True})
             return MobileCardSession(session_token=token, card=card)
         attempt_keys = _build_rate_limit_keys(normalized_email, source_key)
-        self._enforce_rate_limit(
-            cache=self._session_attempt_counts,
-            keys=attempt_keys,
+        # Counts BEFORE validation to prevent TOCTOU races.
+        await self._hit_rate_limits(
+            "attempt",
+            attempt_keys,
             limit=self.settings.mobile_card_session_attempt_limit,
+            window_seconds=self.settings.mobile_card_session_attempt_window_seconds,
             message="Too many access-code attempts. Try again later.",
         )
 
-        # Increment rate limit BEFORE validation to prevent TOCTOU races.
-        self._increment_rate_limit(self._session_attempt_counts, attempt_keys)
-
-        code_hash = sha256(normalized_access_code.encode("utf-8")).hexdigest()
         volunteer_row = await self.repository.find_volunteer_by_email_and_code(
             email=normalized_email,
-            code_hash=code_hash,
+            code_hash=self._hash_access_code(normalized_access_code),
             expires_after=datetime.now(UTC)
             - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
         )
         if volunteer_row is None:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
-        self._clear_rate_limit(self._session_attempt_counts, attempt_keys)
+        await self.rate_limiter.clear(
+            *(f"mobile-card:attempt:{key}" for key in attempt_keys)
+        )
         token = self.sessions.build_token({"person_id": volunteer_row["id"]})
         card = await self._build_card(
             volunteer_row["id"], include_role_history=include_role_history
@@ -420,30 +418,35 @@ class MobileCardService:
             word_of_the_day=_word_of_the_day(),
         )
 
-    def _enforce_rate_limit(
+    async def _hit_rate_limits(
         self,
-        *,
-        cache: TTLCache[str, int],
+        kind: str,
         keys: tuple[str, ...],
+        *,
         limit: int,
+        window_seconds: int,
         message: str,
     ) -> None:
         if limit < 1:
             return
-        if any((cache.get(key) or 0) >= limit for key in keys):
-            raise MobileCardRateLimitedError(message)
+        try:
+            for key in keys:
+                await self.rate_limiter.hit(
+                    f"mobile-card:{kind}:{key}",
+                    limit=limit,
+                    window_seconds=window_seconds,
+                )
+        except RateLimitExceeded:
+            raise MobileCardRateLimitedError(message) from None
 
-    def _increment_rate_limit(
-        self, cache: TTLCache[str, int], keys: tuple[str, ...]
-    ) -> None:
-        for key in keys:
-            cache.set(key, (cache.get(key) or 0) + 1)
-
-    def _clear_rate_limit(
-        self, cache: TTLCache[str, int], keys: tuple[str, ...]
-    ) -> None:
-        for key in keys:
-            cache.pop(key)
+    def _hash_access_code(self, access_code: str) -> str:
+        # HMAC keyed by the app secret: a 6-digit code is trivially
+        # brute-forced offline from a bare digest in a database leak.
+        return hmac.new(
+            self.settings.app_secret_key.encode("utf-8"),
+            access_code.encode("utf-8"),
+            sha256,
+        ).hexdigest()
 
 
 def _generate_access_code(length: int = 6) -> str:

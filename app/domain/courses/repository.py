@@ -18,13 +18,9 @@ from sqlalchemy import (
 )
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import (
-    course_completions,
-    courses,
-    group_course_requirements,
-    groups,
-    volunteer_records,
-)
+from app.domain.courses.tables import course_completions, courses, group_course_requirements
+from app.domain.groups.tables import groups
+from app.domain.volunteers.tables import volunteer_records
 from app.infrastructure.formatting.semester import format_semester_code
 from app.shared.coercion import coerce_datetime
 from app.shared.text import build_full_name
@@ -238,7 +234,7 @@ class CoursesRepository(SqlAlchemyRepository):
             row = result.first()
             return row[0] if row is not None else None
 
-        updated_course_id = await self.execute_in_transaction(callback)
+        updated_course_id = await callback(self.session)
         return updated_course_id == course_id
 
     async def delete_course(self, course_id: int) -> bool:
@@ -256,7 +252,7 @@ class CoursesRepository(SqlAlchemyRepository):
             row = result.first()
             return row[0] if row is not None else None
 
-        deleted_course_id = await self.execute_in_transaction(callback)
+        deleted_course_id = await callback(self.session)
         return deleted_course_id == course_id
 
     async def create_course_completion(
@@ -290,7 +286,7 @@ class CoursesRepository(SqlAlchemyRepository):
             )
             return result.scalars().all()
 
-        created_ids = await self.execute_in_transaction(callback)
+        created_ids = await callback(self.session)
         return len(created_ids)
 
     async def delete_course_completion(self, completion_id: int) -> None:

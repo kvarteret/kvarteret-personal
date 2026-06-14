@@ -5,7 +5,9 @@ from datetime import date
 from sqlalchemy import and_, exists, func, not_, or_, select
 
 from app.db.repository import SqlAlchemyRepository
-from app.db.tables import role_assignments, course_completions, volunteer_records, assignment_roles
+from app.domain.courses.tables import course_completions
+from app.domain.role_assignments.tables import assignment_roles, role_assignments
+from app.domain.volunteers.tables import volunteer_records
 from app.shared.coercion import coerce_date
 from app.shared.text import build_full_name
 from app.domain.search.models import SearchFilterList, SearchQuery, SearchResultItem

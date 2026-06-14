@@ -7,9 +7,7 @@ from app.domain.volunteer_applications.state_machine import (
     ApplicationState,
     IllegalTransition,
     MembershipState,
-    SendApplicantEmail,
     SendApprovalEmail,
-    SendRejectionEmail,
     TransitionContext,
     application_transition,
     membership_transition,
@@ -22,21 +20,21 @@ APPLICATION_TEST_CASES = [
     # (state, action, expected_new_state_or_None)
     (ApplicationState.PROSPECT, ApplicationAction.SUBMIT_PROFILE, ApplicationState.SUBMITTED),
     (ApplicationState.PROSPECT, ApplicationAction.RESEND_INVITATION, None),
-    (ApplicationState.PROSPECT, ApplicationAction.MARK_TRIAL_SHIFT, None),
-    (ApplicationState.PROSPECT, ApplicationAction.APPROVE, None),
+    (ApplicationState.PROSPECT, ApplicationAction.MARK_TRIAL_SHIFT, ApplicationState.PROSPECT),
+    (ApplicationState.PROSPECT, ApplicationAction.APPROVE, ApplicationState.PROMOTED),
     (ApplicationState.PROSPECT, ApplicationAction.REJECT, None),
     (ApplicationState.PROSPECT, ApplicationAction.DELETE, ApplicationState.PROSPECT),  # removed
     (ApplicationState.PROSPECT, ApplicationAction.DROP_MEMBER, None),
 
     (ApplicationState.INVITED, ApplicationAction.SUBMIT_PROFILE, ApplicationState.SUBMITTED),
     (ApplicationState.INVITED, ApplicationAction.RESEND_INVITATION, ApplicationState.INVITED),
-    (ApplicationState.INVITED, ApplicationAction.MARK_TRIAL_SHIFT, None),
+    (ApplicationState.INVITED, ApplicationAction.MARK_TRIAL_SHIFT, ApplicationState.INVITED),
     (ApplicationState.INVITED, ApplicationAction.APPROVE, None),
     (ApplicationState.INVITED, ApplicationAction.REJECT, None),
     (ApplicationState.INVITED, ApplicationAction.DELETE, ApplicationState.INVITED),  # removed
     (ApplicationState.INVITED, ApplicationAction.DROP_MEMBER, None),
 
-    (ApplicationState.SUBMITTED, ApplicationAction.SUBMIT_PROFILE, None),
+    (ApplicationState.SUBMITTED, ApplicationAction.SUBMIT_PROFILE, ApplicationState.SUBMITTED),
     (ApplicationState.SUBMITTED, ApplicationAction.RESEND_INVITATION, None),
     (ApplicationState.SUBMITTED, ApplicationAction.MARK_TRIAL_SHIFT, ApplicationState.SUBMITTED),
     (ApplicationState.SUBMITTED, ApplicationAction.APPROVE, ApplicationState.PROMOTED),
@@ -44,7 +42,7 @@ APPLICATION_TEST_CASES = [
     (ApplicationState.SUBMITTED, ApplicationAction.DELETE, ApplicationState.SUBMITTED),  # removed
     (ApplicationState.SUBMITTED, ApplicationAction.DROP_MEMBER, None),
 
-    (ApplicationState.PROMOTED, ApplicationAction.SUBMIT_PROFILE, None),
+    (ApplicationState.PROMOTED, ApplicationAction.SUBMIT_PROFILE, ApplicationState.PROMOTED),
     (ApplicationState.PROMOTED, ApplicationAction.RESEND_INVITATION, None),
     (ApplicationState.PROMOTED, ApplicationAction.MARK_TRIAL_SHIFT, None),
     (ApplicationState.PROMOTED, ApplicationAction.APPROVE, None),
@@ -94,14 +92,22 @@ def test_membership_transition_matrix(state, action, expected):
 # ── Side-effect tests ─────────────────────────────────────────────
 
 
-def test_submit_profile_emits_applicant_email_effect():
+def test_submit_profile_emits_audit_event():
     result = application_transition(
         ApplicationState.PROSPECT, ApplicationAction.SUBMIT_PROFILE,
     )
-    assert len(result.effects) == 1
-    assert isinstance(result.effects[0], SendApplicantEmail)
+    assert len(result.effects) == 0
     assert result.event is not None
     assert result.event.event_type == "application_submitted"
+
+
+def test_promoted_resubmission_is_profile_completion():
+    result = application_transition(
+        ApplicationState.PROMOTED, ApplicationAction.SUBMIT_PROFILE,
+    )
+    assert result.new_state == ApplicationState.PROMOTED
+    assert result.event is not None
+    assert result.event.event_type == "profile_completed"
 
 
 def test_approve_emits_approval_email_effect():
@@ -114,14 +120,22 @@ def test_approve_emits_approval_email_effect():
     assert result.event.event_type == "application_approved"
 
 
-def test_reject_emits_rejection_email_effect():
+def test_reject_emits_audit_event():
     result = application_transition(
         ApplicationState.SUBMITTED, ApplicationAction.REJECT,
     )
-    assert len(result.effects) == 1
-    assert isinstance(result.effects[0], SendRejectionEmail)
+    assert len(result.effects) == 0
     assert result.event is not None
     assert result.event.event_type == "application_rejected"
+
+
+def test_approve_requires_submission():
+    with pytest.raises(IllegalTransition, match="submitted details"):
+        application_transition(
+            ApplicationState.PROSPECT,
+            ApplicationAction.APPROVE,
+            context=TransitionContext(has_submission=False),
+        )
 
 
 def test_mark_trial_shift_emits_audit_event():
