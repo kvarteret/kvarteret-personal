@@ -28,9 +28,26 @@
           <span class="text-sm text-kvarteret-sky">Brukernavn</span>
           <input class="app-input" type="text" name="identifier" required>
         </label>
-        <label class="grid gap-1">
+        <label class="grid gap-1" x-data="{ show: false }">
           <span class="text-sm text-kvarteret-sky">Passord</span>
-          <input class="app-input" type="password" name="password" required>
+          <div class="relative">
+            <input class="app-input w-full pr-12" :type="show ? 'text' : 'password'" name="password" required>
+            <button
+              class="absolute inset-y-0 right-0 flex items-center px-3 text-kvarteret-sky hover:text-kvarteret-ink"
+              type="button"
+              @click="show = !show"
+              :aria-label="show ? 'Skjul passord' : 'Vis passord'"
+            >
+              <svg x-show="!show" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              <svg x-show="show" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            </button>
+          </div>
         </label>
         <button class="app-button min-h-14 text-lg" type="submit">
           Logg inn

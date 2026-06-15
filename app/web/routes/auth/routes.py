@@ -141,7 +141,7 @@ async def login_submit(
             {
                 "title": "Login",
                 "section": "login",
-                "error_message": "Too many login attempts. Try again later.",
+                "error_message": "For mange innloggingsforsøk. Prøv igjen senere.",
                 "message": None,
             },
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -160,7 +160,7 @@ async def login_submit(
             {
                 "title": "Login",
                 "section": "login",
-                "error_message": "Login is not configured yet.",
+                "error_message": "Innlogging er ikke konfigurert.",
                 "message": None,
             },
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -172,7 +172,7 @@ async def login_submit(
             {
                 "title": "Login",
                 "section": "login",
-                "error_message": "Invalid credentials.",
+                "error_message": "Feil brukernavn eller passord.",
                 "message": None,
             },
             status_code=status.HTTP_400_BAD_REQUEST,
