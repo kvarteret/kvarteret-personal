@@ -6,8 +6,8 @@ Use this guide when changing any route path, request body, response model, statu
 
 From `kvarteret-personal`:
 
-    make openapi
-    make openapi-check
+    kv openapi
+    kv openapi --check
 
 Commit `openapi.json` together with the backend change.
 
@@ -27,7 +27,7 @@ From `/Users/kluvin/dev/kvarteret/samfunnetibergen`:
 
     npm run api:sync
 
-This runs `make -C ../kvarteret-personal openapi` and regenerates the generated client/snapshot. Current public arrangement pages and feeds in `samfunnetibergen` are Sanity-backed. The retired personal event API is not a runtime `samfunnetibergen` dependency.
+This runs `../infra/bin/kv openapi` and regenerates the generated client/snapshot. Current public arrangement pages and feeds in `samfunnetibergen` are Sanity-backed. The retired personal event API is not a runtime `samfunnetibergen` dependency.
 
 ## 4. Record retired `frontend-eventside` impact
 

@@ -24,26 +24,26 @@ jobs:
           bun install --frozen-lockfile
 
       - name: Build assets
-        run: make assets
+        run: bun run build:assets
 
       - name: Lint
-        run: make lint
+        run: uv run ruff check .
 
       - name: Import boundaries
-        run: make lint-imports
+        run: uv run lint-imports
 
       - name: Test
         env:
           DATABASE_URL: sqlite+aiosqlite:////tmp/kvarteret-personal-tests.db
-        run: make test
+        run: uv run pytest
 
       - name: OpenAPI contract
         env:
           DATABASE_URL: sqlite+aiosqlite:////tmp/kvarteret-personal-openapi.db
-        run: make openapi-check
+        run: uv run python scripts/export_openapi.py --check
 
       - name: Dependency audit
-        run: make audit
+        run: uv run pip-audit
 
   migrations:
     runs-on: ubuntu-latest
@@ -117,7 +117,7 @@ jobs:
           SQL
 
       - name: Apply migrations from empty database
-        run: make migrate
+        run: uv run alembic upgrade head
 
       - name: Check schema drift
-        run: make schema-drift
+        run: uv run python scripts/check_schema_drift.py

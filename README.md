@@ -18,12 +18,14 @@ The documentation home is [docs/README.md](docs/README.md).
 
 Install dependencies:
 
-    uv sync
-    bun install
+    kv install
 
-Run the app:
+Run the full dev stack (Dockerized Postgres, migrations, seed, app, CSS watch):
 
-    make run
+    kv start
+
+Typing `kvarteret` (or `kv`) with no arguments shows an interactive command
+menu; `kv info` prints local URLs and credentials.
 
 Check health:
 
@@ -37,17 +39,20 @@ The root web page redirects to `/login` when there is no admin session.
 
 ## Common Commands
 
-    make install
-    make run
-    make css-watch
-    make test
-    make lint
-    make lint-imports
-    make audit
-    make openapi
-    make openapi-check
-    make smoke-auth
-Use [Local development](docs/how-to/local-development.md) for daily workflows.
+    kv start          # full dev stack in phrocs/mprocs panes
+    kv info           # dev URLs, logins, passwords
+    kv seed           # migrate + reseed the dev database
+    kv nuke           # destroy the dev database and rebuild
+    kv test
+    kv lint           # ruff + import-linter contracts
+    kv audit
+    kv openapi --check
+    kv smoke-auth
+
+The `kv` CLI lives in the sibling [infra](../infra) repo and is on PATH via
+[mise](https://mise.jdx.dev) (`mise trust`), or call `../infra/bin/kv`
+directly. Use [Local development](docs/how-to/local-development.md) for
+daily workflows.
 
 ## API Contract
 
@@ -55,11 +60,11 @@ FastAPI is the source of truth for the API contract. `openapi.json` is checked i
 
 After changing API routes, request models, response models, or operation IDs:
 
-    make openapi
+    kv openapi
 
 Before committing API changes:
 
-    make openapi-check
+    kv openapi --check
 
 Consumer boundaries and client regeneration are documented in [API boundaries](docs/reference/api-boundaries.md) and [Update OpenAPI clients](docs/how-to/update-openapi-clients.md).
 

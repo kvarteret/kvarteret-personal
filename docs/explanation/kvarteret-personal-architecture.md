@@ -172,7 +172,7 @@ The web admin routes in `app/web/router.py` cover login, volunteers, groups, cou
 
 ## Data Model Ownership
 
-Supabase Postgres is the primary database; this repository owns the schema through Alembic migrations under `migrations/`. The chain starts at a true baseline (`20260313_0900_legacy_schema_baseline`) and replays from an empty database — CI proves this on every push, then checks the migrated schema against the SQLAlchemy metadata with `make schema-drift`. The schema speaks English; the legacy Norwegian names and all dead .NET-era structures were dropped during the restructure.
+Supabase Postgres is the primary database; this repository owns the schema through Alembic migrations under `migrations/`. The chain starts at a true baseline (`20260313_0900_legacy_schema_baseline`) and replays from an empty database — CI proves this on every push, then checks the migrated schema against the SQLAlchemy metadata with `kv schema-drift`. The schema speaks English; the legacy Norwegian names and all dead .NET-era structures were dropped during the restructure.
 
 ## Security Shape
 
@@ -185,8 +185,8 @@ Supabase Postgres is the primary database; this repository owns the schema throu
 
 Vercel loads `api/index.py`, which imports `create_app()` and exposes a
 module-level ASGI `app`. Static assets are prepared by
-`scripts/prepare_vercel_static.py`. Local development runs `make dev-up` and
-`make dev-run`: Docker Postgres, synthetic seed data, deterministic development
+`scripts/prepare_vercel_static.py`. Local development runs `kv start` and
+`kv start`: Docker Postgres, synthetic seed data, deterministic development
 auth, filesystem-backed photos, and a file-backed email outbox. The database
 engine uses `NullPool` on Vercel; the request-scoped session keeps that to at
 most one connection per request.

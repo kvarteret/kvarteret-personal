@@ -23,7 +23,7 @@ For a minimal local smoke run, the app can start without all third-party integra
 
 Run:
 
-    make run
+    kv run
 
 This starts Uvicorn with `app.main:create_app` as a factory.
 
@@ -41,11 +41,11 @@ The root web page redirects to `/login` when there is no admin session. That is 
 
 Run:
 
-    make test
+    kv test
 
 For API contract work, also run:
 
-    make openapi-check
+    kv openapi --check
 
 ## 5. Where to Go Next
 

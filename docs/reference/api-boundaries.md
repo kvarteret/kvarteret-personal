@@ -8,11 +8,11 @@ FastAPI route declarations and Pydantic response models in `kvarteret-personal` 
 
 After changing API routes, request models, response models, or operation IDs, run:
 
-    make openapi
+    kv openapi
 
 Before committing an API change, run:
 
-    make openapi-check
+    kv openapi --check
 
 Consumers that generate typed clients should regenerate from `openapi.json`, preferably from a sibling checkout during local development or from the `develop` branch artifact when consuming remotely.
 
