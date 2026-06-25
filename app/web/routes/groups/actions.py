@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -349,11 +348,9 @@ async def group_history_delete(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
             )
-        history, stats, retention = await asyncio.gather(
-            groups_service.get_group_history_by_semester(group_id),
-            groups_service.get_group_semester_stats(group_id),
-            groups_service.get_group_retention_stats(group_id),
-        )
+        history = await groups_service.get_group_history_by_semester(group_id)
+        stats = await groups_service.get_group_semester_stats(group_id)
+        retention = await groups_service.get_group_retention_stats(group_id)
         return templates.TemplateResponse(
             request,
             "components/groups/group_history_delete_oob.html",
