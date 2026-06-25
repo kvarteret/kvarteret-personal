@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -141,10 +140,8 @@ async def groups_detail_stats(
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
-        stats, retention = await asyncio.gather(
-            groups_service.get_group_semester_stats(group_id),
-            groups_service.get_group_retention_stats(group_id),
-        )
+        stats = await groups_service.get_group_semester_stats(group_id)
+        retention = await groups_service.get_group_retention_stats(group_id)
     except NotConfiguredError:
         raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
     return templates.TemplateResponse(

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.roles import UserRole
@@ -34,11 +32,9 @@ async def volunteers_stats(
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
-        org_stats, group_counts, org_retention = await asyncio.gather(
-            groups_service.get_org_stats_detailed(),
-            groups_service.get_current_group_member_counts(),
-            groups_service.get_org_retention_stats(),
-        )
+        org_stats = await groups_service.get_org_stats_detailed()
+        group_counts = await groups_service.get_current_group_member_counts()
+        org_retention = await groups_service.get_org_retention_stats()
     except NotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -69,16 +65,14 @@ async def volunteers_index(
 ):
     only_active_enabled = _to_checkbox_bool(only_active, default=True)
     try:
-        page, total_count = await asyncio.gather(
-            volunteers_service.list_volunteers_page(
-                query=q,
-                limit=VOLUNTEERS_PAGE_SIZE,
-                cursor=cursor,
-                only_active=only_active_enabled,
-            ),
-            volunteers_service.count_volunteers(
-                query=q, only_active=only_active_enabled
-            ),
+        page = await volunteers_service.list_volunteers_page(
+            query=q,
+            limit=VOLUNTEERS_PAGE_SIZE,
+            cursor=cursor,
+            only_active=only_active_enabled,
+        )
+        total_count = await volunteers_service.count_volunteers(
+            query=q, only_active=only_active_enabled
         )
     except NotConfiguredError:
         raise HTTPException(
