@@ -56,8 +56,12 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
 
     connect_args: dict[str, object] = {}
     is_sqlite = settings.database_url.startswith("sqlite+aiosqlite")
+    is_pooler = "pooler.supabase.com" in settings.database_url
     if is_sqlite:
         connect_args["check_same_thread"] = False
+    if is_pooler:
+        connect_args["statement_cache_size"] = 0
+        connect_args["prepared_statement_cache_size"] = 0
 
     engine_kwargs: dict[str, object] = {
         "connect_args": connect_args,
