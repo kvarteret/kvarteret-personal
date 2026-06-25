@@ -16,14 +16,14 @@ The build prepares static assets so `/static/...` is served directly from `publi
 
 Run:
 
-    make test
-    make openapi-check
+    kv test
+    kv openapi --check
     bun run build:css
     python scripts/prepare_vercel_static.py
 
 Then start locally:
 
-    make run
+    kv run
 
 Check:
 

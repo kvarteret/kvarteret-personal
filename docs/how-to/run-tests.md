@@ -16,8 +16,8 @@ What it covers:
 
     uv run ruff check .
     uv run lint-imports        # layers + domain-independence contracts
-    DATABASE_URL=sqlite+aiosqlite:////tmp/kv-oas.db make openapi-check
-    make audit                 # pip-audit
+    DATABASE_URL=sqlite+aiosqlite:////tmp/kv-oas.db kv openapi --check
+    kv audit                 # pip-audit
 
 `lint-imports` is a real test: a cross-module service import fails the build.
 
@@ -49,13 +49,13 @@ Tear down when done:
 
 ## CI
 
-`.github/workflows/ci.yml` runs the fast suite, the static gates, and a migration job (empty Postgres 17 → `alembic upgrade head` → `make schema-drift`) on every push and PR, plus a weekly schedule so the quiet repo catches dependency rot.
+`.github/workflows/ci.yml` runs the fast suite, the static gates, and a migration job (empty Postgres 17 → `alembic upgrade head` → `kv schema-drift`) on every push and PR, plus a weekly schedule so the quiet repo catches dependency rot.
 
 ## Production Smoke Checks
 
     curl -sI https://personal.kvarteret.no/health   # security headers + 200
-    make smoke-auth                                  # live create-login-cleanup roundtrip
-    DATABASE_URL=<prod url> make schema-drift        # prod schema matches metadata
+    kv smoke-auth                                  # live create-login-cleanup roundtrip
+    DATABASE_URL=<prod url> kv schema-drift        # prod schema matches metadata
 
 ## Extending the E2E Suite
 

@@ -6,7 +6,7 @@ exists, otherwise the synthetic seed. Always ensures the dev admin
 account exists. Idempotent — re-running against a seeded database only
 re-applies migrations and the admin check.
 
-Run through ``make dev-up``; direct invocation:
+Run through ``kv seed``; direct invocation:
 
     uv run python scripts/dev/bootstrap.py
 """
@@ -47,7 +47,7 @@ async def wait_for_database(timeout_seconds: int = 30) -> None:
                 if time.monotonic() > deadline:
                     raise SystemExit(
                         "Could not reach the dev database on localhost:55432.\n"
-                        "Start it with: make dev-up"
+                        "Start it with: kv start"
                     )
                 await asyncio.sleep(1)
     finally:
@@ -127,7 +127,7 @@ async def main() -> None:
     print(
         "\nDev database ready.\n"
         f"  DATABASE_URL={DEV_DATABASE_URL}\n"
-        "  Start the app:   make dev-run\n"
+        "  Start the app:   kv start\n"
         "  Admin login:     dev@kvarteret.dev / dev-password "
         "(override via DEV_ADMIN_EMAIL / DEV_ADMIN_PASSWORD)\n"
         "  Dev emails land in .devdata/outbox/, photos in .devdata/photos/."
