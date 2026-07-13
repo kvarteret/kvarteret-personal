@@ -53,3 +53,21 @@ def test_feedback_api_returns_429_when_rate_limited() -> None:
     assert response.json() == {
         "detail": "Too many feedback submissions. Try again later."
     }
+
+
+def test_feedback_api_rejects_unverified_identity_fields() -> None:
+    service = CapturingFeedbackService()
+    client = _make_client(service)
+
+    response = client.post(
+        "/api/v1/feedback/",
+        json={
+            "message": "Hei",
+            "source": "internbevis-rn",
+            "user_id": 123,
+            "user_full_name": "Spoofed Member",
+        },
+    )
+
+    assert response.status_code == 422
+    assert service.calls == []

@@ -925,6 +925,7 @@
         "type": "object"
       },
       "FeedbackRequest": {
+        "additionalProperties": false,
         "properties": {
           "contact_allowed": {
             "default": false,
@@ -978,29 +979,6 @@
             "maxLength": 50,
             "title": "Source",
             "type": "string"
-          },
-          "user_full_name": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Full Name"
-          },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
           }
         },
         "required": [
