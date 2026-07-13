@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 import os
 from dataclasses import dataclass
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -60,8 +61,14 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
     if is_sqlite:
         connect_args["check_same_thread"] = False
     if is_pooler:
+        # PgBouncer in transaction mode multiplexes clients onto shared server
+        # backends. Disabling the cache is not enough: SQLAlchemy names every
+        # prepared statement deterministically (__asyncpg_stmt_<counter>__), so
+        # two connections collide on the same backend with
+        # DuplicatePreparedStatementError. A per-statement unique name avoids it.
         connect_args["statement_cache_size"] = 0
         connect_args["prepared_statement_cache_size"] = 0
+        connect_args["prepared_statement_name_func"] = lambda: f"__asyncpg_{uuid4()}__"
 
     engine_kwargs: dict[str, object] = {
         "connect_args": connect_args,
