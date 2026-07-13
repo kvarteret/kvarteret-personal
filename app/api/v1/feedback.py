@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.dependencies import get_feedback_service
 from app.domain.feedback.service import (
     FeedbackDeliveryError,
+    FeedbackRateLimitedError,
     FeedbackService,
     FeedbackValidationError,
 )
+from app.observability import client_ip_from_request
 
 router = APIRouter()
 
@@ -31,6 +33,7 @@ class FeedbackRequest(BaseModel):
 
 @router.post("/")
 async def submit_feedback(
+    request: Request,
     body: FeedbackRequest,
     feedback_service: FeedbackService = Depends(get_feedback_service),
 ):
@@ -47,7 +50,12 @@ async def submit_feedback(
             user_id=body.user_id,
             source=source,
             feedback_type=feedback_type,
+            source_key=client_ip_from_request(request),
         )
+    except FeedbackRateLimitedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
+        ) from exc
     except FeedbackValidationError as exc:
         return {"ok": False, "detail": str(exc)}
     except FeedbackDeliveryError:
