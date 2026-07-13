@@ -235,7 +235,7 @@ def build_application_container(
             pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
         ),
         semester_transfer_service=SemesterTransferService(),
-        feedback_service=FeedbackService(resolved_settings),
+        feedback_service=FeedbackService(resolved_settings, rate_limiter=rate_limiter),
     )
 
     return container

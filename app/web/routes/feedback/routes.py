@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse
 
 from app.dependencies import get_current_user, get_feedback_service
 from app.domain.feedback.service import (
     FeedbackDeliveryError,
+    FeedbackRateLimitedError,
     FeedbackService,
     FeedbackValidationError,
 )
+from app.observability import client_ip_from_request
 from app.web.templates import templates
 
 router = APIRouter()
@@ -59,6 +61,19 @@ async def feedback_submit(
             email=email,
             message=message,
             page=page,
+            source_key=client_ip_from_request(request),
+        )
+    except FeedbackRateLimitedError:
+        return _render_feedback_panel(
+            request,
+            page=page,
+            status="error",
+            message_text="For mange tilbakemeldinger. Prøv igjen senere.",
+            category=category,
+            name=name,
+            email=email,
+            feedback_message=message,
+            response_status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
     except FeedbackValidationError as exc:
         return _render_feedback_panel(
@@ -103,6 +118,7 @@ def _render_feedback_panel(
     name: str | None = None,
     email: str | None = None,
     feedback_message: str = "",
+    response_status_code: int = status.HTTP_200_OK,
 ):
     return templates.TemplateResponse(
         request,
@@ -117,4 +133,5 @@ def _render_feedback_panel(
             "feedback_email": email or "",
             "feedback_message": feedback_message,
         },
+        status_code=response_status_code,
     )

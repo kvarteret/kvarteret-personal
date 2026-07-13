@@ -10,6 +10,7 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from app.config import Settings
+from app.db.rate_limit import RateLimitExceeded, RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,10 @@ class FeedbackDeliveryError(FeedbackError):
     pass
 
 
+class FeedbackRateLimitedError(FeedbackError):
+    pass
+
+
 @dataclass(slots=True)
 class FeedbackSubmission:
     category: str | None
@@ -72,8 +77,9 @@ class FeedbackSubmission:
 
 
 class FeedbackService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, rate_limiter: RateLimiter) -> None:
         self.settings = settings
+        self.rate_limiter = rate_limiter
 
     async def submit_feedback(
         self,
@@ -87,7 +93,23 @@ class FeedbackService:
         platform: str | None = None,
         user_id: int | None = None,
         source: str = "personalplattformen",
+        source_key: str | None = None,
     ) -> None:
+        # Counts before validation so a validation failure can't be used to
+        # probe the limit for free (same TOCTOU-safety rationale as
+        # mobile_card's rate limiting).
+        rate_limit_key = source_key.strip() if source_key else "unknown"
+        try:
+            await self.rate_limiter.hit(
+                f"feedback:submit:{rate_limit_key}",
+                limit=self.settings.feedback_submission_limit,
+                window_seconds=self.settings.feedback_submission_window_seconds,
+            )
+        except RateLimitExceeded:
+            raise FeedbackRateLimitedError(
+                "Too many feedback submissions. Try again later."
+            ) from None
+
         submission = _normalize_submission(
             category=category,
             feedback_type=feedback_type,

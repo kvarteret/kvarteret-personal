@@ -100,6 +100,8 @@ class Settings(BaseSettings):
     mobile_card_session_attempt_window_seconds: int = Field(default=600)
     mobile_card_session_ttl_days: int = Field(default=90)
     mobile_card_session_renewal_threshold_days: int = Field(default=30)
+    feedback_submission_limit: int = Field(default=5)
+    feedback_submission_window_seconds: int = Field(default=600)
 
     @field_validator(
         "app_env",
