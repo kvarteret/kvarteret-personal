@@ -14,7 +14,10 @@ from app.infrastructure.email.applicant_templates import (
 )
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.infrastructure.media.protocols import PhotoProcessorProtocol
-from app.shared.phone_numbers import normalize_phone_number, normalize_required_phone_number
+from app.shared.phone_numbers import (
+    normalize_phone_number,
+    normalize_required_phone_number,
+)
 from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.volunteer_applications.side_effects import (
     VolunteerApplicationSideEffects,
@@ -57,15 +60,8 @@ def _normalize_phone(phone: str) -> str:
 
 def _check_postal_code(postal_code: str | None) -> None:
     if postal_code is not None and not re.fullmatch(r"\d{4}", postal_code):
-        raise VolunteerApplicationValidationError(
-            "Postal code must be exactly 4 digits (e.g. 5011)."
-        )
+        raise VolunteerApplicationValidationError("Postal code must be exactly 4 digits (e.g. 5011).")
 
-PUBLIC_PROSPECT_GROUPS = {
-    "skjenkegruppen": "Skjenkegruppen",
-    "kraft": "Kraftetaten",
-    "vaktetaten": "Vaktetaten",
-}
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +105,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         *,
         base_url: str | None = None,
     ) -> VolunteerApplicationDetail:
-        return await self.workflow.register_public_prospect(
-            registration, base_url=base_url
-        )
+        return await self.workflow.register_public_prospect(registration, base_url=base_url)
 
     async def create_public_prospect_registration_record(
         self,
@@ -134,21 +128,16 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         if not first_choice_slug:
             raise VolunteerApplicationValidationError("Velg et førstevalg.")
         if second_choice_slug and first_choice_slug == second_choice_slug:
-            raise VolunteerApplicationValidationError("Førstevalg og andrevalg må være ulike groups.")
+            raise VolunteerApplicationValidationError("Førstevalg og andrevalg må være ulike grupper.")
 
-        known_choice_names = {
-            slug: PUBLIC_PROSPECT_GROUPS[slug]
-            for slug in [first_choice_slug, second_choice_slug]
-            if slug
-            if slug in PUBLIC_PROSPECT_GROUPS
-        }
+        choice_slugs = [slug for slug in [first_choice_slug, second_choice_slug] if slug]
+        groups_by_slug = await self.repository.find_public_prospect_groups_by_slugs(choice_slugs)
         expected_choice_count = 1 + (1 if second_choice_slug else 0)
-        if len(known_choice_names) != expected_choice_count:
-            raise VolunteerApplicationValidationError("Én eller flere valgte groups støttes ikke i denne lanseringen.")
+        if len(groups_by_slug) != expected_choice_count:
+            raise VolunteerApplicationValidationError("Én eller flere valgte grupper finnes ikke.")
 
-        group_ids_by_name = await self.repository.find_group_ids_by_names(list(known_choice_names.values()))
-        if len(group_ids_by_name) != expected_choice_count:
-            raise VolunteerApplicationConflictError("Én eller flere valgte groups finnes ikke i personaldatabasen.")
+        first_choice_group = groups_by_slug[first_choice_slug]
+        second_choice_group = groups_by_slug[second_choice_slug] if second_choice_slug else None
 
         first_name, last_name = _split_full_name(registration.full_name)
         friend_emails = self._normalize_friend_emails(
@@ -166,15 +155,11 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             phone=normalize_phone_number(registration.phone),
             study_institution=_normalize_optional_text(registration.study_institution),
             background_details=_normalize_optional_text(registration.background_details),
-            first_choice_group_id=group_ids_by_name[known_choice_names[first_choice_slug]],
-            second_choice_group_id=(
-                group_ids_by_name[known_choice_names[second_choice_slug]]
-                if second_choice_slug
-                else None
-            ),
+            first_choice_group_id=first_choice_group.group_id,
+            second_choice_group_id=(second_choice_group.group_id if second_choice_group else None),
             friend_invites=[(friend_email, token_urlsafe(24)) for friend_email in friend_emails],
             inviter_name=_build_full_name(first_name, last_name),
-            first_choice_group_name=known_choice_names[first_choice_slug],
+            first_choice_group_name=first_choice_group.name,
         )
         return result
 
@@ -279,9 +264,12 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         storage_service: StorageProtocol | None = None
 
         if has_new_photo:
-            photo_sha1, photo_filetype, new_storage_path, storage_service = await self._upload_new_photo(
-                photo_filename, photo_content
-            )
+            (
+                photo_sha1,
+                photo_filetype,
+                new_storage_path,
+                storage_service,
+            ) = await self._upload_new_photo(photo_filename, photo_content)
             assert new_storage_path is not None
             uploaded_new_photo = True
 
@@ -309,9 +297,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         safe_filename = _sanitize_filename(photo_filename)
         extension = _normalize_extension(safe_filename)
         if extension not in {"jpg", "jpeg", "png", "webp"}:
-            raise VolunteerApplicationConflictError(
-                "Photos must be jpg, jpeg, png, or webp."
-            )
+            raise VolunteerApplicationConflictError("Photos must be jpg, jpeg, png, or webp.")
         storage_service = self._require_storage_service()
         photo_sha1 = token_hex(20)
         processed = self._require_photo_processor()(
@@ -357,18 +343,12 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             )
             if should_rollback:
                 try:
-                    await to_thread(
-                        storage_service.remove_photo, new_storage_path
-                    )
+                    await to_thread(storage_service.remove_photo, new_storage_path)
                 except Exception:
                     pass
             raise
 
-        should_remove_old = (
-            uploaded_new_photo
-            and old_storage_path is not None
-            and old_storage_path != new_storage_path
-        )
+        should_remove_old = uploaded_new_photo and old_storage_path is not None and old_storage_path != new_storage_path
         if should_remove_old:
             try:
                 await to_thread(
@@ -447,7 +427,11 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         resolved_group_id = accepted_group_id or detail.initial_group_id or detail.first_choice_group_id
         allowed_group_ids = {
             group_id
-            for group_id in [detail.initial_group_id, detail.first_choice_group_id, detail.second_choice_group_id]
+            for group_id in [
+                detail.initial_group_id,
+                detail.first_choice_group_id,
+                detail.second_choice_group_id,
+            ]
             if group_id is not None
         }
         if resolved_group_id is None:
@@ -455,9 +439,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         if allowed_group_ids and resolved_group_id not in allowed_group_ids:
             raise VolunteerApplicationConflictError("The chosen group is not one of the registered committee choices.")
         if detail.initial_role_id is not None and not (
-            await self.repository.role_matches_group(
-                role_id=detail.initial_role_id, group_id=resolved_group_id
-            )
+            await self.repository.role_matches_group(role_id=detail.initial_role_id, group_id=resolved_group_id)
         ):
             raise VolunteerApplicationConflictError(
                 "The selected initial assignment_roles is no longer valid for the chosen group."
@@ -495,9 +477,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
     ) -> list[int]:
         members = await self.repository.list_group_members(group_id, include_dropped=False)
         active_registration_ids = [
-            member.registration_id
-            for member in members
-            if member.registration_id is not None and member.active
+            member.registration_id for member in members if member.registration_id is not None and member.active
         ]
         if not active_registration_ids:
             raise VolunteerApplicationNotFoundError("Group registration was not found.")
@@ -522,9 +502,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         dropped_by_user_id: int | None = None,
     ) -> None:
         try:
-            await self.workflow.drop_group_invitee(
-                registration_id, dropped_by_user_id=dropped_by_user_id
-            )
+            await self.workflow.drop_group_invitee(registration_id, dropped_by_user_id=dropped_by_user_id)
         except IllegalTransition as exc:
             raise VolunteerApplicationConflictError(str(exc)) from exc
 
@@ -549,15 +527,11 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         actor_user_account_id: int | None = None,
     ) -> None:
         try:
-            await self.workflow.delete(
-                registration_id, actor_user_account_id=actor_user_account_id
-            )
+            await self.workflow.delete(registration_id, actor_user_account_id=actor_user_account_id)
         except IllegalTransition as exc:
             raise VolunteerApplicationConflictError(str(exc)) from exc
 
-    async def delete_application_record(
-        self, registration_id: int
-    ) -> VolunteerApplicationDetail:
+    async def delete_application_record(self, registration_id: int) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
@@ -589,14 +563,10 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         return detail
 
-    async def list_active_group_members(
-        self, group_id: int
-    ) -> list[VolunteerApplicationGroupMember]:
+    async def list_active_group_members(self, group_id: int) -> list[VolunteerApplicationGroupMember]:
         return await self.repository.list_group_members(group_id, include_dropped=False)
 
-    async def append_domain_event(
-        self, event: DomainEventRecord, *, subject_id: int
-    ) -> None:
+    async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> None:
         await self.repository.append_domain_event(event, subject_id=subject_id)
 
     def _normalize_friend_emails(
@@ -628,9 +598,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
     async def _assert_friend_emails_available(self, friend_emails: list[str]) -> None:
         for index, friend_email in enumerate(friend_emails):
-            is_already_volunteer = (
-                await self.repository.find_volunteer_id_by_email(friend_email)
-            ) is not None
+            is_already_volunteer = (await self.repository.find_volunteer_id_by_email(friend_email)) is not None
             if is_already_volunteer:
                 raise VolunteerApplicationFieldConflictError(
                     "Én av vennene er allerede frivillig.",

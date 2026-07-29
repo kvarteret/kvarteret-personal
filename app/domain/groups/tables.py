@@ -8,6 +8,7 @@ groups = Table(
     "groups",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
+    Column("slug", Text, nullable=False),
     Column("name", Text, nullable=False),
     Column("description", Text),
     Column("is_active", Boolean, nullable=False),

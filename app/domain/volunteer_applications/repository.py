@@ -9,7 +9,12 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.admin_accounts.tables import group_admin_memberships, user_accounts
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import assignment_roles
-from app.domain.volunteer_applications.tables import volunteer_application_group_members, volunteer_application_groups, volunteer_application_invites, volunteer_application_submissions
+from app.domain.volunteer_applications.tables import (
+    volunteer_application_group_members,
+    volunteer_application_groups,
+    volunteer_application_invites,
+    volunteer_application_submissions,
+)
 from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.domain.volunteer_applications.state_machine import (
     ApplicationState,
@@ -18,6 +23,7 @@ from app.domain.volunteer_applications.state_machine import (
 )
 from app.domain.volunteer_applications.tables import domain_events
 from app.domain.volunteer_applications.models import (
+    PublicProspectGroup,
     PublicProspectRegistrationResult,
     VolunteerApplicationDetail,
     VolunteerApplicationFriendInvite,
@@ -153,9 +159,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             )
         detail = await self.get_volunteer_application_detail(inserted["id"])
         assert detail is not None
-        return PublicProspectRegistrationResult(
-            detail=detail, friend_invites=created_friend_invites
-        )
+        return PublicProspectRegistrationResult(detail=detail, friend_invites=created_friend_invites)
 
     async def create_volunteer_application_invitation(
         self,
@@ -213,7 +217,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             select(func.count())
             .select_from(
                 volunteer_application_invites.join(
-                    volunteer_application_submissions, volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id
+                    volunteer_application_submissions,
+                    volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id,
                 )
             )
             .where(volunteer_application_invites.c.status != ApplicationState.PROMOTED)
@@ -222,27 +227,30 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         count = await session.scalar(stmt)
         return int(count or 0)
 
-    async def get_volunteer_application_detail(
-        self, registration_id: int
-    ) -> VolunteerApplicationDetail | None:
+    async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None:
         return await self._get_detail(
             select(volunteer_application_invites.c.id).where(volunteer_application_invites.c.id == registration_id)
         )
 
-    async def get_volunteer_application_by_token(
-        self, token: str
-    ) -> VolunteerApplicationDetail | None:
+    async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None:
         return await self._get_detail(
             select(volunteer_application_invites.c.id).where(volunteer_application_invites.c.token == token)
         )
 
-    async def find_group_ids_by_names(self, names: list[str]) -> dict[str, int]:
-        if not names:
+    async def find_public_prospect_groups_by_slugs(self, slugs: list[str]) -> dict[str, PublicProspectGroup]:
+        if not slugs:
             return {}
-        stmt = select(groups.c.id, groups.c.name).where(groups.c.name.in_(names))
+        stmt = select(groups.c.id, groups.c.slug, groups.c.name).where(groups.c.slug.in_(slugs))
         session = self.session
         rows = (await session.execute(stmt)).mappings().all()
-        return {row["name"]: row["id"] for row in rows}
+        return {
+            row["slug"]: PublicProspectGroup(
+                group_id=row["id"],
+                slug=row["slug"],
+                name=row["name"],
+            )
+            for row in rows
+        }
 
     async def save_submission(
         self,
@@ -365,9 +373,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .values(status=ApplicationState.SUBMITTED, full_profile_submitted_at=func.now())
         )
 
-    async def set_trial_shift_attended(
-        self, registration_id: int, *, attended: bool
-    ) -> None:
+    async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None:
         session = self.session
         await session.execute(
             update(volunteer_application_invites)
@@ -391,8 +397,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         return await session.scalar(
             select(volunteer_application_invites.c.id)
             .where(
-                func.lower(func.coalesce(volunteer_application_invites.c.email, ""))
-                == email.lower(),
+                func.lower(func.coalesce(volunteer_application_invites.c.email, "")) == email.lower(),
                 volunteer_application_invites.c.status != ApplicationState.PROMOTED,
                 volunteer_application_invites.c.status != ApplicationState.REJECTED,
             )
@@ -425,7 +430,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     volunteer_application_invites,
                     volunteer_application_invites.c.id == volunteer_application_group_members.c.invite_id,
                 ).outerjoin(
-                    volunteer_application_submissions, volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id
+                    volunteer_application_submissions,
+                    volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id,
                 )
             )
             .where(volunteer_application_group_members.c.group_id == group_id)
@@ -459,8 +465,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .select_from(
                 group_admin_memberships.join(
                     user_accounts,
-                    user_accounts.c.auth_user_id
-                    == group_admin_memberships.c.auth_user_id,
+                    user_accounts.c.auth_user_id == group_admin_memberships.c.auth_user_id,
                 )
             )
             .where(
@@ -536,9 +541,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             )
         )
 
-    async def append_domain_event(
-        self, event: DomainEventRecord, *, subject_id: int
-    ) -> None:
+    async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> None:
         """Append one audit row; runs in the ambient request transaction
         so the event commits or rolls back with the state change it records."""
         await self.session.execute(
@@ -597,7 +600,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             )
             .select_from(
                 volunteer_application_invites.outerjoin(
-                    volunteer_application_submissions, volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id
+                    volunteer_application_submissions,
+                    volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id,
                 )
                 .outerjoin(
                     group_membership,
@@ -608,7 +612,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     accepted_group.c.id == volunteer_application_invites.c.initial_group_id,
                 )
                 .outerjoin(
-                    accepted_role, accepted_role.c.id == volunteer_application_invites.c.initial_role_id
+                    accepted_role,
+                    accepted_role.c.id == volunteer_application_invites.c.initial_role_id,
                 )
                 .outerjoin(
                     first_choice_group,
@@ -626,11 +631,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         row = (await session.execute(detail_stmt)).mappings().first()
         if row is None:
             return None
-        group_members = (
-            await self.list_group_members(row["group_id"])
-            if row["group_id"] is not None
-            else None
-        )
+        group_members = await self.list_group_members(row["group_id"]) if row["group_id"] is not None else None
         return VolunteerApplicationDetail(
             registration_id=row["id"],
             token=row["token"],
@@ -650,12 +651,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             photo_sha1=row["photo_sha1"],
             photo_filetype=row["photo_filetype"],
             photo_url=(
-                self.media_token_service.build_photo_media_url(
-                    f"{row['photo_sha1']}.{row['photo_filetype']}"
-                )
-                if row["photo_sha1"]
-                and row["photo_filetype"]
-                and self.media_token_service is not None
+                self.media_token_service.build_photo_media_url(f"{row['photo_sha1']}.{row['photo_filetype']}")
+                if row["photo_sha1"] and row["photo_filetype"] and self.media_token_service is not None
                 else None
             ),
             study_institution=row["studiested"],

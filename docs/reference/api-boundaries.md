@@ -78,7 +78,16 @@ Current public arrangement pages and feeds read from Sanity, not from
 `app/[locale]/arrangementer/page.tsx`, `app/api/events/feed/route.ts`, and
 `app/api/ical/route.ts`.
 
-`app/api/volunteer-prospects/route.ts` validates the public recruitment form, then posts to `POST /api/v1/volunteer-prospects`. It returns upstream validation errors to the browser and records PostHog server-side events when a PostHog distinct id is provided by the client.
+`samfunnetibergen/src/app/api/volunteer-prospects/route.ts` validates the
+public recruitment form, then posts to `POST /api/v1/volunteer-prospects`.
+Sanity group slugs are forwarded unchanged. Personal resolves each slug through
+the stable, unique `groups.slug` column, so every configured group is eligible
+without a code-level allowlist. Unknown slugs are rejected and public requests
+cannot create organizational groups.
+
+Group slugs use the same deterministic Norwegian-safe generation rule in both
+repositories. There are no compatibility aliases. An established slug is
+immutable even if the group's display name is later changed.
 
 The request body accepts `friend_emails` (up to two). When present, the backend creates an application group: the submitter becomes the group's inviter, each friend gets their own invitation with a personal `/apply/{token}` link delivered by email, and admins later approve the whole group atomically. Field-level validation errors for friend emails come back under `fieldErrors.friendEmails`.
 
