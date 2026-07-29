@@ -262,9 +262,7 @@ class FakeVolunteerApplicationsService:
     ) -> None:
         self.deleted_registration_ids.append(registration_id)
         self.volunteer_applications = [
-            application
-            for application in self.volunteer_applications
-            if application.registration_id != registration_id
+            application for application in self.volunteer_applications if application.registration_id != registration_id
         ]
 
 
@@ -379,8 +377,8 @@ def test_volunteer_application_pages_render() -> None:
     assert 'enctype="multipart/form-data"' in public_response.text
     assert 'hx-boost="false"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
-    assert 'data-photo-input' in public_response.text
-    assert 'data-photo-preview' in public_response.text
+    assert "data-photo-input" in public_response.text
+    assert "data-photo-preview" in public_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in public_response.text
     assert "URL.createObjectURL(file)" in public_response.text
     assert 'pattern="\\+[1-9][0-9]{7,14}"' not in public_response.text
@@ -614,7 +612,9 @@ def test_group_admin_can_create_invite_without_group() -> None:
 def test_duplicate_volunteer_approval_redirects_to_existing_profile() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
-    app.dependency_overrides[get_volunteer_applications_service] = lambda: DuplicateApprovalVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: (
+        DuplicateApprovalVolunteerApplicationsService()
+    )
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     client = TestClient(app)
 
@@ -926,7 +926,7 @@ def test_group_admin_can_manage_any_registration() -> None:
     assert volunteer_applications_service.deleted_registration_ids == [8]
 
 
-def test_public_prospect_api_accepts_missing_second_choice() -> None:
+def test_public_prospect_api_accepts_any_valid_group_slug() -> None:
     app = create_app()
     volunteer_applications_service = FakeVolunteerApplicationsService()
     app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
@@ -940,7 +940,7 @@ def test_public_prospect_api_accepts_missing_second_choice() -> None:
             "phone": "12345678",
             "study_institution": "UiB",
             "background_details": None,
-            "first_choice_group_slug": "skjenkegruppen",
+            "first_choice_group_slug": "grondahls",
         },
     )
 
@@ -953,12 +953,33 @@ def test_public_prospect_api_accepts_missing_second_choice() -> None:
             "phone": "12345678",
             "study_institution": "UiB",
             "background_details": None,
-            "first_choice_group_slug": "skjenkegruppen",
+            "first_choice_group_slug": "grondahls",
             "second_choice_group_slug": None,
             "friend_emails": [],
             "base_url": "http://testserver",
         }
     ]
+
+
+def test_public_prospect_api_rejects_invalid_group_slug_syntax() -> None:
+    app = create_app()
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/volunteer-prospects",
+        json={
+            "full_name": "Test Person",
+            "email": "prospect@example.com",
+            "phone": "12345678",
+            "study_institution": "UiB",
+            "first_choice_group_slug": "../admin",
+        },
+    )
+
+    assert response.status_code == 422
+    assert volunteer_applications_service.public_prospect_calls == []
 
 
 def test_public_prospect_api_forwards_friend_emails() -> None:

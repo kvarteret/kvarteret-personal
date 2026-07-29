@@ -16,6 +16,10 @@ from app.domain.courses.service import (
     InvalidCourseCompletionError,
 )
 from app.domain.groups.service import GroupsService
+from app.domain.volunteer_applications.models import (
+    PublicProspectGroup,
+    PublicProspectRegistrationInput,
+)
 from app.domain.volunteer_applications.service import (
     VolunteerAlreadyExistsError,
     VolunteerApplicationDetail,
@@ -96,6 +100,26 @@ class FakeVolunteerApplicationsRepository:
         self.media_token_service = None
         self.recent_registration_rows: list[dict] = []
         self.recent_registration_group_rows: dict[int, list[dict]] = {}
+        self.public_prospect_groups: dict[str, PublicProspectGroup] = {}
+        self.created_public_prospects: list[dict[str, object | None]] = []
+
+    async def create_public_prospect_registration(self, **kwargs):
+        self.created_public_prospects.append(kwargs)
+        return type(
+            "PublicProspectResult",
+            (),
+            {
+                "detail": type(
+                    "PublicProspectDetail",
+                    (),
+                    {
+                        "registration_id": 7,
+                        "email": kwargs["email"],
+                    },
+                )(),
+                "friend_invites": [],
+            },
+        )()
 
     async def create_volunteer_application_invitation(
         self,
@@ -132,7 +156,11 @@ class FakeVolunteerApplicationsRepository:
         raise NotImplementedError
 
     async def list_recent_volunteer_registrations(self, *, limit: int, before_volunteer_id: int | None = None):
-        rows = [row for row in self.recent_registration_rows if before_volunteer_id is None or row["id"] < before_volunteer_id]
+        rows = [
+            row
+            for row in self.recent_registration_rows
+            if before_volunteer_id is None or row["id"] < before_volunteer_id
+        ]
         return rows[:limit]
 
     async def list_recent_registration_group_members(self, group_id: int):
@@ -193,6 +221,9 @@ class FakeVolunteerApplicationsRepository:
     async def find_active_registration_id_by_email(self, email: str) -> int | None:
         return self.active_registration_ids_by_email.get(email.lower())
 
+    async def find_public_prospect_groups_by_slugs(self, slugs: list[str]) -> dict[str, PublicProspectGroup]:
+        return {slug: self.public_prospect_groups[slug] for slug in slugs if slug in self.public_prospect_groups}
+
     async def list_group_members(self, group_id: int, *, include_dropped: bool = True):
         return []
 
@@ -238,9 +269,7 @@ class FakeMobileCardRepository:
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
         return list(self.volunteers_by_email)
 
-    async def store_access_code(
-        self, *, volunteer_id: int, code_hash: str, created_at: datetime
-    ) -> None:
+    async def store_access_code(self, *, volunteer_id: int, code_hash: str, created_at: datetime) -> None:
         self.stored_access_codes.append((volunteer_id, code_hash, created_at))
 
     async def find_volunteer_by_email_and_code(
@@ -264,9 +293,7 @@ class FakeEmailSender:
     def __init__(self) -> None:
         self.sent_emails: list[dict[str, str]] = []
 
-    async def send_email(
-        self, *, recipient_email: str, subject: str, html_body: str
-    ) -> None:
+    async def send_email(self, *, recipient_email: str, subject: str, html_body: str) -> None:
         self.sent_emails.append(
             {
                 "recipient_email": recipient_email,
@@ -441,9 +468,7 @@ async def test_group_detail_recent_members_are_scoped_to_current_semester(
         return []
 
     monkeypatch.setattr(service, "fetch_all_mappings", fake_fetch_all_mappings)
-    monkeypatch.setattr(
-        service, "_get_group_delete_blockers", fake_get_group_delete_blockers
-    )
+    monkeypatch.setattr(service, "_get_group_delete_blockers", fake_get_group_delete_blockers)
     monkeypatch.setattr("app.domain.groups.service.get_current_semester_code", lambda: 20262)
 
     detail = await service.get_group_detail(7)
@@ -485,7 +510,10 @@ async def test_groups_service_archive_marks_group_inactive(monkeypatch) -> None:
 
     assert archived is True
     assert "UPDATE public.groups SET is_active=false" in captured["sql"]
-    assert "active_through_semester=CASE WHEN (public.groups.active_through_semester > 20261) THEN 20261" in captured["sql"]
+    assert (
+        "active_through_semester=CASE WHEN (public.groups.active_through_semester > 20261) THEN 20261"
+        in captured["sql"]
+    )
     assert "WHERE public.groups.id = 7" in captured["sql"]
 
 
@@ -545,7 +573,9 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
 
     monkeypatch.setattr(service.repository, "course_exists", fake_course_exists)
     monkeypatch.setattr(
-        service.repository, "list_existing_volunteer_ids", fake_list_existing_volunteer_ids
+        service.repository,
+        "list_existing_volunteer_ids",
+        fake_list_existing_volunteer_ids,
     )
     monkeypatch.setattr(
         service.repository,
@@ -555,9 +585,7 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
 
     token = set_request_session(FakeSession())
     try:
-        created_count = await service.create_course_completions(
-            course_id=4, volunteer_ids=[12, 13], year=2026, term=1
-        )
+        created_count = await service.create_course_completions(course_id=4, volunteer_ids=[12, 13], year=2026, term=1)
     finally:
         reset_request_session(token)
 
@@ -570,15 +598,11 @@ async def test_courses_service_bulk_create_inserts_all_rows(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
-async def test_courses_service_bulk_create_rejects_duplicate_selected_volunteers() -> (
-    None
-):
+async def test_courses_service_bulk_create_rejects_duplicate_selected_volunteers() -> None:
     service = CoursesService(repository=CoursesRepository())
 
     with pytest.raises(InvalidCourseCompletionError):
-        await service.create_course_completions(
-            course_id=4, volunteer_ids=[12, 12], year=2026, term=1
-        )
+        await service.create_course_completions(course_id=4, volunteer_ids=[12, 12], year=2026, term=1)
 
 
 @pytest.mark.asyncio
@@ -600,7 +624,9 @@ async def test_courses_service_bulk_create_rejects_existing_same_semester_comple
 
     monkeypatch.setattr(service.repository, "course_exists", fake_course_exists)
     monkeypatch.setattr(
-        service.repository, "list_existing_volunteer_ids", fake_list_existing_volunteer_ids
+        service.repository,
+        "list_existing_volunteer_ids",
+        fake_list_existing_volunteer_ids,
     )
     monkeypatch.setattr(
         service.repository,
@@ -609,9 +635,7 @@ async def test_courses_service_bulk_create_rejects_existing_same_semester_comple
     )
 
     with pytest.raises(DuplicateCourseCompletionError):
-        await service.create_course_completions(
-            course_id=4, volunteer_ids=[13, 14], year=2026, term=1
-        )
+        await service.create_course_completions(course_id=4, volunteer_ids=[13, 14], year=2026, term=1)
 
 
 @pytest.mark.asyncio
@@ -694,9 +718,7 @@ async def test_volunteers_service_search_queries_use_ranked_database_path(
 
     monkeypatch.setattr(service, "_search_volunteers_page", fake_search)
 
-    result = await service.list_volunteers_page(
-        query="  Martin   Kleiven ", limit=10, cursor=None
-    )
+    result = await service.list_volunteers_page(query="  Martin   Kleiven ", limit=10, cursor=None)
 
     assert result == "sentinel"
 
@@ -721,6 +743,75 @@ async def test_volunteer_applications_pending_count_is_cached() -> None:
     assert first == 3
     assert second == 3
     assert repository.count_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_public_prospect_resolves_any_configured_group_slug() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.public_prospect_groups = {
+        "grondahls": PublicProspectGroup(
+            group_id=81,
+            slug="grondahls",
+            name="Grøndahls",
+        ),
+        "halvtimen": PublicProspectGroup(
+            group_id=82,
+            slug="halvtimen",
+            name="Halvtimen",
+        ),
+    }
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+    )
+
+    await service.create_public_prospect_registration_record(
+        PublicProspectRegistrationInput(
+            full_name="Kari Nordmann",
+            email="kari@example.test",
+            phone="41234567",
+            study_institution="UiB",
+            background_details=None,
+            first_choice_group_slug="grondahls",
+            second_choice_group_slug="halvtimen",
+        )
+    )
+
+    created = repository.created_public_prospects[0]
+    assert created["first_choice_group_id"] == 81
+    assert created["second_choice_group_id"] == 82
+    assert created["first_choice_group_name"] == "Grøndahls"
+
+
+@pytest.mark.asyncio
+async def test_public_prospect_rejects_an_unknown_group_slug() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+    )
+
+    with pytest.raises(
+        VolunteerApplicationValidationError,
+        match="valgte grupper finnes ikke",
+    ):
+        await service.create_public_prospect_registration_record(
+            PublicProspectRegistrationInput(
+                full_name="Kari Nordmann",
+                email="kari@example.test",
+                phone="41234567",
+                study_institution="UiB",
+                background_details=None,
+                first_choice_group_slug="ukjent",
+                second_choice_group_slug=None,
+            )
+        )
+
+    assert repository.created_public_prospects == []
 
 
 @pytest.mark.asyncio
@@ -825,13 +916,9 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_submit_does_not_notify_group_admins() -> (
-    None
-):
+async def test_volunteer_applications_submit_does_not_notify_group_admins() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    repository.group_admin_email_recipients = {
-        3: ["leader@example.test", "second@example.test"]
-    }
+    repository.group_admin_email_recipients = {3: ["leader@example.test", "second@example.test"]}
     repository.application_photo_sha1 = "abc123"
     repository.application_photo_filetype = "jpg"
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
@@ -866,9 +953,7 @@ async def test_volunteer_applications_submit_does_not_notify_group_admins() -> (
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_submit_normalizes_local_phone_number() -> (
-    None
-):
+async def test_volunteer_applications_submit_normalizes_local_phone_number() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.application_photo_sha1 = "abc123"
     repository.application_photo_filetype = "jpg"
@@ -924,9 +1009,7 @@ async def test_volunteer_applications_submit_rejects_invalid_phone_number() -> N
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_submit_requires_profile_photo_when_missing() -> (
-    None
-):
+async def test_volunteer_applications_submit_requires_profile_photo_when_missing() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
@@ -936,9 +1019,7 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
         pending_count_cache_ttl_seconds=60,
     )
 
-    with pytest.raises(
-        VolunteerApplicationValidationError, match="Profilbilde er påkrevd."
-    ):
+    with pytest.raises(VolunteerApplicationValidationError, match="Profilbilde er påkrevd."):
         await service.submit_volunteer_application(
             "token-123",
             VolunteerApplicationSubmissionInput(
@@ -1008,9 +1089,7 @@ async def test_volunteer_applications_delete_invalidates_pending_count_cache() -
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_service_sends_email_when_creating_invitation() -> (
-    None
-):
+async def test_volunteer_applications_service_sends_email_when_creating_invitation() -> None:
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
@@ -1072,9 +1151,7 @@ async def test_volunteer_applications_service_can_resend_invitation_email() -> N
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_service_can_use_explicit_base_url_without_settings_value() -> (
-    None
-):
+async def test_volunteer_applications_service_can_use_explicit_base_url_without_settings_value() -> None:
     repository = FakeVolunteerApplicationsRepository()
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
@@ -1090,18 +1167,11 @@ async def test_volunteer_applications_service_can_use_explicit_base_url_without_
         base_url="http://localhost:8000",
     )
 
-    assert (
-        email_sender.sent_emails[0]["html_body"].find(
-            f"http://localhost:8000/apply/{invite.token}"
-        )
-        != -1
-    )
+    assert email_sender.sent_emails[0]["html_body"].find(f"http://localhost:8000/apply/{invite.token}") != -1
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_service_rejects_duplicate_email_before_creating_invitation() -> (
-    None
-):
+async def test_volunteer_applications_service_rejects_duplicate_email_before_creating_invitation() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.existing_volunteer_ids_by_email = {"existing@example.test": 42}
     email_sender = FakeEmailSender()
@@ -1125,9 +1195,7 @@ async def test_volunteer_applications_service_rejects_duplicate_email_before_cre
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts() -> (
-    None
-):
+async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts() -> None:
     service = MobileCardService(
         Settings(
             app_secret_key="test-secret",
@@ -1140,17 +1208,11 @@ async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts
     )
 
     with pytest.raises(MobileCardInvalidAccessCodeError):
-        await service.create_session(
-            "person@example.com", "111111", source_key="127.0.0.1"
-        )
+        await service.create_session("person@example.com", "111111", source_key="127.0.0.1")
     with pytest.raises(MobileCardInvalidAccessCodeError):
-        await service.create_session(
-            "person@example.com", "222222", source_key="127.0.0.1"
-        )
+        await service.create_session("person@example.com", "222222", source_key="127.0.0.1")
     with pytest.raises(MobileCardRateLimitedError):
-        await service.create_session(
-            "person@example.com", "333333", source_key="127.0.0.1"
-        )
+        await service.create_session("person@example.com", "333333", source_key="127.0.0.1")
 
 
 @pytest.mark.asyncio
@@ -1182,12 +1244,10 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
     assert created_at.tzinfo == UTC
     assert len(code_hash) == 64  # SHA-256 hex digest
     assert email_sender.sent_emails[0]["recipient_email"] == "person@example.com"
-    assert (
-        email_sender.sent_emails[0]["subject"]
-        == "Kvarteret Internkort is ready for you"
-    )
+    assert email_sender.sent_emails[0]["subject"] == "Kvarteret Internkort is ready for you"
     assert "Your verification code" in email_sender.sent_emails[0]["html_body"]
     import re
+
     assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"]), "expected a 6-digit code in the email"
     assert "This code expires in 10 minutes." in email_sender.sent_emails[0]["html_body"]
     assert "If you did not request this code" in email_sender.sent_emails[0]["html_body"]
@@ -1223,13 +1283,12 @@ async def test_mobile_card_service_issues_new_code_on_every_request() -> None:
     assert code_hash_new != "some-old-hash"
     # The email contains a 6-digit code.
     import re
+
     assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"])
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token_is_new() -> (
-    None
-):
+async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token_is_new() -> None:
     repository = FakeMobileCardRepository(card_snapshot=_build_mobile_card_snapshot())
     service = MobileCardService(
         Settings(
@@ -1240,7 +1299,6 @@ async def test_mobile_card_service_returns_fresh_card_without_renewal_when_token
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
-    
     )
 
     token = service.sessions.serializer.dumps({"person_id": 12})
@@ -1261,7 +1319,6 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
-    
     )
 
     token = service.sessions.serializer.dumps({"person_id": 12})
@@ -1275,9 +1332,7 @@ async def test_mobile_card_service_includes_role_history_when_requested() -> Non
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disabled() -> (
-    None
-):
+async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disabled() -> None:
     repository = FakeMobileCardRepository(
         card_snapshot=MobileCardSnapshot(
             volunteer_id=12,
@@ -1306,7 +1361,6 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
         rate_limiter=InMemoryRateLimiter(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(False),
-    
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1315,9 +1369,7 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_enabled() -> (
-    None
-):
+async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_enabled() -> None:
     repository = FakeMobileCardRepository(card_snapshot=_build_mobile_card_snapshot())
     service = MobileCardService(
         Settings(app_secret_key="test-secret"),
@@ -1326,7 +1378,6 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
         rate_limiter=InMemoryRateLimiter(),
         media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
         april_state_service=FakeMobileCardAprilStateService(True),
-    
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1371,7 +1422,6 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
         april_state_service=FakeMobileCardAprilStateService(True),
-    
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1408,7 +1458,6 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
         april_state_service=FakeMobileCardAprilStateService(True),
-    
     )
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
@@ -1432,7 +1481,6 @@ async def test_mobile_card_service_renews_session_when_token_is_near_expiry(
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
-    
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1462,7 +1510,6 @@ async def test_mobile_card_service_reports_expired_token_reason(monkeypatch) -> 
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
-    
     )
 
     now_timestamp = itsdangerous.timed.time.time()
@@ -1489,14 +1536,12 @@ async def test_mobile_card_service_reports_bad_signature_reason() -> None:
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
-    
     )
     other_service = MobileCardService(
         Settings(app_secret_key="other-secret"),
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
-    
     )
 
     token = other_service.sessions.serializer.dumps({"person_id": 12})
@@ -1515,7 +1560,6 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         repository=repository,  # type: ignore[arg-type]
         email_sender=FakeEmailSender(),
         rate_limiter=InMemoryRateLimiter(),
-    
     )
 
     token = service.sessions.serializer.dumps({"review": False})
@@ -1535,7 +1579,5 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
         (datetime(2026, 7, 1, 12, 0, 0, tzinfo=UTC), "kaffepingvin"),
     ],
 )
-def test_mobile_card_word_of_the_day_is_stable_for_the_effective_day(
-    now: datetime, expected_word: str
-) -> None:
+def test_mobile_card_word_of_the_day_is_stable_for_the_effective_day(now: datetime, expected_word: str) -> None:
     assert _word_of_the_day(now) == expected_word
