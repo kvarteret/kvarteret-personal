@@ -1,14 +1,12 @@
-"""Full volunteer lifecycle, end to end, on a real migrated Postgres.
+"""Volunteer application flows, end to end, on a real migrated Postgres.
 
-Two friends sign up together through the public prospect API, both
-submit their profiles via their /apply tokens, the group is approved
-atomically into a committee (with profile-completion emails), and the
-volunteers are finally deleted. Every step asserts the database state,
-the captured emails, and the domain-event audit trail.
+The public prospect tests verify that every canonical group slug is
+resolved through the real database and persisted as a group ID. The
+full lifecycle tests then take two friends from public signup through
+profile submission, atomic approval, and deletion.
 
-A second test induces a failure on the second member during group
-approval and asserts the all-or-nothing property: nobody is promoted,
-no audit row survives.
+The failure-path test induces an error on the second member during
+group approval and asserts the all-or-nothing property.
 """
 
 from __future__ import annotations
@@ -45,7 +43,15 @@ pytestmark = requires_e2e_database
 INVITER_EMAIL = "inviter@example.com"
 FRIEND_EMAIL = "friend@example.com"
 GROUP_NAME = "Skjenkegruppen"
-GROUP_SLUG = "skjenkegruppen"
+GROUP_SLUG = "skjenke-gruppen"
+CANONICAL_GROUPS = [
+    ("debatt", "Debattkomiteen"),
+    ("fest", "Festkomiteen"),
+    ("finans-departementet", "Finansdepartementet"),
+    ("kommunikasjons-avdelingen", "Kommunikasjonsavdelingen"),
+    ("skjenke-gruppen", GROUP_NAME),
+    ("sosial-departementet", "Sosialdepartementet"),
+]
 
 
 @pytest.fixture
@@ -78,7 +84,12 @@ def app(clean_database, email_outbox, storage):
     return application
 
 
-async def _seed_group(engine) -> int:
+async def _seed_group(
+    engine,
+    *,
+    slug: str = GROUP_SLUG,
+    name: str = GROUP_NAME,
+) -> int:
     async with engine.begin() as conn:
         row = await conn.execute(
             text(
@@ -87,8 +98,8 @@ async def _seed_group(engine) -> int:
                 " VALUES (:slug, :name, true, 20991, :now) RETURNING id"
             ),
             {
-                "slug": GROUP_SLUG,
-                "name": GROUP_NAME,
+                "slug": slug,
+                "name": name,
                 "now": datetime.now(timezone.utc),
             },
         )
@@ -115,6 +126,120 @@ async def _signup_with_friend(client) -> None:
         },
     )
     assert response.status_code == 201, response.text
+
+
+@pytest.mark.parametrize(("group_slug", "group_name"), CANONICAL_GROUPS)
+async def test_public_prospect_accepts_every_canonical_group_slug(
+    app,
+    e2e_engine,
+    group_slug,
+    group_name,
+):
+    expected_group_id = await _seed_group(
+        e2e_engine,
+        slug=group_slug,
+        name=group_name,
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://personal.e2e.test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/volunteer-prospects",
+            json={
+                "full_name": "Canonical Applicant",
+                "email": f"applicant-{group_slug}@example.com",
+                "phone": "+47 412 34 567",
+                "study_institution": "UiB",
+                "first_choice_group_slug": group_slug,
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    invites = await _fetch_all(
+        e2e_engine,
+        "SELECT first_choice_group_id, second_choice_group_id"
+        " FROM public.volunteer_application_invites",
+    )
+    assert invites == [
+        {
+            "first_choice_group_id": expected_group_id,
+            "second_choice_group_id": None,
+        }
+    ]
+
+
+async def test_public_prospect_resolves_both_group_choices(app, e2e_engine):
+    first_group_id = await _seed_group(
+        e2e_engine,
+        slug="debatt",
+        name="Debattkomiteen",
+    )
+    second_group_id = await _seed_group(
+        e2e_engine,
+        slug="fest",
+        name="Festkomiteen",
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://personal.e2e.test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/volunteer-prospects",
+            json={
+                "full_name": "Two Choices",
+                "email": "two-choices@example.com",
+                "phone": "+47 412 34 567",
+                "study_institution": "UiB",
+                "first_choice_group_slug": "debatt",
+                "second_choice_group_slug": "fest",
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    invites = await _fetch_all(
+        e2e_engine,
+        "SELECT first_choice_group_id, second_choice_group_id"
+        " FROM public.volunteer_application_invites",
+    )
+    assert invites == [
+        {
+            "first_choice_group_id": first_group_id,
+            "second_choice_group_id": second_group_id,
+        }
+    ]
+
+
+async def test_public_prospect_rejects_unknown_group_without_persisting(
+    app,
+    e2e_engine,
+):
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://personal.e2e.test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/volunteer-prospects",
+            json={
+                "full_name": "Unknown Group",
+                "email": "unknown-group@example.com",
+                "phone": "+47 412 34 567",
+                "study_institution": "UiB",
+                "first_choice_group_slug": "does-not-exist",
+            },
+        )
+
+    assert response.status_code == 400, response.text
+    invites = await _fetch_all(
+        e2e_engine,
+        "SELECT id FROM public.volunteer_application_invites",
+    )
+    assert invites == []
 
 
 async def _submit_profile(client, token: str, *, first_name: str, last_name: str):
