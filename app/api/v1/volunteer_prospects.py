@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.dependencies import get_volunteer_applications_service
 from app.domain.volunteer_applications.service import (
@@ -26,8 +26,17 @@ class PublicVolunteerProspectRequest(BaseModel):
     phone: str
     study_institution: str
     background_details: str | None = None
-    first_choice_group_slug: str
-    second_choice_group_slug: str | None = None
+    first_choice_group_slug: str = Field(
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    )
+    second_choice_group_slug: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    )
     friend_emails: list[str] | None = None
 
 
@@ -46,25 +55,21 @@ class PublicVolunteerProspectResponse(BaseModel):
 async def create_public_volunteer_prospect(
     payload: PublicVolunteerProspectRequest,
     request: Request,
-    volunteer_applications_service: VolunteerApplicationsService = Depends(
-        get_volunteer_applications_service
-    ),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
-        detail = (
-            await volunteer_applications_service.create_public_prospect_registration(
-                PublicProspectRegistrationInput(
-                    full_name=payload.full_name,
-                    email=str(payload.email),
-                    phone=payload.phone,
-                    study_institution=payload.study_institution,
-                    background_details=payload.background_details,
-                    first_choice_group_slug=payload.first_choice_group_slug,
-                    second_choice_group_slug=payload.second_choice_group_slug,
-                    friend_emails=payload.friend_emails or [],
-                ),
-                base_url=str(request.base_url).rstrip("/"),
-            )
+        detail = await volunteer_applications_service.create_public_prospect_registration(
+            PublicProspectRegistrationInput(
+                full_name=payload.full_name,
+                email=str(payload.email),
+                phone=payload.phone,
+                study_institution=payload.study_institution,
+                background_details=payload.background_details,
+                first_choice_group_slug=payload.first_choice_group_slug,
+                second_choice_group_slug=payload.second_choice_group_slug,
+                friend_emails=payload.friend_emails or [],
+            ),
+            base_url=str(request.base_url).rstrip("/"),
         )
     except VolunteerApplicationFieldValidationError as exc:
         raise HTTPException(
@@ -87,11 +92,7 @@ async def create_public_volunteer_prospect(
             detail="En aktiv søknad med denne e-postadressen finnes allerede.",
         )
     except VolunteerApplicationValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except VolunteerApplicationConflictError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return PublicVolunteerProspectResponse(registrationId=detail.registration_id)

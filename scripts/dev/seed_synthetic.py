@@ -41,23 +41,67 @@ from app.db.tables import (
     volunteer_records,
 )
 from app.shared.semester import get_current_semester_code
+from app.shared.slugs import slugify
 
 DEV_ADMIN_EMAIL = os.environ.get("DEV_ADMIN_EMAIL", "dev@kvarteret.dev")
 
 FIRST_NAMES = [
-    "Ada", "Birk", "Clara", "Didrik", "Eira", "Frida", "Gustav", "Hedda",
-    "Iver", "Jenny", "Kasper", "Live", "Mats", "Nora", "Oskar", "Pernille",
-    "Quint", "Ronja", "Sander", "Tuva", "Ulrik", "Vilde", "William", "Ylva",
+    "Ada",
+    "Birk",
+    "Clara",
+    "Didrik",
+    "Eira",
+    "Frida",
+    "Gustav",
+    "Hedda",
+    "Iver",
+    "Jenny",
+    "Kasper",
+    "Live",
+    "Mats",
+    "Nora",
+    "Oskar",
+    "Pernille",
+    "Quint",
+    "Ronja",
+    "Sander",
+    "Tuva",
+    "Ulrik",
+    "Vilde",
+    "William",
+    "Ylva",
 ]
 LAST_NAMES = [
-    "Andersen", "Berg", "Christiansen", "Dahl", "Eriksen", "Fjeld",
-    "Gundersen", "Haugen", "Iversen", "Johansen", "Knutsen", "Lie",
-    "Moen", "Nilsen", "Olsen", "Pedersen", "Rasmussen", "Solberg",
-    "Tangen", "Vik",
+    "Andersen",
+    "Berg",
+    "Christiansen",
+    "Dahl",
+    "Eriksen",
+    "Fjeld",
+    "Gundersen",
+    "Haugen",
+    "Iversen",
+    "Johansen",
+    "Knutsen",
+    "Lie",
+    "Moen",
+    "Nilsen",
+    "Olsen",
+    "Pedersen",
+    "Rasmussen",
+    "Solberg",
+    "Tangen",
+    "Vik",
 ]
 STREETS = [
-    "Olav Kyrres gate", "Nygårdsgaten", "Christies gate", "Fosswinckels gate",
-    "Strandgaten", "Marken", "Kong Oscars gate", "Sydnesplassen",
+    "Olav Kyrres gate",
+    "Nygårdsgaten",
+    "Christies gate",
+    "Fosswinckels gate",
+    "Strandgaten",
+    "Marken",
+    "Kong Oscars gate",
+    "Sydnesplassen",
 ]
 POSTAL_CODES = ["5006", "5007", "5011", "5014", "5015", "5018", "5020"]
 
@@ -99,6 +143,7 @@ async def seed(database_url: str) -> None:
                     await session.execute(
                         insert(groups)
                         .values(
+                            slug=slugify(name),
                             name=name,
                             description=description,
                             is_active=True,
@@ -129,9 +174,7 @@ async def seed(database_url: str) -> None:
             for course_name in COURSES:
                 course_id = (
                     await session.execute(
-                        insert(courses)
-                        .values(name=course_name, created_at=now)
-                        .returning(courses.c.id)
+                        insert(courses).values(name=course_name, created_at=now).returning(courses.c.id)
                     )
                 ).scalar_one()
                 course_ids.append(course_id)
@@ -292,9 +335,7 @@ async def seed(database_url: str) -> None:
 async def ensure_dev_admin(runtime) -> None:
     """Idempotently create the dev admin matching the DevAuthGateway login."""
     async with session_scope(runtime) as session:
-        existing = await session.scalar(
-            select(user_accounts.c.id).where(user_accounts.c.email == DEV_ADMIN_EMAIL)
-        )
+        existing = await session.scalar(select(user_accounts.c.id).where(user_accounts.c.email == DEV_ADMIN_EMAIL))
         if existing is not None:
             return
     async with session_scope(runtime):
