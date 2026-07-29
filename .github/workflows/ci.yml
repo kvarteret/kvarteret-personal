@@ -63,6 +63,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/kvarteret_personal
+      E2E_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/kvarteret_personal
       PGDATABASE: kvarteret_personal
       PGHOST: localhost
       PGPASSWORD: postgres
@@ -121,3 +122,6 @@ jobs:
 
       - name: Check schema drift
         run: uv run python scripts/check_schema_drift.py
+
+      - name: Run end-to-end tests
+        run: uv run pytest tests/e2e
