@@ -169,12 +169,13 @@
                   {% endif %}
                 </dd>
               </div>
-              <div class="border-b border-stone-300 pb-3 md:col-span-2">
-                <dt class="text-sm text-stone-500">Komitéønsker</dt>
-                <dd class="mt-1 text-stone-900">
-                  {{ volunteer.registration_log_entry.first_choice_group_name or "Ikke registrert" }}
-                  {% if volunteer.registration_log_entry.second_choice_group_name %} / {{ volunteer.registration_log_entry.second_choice_group_name }}{% endif %}
-                </dd>
+              <div class="border-b border-stone-300 pb-3">
+                <dt class="text-sm text-stone-500">Første valg</dt>
+                <dd class="mt-1 text-stone-900">{{ volunteer.registration_log_entry.first_choice_group_name or "N/A" }}</dd>
+              </div>
+              <div class="border-b border-stone-300 pb-3">
+                <dt class="text-sm text-stone-500">Andre valg</dt>
+                <dd class="mt-1 text-stone-900">{{ volunteer.registration_log_entry.second_choice_group_name or "N/A" }}</dd>
               </div>
             </dl>
           </section>

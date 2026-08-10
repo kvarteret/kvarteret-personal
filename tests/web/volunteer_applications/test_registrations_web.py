@@ -449,8 +449,11 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "registrant@example.com" in response.text
     assert "Promoter til frivillig" in response.text
     assert "Prøvedugnad" in response.text
+    assert "Første valg" in response.text
+    assert "Andre valg" in response.text
     assert "Halvtimen" in response.text
     assert "Grøndahls" in response.text
+    assert "Komitéønsker" not in response.text
     assert "Lenke" not in response.text
 
 
@@ -564,6 +567,9 @@ def test_recent_registrations_groups_people_from_same_signup() -> None:
 
     assert response.status_code == 200
     assert "Grupperegistrering" in response.text
+    assert "Første valg:" in response.text
+    assert "Andre valg:" in response.text
+    assert "Komitéønsker" not in response.text
     assert response.text.count("Inviter Person") == 1
     assert response.text.count("Invitee Person") == 1
     assert "(inviterer)" in response.text

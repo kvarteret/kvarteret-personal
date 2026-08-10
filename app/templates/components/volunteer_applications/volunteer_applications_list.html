@@ -8,22 +8,14 @@
             <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">Grupperegistrering</p>
-                <p class="text-sm text-kvarteret-ink">
-                  Komitéønsker:
-                  {{ volunteer_application.first_choice_group_name }}
-                  {% if volunteer_application.second_choice_group_name %} / {{ volunteer_application.second_choice_group_name }}{% endif %}
-                </p>
+                <p class="text-sm text-kvarteret-ink">Første valg: {{ volunteer_application.first_choice_group_name or "N/A" }}</p>
+                <p class="text-sm text-kvarteret-ink">Andre valg: {{ volunteer_application.second_choice_group_name or "N/A" }}</p>
               </div>
               <form action="/volunteer-applications/groups/{{ volunteer_application.group_id }}/approval" class="flex flex-wrap gap-3" method="post">
-                <select class="app-input" name="accepted_group_id">
-                  {% if volunteer_application.first_choice_group_id and volunteer_application.first_choice_group_name %}
-                    <option value="{{ volunteer_application.first_choice_group_id }}">{{ volunteer_application.first_choice_group_name }}</option>
-                  {% endif %}
-                  {% if volunteer_application.second_choice_group_id and volunteer_application.second_choice_group_name %}
-                    <option value="{{ volunteer_application.second_choice_group_id }}">{{ volunteer_application.second_choice_group_name }}</option>
-                  {% endif %}
-                </select>
-                <button class="app-button" type="submit" {% if volunteer_application.group_members | selectattr("active") | selectattr("submitted", "equalto", false) | list %}disabled{% endif %}>Godkjenn gruppen</button>
+                {% if volunteer_application.first_choice_group_id %}
+                  <input name="accepted_group_id" type="hidden" value="{{ volunteer_application.first_choice_group_id }}">
+                {% endif %}
+                <button class="app-button" type="submit" {% if not volunteer_application.first_choice_group_id or volunteer_application.group_members | selectattr("active") | selectattr("submitted", "equalto", false) | list %}disabled{% endif %}>Godkjenn gruppen</button>
               </form>
             </div>
             <div class="grid gap-3">
@@ -57,13 +49,8 @@
                 <a class="app-button-secondary inline-flex min-h-8 px-3 text-xs" href="/apply/{{ volunteer_application.token }}">Send inn nå</a>
               {% endif %}
             </div>
-            {% if volunteer_application.first_choice_group_name %}
-              <p class="text-sm text-kvarteret-ink">
-                Komitéønsker:
-                {{ volunteer_application.first_choice_group_name }}
-                {% if volunteer_application.second_choice_group_name %} / {{ volunteer_application.second_choice_group_name }}{% endif %}
-              </p>
-            {% endif %}
+            <p class="text-sm text-kvarteret-ink">Første valg: {{ volunteer_application.first_choice_group_name or "N/A" }}</p>
+            <p class="text-sm text-kvarteret-ink">Andre valg: {{ volunteer_application.second_choice_group_name or "N/A" }}</p>
             {% if volunteer_application.initial_group_name and volunteer_application.initial_role_name %}
               <p class="text-sm text-kvarteret-ink">Planlagt verv: {{ volunteer_application.initial_group_name }} · {{ volunteer_application.initial_role_name }}</p>
             {% elif volunteer_application.initial_group_name %}
