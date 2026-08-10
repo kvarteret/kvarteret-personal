@@ -29,6 +29,8 @@ volunteer_application_invites = Table(
     Column("initial_role_id", BigInteger),
     Column("first_choice_group_id", BigInteger),
     Column("second_choice_group_id", BigInteger),
+    Column("first_choice_label", Text),
+    Column("second_choice_label", Text),
     Column("trial_shift_attended", Boolean, nullable=False),
     Column("trial_shift_marked_at", DateTime(timezone=True)),
     Column("full_profile_submitted_at", DateTime(timezone=True)),
