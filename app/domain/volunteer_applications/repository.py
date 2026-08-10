@@ -49,6 +49,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         phone: str | None,
         study_institution: str | None,
         background_details: str | None,
+        initial_group_id: int | None,
+        initial_role_id: int | None,
         first_choice_group_id: int,
         second_choice_group_id: int | None,
         friend_invites: list[tuple[str, str]] | None = None,
@@ -67,6 +69,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         email=email,
                         source="public_signup",
                         status=ApplicationState.PROSPECT,
+                        initial_group_id=initial_group_id,
+                        initial_role_id=initial_role_id,
                         first_choice_group_id=first_choice_group_id,
                         second_choice_group_id=second_choice_group_id,
                         trial_shift_attended=False,
@@ -123,6 +127,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             email=friend_email,
                             source="group_invite",
                             status=ApplicationState.INVITED,
+                            initial_group_id=initial_group_id,
+                            initial_role_id=initial_role_id,
                             first_choice_group_id=first_choice_group_id,
                             second_choice_group_id=second_choice_group_id,
                             trial_shift_attended=False,
@@ -251,6 +257,16 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             )
             for row in rows
         }
+
+    async def find_public_prospect_role_id(self, *, group_id: int, role_name: str) -> int | None:
+        return await self.session.scalar(
+            select(assignment_roles.c.id)
+            .where(
+                assignment_roles.c.group_id == group_id,
+                assignment_roles.c.name == role_name,
+            )
+            .limit(1)
+        )
 
     async def save_submission(
         self,

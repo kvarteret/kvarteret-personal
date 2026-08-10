@@ -50,6 +50,14 @@ from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkf
 
 _REGISTRATION_NOT_FOUND = "Registration was not found."
 
+_PUBLIC_PROSPECT_ROLE_ROUTES = {
+    "grondahls": ("skjenke-gruppen", "Pubdyr"),
+    "halvtimen": ("skjenke-gruppen", "Halvtimen-skjenker"),
+    "kokkegruppen": ("skjenke-gruppen", "Kokk"),
+    "stjernebarn": ("skjenke-gruppen", "Stjernebarn"),
+    "stjernesalen": ("skjenke-gruppen", "Stjernebarn"),
+}
+
 
 def _normalize_phone(phone: str) -> str:
     try:
@@ -131,13 +139,28 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationValidationError("Førstevalg og andrevalg må være ulike grupper.")
 
         choice_slugs = [slug for slug in [first_choice_slug, second_choice_slug] if slug]
-        groups_by_slug = await self.repository.find_public_prospect_groups_by_slugs(choice_slugs)
-        expected_choice_count = 1 + (1 if second_choice_slug else 0)
-        if len(groups_by_slug) != expected_choice_count:
+        resolved_choice_slugs = [
+            _PUBLIC_PROSPECT_ROLE_ROUTES.get(slug, (slug, None))[0]
+            for slug in choice_slugs
+        ]
+        groups_by_slug = await self.repository.find_public_prospect_groups_by_slugs(
+            list(dict.fromkeys(resolved_choice_slugs))
+        )
+        if any(slug not in groups_by_slug for slug in resolved_choice_slugs):
             raise VolunteerApplicationValidationError("Én eller flere valgte grupper finnes ikke.")
 
-        first_choice_group = groups_by_slug[first_choice_slug]
-        second_choice_group = groups_by_slug[second_choice_slug] if second_choice_slug else None
+        first_choice_group = groups_by_slug[resolved_choice_slugs[0]]
+        second_choice_group = groups_by_slug[resolved_choice_slugs[1]] if second_choice_slug else None
+
+        suggested_role_id = None
+        suggested_role_route = _PUBLIC_PROSPECT_ROLE_ROUTES.get(first_choice_slug)
+        if suggested_role_route is not None:
+            suggested_role_id = await self.repository.find_public_prospect_role_id(
+                group_id=first_choice_group.group_id,
+                role_name=suggested_role_route[1],
+            )
+            if suggested_role_id is None:
+                raise VolunteerApplicationValidationError("Den foreslåtte vervtypen finnes ikke.")
 
         first_name, last_name = _split_full_name(registration.full_name)
         friend_emails = self._normalize_friend_emails(
@@ -155,6 +178,8 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             phone=normalize_phone_number(registration.phone),
             study_institution=_normalize_optional_text(registration.study_institution),
             background_details=_normalize_optional_text(registration.background_details),
+            initial_group_id=(first_choice_group.group_id if suggested_role_id is not None else None),
+            initial_role_id=suggested_role_id,
             first_choice_group_id=first_choice_group.group_id,
             second_choice_group_id=(second_choice_group.group_id if second_choice_group else None),
             friend_invites=[(friend_email, token_urlsafe(24)) for friend_email in friend_emails],
