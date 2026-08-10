@@ -101,6 +101,7 @@ class FakeVolunteerApplicationsRepository:
         self.recent_registration_rows: list[dict] = []
         self.recent_registration_group_rows: dict[int, list[dict]] = {}
         self.public_prospect_groups: dict[str, PublicProspectGroup] = {}
+        self.public_prospect_role_ids: dict[tuple[int, str], int] = {}
         self.created_public_prospects: list[dict[str, object | None]] = []
 
     async def create_public_prospect_registration(self, **kwargs):
@@ -223,6 +224,9 @@ class FakeVolunteerApplicationsRepository:
 
     async def find_public_prospect_groups_by_slugs(self, slugs: list[str]) -> dict[str, PublicProspectGroup]:
         return {slug: self.public_prospect_groups[slug] for slug in slugs if slug in self.public_prospect_groups}
+
+    async def find_public_prospect_role_id(self, *, group_id: int, role_name: str) -> int | None:
+        return self.public_prospect_role_ids.get((group_id, role_name))
 
     async def list_group_members(self, group_id: int, *, include_dropped: bool = True):
         return []
@@ -749,15 +753,15 @@ async def test_volunteer_applications_pending_count_is_cached() -> None:
 async def test_public_prospect_resolves_any_configured_group_slug() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.public_prospect_groups = {
-        "grondahls": PublicProspectGroup(
+        "debatt": PublicProspectGroup(
             group_id=81,
-            slug="grondahls",
-            name="Grøndahls",
+            slug="debatt",
+            name="Debattkomiteen",
         ),
-        "halvtimen": PublicProspectGroup(
+        "fest": PublicProspectGroup(
             group_id=82,
-            slug="halvtimen",
-            name="Halvtimen",
+            slug="fest",
+            name="Festkomiteen",
         ),
     }
     service = VolunteerApplicationsService(
@@ -774,15 +778,55 @@ async def test_public_prospect_resolves_any_configured_group_slug() -> None:
             phone="41234567",
             study_institution="UiB",
             background_details=None,
-            first_choice_group_slug="grondahls",
-            second_choice_group_slug="halvtimen",
+            first_choice_group_slug="debatt",
+            second_choice_group_slug="fest",
         )
     )
 
     created = repository.created_public_prospects[0]
     assert created["first_choice_group_id"] == 81
     assert created["second_choice_group_id"] == 82
-    assert created["first_choice_group_name"] == "Grøndahls"
+    assert created["first_choice_label"] == "Debattkomiteen"
+    assert created["second_choice_label"] == "Festkomiteen"
+
+
+@pytest.mark.asyncio
+async def test_public_bar_choices_preserve_labels_and_route_only_primary_choice() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.public_prospect_groups = {
+        "skjenke-gruppen": PublicProspectGroup(
+            group_id=81,
+            slug="skjenke-gruppen",
+            name="Skjenkegruppen",
+        ),
+    }
+    repository.public_prospect_role_ids[(81, "Halvtimen-skjenker")] = 17
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=FakeEmailSender(),
+    )
+
+    await service.create_public_prospect_registration_record(
+        PublicProspectRegistrationInput(
+            full_name="Kari Nordmann",
+            email="kari@example.test",
+            phone="41234567",
+            study_institution="UiB",
+            background_details=None,
+            first_choice_group_slug="halvtimen",
+            second_choice_group_slug="grondahls",
+        )
+    )
+
+    created = repository.created_public_prospects[0]
+    assert created["first_choice_group_id"] == 81
+    assert created["second_choice_group_id"] == 81
+    assert created["first_choice_label"] == "Halvtimen"
+    assert created["second_choice_label"] == "Grøndahls"
+    assert created["initial_group_id"] == 81
+    assert created["initial_role_id"] == 17
 
 
 @pytest.mark.asyncio

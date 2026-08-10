@@ -49,6 +49,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         phone: str | None,
         study_institution: str | None,
         background_details: str | None,
+        first_choice_label: str,
+        second_choice_label: str | None,
         initial_group_id: int | None,
         initial_role_id: int | None,
         first_choice_group_id: int,
@@ -73,6 +75,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         initial_role_id=initial_role_id,
                         first_choice_group_id=first_choice_group_id,
                         second_choice_group_id=second_choice_group_id,
+                        first_choice_label=first_choice_label,
+                        second_choice_label=second_choice_label,
                         trial_shift_attended=False,
                     )
                     .returning(volunteer_application_invites.c.id)
@@ -131,6 +135,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             initial_role_id=initial_role_id,
                             first_choice_group_id=first_choice_group_id,
                             second_choice_group_id=second_choice_group_id,
+                            first_choice_label=first_choice_label,
+                            second_choice_label=second_choice_label,
                             trial_shift_attended=False,
                         )
                         .returning(
@@ -608,8 +614,14 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_application_submissions.c.bakgrunn,
                 accepted_group.c.name.label("initial_group_name"),
                 accepted_role.c.name.label("initial_role_name"),
-                first_choice_group.c.name.label("first_choice_group_name"),
-                second_choice_group.c.name.label("second_choice_group_name"),
+                func.coalesce(
+                    volunteer_application_invites.c.first_choice_label,
+                    first_choice_group.c.name,
+                ).label("first_choice_group_name"),
+                func.coalesce(
+                    volunteer_application_invites.c.second_choice_label,
+                    second_choice_group.c.name,
+                ).label("second_choice_group_name"),
                 group_membership.c.group_id.label("group_id"),
                 group_membership.c.role.label("group_role"),
                 group_membership.c.status.label("group_status"),

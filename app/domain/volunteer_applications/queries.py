@@ -72,8 +72,14 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 volunteer_application_submissions.c.bakgrunn,
                 accepted_group.c.name.label("initial_group_name"),
                 accepted_role.c.name.label("initial_role_name"),
-                first_choice_group.c.name.label("first_choice_group_name"),
-                second_choice_group.c.name.label("second_choice_group_name"),
+                func.coalesce(
+                    volunteer_application_invites.c.first_choice_label,
+                    first_choice_group.c.name,
+                ).label("first_choice_group_name"),
+                func.coalesce(
+                    volunteer_application_invites.c.second_choice_label,
+                    second_choice_group.c.name,
+                ).label("second_choice_group_name"),
                 group_membership.c.group_id.label("group_id"),
                 group_membership.c.role.label("group_role"),
                 group_membership.c.status.label("group_status"),

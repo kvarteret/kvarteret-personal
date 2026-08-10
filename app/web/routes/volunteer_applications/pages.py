@@ -248,10 +248,6 @@ def _build_promotion_group_options(volunteer_application):
             volunteer_application.first_choice_group_id,
             volunteer_application.first_choice_group_name,
         ),
-        (
-            volunteer_application.second_choice_group_id,
-            volunteer_application.second_choice_group_name,
-        ),
     ]:
         if group_id is None or not name or group_id in seen_group_ids:
             continue

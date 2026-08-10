@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.auth.roles import UserRole
 from app.dependencies import get_volunteer_applications_service, get_volunteers_service
 from app.main import create_app
+from app.web.routes.volunteer_applications.pages import _build_promotion_group_options
 from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationInput,
     RecentVolunteerRegistrationItem,
@@ -209,6 +210,10 @@ class FakeVolunteerApplicationsService:
             initial_group_name="Bar",
             initial_role_id=9,
             initial_role_name="Skiftleder",
+            first_choice_group_id=3,
+            first_choice_group_name="Halvtimen",
+            second_choice_group_id=3,
+            second_choice_group_name="Grøndahls",
         )
 
     async def submit_volunteer_application(
@@ -444,7 +449,46 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "registrant@example.com" in response.text
     assert "Promoter til frivillig" in response.text
     assert "Prøvedugnad" in response.text
+    assert "Halvtimen" in response.text
+    assert "Grøndahls" in response.text
     assert "Lenke" not in response.text
+
+
+def test_promotion_options_exclude_metadata_only_second_choice() -> None:
+    application = VolunteerApplicationDetail(
+        registration_id=7,
+        token="token-123",
+        email="registrant@example.com",
+        created_at=datetime(2026, 3, 13, tzinfo=UTC),
+        submitted=True,
+        source="public_signup",
+        status="prospect",
+        pending_volunteer_id=8,
+        first_name="Sample",
+        last_name="Registrant",
+        phone="+4741234567",
+        birth_date=None,
+        gender=None,
+        address=None,
+        postal_code=None,
+        photo_sha1=None,
+        photo_filetype=None,
+        photo_url=None,
+        study_institution=None,
+        background_details=None,
+        initial_group_id=3,
+        initial_group_name="Skjenkegruppen",
+        initial_role_id=9,
+        initial_role_name="Halvtimen-skjenker",
+        first_choice_group_id=3,
+        first_choice_group_name="Halvtimen",
+        second_choice_group_id=4,
+        second_choice_group_name="Grøndahls",
+    )
+
+    assert _build_promotion_group_options(application) == [
+        {"group_id": 3, "name": "Skjenkegruppen"}
+    ]
 
 
 def test_recent_registrations_fragment_renders_next_page() -> None:

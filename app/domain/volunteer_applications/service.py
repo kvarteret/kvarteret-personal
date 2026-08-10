@@ -51,11 +51,11 @@ from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkf
 _REGISTRATION_NOT_FOUND = "Registration was not found."
 
 _PUBLIC_PROSPECT_ROLE_ROUTES = {
-    "grondahls": ("skjenke-gruppen", "Pubdyr"),
-    "halvtimen": ("skjenke-gruppen", "Halvtimen-skjenker"),
-    "kokkegruppen": ("skjenke-gruppen", "Kokk"),
-    "stjernebarn": ("skjenke-gruppen", "Stjernebarn"),
-    "stjernesalen": ("skjenke-gruppen", "Stjernebarn"),
+    "grondahls": ("skjenke-gruppen", "Pubdyr", "Grøndahls"),
+    "halvtimen": ("skjenke-gruppen", "Halvtimen-skjenker", "Halvtimen"),
+    "kokkegruppen": ("skjenke-gruppen", "Kokk", "Kokkegruppen"),
+    "stjernebarn": ("skjenke-gruppen", "Stjernebarn", "Stjernebarn"),
+    "stjernesalen": ("skjenke-gruppen", "Stjernebarn", "Stjernesalen"),
 }
 
 
@@ -140,7 +140,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
         choice_slugs = [slug for slug in [first_choice_slug, second_choice_slug] if slug]
         resolved_choice_slugs = [
-            _PUBLIC_PROSPECT_ROLE_ROUTES.get(slug, (slug, None))[0]
+            _PUBLIC_PROSPECT_ROLE_ROUTES.get(slug, (slug, None, None))[0]
             for slug in choice_slugs
         ]
         groups_by_slug = await self.repository.find_public_prospect_groups_by_slugs(
@@ -151,13 +151,21 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
         first_choice_group = groups_by_slug[resolved_choice_slugs[0]]
         second_choice_group = groups_by_slug[resolved_choice_slugs[1]] if second_choice_slug else None
+        first_choice_route = _PUBLIC_PROSPECT_ROLE_ROUTES.get(first_choice_slug)
+        second_choice_route = _PUBLIC_PROSPECT_ROLE_ROUTES.get(second_choice_slug)
+        first_choice_label = first_choice_route[2] if first_choice_route else first_choice_group.name
+        if second_choice_route:
+            second_choice_label = second_choice_route[2]
+        elif second_choice_group:
+            second_choice_label = second_choice_group.name
+        else:
+            second_choice_label = None
 
         suggested_role_id = None
-        suggested_role_route = _PUBLIC_PROSPECT_ROLE_ROUTES.get(first_choice_slug)
-        if suggested_role_route is not None:
+        if first_choice_route is not None:
             suggested_role_id = await self.repository.find_public_prospect_role_id(
                 group_id=first_choice_group.group_id,
-                role_name=suggested_role_route[1],
+                role_name=first_choice_route[1],
             )
             if suggested_role_id is None:
                 raise VolunteerApplicationValidationError("Den foreslåtte vervtypen finnes ikke.")
@@ -178,13 +186,15 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             phone=normalize_phone_number(registration.phone),
             study_institution=_normalize_optional_text(registration.study_institution),
             background_details=_normalize_optional_text(registration.background_details),
+            first_choice_label=first_choice_label,
+            second_choice_label=second_choice_label,
             initial_group_id=(first_choice_group.group_id if suggested_role_id is not None else None),
             initial_role_id=suggested_role_id,
             first_choice_group_id=first_choice_group.group_id,
             second_choice_group_id=(second_choice_group.group_id if second_choice_group else None),
             friend_invites=[(friend_email, token_urlsafe(24)) for friend_email in friend_emails],
             inviter_name=_build_full_name(first_name, last_name),
-            first_choice_group_name=first_choice_group.name,
+            first_choice_group_name=first_choice_label,
         )
         return result
 
@@ -455,7 +465,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             for group_id in [
                 detail.initial_group_id,
                 detail.first_choice_group_id,
-                detail.second_choice_group_id,
             ]
             if group_id is not None
         }
