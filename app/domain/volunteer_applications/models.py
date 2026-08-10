@@ -341,6 +341,8 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         phone: str | None,
         study_institution: str | None,
         background_details: str | None,
+        initial_group_id: int | None,
+        initial_role_id: int | None,
         first_choice_group_id: int,
         second_choice_group_id: int | None,
         friend_invites: list[tuple[str, str]] | None = None,
@@ -366,6 +368,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
     async def find_public_prospect_groups_by_slugs(self, slugs: list[str]) -> dict[str, PublicProspectGroup]: ...
+    async def find_public_prospect_role_id(self, *, group_id: int, role_name: str) -> int | None: ...
     async def save_submission(
         self,
         *,
