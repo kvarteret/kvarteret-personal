@@ -341,6 +341,8 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         phone: str | None,
         study_institution: str | None,
         background_details: str | None,
+        first_choice_label: str,
+        second_choice_label: str | None,
         initial_group_id: int | None,
         initial_role_id: int | None,
         first_choice_group_id: int,

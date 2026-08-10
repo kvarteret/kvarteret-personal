@@ -47,6 +47,20 @@ stateDiagram-v2
     active --> dropped: drop_member\n(audit kept, row kept)
 ```
 
+## Public Choices and Promotion
+
+The public form submits a required first choice and an optional second choice.
+Personal stores immutable display labels for both choices as application
+metadata. A public choice does not always correspond one-to-one with an
+operational group: Halvtimen, Grøndahls, Kokkegruppen, and Stjernesalen are
+public choices that route to roles under Skjenkegruppen.
+
+Only the first choice determines the suggested operational group and role.
+Promotion therefore offers the primary placement, not the secondary choice.
+The secondary label remains visible to reviewers as context, but it does not
+expand the set of allowed promotion targets. This prevents two different bar
+choices from collapsing into two indistinguishable “Skjenkegruppen” options.
+
 ## Guards
 
 Two rules depend on more than the current state, so they live in the machine's `TransitionContext` and are covered by the exhaustive test matrix:

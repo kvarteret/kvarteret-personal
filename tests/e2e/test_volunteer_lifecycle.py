@@ -160,13 +160,16 @@ async def test_public_prospect_accepts_every_canonical_group_slug(
     assert response.status_code == 201, response.text
     invites = await _fetch_all(
         e2e_engine,
-        "SELECT first_choice_group_id, second_choice_group_id"
+        "SELECT first_choice_group_id, second_choice_group_id,"
+        " first_choice_label, second_choice_label"
         " FROM public.volunteer_application_invites",
     )
     assert invites == [
         {
             "first_choice_group_id": expected_group_id,
             "second_choice_group_id": None,
+            "first_choice_label": group_name,
+            "second_choice_label": None,
         }
     ]
 
@@ -203,13 +206,74 @@ async def test_public_prospect_resolves_both_group_choices(app, e2e_engine):
     assert response.status_code == 201, response.text
     invites = await _fetch_all(
         e2e_engine,
-        "SELECT first_choice_group_id, second_choice_group_id"
+        "SELECT first_choice_group_id, second_choice_group_id,"
+        " first_choice_label, second_choice_label"
         " FROM public.volunteer_application_invites",
     )
     assert invites == [
         {
             "first_choice_group_id": first_group_id,
             "second_choice_group_id": second_group_id,
+            "first_choice_label": "Debattkomiteen",
+            "second_choice_label": "Festkomiteen",
+        }
+    ]
+
+
+async def test_public_bar_choices_keep_distinct_metadata_and_route_primary_role(
+    app,
+    e2e_engine,
+):
+    group_id = await _seed_group(
+        e2e_engine,
+        slug="skjenke-gruppen",
+        name="Skjenkegruppen",
+    )
+    async with e2e_engine.begin() as conn:
+        role_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO public.assignment_roles"
+                    " (name, group_id, penguin_points, created_at)"
+                    " VALUES ('Halvtimen-skjenker', :group_id, 0, :now)"
+                    " RETURNING id"
+                ),
+                {"group_id": group_id, "now": datetime.now(timezone.utc)},
+            )
+        ).scalar_one()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://personal.e2e.test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/volunteer-prospects",
+            json={
+                "full_name": "Bar Choices",
+                "email": "bar-choices@example.com",
+                "phone": "+47 412 34 567",
+                "study_institution": "UiB",
+                "first_choice_group_slug": "halvtimen",
+                "second_choice_group_slug": "grondahls",
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    invites = await _fetch_all(
+        e2e_engine,
+        "SELECT initial_group_id, initial_role_id, first_choice_group_id,"
+        " second_choice_group_id, first_choice_label, second_choice_label"
+        " FROM public.volunteer_application_invites",
+    )
+    assert invites == [
+        {
+            "initial_group_id": group_id,
+            "initial_role_id": role_id,
+            "first_choice_group_id": group_id,
+            "second_choice_group_id": group_id,
+            "first_choice_label": "Halvtimen",
+            "second_choice_label": "Grøndahls",
         }
     ]
 
