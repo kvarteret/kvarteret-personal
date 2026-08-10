@@ -392,7 +392,11 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Slett frivillig" in detail_response.text
     assert "Registreringslogg" in detail_response.text
     assert "#44" in detail_response.text
+    assert "Første valg" in detail_response.text
+    assert "Andre valg" in detail_response.text
     assert "Skjenkegruppen" in detail_response.text
+    assert "N/A" in detail_response.text
+    assert "Komitéønsker" not in detail_response.text
     assert "invitee · active" in detail_response.text
     assert service.list_page_calls[0]["only_active"] is True
 

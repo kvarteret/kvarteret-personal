@@ -7,6 +7,7 @@ import phonenumbers
 from phonenumbers import NumberParseException, PhoneNumberFormat
 
 DEFAULT_PHONE_REGION = "NO"
+NORWEGIAN_PHONE_FALLBACK = "+4700000000"
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _TRUNK_ZERO_RE = re.compile(r"^(\+\d{1,3})\(0\)")
@@ -83,6 +84,15 @@ def analyze_phone_number(
             normalized=None,
             status="invalid",
             reason="contains_letters",
+        )
+
+    if cleaned.startswith("+") and _DIGITS_RE.sub("", cleaned) == "4700000000":
+        return PhoneNormalizationResult(
+            original=value,
+            cleaned=cleaned,
+            normalized=NORWEGIAN_PHONE_FALLBACK,
+            status="normalized",
+            reason="fallback",
         )
 
     parsed = _parse_phone_number(cleaned, default_region=default_region)
