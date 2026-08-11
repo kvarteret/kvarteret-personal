@@ -20,6 +20,7 @@ from sqlalchemy import (
 
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
+from app.domain.volunteer_applications.tables import volunteer_application_invites
 from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.shared.semester import get_current_semester_code
 
@@ -148,6 +149,15 @@ def current_active_volunteers_subquery():
         select(role_assignments.c.volunteer_id.label("volunteer_id"))
         .where(role_assignments.c.semester == get_current_semester_code())
         .where(role_assignments.c.contract_signed.is_(True))
+        .where(
+            ~select(volunteer_application_invites.c.id)
+            .where(
+                volunteer_application_invites.c.promoted_volunteer_id
+                == role_assignments.c.volunteer_id
+            )
+            .where(volunteer_application_invites.c.status == "not_volunteer")
+            .exists()
+        )
         .group_by(role_assignments.c.volunteer_id)
         .subquery()
     )

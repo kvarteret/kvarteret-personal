@@ -12,6 +12,12 @@ msgstr "Application submitted"
 msgid "Complete your details"
 msgstr "Complete your details"
 
+msgid "Your journey starts now"
+msgstr "Your journey starts now"
+
+msgid "Your trial period has now started. Complete your profile to access your temporary staff ID, internal benefits, and relevant information during your trial period."
+msgstr "Your trial period has now started. Complete your profile to access your temporary staff ID, internal benefits, and relevant information during your trial period."
+
 msgid "Invitation for %(email)s"
 msgstr "Invitation for %(email)s"
 

@@ -20,7 +20,6 @@ from app.domain.volunteer_applications.tables import (
     volunteer_application_submissions,
 )
 from app.domain.volunteers.tables import volunteer_photos, volunteer_records
-from app.domain.volunteer_applications.state_machine import ApplicationState
 from app.domain.volunteer_applications.models import (
     RecentVolunteerRegistrationItem,
     RecentVolunteerRegistrationPage,
@@ -61,6 +60,8 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 volunteer_application_invites.c.first_choice_group_id,
                 volunteer_application_invites.c.second_choice_group_id,
                 volunteer_application_invites.c.trial_shift_attended,
+                volunteer_application_invites.c.trial_started_at,
+                volunteer_application_invites.c.trial_ends_at,
                 volunteer_application_invites.c.full_profile_submitted_at,
                 volunteer_application_invites.c.promoted_volunteer_id,
                 volunteer_application_invites.c.promoted_at,
@@ -108,7 +109,6 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                     second_choice_group.c.id == volunteer_application_invites.c.second_choice_group_id,
                 )
             )
-            .where(volunteer_application_invites.c.status != ApplicationState.PROMOTED)
             .order_by(volunteer_application_invites.c.created_at.desc(), volunteer_application_invites.c.id.desc())
         )
         session = self.session
@@ -142,6 +142,8 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 second_choice_group_id=row["second_choice_group_id"],
                 second_choice_group_name=row["second_choice_group_name"],
                 trial_shift_attended=bool(row["trial_shift_attended"]),
+                trial_started_at=row["trial_started_at"],
+                trial_ends_at=row["trial_ends_at"],
                 promoted_volunteer_id=row["promoted_volunteer_id"],
                 promoted_at=row["promoted_at"],
                 group_id=row["group_id"],

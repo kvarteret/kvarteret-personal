@@ -23,6 +23,7 @@ from app.domain.volunteer_applications.side_effects import (
     VolunteerApplicationSideEffects,
 )
 from app.domain.volunteer_applications.state_machine import (
+    ApplicationState,
     DomainEventRecord,
     IllegalTransition,
     MembershipState,
@@ -103,6 +104,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
                 send_invitation_email=self._send_invitation_email,
                 send_friend_invitation_email=self._send_friend_invitation_email,
                 send_profile_completion_email=self._send_profile_completion_email,
+                send_application_received_email=self._send_application_received_email,
                 storage_service=storage_service,
             ),
         )
@@ -393,32 +395,100 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             except Exception:
                 pass
 
-    async def mark_trial_shift_attended(
+    async def mark_contacted(
         self,
         registration_id: int,
         *,
-        attended: bool,
         actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationDetail:
         try:
-            return await self.workflow.mark_trial_shift_attended(
+            return await self.workflow.contact(
                 registration_id,
-                attended=attended,
                 actor_user_account_id=actor_user_account_id,
             )
         except IllegalTransition as exc:
             raise VolunteerApplicationConflictError(str(exc)) from exc
 
-    async def mark_trial_shift_attended_record(
+    async def start_trial(
         self,
         registration_id: int,
         *,
-        attended: bool,
+        base_url: str | None = None,
+        actor_user_account_id: int | None = None,
+    ) -> VolunteerApplicationDetail:
+        try:
+            return await self.workflow.start_trial(
+                registration_id,
+                base_url=base_url,
+                actor_user_account_id=actor_user_account_id,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
+
+    async def reject_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> VolunteerApplicationDetail:
+        try:
+            return await self.workflow.reject(
+                registration_id,
+                actor_user_account_id=actor_user_account_id,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
+
+    async def reopen_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> VolunteerApplicationDetail:
+        try:
+            return await self.workflow.reopen(
+                registration_id,
+                actor_user_account_id=actor_user_account_id,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
+
+    async def restore_volunteer_application(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
     ) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
-        await self.repository.set_trial_shift_attended(registration_id, attended=attended)
+        if detail.promoted_volunteer_id is None:
+            raise VolunteerApplicationConflictError(
+                "Only previously promoted applications can be restored as volunteers."
+            )
+        try:
+            return await self.workflow.restore_volunteer(
+                registration_id,
+                actor_user_account_id=actor_user_account_id,
+            )
+        except IllegalTransition as exc:
+            raise VolunteerApplicationConflictError(str(exc)) from exc
+
+    async def set_application_status_record(
+        self,
+        registration_id: int,
+        *,
+        status: ApplicationState,
+        start_trial: bool = False,
+    ) -> VolunteerApplicationDetail:
+        detail = await self.get_volunteer_application_detail(registration_id)
+        if detail is None:
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
+        await self.repository.set_application_status(
+            registration_id,
+            status=status,
+            start_trial=start_trial,
+        )
         refreshed = await self.get_volunteer_application_detail(registration_id)
         if refreshed is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
@@ -493,6 +563,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             photo_filetype=detail.photo_filetype,
             group_id=resolved_group_id,
             role_id=detail.initial_role_id,
+            contract_signed=True,
         )
         await self.repository.mark_promoted(
             registration_id=detail.registration_id,
@@ -569,8 +640,18 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
+        if detail.pending_volunteer_id is not None:
+            raise VolunteerApplicationConflictError(
+                "Submitted applications must be rejected instead of deleted."
+            )
         await self.repository.delete_volunteer_application(registration_id)
         return detail
+
+    async def find_active_trial_applicant_by_email(self, email: str):
+        return await self.repository.find_active_trial_applicant_by_email(email)
+
+    async def get_active_trial_applicant(self, application_id: int):
+        return await self.repository.get_active_trial_applicant(application_id)
 
     async def resend_volunteer_application_invitation(
         self,
@@ -713,6 +794,14 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         invitation_url = f"{resolved_base_url}/apply/{token}"
         rendered_email = self.applicant_email_renderer.render_profile_completion_email(invitation_url=invitation_url)
         await commit_request_session()
+        await self.email_sender.send_email(
+            recipient_email=email,
+            subject=rendered_email.subject,
+            html_body=rendered_email.html_body,
+        )
+
+    async def _send_application_received_email(self, *, email: str) -> None:
+        rendered_email = self.applicant_email_renderer.render_application_received_email()
         await self.email_sender.send_email(
             recipient_email=email,
             subject=rendered_email.subject,

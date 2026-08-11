@@ -13,7 +13,7 @@ class _Record:
 class FakeWorkflowOperations:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
-        self.detail_status = "submitted"
+        self.detail_status = "trial"
 
     async def create_public_prospect_registration_record(
         self, registration, *, base_url: str | None
@@ -47,11 +47,12 @@ class FakeWorkflowOperations:
         self.calls.append(("submit", token))
         return _Record(registration_id=7, email="applicant@example.test")
 
-    async def mark_trial_shift_attended_record(
-        self, registration_id: int, *, attended: bool
+    async def set_application_status_record(
+        self, registration_id: int, *, status, start_trial: bool = False
     ):
-        self.calls.append(("mark_trial", registration_id))
-        return _Record(registration_id=registration_id, attended=attended)
+        self.calls.append(("status", status.value))
+        self.detail_status = status.value
+        return _Record(registration_id=registration_id, status=status.value)
 
     async def approve_application_record(
         self, registration_id: int, *, accepted_group_id: int | None
@@ -92,7 +93,7 @@ class FakeWorkflowOperations:
         self.calls.append(("get_by_token", token))
         return _Record(
             registration_id=7,
-            status="invited",
+            status="new",
             email="applicant@example.test",
             pending_volunteer_id=None,
             group_id=None,
@@ -126,7 +127,7 @@ class FakeWorkflowSideEffects:
     async def after_submitted(self, detail):
         self.calls.append(("after_submitted", detail.registration_id))
 
-    async def after_trial_shift_marked(self, detail):
+    async def after_trial_started(self, detail, *, base_url: str | None):
         self.calls.append(("after_trial", detail.registration_id))
 
     async def after_approved(self, detail, *, volunteer_id: int, base_url: str | None):
@@ -217,15 +218,20 @@ async def test_workflow_register_mark_delete_and_resend_are_traceable() -> None:
     await workflow.register_public_prospect(
         object(), base_url="https://personal.example.test"
     )
-    await workflow.mark_trial_shift_attended(7, attended=True)
+    operations.detail_status = "new"
+    await workflow.contact(7)
+    await workflow.start_trial(7, base_url="https://personal.example.test")
+    operations.detail_status = "new"
     await workflow.delete(7)
-    operations.detail_status = "invited"
+    operations.detail_status = "new"
     await workflow.resend_invitation(7, base_url="https://personal.example.test")
 
     assert operations.calls == [
         ("register", "https://personal.example.test"),
         ("get", 7),
-        ("mark_trial", 7),
+        ("status", "contacted"),
+        ("get", 7),
+        ("status", "trial"),
         ("get", 7),
         ("delete", 7),
         ("get", 7),

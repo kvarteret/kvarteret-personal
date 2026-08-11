@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, exists, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,11 +25,13 @@ from app.domain.volunteer_applications.tables import domain_events
 from app.domain.volunteer_applications.models import (
     PublicProspectGroup,
     PublicProspectRegistrationResult,
+    TrialApplicantCardSnapshot,
     VolunteerApplicationDetail,
     VolunteerApplicationFriendInvite,
     VolunteerApplicationGroupMember,
     VolunteerApplicationInvite,
     VolunteerApplicationSubmissionInput,
+    VolunteerApplicationStatusEvent,
 )
 from app.shared.phone_numbers import normalize_phone_number
 from app.media_tokens import MediaTokenService
@@ -70,7 +72,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         token=token,
                         email=email,
                         source="public_signup",
-                        status=ApplicationState.PROSPECT,
+                        status=ApplicationState.NEW,
                         initial_group_id=initial_group_id,
                         initial_role_id=initial_role_id,
                         first_choice_group_id=first_choice_group_id,
@@ -130,7 +132,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             token=friend_token,
                             email=friend_email,
                             source="group_invite",
-                            status=ApplicationState.INVITED,
+                            status=ApplicationState.NEW,
                             initial_group_id=initial_group_id,
                             initial_role_id=initial_role_id,
                             first_choice_group_id=first_choice_group_id,
@@ -190,7 +192,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         token=token,
                         email=email,
                         source="invite",
-                        status=ApplicationState.INVITED,
+                        status=ApplicationState.NEW,
                         initial_group_id=initial_group_id,
                         initial_role_id=initial_role_id,
                         trial_shift_attended=False,
@@ -233,7 +235,11 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id,
                 )
             )
-            .where(volunteer_application_invites.c.status != ApplicationState.PROMOTED)
+            .where(
+                volunteer_application_invites.c.status.not_in(
+                    [ApplicationState.VOLUNTEER, ApplicationState.NOT_VOLUNTEER]
+                )
+            )
         )
         session = self.session
         count = await session.scalar(stmt)
@@ -392,18 +398,27 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         await session.execute(
             update(volunteer_application_invites)
             .where(volunteer_application_invites.c.id == registration_id)
-            .values(status=ApplicationState.SUBMITTED, full_profile_submitted_at=func.now())
+            .values(full_profile_submitted_at=func.now())
         )
 
-    async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None:
-        session = self.session
-        await session.execute(
+    async def set_application_status(
+        self,
+        registration_id: int,
+        *,
+        status: ApplicationState,
+        start_trial: bool = False,
+    ) -> None:
+        values: dict[str, object] = {"status": status}
+        if start_trial:
+            started_at = datetime.now(UTC)
+            values.update(
+                trial_started_at=started_at,
+                trial_ends_at=started_at + timedelta(days=30),
+            )
+        await self.session.execute(
             update(volunteer_application_invites)
             .where(volunteer_application_invites.c.id == registration_id)
-            .values(
-                trial_shift_attended=attended,
-                trial_shift_marked_at=datetime.now(UTC) if attended else None,
-            )
+            .values(**values)
         )
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
@@ -420,8 +435,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             select(volunteer_application_invites.c.id)
             .where(
                 func.lower(func.coalesce(volunteer_application_invites.c.email, "")) == email.lower(),
-                volunteer_application_invites.c.status != ApplicationState.PROMOTED,
-                volunteer_application_invites.c.status != ApplicationState.REJECTED,
+                volunteer_application_invites.c.status != ApplicationState.VOLUNTEER,
+                volunteer_application_invites.c.status != ApplicationState.NOT_VOLUNTEER,
             )
             .limit(1)
         )
@@ -443,6 +458,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_application_invites.c.full_profile_submitted_at,
                 volunteer_application_invites.c.trial_shift_attended,
                 volunteer_application_invites.c.promoted_volunteer_id,
+                volunteer_application_invites.c.status.label("application_status"),
                 volunteer_application_submissions.c.id.label("pending_volunteer_id"),
                 volunteer_application_submissions.c.first_name,
                 volunteer_application_submissions.c.last_name,
@@ -476,6 +492,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 last_name=row["last_name"],
                 trial_shift_attended=bool(row["trial_shift_attended"]),
                 promoted_volunteer_id=row["promoted_volunteer_id"],
+                application_status=row["application_status"],
                 dropped_at=row["dropped_at"],
             )
             for row in rows
@@ -526,9 +543,92 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .values(
                 promoted_volunteer_id=volunteer_id,
                 promoted_at=func.now(),
-                status=ApplicationState.PROMOTED,
+                status=ApplicationState.VOLUNTEER,
                 initial_group_id=accepted_group_id,
             )
+        )
+
+    async def find_active_trial_applicant_by_email(
+        self, email: str
+    ) -> TrialApplicantCardSnapshot | None:
+        return await self._find_active_trial_applicant(email=email)
+
+    async def get_active_trial_applicant(
+        self, application_id: int
+    ) -> TrialApplicantCardSnapshot | None:
+        return await self._find_active_trial_applicant(application_id=application_id)
+
+    async def _find_active_trial_applicant(
+        self,
+        *,
+        email: str | None = None,
+        application_id: int | None = None,
+    ) -> TrialApplicantCardSnapshot | None:
+        accepted_group = groups.alias("trial_group")
+        accepted_role = assignment_roles.alias("trial_role")
+        stmt = (
+            select(
+                volunteer_application_invites.c.id,
+                volunteer_application_invites.c.created_at,
+                volunteer_application_invites.c.trial_ends_at,
+                volunteer_application_submissions.c.first_name,
+                volunteer_application_submissions.c.last_name,
+                volunteer_application_submissions.c.birth_date,
+                volunteer_application_submissions.c.photo_sha1,
+                volunteer_application_submissions.c.photo_filetype,
+                accepted_group.c.name.label("group_name"),
+                accepted_group.c.discount_tier,
+                accepted_role.c.name.label("role_name"),
+            )
+            .select_from(
+                volunteer_application_invites.join(
+                    volunteer_application_submissions,
+                    volunteer_application_submissions.c.invite_id
+                    == volunteer_application_invites.c.id,
+                )
+                .outerjoin(
+                    accepted_group,
+                    accepted_group.c.id
+                    == func.coalesce(
+                        volunteer_application_invites.c.initial_group_id,
+                        volunteer_application_invites.c.first_choice_group_id,
+                    ),
+                )
+                .outerjoin(
+                    accepted_role,
+                    accepted_role.c.id
+                    == volunteer_application_invites.c.initial_role_id,
+                )
+            )
+            .where(
+                volunteer_application_invites.c.status == ApplicationState.TRIAL,
+                volunteer_application_invites.c.trial_ends_at > func.now(),
+                volunteer_application_invites.c.full_profile_submitted_at.is_not(None),
+                volunteer_application_submissions.c.photo_sha1.is_not(None),
+                volunteer_application_submissions.c.photo_filetype.is_not(None),
+            )
+            .limit(1)
+        )
+        if email is not None:
+            stmt = stmt.where(
+                func.lower(volunteer_application_invites.c.email) == email.lower()
+            )
+        if application_id is not None:
+            stmt = stmt.where(volunteer_application_invites.c.id == application_id)
+        row = await self.fetch_first_mapping(stmt)
+        if row is None:
+            return None
+        return TrialApplicantCardSnapshot(
+            application_id=row["id"],
+            first_name=row["first_name"] or "",
+            last_name=row["last_name"],
+            birth_date=row["birth_date"],
+            created_at=row["created_at"],
+            trial_ends_at=row["trial_ends_at"],
+            photo_path=f"{row['photo_sha1']}.{row['photo_filetype']}",
+            group_name=row["group_name"] or "Kvarteret",
+            role_name=row["role_name"] or "Prøvefrivillig",
+            discount_level=row["discount_tier"],
         )
 
     async def delete_volunteer_application(self, registration_id: int) -> None:
@@ -597,6 +697,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_application_invites.c.second_choice_group_id,
                 volunteer_application_invites.c.trial_shift_attended,
                 volunteer_application_invites.c.trial_shift_marked_at,
+                volunteer_application_invites.c.trial_started_at,
+                volunteer_application_invites.c.trial_ends_at,
                 volunteer_application_invites.c.full_profile_submitted_at,
                 volunteer_application_invites.c.promoted_volunteer_id,
                 volunteer_application_invites.c.promoted_at,
@@ -660,6 +762,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         if row is None:
             return None
         group_members = await self.list_group_members(row["group_id"]) if row["group_id"] is not None else None
+        status_history = await self.list_status_history(row["id"])
         return VolunteerApplicationDetail(
             registration_id=row["id"],
             token=row["token"],
@@ -695,13 +798,61 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             second_choice_group_name=row["second_choice_group_name"],
             trial_shift_attended=bool(row["trial_shift_attended"]),
             trial_shift_marked_at=row["trial_shift_marked_at"],
+            trial_started_at=row["trial_started_at"],
+            trial_ends_at=row["trial_ends_at"],
             promoted_volunteer_id=row["promoted_volunteer_id"],
             promoted_at=row["promoted_at"],
             group_id=row["group_id"],
             group_role=row["group_role"],
             group_status=row["group_status"],
             group_members=group_members,
+            status_history=status_history,
         )
+
+    async def list_status_history(
+        self, registration_id: int
+    ) -> list[VolunteerApplicationStatusEvent]:
+        event_statuses = {
+            "prospect_registered": ApplicationState.NEW.value,
+            "application_invited": ApplicationState.NEW.value,
+            "application_contacted": ApplicationState.CONTACTED.value,
+            "trial_started": ApplicationState.TRIAL.value,
+            "application_approved": ApplicationState.VOLUNTEER.value,
+            "application_rejected": ApplicationState.NOT_VOLUNTEER.value,
+            "application_reopened": ApplicationState.CONTACTED.value,
+            "application_volunteer_restored": ApplicationState.VOLUNTEER.value,
+        }
+        actor = user_accounts.alias("event_actor")
+        rows = await self.fetch_all_mappings(
+            select(
+                domain_events.c.event_type,
+                domain_events.c.actor_user_account_id,
+                domain_events.c.occurred_at,
+                actor.c.display_name,
+                actor.c.username,
+            )
+            .select_from(
+                domain_events.outerjoin(
+                    actor, actor.c.id == domain_events.c.actor_user_account_id
+                )
+            )
+            .where(
+                domain_events.c.subject_type == "application",
+                domain_events.c.subject_id == registration_id,
+                domain_events.c.event_type.in_(tuple(event_statuses)),
+            )
+            .order_by(domain_events.c.occurred_at.desc(), domain_events.c.id.desc())
+        )
+        return [
+            VolunteerApplicationStatusEvent(
+                event_type=row["event_type"],
+                status=event_statuses[row["event_type"]],
+                actor_display_name=row["display_name"] or row["username"],
+                actor_user_account_id=row["actor_user_account_id"],
+                occurred_at=row["occurred_at"],
+            )
+            for row in rows
+        ]
 
     async def _fetch_assignment_names(
         self,

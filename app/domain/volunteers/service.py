@@ -72,6 +72,7 @@ class VolunteersService(VolunteersQueries):
         photo_filetype: str | None,
         group_id: int,
         role_id: int | None,
+        contract_signed: bool,
     ) -> int:
         """Create a volunteer from an approved application; returns the id."""
         return await self.repository.create_from_application(
@@ -87,6 +88,7 @@ class VolunteersService(VolunteersQueries):
             photo_filetype=photo_filetype,
             group_id=group_id,
             role_id=role_id,
+            contract_signed=contract_signed,
         )
 
     async def update_volunteer_profile(

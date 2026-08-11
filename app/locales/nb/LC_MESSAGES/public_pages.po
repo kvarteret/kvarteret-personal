@@ -12,6 +12,12 @@ msgstr "Søknad sendt inn"
 msgid "Complete your details"
 msgstr "Fullfør dine detaljer"
 
+msgid "Your journey starts now"
+msgstr "Din reise starter nå"
+
+msgid "Your trial period has now started. Complete your profile to access your temporary staff ID, internal benefits, and relevant information during your trial period."
+msgstr "Din prøveperiode er nå i gang. Fullfør profilen din for å få tilgang til midlertidig internbevis, interne goder og relevant informasjon gjennom prøveperioden."
+
 msgid "Invitation for %(email)s"
 msgstr "Invitasjon for %(email)s"
 
