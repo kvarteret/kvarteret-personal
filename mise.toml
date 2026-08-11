@@ -28,3 +28,17 @@ run = "bun run watch:css"
 [tasks."dev:server"]
 description = "Run the FastAPI development server with reload"
 run = "DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/kvarteret_personal_dev APP_ENV=development DEV_ADMIN_EMAIL=dev@kvarteret.dev DEV_ADMIN_PASSWORD=dev-password APP_SECRET_KEY=local-dev-secret uv run uvicorn app.main:create_app --factory --reload --host 127.0.0.1 --port 8000"
+
+[tasks.prod]
+description = "Run Personal and the CSS watcher with settings from .env"
+run = """
+if [ ! -f .env ]; then
+  echo 'Missing .env; refusing to start the production-configured server.' >&2
+  exit 1
+fi
+bun run build:css
+bun run watch:css &
+css_pid=$!
+trap 'kill "$css_pid" 2>/dev/null || true' EXIT INT TERM
+exec uv run --no-sync uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+"""
