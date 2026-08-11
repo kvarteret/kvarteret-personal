@@ -24,15 +24,29 @@
           <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteer-applications'; }" type="button">Tilbake</button>
         </div>
 
-        {% if volunteer_application.pending_volunteer_id and not volunteer_application.promoted_volunteer_id %}
-          <div class="grid gap-4">
-            <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/trial-attendance" class="justify-self-center xl:justify-self-stretch" method="post">
-              <input name="attended" type="hidden" value="{% if volunteer_application.trial_shift_attended %}false{% else %}true{% endif %}">
-              <button class="app-button-secondary w-full xl:w-auto" type="submit">
-                {% if volunteer_application.trial_shift_attended %}Fjern prøvedugnad{% else %}Marker møtt på prøvedugnad{% endif %}
-              </button>
-            </form>
+        <div class="grid gap-4">
+          <div class="text-center">
+            <span class="inline-flex border border-stone-300 px-3 py-2 text-sm font-semibold uppercase tracking-wide">{{ volunteer_application.status_label }}</span>
+            {% if volunteer_application.status == "trial" %}
+              <p class="mt-2 text-sm text-stone-600">
+                {% if volunteer_application.trial_expired %}
+                  Prøvetid utløpt · midlertidig internbevis er deaktivert
+                {% else %}
+                  {{ volunteer_application.trial_days_remaining }} dager igjen av prøveperioden
+                {% endif %}
+              </p>
+            {% endif %}
+          </div>
 
+          {% if volunteer_application.status == "new" %}
+            <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/contact" method="post">
+              <button class="app-button w-full" type="submit">Marker som kontaktet</button>
+            </form>
+          {% elif volunteer_application.status == "contacted" %}
+            <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/trial" method="post">
+              <button class="app-button w-full" type="submit">Start prøvetid</button>
+            </form>
+          {% elif volunteer_application.status == "trial" %}
             {% if volunteer_application.is_part_of_active_group %}
             <p class="text-sm text-stone-600">
               Denne søknaden er del av en aktiv grupperegistrering og godkjennes
@@ -53,18 +67,25 @@
                 {% endif %}
               </label>
               <button class="app-button w-full xl:w-auto" type="submit" {% if not promotion_group_options %}disabled{% endif %}>Promoter til frivillig</button>
+              <p class="text-sm text-stone-600 xl:col-span-2">PS: Husk å signere kontrakt før du promoterer til frivillig.</p>
             </form>
             {% endif %}
-          </div>
+          {% elif volunteer_application.status == "not_volunteer" %}
+            <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/{% if volunteer_application.promoted_volunteer_id %}restore-volunteer{% else %}reopen{% endif %}" method="post">
+              <button class="app-button-secondary w-full" type="submit">{% if volunteer_application.promoted_volunteer_id %}Gjenopprett som frivillig{% else %}Gjenåpne som kontaktet{% endif %}</button>
+            </form>
+          {% elif volunteer_application.status == "volunteer" and volunteer_application.promoted_volunteer_id %}
+            <a class="app-button" href="/volunteers/{{ volunteer_application.promoted_volunteer_id }}">Åpne frivilligprofil</a>
+          {% endif %}
+        </div>
+
+        {% if volunteer_application.status in ["new", "contacted", "trial", "volunteer"] %}
+          <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/reject" class="flex flex-wrap justify-center xl:justify-end" method="post" onsubmit="return window.confirm('Avvise denne søknaden?');">
+            <button class="app-button-secondary w-full xl:w-auto" type="submit">{% if volunteer_application.status == "volunteer" %}Sett til ikke frivillig{% else %}Avvis{% endif %}</button>
+          </form>
         {% else %}
           <div></div>
         {% endif %}
-
-        <form action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=DELETE" class="flex flex-wrap justify-center xl:justify-end" method="post" onsubmit="return window.confirm('{% if volunteer_application.submitted %}Avvise denne søknaden?{% else %}Avbryte denne invitasjonen?{% endif %}');">
-          <button class="app-button w-full xl:w-auto" type="submit">
-            {% if volunteer_application.submitted %}Avvis søknad{% else %}Avbryt invitasjon{% endif %}
-          </button>
-        </form>
       </div>
     </header>
 
@@ -85,10 +106,7 @@
                     {% if not member.active %}<span class="text-stone-500">(fjernet {{ member.dropped_at.strftime("%Y-%m-%d") if member.dropped_at else "" }})</span>{% endif %}
                   </p>
                   <p class="text-sm text-stone-600">{{ member.email }}</p>
-                  <p class="text-sm text-stone-700">
-                    {% if member.submitted %}Søkt inn{% else %}Venter på innsending{% endif %}
-                    · Prøvedugnad: {% if member.trial_shift_attended %}Møtt{% else %}Ikke registrert{% endif %}
-                  </p>
+                  <p class="text-sm text-stone-700">{% if member.submitted %}Søkt inn{% else %}Venter på innsending{% endif %}</p>
                 </div>
                 <div class="flex flex-wrap gap-3">
                   {% if member.registration_id %}
@@ -159,15 +177,7 @@
         <div class="mb-5 flex items-center justify-between gap-3">
           <h2 class="text-2xl font-medium tracking-tight text-stone-900">Registrering</h2>
           <span class="text-sm text-stone-500">
-            {% if volunteer_application.promoted_volunteer_id %}
-              Promotert
-            {% elif volunteer_application.source == "public_signup" %}
-              Prospekt
-            {% elif volunteer_application.submitted %}
-              Klar til vurdering
-            {% else %}
-              Venter på innsending
-            {% endif %}
+            {{ volunteer_application.status_label }}
           </span>
         </div>
         <dl class="grid gap-5">
@@ -183,10 +193,15 @@
             <dt class="text-sm text-stone-500">Andre valg</dt>
             <dd class="mt-1 text-stone-900">{{ volunteer_application.second_choice_group_name or "N/A" }}</dd>
           </div>
-          <div class="border-b border-stone-300 pb-3">
-            <dt class="text-sm text-stone-500">Prøvedugnad</dt>
-            <dd class="mt-1 text-stone-900">{% if volunteer_application.trial_shift_attended %}Møtt{% else %}Ikke registrert{% endif %}</dd>
-          </div>
+          {% if volunteer_application.trial_started_at %}
+            <div class="border-b border-stone-300 pb-3">
+              <dt class="text-sm text-stone-500">Prøveperiode</dt>
+              <dd class="mt-1 text-stone-900">
+                {{ volunteer_application.trial_started_at.strftime("%d.%m.%Y") }}–{{ volunteer_application.trial_ends_at.strftime("%d.%m.%Y") }}
+                · {% if volunteer_application.trial_expired %}Prøvetid utløpt{% elif volunteer_application.status == "trial" %}{{ volunteer_application.trial_days_remaining }} dager igjen{% else %}Avsluttet{% endif %}
+              </dd>
+            </div>
+          {% endif %}
           <div class="border-b border-stone-300 pb-3">
             <dt class="text-sm text-stone-500">Valgt gruppe ved promotering</dt>
             <dd class="mt-1 text-stone-900">{{ volunteer_application.initial_group_name or "Ikke valgt ennå" }}</dd>
@@ -213,13 +228,27 @@
               <dd class="mt-1 text-stone-900"><a class="underline decoration-kvarteret-red decoration-2 underline-offset-4" href="/apply/{{ volunteer_application.token }}">/apply/{{ volunteer_application.token }}</a></dd>
             </div>
           {% endif %}
-          {% if volunteer_application.source == "public_signup" and volunteer_application.promoted_volunteer_id %}
+          {% if volunteer_application.source == "public_signup" and volunteer_application.status in ["trial", "volunteer"] %}
             <div class="border-b border-stone-300 pb-3">
               <dt class="text-sm text-stone-500">Utfyllingslenke</dt>
               <dd class="mt-1 text-stone-900"><a class="underline decoration-kvarteret-red decoration-2 underline-offset-4" href="/apply/{{ volunteer_application.token }}">/apply/{{ volunteer_application.token }}</a></dd>
             </div>
           {% endif %}
         </dl>
+      </section>
+
+      <section class="app-panel xl:col-span-2">
+        <h2 class="text-2xl font-medium tracking-tight text-stone-900">Statushistorikk</h2>
+        <div class="mt-5 grid gap-3">
+          {% for event in volunteer_application.status_history or [] %}
+            <div class="flex flex-col gap-1 border-b border-stone-300 pb-3 md:flex-row md:items-center md:justify-between">
+              <span class="font-medium text-stone-900">{{ {"new": "Ny", "contacted": "Kontaktet", "trial": "På prøve", "volunteer": "Frivillig", "not_volunteer": "Ikke frivillig"}.get(event.status, event.status) }}</span>
+              <span class="text-sm text-stone-600">{{ event.occurred_at.strftime("%d.%m.%Y %H:%M") }} · {{ event.actor_display_name or ("Bruker #" ~ event.actor_user_account_id if event.actor_user_account_id else "System") }}</span>
+            </div>
+          {% else %}
+            <p class="text-sm text-stone-600">Ingen statusendringer er loggført ennå.</p>
+          {% endfor %}
+        </div>
       </section>
     </div>
   </section>

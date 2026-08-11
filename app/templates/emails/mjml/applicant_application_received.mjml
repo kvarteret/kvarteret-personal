@@ -1,0 +1,31 @@
+<mjml>
+  <mj-head>
+    <mj-attributes>
+      <mj-all font-family="Helvetica, Arial, sans-serif" color="#111111" />
+      <mj-body background-color="#ffffff" />
+      <mj-column padding="0" />
+      <mj-text font-size="16px" line-height="24px" padding="0" />
+    </mj-attributes>
+    <mj-title>Den første døren er nå åpen</mj-title>
+    <mj-preview>Vi har mottatt frivilligsøknaden din.</mj-preview>
+  </mj-head>
+  <mj-body>
+    <mj-section padding="0" background-color="#f54b4b">
+      <mj-column>
+        <mj-text font-size="24px" line-height="32px" font-weight="700" color="#ffffff" padding="20px 24px">
+          Den første døren er nå åpen
+        </mj-text>
+      </mj-column>
+    </mj-section>
+    <mj-section padding="0" background-color="#ffffff">
+      <mj-column>
+        <mj-text padding="24px 24px 0">
+          Det gleder oss å se at du er interessert i å bli frivillig hos oss på Samfunnet i Bergen. Vi tar kontakt så fort som mulig.
+        </mj-text>
+        <mj-text padding="14px 24px 24px">
+          We are delighted that you are interested in becoming a volunteer at Samfunnet i Bergen. We will contact you as soon as possible.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

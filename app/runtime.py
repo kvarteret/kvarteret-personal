@@ -172,6 +172,18 @@ def build_application_container(
         photo_upload_max_bytes=resolved_settings.photo_upload_max_bytes,
         photo_max_dimension=resolved_settings.photo_max_dimension,
     )
+    volunteer_applications_service = VolunteerApplicationsService(
+        settings=resolved_settings,
+        volunteer_creator=volunteers_service,
+        repository=VolunteerApplicationsRepository(
+            media_token_service=media_token_service,
+        ),
+        email_sender=email_sender,
+        applicant_email_renderer=applicant_email_renderer,
+        storage_service=storage_service,
+        photo_processor=process_uploaded_photo,
+        pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
+    )
 
     container = ApplicationContainer(
         settings=resolved_settings,
@@ -216,24 +228,14 @@ def build_application_container(
             media_token_service=media_token_service,
             april_state_service=mobile_card_april_state_service,
             email_template_renderer=mobile_card_email_renderer,
+            trial_applicant_provider=volunteer_applications_service,
         ),
         rate_limiter=rate_limiter,
         now_playing_service=NowPlayingService(
             resolved_settings,
             repository=IntegrationTokensRepository(),
         ),
-        volunteer_applications_service=VolunteerApplicationsService(
-            settings=resolved_settings,
-            volunteer_creator=volunteers_service,
-            repository=VolunteerApplicationsRepository(
-                media_token_service=media_token_service,
-            ),
-            email_sender=email_sender,
-            applicant_email_renderer=applicant_email_renderer,
-            storage_service=storage_service,
-            photo_processor=process_uploaded_photo,
-            pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
-        ),
+        volunteer_applications_service=volunteer_applications_service,
         semester_transfer_service=SemesterTransferService(),
         feedback_service=FeedbackService(resolved_settings, rate_limiter=rate_limiter),
     )

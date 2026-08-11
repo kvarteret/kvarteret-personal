@@ -33,6 +33,8 @@ volunteer_application_invites = Table(
     Column("second_choice_label", Text),
     Column("trial_shift_attended", Boolean, nullable=False),
     Column("trial_shift_marked_at", DateTime(timezone=True)),
+    Column("trial_started_at", DateTime(timezone=True)),
+    Column("trial_ends_at", DateTime(timezone=True)),
     Column("full_profile_submitted_at", DateTime(timezone=True)),
     Column("promoted_volunteer_id", BigInteger, ForeignKey("public.volunteer_records.id")),
     Column("promoted_at", DateTime(timezone=True)),

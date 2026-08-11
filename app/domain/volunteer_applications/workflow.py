@@ -68,8 +68,12 @@ class VolunteerApplicationWorkflowOperations(Protocol):
         photo_content: bytes | None,
         photo_content_type: str | None,
     ) -> "VolunteerApplicationDetail": ...
-    async def mark_trial_shift_attended_record(
-        self, registration_id: int, *, attended: bool
+    async def set_application_status_record(
+        self,
+        registration_id: int,
+        *,
+        status: ApplicationState,
+        start_trial: bool = False,
     ) -> "VolunteerApplicationDetail": ...
     async def approve_application_record(
         self, registration_id: int, *, accepted_group_id: int | None
@@ -107,8 +111,11 @@ class VolunteerApplicationSideEffectsProtocol(Protocol):
     async def after_submitted(
         self, detail: "VolunteerApplicationDetail",
     ) -> None: ...
-    async def after_trial_shift_marked(
-        self, detail: "VolunteerApplicationDetail",
+    async def after_trial_started(
+        self,
+        detail: "VolunteerApplicationDetail",
+        *,
+        base_url: str | None,
     ) -> None: ...
     async def after_approved(
         self,
@@ -265,12 +272,77 @@ class VolunteerApplicationWorkflow:
         await self.side_effects.after_submitted(detail)
         return detail
 
-    async def mark_trial_shift_attended(
+    async def contact(
         self,
         registration_id: int,
         *,
-        attended: bool,
         actor_user_account_id: int | None = None,
+    ) -> "VolunteerApplicationDetail":
+        return await self._change_status(
+            registration_id,
+            action=ApplicationAction.CONTACT,
+            actor_user_account_id=actor_user_account_id,
+        )
+
+    async def start_trial(
+        self,
+        registration_id: int,
+        *,
+        base_url: str | None,
+        actor_user_account_id: int | None = None,
+    ) -> "VolunteerApplicationDetail":
+        detail = await self._change_status(
+            registration_id,
+            action=ApplicationAction.START_TRIAL,
+            actor_user_account_id=actor_user_account_id,
+            start_trial=True,
+        )
+        await self.side_effects.after_trial_started(detail, base_url=base_url)
+        return detail
+
+    async def reject(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> "VolunteerApplicationDetail":
+        return await self._change_status(
+            registration_id,
+            action=ApplicationAction.REJECT,
+            actor_user_account_id=actor_user_account_id,
+        )
+
+    async def reopen(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> "VolunteerApplicationDetail":
+        return await self._change_status(
+            registration_id,
+            action=ApplicationAction.REOPEN,
+            actor_user_account_id=actor_user_account_id,
+        )
+
+    async def restore_volunteer(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> "VolunteerApplicationDetail":
+        return await self._change_status(
+            registration_id,
+            action=ApplicationAction.RESTORE_VOLUNTEER,
+            actor_user_account_id=actor_user_account_id,
+        )
+
+    async def _change_status(
+        self,
+        registration_id: int,
+        *,
+        action: ApplicationAction,
+        actor_user_account_id: int | None,
+        start_trial: bool = False,
     ) -> "VolunteerApplicationDetail":
         existing = await self.operations.get_volunteer_application_detail(
             registration_id
@@ -279,24 +351,30 @@ class VolunteerApplicationWorkflow:
         if existing is not None:
             result = application_transition(
                 ApplicationState(existing.status),
-                ApplicationAction.MARK_TRIAL_SHIFT,
+                action,
                 context=TransitionContext(
                     actor_user_account_id=actor_user_account_id
                 ),
             )
-        detail = await self.operations.mark_trial_shift_attended_record(
-            registration_id, attended=attended
+        new_state = result.new_state if result is not None else ApplicationState.NEW
+        assert isinstance(new_state, ApplicationState)
+        detail = await self.operations.set_application_status_record(
+            registration_id,
+            status=new_state,
+            start_trial=start_trial,
         )
         if result is not None and result.event is not None:
-            event = replace(
-                result.event,
-                payload={**result.event.payload, "attended": attended},
-            )
             await self.operations.append_domain_event(
-                event, subject_id=registration_id
+                replace(
+                    result.event,
+                    payload={
+                        **result.event.payload,
+                        "new_state": result.new_state.value,
+                    },
+                ),
+                subject_id=registration_id,
             )
         await commit_request_session()
-        await self.side_effects.after_trial_shift_marked(detail)
         return detail
 
     async def approve(
@@ -364,7 +442,7 @@ class VolunteerApplicationWorkflow:
         if existing is not None:
             result = application_transition(
                 ApplicationState(existing.status),
-                ApplicationAction.APPROVE,
+                ApplicationAction.PROMOTE,
                 context=_approval_context(
                     existing,
                     actor_user_account_id=actor_user_account_id,

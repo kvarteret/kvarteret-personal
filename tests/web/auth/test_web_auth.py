@@ -231,7 +231,7 @@ def test_login_sets_cookie_and_protected_page_renders() -> None:
 
     assert dashboard_response.status_code == 200
     assert "Admin-kontoer" in dashboard_response.text
-    assert "Nye frivillige" in dashboard_response.text
+    assert "Søknader" in dashboard_response.text
     assert people_response.status_code == 200
     assert "Sample Person" in people_response.text
     assert "Ny frivillig" in people_response.text
@@ -250,7 +250,7 @@ def test_group_admin_sees_registrations_and_new_volunteer_but_not_admin_accounts
     people_response = client.get("/volunteers")
 
     assert dashboard_response.status_code == 200
-    assert "Nye frivillige" in dashboard_response.text
+    assert "Søknader" in dashboard_response.text
     assert "Admin-kontoer" not in dashboard_response.text
     assert people_response.status_code == 200
     assert "Ny frivillig" in people_response.text
@@ -327,7 +327,7 @@ def test_container_backed_auth_middleware_populates_current_user_and_pending_cou
 
     assert response.status_code == 200
     assert "Admin-kontoer" in response.text
-    assert "Nye frivillige" in response.text
+    assert "Søknader" in response.text
     assert ">3<" in response.text
     assert pending_service.calls == 1
 

@@ -14,6 +14,8 @@ class ApplicantEmail:
 
 
 class ApplicantEmailTemplateRendererProtocol(Protocol):
+    def render_application_received_email(self) -> ApplicantEmail: ...
+
     def render_invitation_email(self, *, invitation_url: str) -> ApplicantEmail: ...
 
     def render_friend_invitation_email(
@@ -37,6 +39,12 @@ class ApplicantEmailTemplateRenderer:
         self._environment = Environment(
             loader=FileSystemLoader(str(resolved_dir)),
             autoescape=select_autoescape(["html", "xml"]),
+        )
+
+    def render_application_received_email(self) -> ApplicantEmail:
+        return ApplicantEmail(
+            subject="Den første døren er nå åpen",
+            html_body=self._render("applicant_application_received.html"),
         )
 
     def render_invitation_email(self, *, invitation_url: str) -> ApplicantEmail:
@@ -67,7 +75,7 @@ class ApplicantEmailTemplateRenderer:
 
     def render_profile_completion_email(self, *, invitation_url: str) -> ApplicantEmail:
         return ApplicantEmail(
-            subject="Complete your Kvarteret profile / Fullfør Kvarteret-profilen din",
+            subject="Din reise starter nå / Your journey starts now",
             html_body=self._render(
                 "applicant_profile_completion.html",
                 invitation_url=invitation_url,

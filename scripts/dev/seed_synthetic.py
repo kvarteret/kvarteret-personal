@@ -229,14 +229,14 @@ async def seed(database_url: str) -> None:
                         )
                     )
 
-            # Pending applications: one admin invite, one solo prospect,
-            # and a two-friend group ready for atomic approval.
+            # Applications: one new admin invite, one solo trial applicant,
+            # and a two-friend group ready for atomic promotion.
             await session.execute(
                 insert(volunteer_application_invites).values(
                     token=_seed_token("invite-1"),
                     email="invited.person@example.dev",
                     source="invite",
-                    status="invited",
+                    status="new",
                     initial_group_id=group_ids["Lydgruppen"],
                     initial_role_id=role_ids["Lydgruppen"][0],
                     trial_shift_attended=False,
@@ -250,10 +250,10 @@ async def seed(database_url: str) -> None:
                         token=_seed_token("prospect-1"),
                         email="solo.prospect@example.dev",
                         source="public_signup",
-                        status="prospect",
+                        status="trial",
                         first_choice_group_id=group_ids["Vaktetaten"],
-                        trial_shift_attended=True,
-                        trial_shift_marked_at=now - timedelta(days=1),
+                        trial_started_at=now - timedelta(days=1),
+                        trial_ends_at=now + timedelta(days=29),
                         created_at=now - timedelta(days=5),
                     )
                     .returning(volunteer_application_invites.c.id)
@@ -291,10 +291,10 @@ async def seed(database_url: str) -> None:
                             token=token,
                             email=email,
                             source="public_signup" if role == "inviter" else "group_invite",
-                            status="submitted",
+                            status="trial",
                             first_choice_group_id=group_ids["Skjenkegruppen"],
-                            trial_shift_attended=True,
-                            trial_shift_marked_at=now - timedelta(days=1),
+                            trial_started_at=now - timedelta(days=1),
+                            trial_ends_at=now + timedelta(days=29),
                             full_profile_submitted_at=now - timedelta(days=1, hours=offset),
                             created_at=now - timedelta(days=3),
                         )

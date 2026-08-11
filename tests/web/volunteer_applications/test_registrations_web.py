@@ -23,6 +23,7 @@ from tests.support.helpers import make_authenticated_user, override_authenticate
 
 class FakeVolunteerApplicationsService:
     def __init__(self) -> None:
+        self.detail_status = "trial"
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, int | str | None]] = []
         self.public_prospect_calls: list[dict[str, object | None]] = []
@@ -37,7 +38,7 @@ class FakeVolunteerApplicationsService:
                 created_at=datetime(2026, 3, 13, tzinfo=UTC),
                 submitted=True,
                 source="invite",
-                status="submitted",
+                status=self.detail_status,
                 pending_volunteer_id=8,
                 first_name="Sample",
                 last_name="Registrant",
@@ -147,7 +148,7 @@ class FakeVolunteerApplicationsService:
             created_at=datetime(2026, 4, 9, tzinfo=UTC),
             submitted=True,
             source="public_signup",
-            status="prospect",
+            status="new",
             pending_volunteer_id=17,
             first_name="Test",
             last_name="Person",
@@ -192,7 +193,7 @@ class FakeVolunteerApplicationsService:
             created_at=datetime(2026, 3, 13, tzinfo=UTC),
             submitted=True,
             source="invite",
-            status="submitted",
+            status=self.detail_status,
             pending_volunteer_id=8,
             first_name="Sample",
             last_name="Registrant",
@@ -246,6 +247,30 @@ class FakeVolunteerApplicationsService:
         actor_user_account_id: int | None = None,
     ) -> int:
         return 12
+
+    async def mark_contacted(self, registration_id: int, *, actor_user_account_id=None):
+        self.detail_status = "contacted"
+        detail = await self.get_volunteer_application_detail(registration_id)
+        assert detail is not None
+        return detail
+
+    async def start_trial(self, registration_id: int, *, base_url=None, actor_user_account_id=None):
+        self.detail_status = "trial"
+        detail = await self.get_volunteer_application_detail(registration_id)
+        assert detail is not None
+        return detail
+
+    async def reject_volunteer_application(self, registration_id: int, *, actor_user_account_id=None):
+        self.detail_status = "not_volunteer"
+        detail = await self.get_volunteer_application_detail(registration_id)
+        assert detail is not None
+        return detail
+
+    async def reopen_volunteer_application(self, registration_id: int, *, actor_user_account_id=None):
+        self.detail_status = "contacted"
+        detail = await self.get_volunteer_application_detail(registration_id)
+        assert detail is not None
+        return detail
 
     async def resend_volunteer_application_invitation(
         self,
@@ -364,10 +389,12 @@ def test_volunteer_application_pages_render() -> None:
     submitted_response = client.get("/apply/token-123/submitted")
 
     assert admin_response.status_code == 200
-    assert "Nye frivillige" in admin_response.text
+    assert "Søknader" in admin_response.text
     assert "Opprett invitasjon" in admin_response.text
+    assert '<details class="app-panel">' in admin_response.text
+    assert 'x-show="inviteOpen"' not in admin_response.text
     assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
-    assert 'hx-confirm="Avvise denne registreringen?"' in admin_response.text
+    assert 'name="application_status"' in admin_response.text
     assert "Siste nye frivillige" in admin_response.text
     assert "Ny Frivillig" in admin_response.text
     assert 'hx-get="/volunteer-applications/recent-registrations"' in admin_response.text
@@ -448,13 +475,33 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Registrering" in response.text
     assert "registrant@example.com" in response.text
     assert "Promoter til frivillig" in response.text
-    assert "Prøvedugnad" in response.text
+    assert "På prøve" in response.text
+    assert "Husk å signere kontrakt" in response.text
     assert "Første valg" in response.text
     assert "Andre valg" in response.text
     assert "Halvtimen" in response.text
     assert "Grøndahls" in response.text
     assert "Komitéønsker" not in response.text
     assert "Lenke" not in response.text
+
+
+def test_contact_trial_and_reject_actions_follow_required_order() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    service.detail_status = "new"
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    contacted = client.post("/volunteer-applications/7/contact", follow_redirects=False)
+    trial = client.post("/volunteer-applications/7/trial", follow_redirects=False)
+    rejected = client.post("/volunteer-applications/7/reject", follow_redirects=False)
+
+    assert contacted.status_code == 303
+    assert trial.status_code == 303
+    assert rejected.status_code == 303
+    assert service.detail_status == "not_volunteer"
 
 
 def test_promotion_options_exclude_metadata_only_second_choice() -> None:
@@ -507,7 +554,7 @@ def test_recent_registrations_fragment_renders_next_page() -> None:
     assert response.status_code == 200
     assert "Eldre Frivillig" in response.text
     assert "Ingen startgruppe registrert" in response.text
-    assert volunteer_applications_service.recent_registration_calls == [{"limit": 20, "cursor": "12"}]
+    assert volunteer_applications_service.recent_registration_calls == [{"limit": 10, "cursor": "12"}]
 
 
 def test_recent_registrations_groups_people_from_same_signup() -> None:

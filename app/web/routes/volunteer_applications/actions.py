@@ -149,18 +149,16 @@ async def volunteer_application_group_approve(
     return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/volunteer-applications/{application_id}/trial-attendance")
-async def volunteer_application_mark_trial_attendance(
+@router.post("/volunteer-applications/{application_id}/contact")
+async def volunteer_application_mark_contacted(
     request: Request,
     application_id: int,
-    attended: str = Form(...),
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
-        detail = await volunteer_applications_service.mark_trial_shift_attended(
+        detail = await volunteer_applications_service.mark_contacted(
             application_id,
-            attended=attended == "true",
             actor_user_account_id=current_user.user_account_id,
         )
     except VolunteerApplicationNotFoundError as exc:
@@ -170,10 +168,139 @@ async def volunteer_application_mark_trial_attendance(
     log_admin_activity(
         request=request,
         user=current_user,
-        action="volunteer_application.mark_trial_attendance",
+        action="volunteer_application.mark_contacted",
         subject_type="volunteer_application",
         subject_id=application_id,
-        details={"attended": detail.trial_shift_attended},
+        details={"status": detail.status},
+    )
+    return RedirectResponse(
+        url=f"/volunteer-applications/{application_id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/volunteer-applications/{application_id}/trial")
+async def volunteer_application_start_trial(
+    request: Request,
+    application_id: int,
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
+):
+    try:
+        detail = await volunteer_applications_service.start_trial(
+            application_id,
+            base_url=str(request.base_url).rstrip("/"),
+            actor_user_account_id=current_user.user_account_id,
+        )
+    except VolunteerApplicationNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer_application.start_trial",
+        subject_type="volunteer_application",
+        subject_id=application_id,
+        details={"trial_ends_at": detail.trial_ends_at.isoformat() if detail.trial_ends_at else None},
+    )
+    return RedirectResponse(
+        url=f"/volunteer-applications/{application_id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/volunteer-applications/{application_id}/reject")
+async def volunteer_application_reject(
+    request: Request,
+    application_id: int,
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
+):
+    try:
+        detail = await volunteer_applications_service.reject_volunteer_application(
+            application_id,
+            actor_user_account_id=current_user.user_account_id,
+        )
+    except VolunteerApplicationNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer_application.reject",
+        subject_type="volunteer_application",
+        subject_id=application_id,
+        details={"status": detail.status},
+    )
+    return RedirectResponse(
+        url=f"/volunteer-applications/{application_id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/volunteer-applications/{application_id}/reopen")
+async def volunteer_application_reopen(
+    request: Request,
+    application_id: int,
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
+):
+    try:
+        detail = await volunteer_applications_service.reopen_volunteer_application(
+            application_id,
+            actor_user_account_id=current_user.user_account_id,
+        )
+    except VolunteerApplicationNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer_application.reopen",
+        subject_type="volunteer_application",
+        subject_id=application_id,
+        details={"status": detail.status},
+    )
+    return RedirectResponse(
+        url=f"/volunteer-applications/{application_id}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/volunteer-applications/{application_id}/restore-volunteer")
+async def volunteer_application_restore_volunteer(
+    request: Request,
+    application_id: int,
+    current_user=Depends(require_management_user),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
+):
+    try:
+        detail = await volunteer_applications_service.restore_volunteer_application(
+            application_id,
+            actor_user_account_id=current_user.user_account_id,
+        )
+    except VolunteerApplicationNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except VolunteerApplicationConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="volunteer_application.restore_volunteer",
+        subject_type="volunteer_application",
+        subject_id=application_id,
+        details={"status": detail.status},
     )
     return RedirectResponse(
         url=f"/volunteer-applications/{application_id}",

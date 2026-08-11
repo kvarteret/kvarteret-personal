@@ -662,19 +662,6 @@
         "title": "Body_volunteer_application_group_approve_volunteer_applications_groups__group_id__approval_post",
         "type": "object"
       },
-      "Body_volunteer_application_mark_trial_attendance_volunteer_applications__application_id__trial_attendance_post": {
-        "properties": {
-          "attended": {
-            "title": "Attended",
-            "type": "string"
-          }
-        },
-        "required": [
-          "attended"
-        ],
-        "title": "Body_volunteer_application_mark_trial_attendance_volunteer_applications__application_id__trial_attendance_post",
-        "type": "object"
-      },
       "Body_volunteer_application_submit_apply__token__post": {
         "properties": {
           "address": {
@@ -4180,6 +4167,40 @@
     "/volunteer-applications": {
       "get": {
         "operationId": "volunteer_applications_index_volunteer_applications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "application_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Application Status"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4188,6 +4209,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Volunteer Applications Index"
@@ -4480,6 +4511,43 @@
         "summary": "Volunteer Application Approve"
       }
     },
+    "/volunteer-applications/{application_id}/contact": {
+      "post": {
+        "operationId": "volunteer_application_mark_contacted_volunteer_applications__application_id__contact_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "title": "Application Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Volunteer Application Mark Contacted"
+      }
+    },
     "/volunteer-applications/{application_id}/drop-from-group": {
       "post": {
         "operationId": "volunteer_application_drop_from_group_volunteer_applications__application_id__drop_from_group_post",
@@ -4515,6 +4583,80 @@
           }
         },
         "summary": "Volunteer Application Drop From Group"
+      }
+    },
+    "/volunteer-applications/{application_id}/reject": {
+      "post": {
+        "operationId": "volunteer_application_reject_volunteer_applications__application_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "title": "Application Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Volunteer Application Reject"
+      }
+    },
+    "/volunteer-applications/{application_id}/reopen": {
+      "post": {
+        "operationId": "volunteer_application_reopen_volunteer_applications__application_id__reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "title": "Application Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Volunteer Application Reopen"
       }
     },
     "/volunteer-applications/{application_id}/resend": {
@@ -4554,9 +4696,9 @@
         "summary": "Volunteer Application Resend"
       }
     },
-    "/volunteer-applications/{application_id}/trial-attendance": {
+    "/volunteer-applications/{application_id}/restore-volunteer": {
       "post": {
-        "operationId": "volunteer_application_mark_trial_attendance_volunteer_applications__application_id__trial_attendance_post",
+        "operationId": "volunteer_application_restore_volunteer_volunteer_applications__application_id__restore_volunteer_post",
         "parameters": [
           {
             "in": "path",
@@ -4568,16 +4710,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_volunteer_application_mark_trial_attendance_volunteer_applications__application_id__trial_attendance_post"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
@@ -4598,7 +4730,44 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Volunteer Application Mark Trial Attendance"
+        "summary": "Volunteer Application Restore Volunteer"
+      }
+    },
+    "/volunteer-applications/{application_id}/trial": {
+      "post": {
+        "operationId": "volunteer_application_start_trial_volunteer_applications__application_id__trial_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "title": "Application Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Volunteer Application Start Trial"
       }
     },
     "/volunteers": {

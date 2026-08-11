@@ -4,8 +4,13 @@
   <section class="grid gap-7">
     <header class="grid justify-items-center gap-3 pt-3 text-center">
       <p class="text-sm font-semibold uppercase tracking-widest text-kvarteret-red">{{ _("Volunteer registration") }}</p>
-      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ _("Complete your details") }}</h1>
-      <p class="max-w-3xl text-base leading-7 text-stone-700">{{ _("Invitation for %(email)s", email=volunteer_application.email) }}</p>
+      {% if volunteer_application.trial_active %}
+        <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ _("Your journey starts now") }}</h1>
+        <p class="max-w-3xl text-base leading-7 text-stone-700">{{ _("Your trial period has now started. Complete your profile to access your temporary staff ID, internal benefits, and relevant information during your trial period.") }}</p>
+      {% else %}
+        <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ _("Complete your details") }}</h1>
+        <p class="max-w-3xl text-base leading-7 text-stone-700">{{ _("Invitation for %(email)s", email=volunteer_application.email) }}</p>
+      {% endif %}
       {% if volunteer_application.group_id and volunteer_application.group_role == "invitee" and volunteer_application.group_members %}
         {% set inviter = volunteer_application.group_members | selectattr("role", "equalto", "inviter") | first %}
         {% if inviter %}

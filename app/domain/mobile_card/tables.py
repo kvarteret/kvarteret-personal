@@ -23,3 +23,16 @@ mobile_card_access_codes = Table(
     Column("code_hash", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
+
+mobile_card_trial_access_codes = Table(
+    "mobile_card_trial_access_codes",
+    public_metadata,
+    Column(
+        "application_id",
+        BigInteger,
+        ForeignKey("public.volunteer_application_invites.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("code_hash", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)

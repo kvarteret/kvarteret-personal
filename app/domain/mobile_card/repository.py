@@ -12,7 +12,11 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
 from app.domain.volunteers.tables import volunteer_photos, volunteer_records
-from app.domain.mobile_card.tables import mobile_card_access_codes
+from app.domain.volunteer_applications.tables import volunteer_application_invites
+from app.domain.mobile_card.tables import (
+    mobile_card_access_codes,
+    mobile_card_trial_access_codes,
+)
 from app.observability import log_operation_timing
 
 logger = logging.getLogger("app.performance")
@@ -54,6 +58,13 @@ class MobileCardSnapshot:
 
 
 class MobileCardRepository(SqlAlchemyRepository):
+    @staticmethod
+    def _not_blocked_volunteer(volunteer_id):
+        return ~select(volunteer_application_invites.c.id).where(
+            volunteer_application_invites.c.promoted_volunteer_id == volunteer_id,
+            volunteer_application_invites.c.status == "not_volunteer",
+        ).exists()
+
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
         stmt = (
             select(
@@ -62,6 +73,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                 volunteer_records.c.last_name,
             )
             .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
+            .where(self._not_blocked_volunteer(volunteer_records.c.id))
             .order_by(volunteer_records.c.id.asc())
         )
         return await self.fetch_all_mappings(stmt)
@@ -80,6 +92,45 @@ class MobileCardRepository(SqlAlchemyRepository):
         )
         session = self.session
         await session.execute(stmt)
+
+    async def store_trial_access_code(
+        self, *, application_id: int, code_hash: str, created_at: datetime
+    ) -> None:
+        stmt = pg_insert(mobile_card_trial_access_codes).values(
+            application_id=application_id,
+            code_hash=code_hash,
+            created_at=created_at,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[mobile_card_trial_access_codes.c.application_id],
+            set_={"code_hash": code_hash, "created_at": created_at},
+        )
+        await self.session.execute(stmt)
+
+    async def consume_trial_access_code(
+        self,
+        *,
+        application_id: int,
+        code_hash: str,
+        expires_after: datetime,
+    ) -> bool:
+        found = await self.session.scalar(
+            select(mobile_card_trial_access_codes.c.application_id)
+            .where(
+                mobile_card_trial_access_codes.c.application_id == application_id,
+                mobile_card_trial_access_codes.c.code_hash == code_hash,
+                mobile_card_trial_access_codes.c.created_at >= expires_after,
+            )
+            .limit(1)
+        )
+        if found is None:
+            return False
+        await self.session.execute(
+            delete(mobile_card_trial_access_codes).where(
+                mobile_card_trial_access_codes.c.application_id == application_id
+            )
+        )
+        return True
 
     async def find_volunteer_by_email_and_code(
         self,
@@ -100,6 +151,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                         )
                     )
                     .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
+                    .where(self._not_blocked_volunteer(volunteer_records.c.id))
                     .where(mobile_card_access_codes.c.code_hash == code_hash)
                     .where(mobile_card_access_codes.c.created_at >= expires_after)
                     .limit(1)
@@ -163,6 +215,7 @@ class MobileCardRepository(SqlAlchemyRepository):
                 .outerjoin(groups, groups.c.id == role_assignments.c.group_id)
             )
             .where(volunteer_records.c.id == volunteer_id)
+            .where(self._not_blocked_volunteer(volunteer_records.c.id))
             .order_by(groups.c.name.asc().nullslast(), assignment_roles.c.name.asc().nullslast())
         )
         history_stmt = (

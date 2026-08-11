@@ -3,7 +3,7 @@
 The public prospect tests verify that every canonical group slug is
 resolved through the real database and persisted as a group ID. The
 full lifecycle tests then take two friends from public signup through
-profile submission, atomic approval, and deletion.
+contact, trial, profile submission, atomic promotion, and deletion.
 
 The failure-path test induces an error on the second member during
 group approval and asserts the all-or-nothing property.
@@ -12,6 +12,7 @@ group approval and asserts the all-or-nothing property.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 
 import httpx
 import pytest
@@ -336,8 +337,8 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
             "SELECT id, email, token, status, source FROM public.volunteer_application_invites ORDER BY id",
         )
         assert [(i["email"], i["status"], i["source"]) for i in invites] == [
-            (INVITER_EMAIL, "prospect", "public_signup"),
-            (FRIEND_EMAIL, "invited", "group_invite"),
+            (INVITER_EMAIL, "new", "public_signup"),
+            (FRIEND_EMAIL, "new", "group_invite"),
         ]
         inviter, friend = invites
 
@@ -350,11 +351,43 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
             (FRIEND_EMAIL, "invitee", "active"),
         ]
 
-        # The friend got an invitation email with their apply link.
-        assert [e.recipient_email for e in email_outbox.sent] == [FRIEND_EMAIL]
-        assert friend["token"] in email_outbox.sent[0].html_body
+        # The applicant got a receipt, and the friend got an invitation with
+        # their apply link.
+        assert [e.recipient_email for e in email_outbox.sent] == [
+            INVITER_EMAIL,
+            FRIEND_EMAIL,
+        ]
+        assert email_outbox.sent[0].subject == "Den første døren er nå åpen"
+        assert friend["token"] in email_outbox.sent[1].html_body
 
-        # ── 2. Both submit their full profiles ────────────────────
+        # ── 2. Both must be contacted before starting trial ──────
+        for invite in invites:
+            response = await client.post(
+                f"/volunteer-applications/{invite['id']}/contact",
+                follow_redirects=False,
+            )
+            assert response.status_code == 303, response.text
+            response = await client.post(
+                f"/volunteer-applications/{invite['id']}/trial",
+                follow_redirects=False,
+            )
+            assert response.status_code == 303, response.text
+
+        statuses = await _fetch_all(
+            e2e_engine,
+            "SELECT status, trial_started_at, trial_ends_at "
+            "FROM public.volunteer_application_invites ORDER BY id",
+        )
+        assert all(row["status"] == "trial" for row in statuses)
+        assert all(row["trial_started_at"] is not None for row in statuses)
+        assert all(row["trial_ends_at"] is not None for row in statuses)
+
+        # Starting trial sends each applicant the profile-completion email.
+        assert sorted(e.recipient_email for e in email_outbox.sent[2:]) == sorted(
+            [FRIEND_EMAIL, INVITER_EMAIL]
+        )
+
+        # ── 3. Both submit their full profiles ────────────────────
         await _submit_profile(client, friend["token"], first_name="Frida", last_name="Friend")
         await _submit_profile(client, inviter["token"], first_name="Inga", last_name="Inviter")
 
@@ -362,7 +395,7 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
             e2e_engine,
             "SELECT email, status FROM public.volunteer_application_invites ORDER BY id",
         )
-        assert all(row["status"] == "submitted" for row in statuses)
+        assert all(row["status"] == "trial" for row in statuses)
 
         # Per-person approval of an active group member must be blocked.
         response = await client.post(
@@ -372,7 +405,7 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
         assert response.status_code == 400
         assert "group approval" in response.text
 
-        # ── 3. Atomic group approval into the committee ───────────
+        # ── 4. Atomic group promotion into the committee ──────────
         group_row = await _fetch_all(e2e_engine, "SELECT id FROM public.volunteer_application_groups")
         application_group_id = group_row[0]["id"]
         response = await client.post(
@@ -401,14 +434,10 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
             e2e_engine,
             "SELECT status, promoted_volunteer_id FROM public.volunteer_application_invites ORDER BY id",
         )
-        assert all(row["status"] == "promoted" for row in promoted)
+        assert all(row["status"] == "volunteer" for row in promoted)
         assert all(row["promoted_volunteer_id"] is not None for row in promoted)
 
-        # Both got profile-completion emails, after the commit.
-        completion_recipients = sorted(e.recipient_email for e in email_outbox.sent[1:])
-        assert completion_recipients == sorted([FRIEND_EMAIL, INVITER_EMAIL])
-
-        # ── 4. The audit trail recorded every transition ──────────
+        # ── 5. The audit trail recorded every transition ──────────
         events = await _fetch_all(
             e2e_engine,
             "SELECT event_type, subject_id, actor_user_account_id FROM public.domain_events ORDER BY id",
@@ -417,15 +446,19 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
         assert event_types == [
             "prospect_registered",
             "application_invited",
-            "application_submitted",
-            "application_submitted",
+            "application_contacted",
+            "trial_started",
+            "application_contacted",
+            "trial_started",
+            "profile_completed",
+            "profile_completed",
             "application_approved",
             "application_approved",
         ]
         approvals = [e for e in events if e["event_type"] == "application_approved"]
         assert all(e["actor_user_account_id"] == 5 for e in approvals)
 
-        # ── 5. Offboarding: both volunteers are finally deleted ───
+        # ── 6. Offboarding: both volunteers are finally deleted ───
         for volunteer in volunteers:
             response = await client.delete(f"/volunteers/{volunteer['id']}", follow_redirects=False)
             assert response.status_code == 303, response.text
@@ -437,16 +470,97 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
             e2e_engine,
             "SELECT status, promoted_volunteer_id FROM public.volunteer_application_invites",
         )
-        assert all(row["status"] == "promoted" for row in history)
+        assert all(row["status"] == "volunteer" for row in history)
         assert all(row["promoted_volunteer_id"] is None for row in history)
         # ...and they do not resurface as pending applications.
         pending = await _fetch_all(
             e2e_engine,
             "SELECT count(*) AS n FROM public.volunteer_application_invites i"
             " JOIN public.volunteer_application_submissions s"
-            " ON s.invite_id = i.id WHERE i.status != 'promoted'",
+            " ON s.invite_id = i.id WHERE i.status != 'volunteer'",
         )
         assert pending[0]["n"] == 0
+
+
+async def test_active_trial_profile_gets_temporary_card_until_trial_expires(
+    app,
+    e2e_engine,
+    email_outbox,
+):
+    await _seed_group(e2e_engine)
+    email = "trial.card@example.com"
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://personal.e2e.test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/volunteer-prospects",
+            json={
+                "full_name": "Trial Card",
+                "email": email,
+                "phone": "+47 412 34 567",
+                "study_institution": "UiB",
+                "first_choice_group_slug": GROUP_SLUG,
+            },
+        )
+        assert response.status_code == 201, response.text
+        application = (
+            await _fetch_all(
+                e2e_engine,
+                "SELECT id, token FROM public.volunteer_application_invites",
+            )
+        )[0]
+
+        for action in ("contact", "trial"):
+            response = await client.post(
+                f"/volunteer-applications/{application['id']}/{action}",
+                follow_redirects=False,
+            )
+            assert response.status_code == 303, response.text
+        await _submit_profile(
+            client,
+            application["token"],
+            first_name="Trial",
+            last_name="Card",
+        )
+
+        response = await client.post(
+            "/api/v1/mobile-card/access-codes",
+            json={"email": email},
+        )
+        assert response.status_code == 202, response.text
+        code_match = re.search(
+            r">\s*(\d{6})\s*<",
+            email_outbox.sent[-1].html_body,
+        )
+        assert code_match is not None
+
+        response = await client.post(
+            "/api/v1/mobile-card/sessions",
+            json={"email": email, "access_code": code_match.group(1)},
+        )
+        assert response.status_code == 200, response.text
+        session = response.json()
+        assert session["card"]["person_id"] == -application["id"]
+        assert session["card"]["active_roles"][0]["signed_contract"] is False
+
+        async with e2e_engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE public.volunteer_application_invites "
+                    "SET trial_ends_at = now() - interval '1 day' WHERE id = :id"
+                ),
+                {"id": application["id"]},
+            )
+
+        response = await client.get(
+            "/api/v1/mobile-card/me",
+            headers={"Authorization": f"Bearer {session['session_token']}"},
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Trial access has expired."
 
 
 async def test_group_approval_is_atomic_when_second_member_fails(app, e2e_engine, email_outbox, monkeypatch):
@@ -459,6 +573,17 @@ async def test_group_approval_is_atomic_when_second_member_fails(app, e2e_engine
             e2e_engine,
             "SELECT id, token FROM public.volunteer_application_invites ORDER BY id",
         )
+        for invite in invites:
+            response = await client.post(
+                f"/volunteer-applications/{invite['id']}/contact",
+                follow_redirects=False,
+            )
+            assert response.status_code == 303, response.text
+            response = await client.post(
+                f"/volunteer-applications/{invite['id']}/trial",
+                follow_redirects=False,
+            )
+            assert response.status_code == 303, response.text
         for index, invite in enumerate(invites):
             await _submit_profile(
                 client,
@@ -496,7 +621,7 @@ async def test_group_approval_is_atomic_when_second_member_fails(app, e2e_engine
             e2e_engine,
             "SELECT status FROM public.volunteer_application_invites",
         )
-        assert all(row["status"] == "submitted" for row in statuses)
+        assert all(row["status"] == "trial" for row in statuses)
         approval_events = await _fetch_all(
             e2e_engine,
             "SELECT id FROM public.domain_events WHERE event_type = 'application_approved'",

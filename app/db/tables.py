@@ -39,6 +39,7 @@ from app.domain.groups.tables import groups
 from app.domain.mobile_card.tables import (
     mobile_card_access_codes,
     mobile_card_april_state,
+    mobile_card_trial_access_codes,
 )
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
 from app.domain.spotify.tables import integration_tokens
@@ -76,6 +77,7 @@ __all__ = [
     "integration_tokens",
     "mobile_card_access_codes",
     "mobile_card_april_state",
+    "mobile_card_trial_access_codes",
     "public_metadata",
     "rate_limits",
     "role_assignments",

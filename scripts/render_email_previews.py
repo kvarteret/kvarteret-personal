@@ -41,6 +41,7 @@ def build_previews() -> list[EmailPreview]:
     applicant_invitation_email = applicant_renderer.render_invitation_email(
         invitation_url="https://personal.kvarteret.no/apply/invite-token-preview",
     )
+    applicant_received_email = applicant_renderer.render_application_received_email()
     applicant_profile_email = applicant_renderer.render_profile_completion_email(
         invitation_url="https://personal.kvarteret.no/apply/profile-token-preview",
     )
@@ -56,6 +57,12 @@ def build_previews() -> list[EmailPreview]:
     )
 
     return [
+        EmailPreview(
+            slug="applicant_application_received",
+            title="Applicant Application Received",
+            subject=applicant_received_email.subject,
+            html_body=applicant_received_email.html_body,
+        ),
         EmailPreview(
             slug="applicant_invitation",
             title="Applicant Invitation",

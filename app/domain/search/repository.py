@@ -7,6 +7,7 @@ from sqlalchemy import and_, exists, func, not_, or_, select
 from app.db.repository import SqlAlchemyRepository
 from app.domain.courses.tables import course_completions
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
+from app.domain.volunteer_applications.tables import volunteer_application_invites
 from app.domain.volunteers.tables import volunteer_records
 from app.shared.coercion import coerce_date
 from app.shared.text import build_full_name
@@ -108,12 +109,25 @@ def _active_signed_contract_filter(enabled: bool):
     if not enabled:
         return None
 
-    return exists(
-        select(1)
-        .select_from(role_assignments)
-        .where(role_assignments.c.volunteer_id == volunteer_records.c.id)
-        .where(role_assignments.c.semester == _get_current_semester_code())
-        .where(role_assignments.c.contract_signed.is_(True))
+    return and_(
+        exists(
+            select(1)
+            .select_from(role_assignments)
+            .where(role_assignments.c.volunteer_id == volunteer_records.c.id)
+            .where(role_assignments.c.semester == _get_current_semester_code())
+            .where(role_assignments.c.contract_signed.is_(True))
+        ),
+        not_(
+            exists(
+                select(1)
+                .select_from(volunteer_application_invites)
+                .where(
+                    volunteer_application_invites.c.promoted_volunteer_id
+                    == volunteer_records.c.id
+                )
+                .where(volunteer_application_invites.c.status == "not_volunteer")
+            )
+        ),
     )
 
 

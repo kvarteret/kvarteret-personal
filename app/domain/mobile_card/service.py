@@ -5,6 +5,7 @@ import logging
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from secrets import choice
+from typing import Any, Protocol
 
 from app.config import Settings
 from app.db.rate_limit import RateLimiter, RateLimitExceeded
@@ -54,6 +55,12 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+class TrialApplicantProviderProtocol(Protocol):
+    async def find_active_trial_applicant_by_email(self, email: str) -> Any | None: ...
+
+    async def get_active_trial_applicant(self, application_id: int) -> Any | None: ...
 
 _APRIL_FOOLS_IMAGE_BY_GROUP_ID = {
     2: "hovedstyret.avif",
@@ -144,6 +151,7 @@ class MobileCardService:
         media_token_service: MediaTokenService | None = None,
         april_state_service: MobileCardAprilStateService | None = None,
         email_template_renderer: MobileCardEmailTemplateRendererProtocol | None = None,
+        trial_applicant_provider: TrialApplicantProviderProtocol | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
@@ -151,6 +159,7 @@ class MobileCardService:
         self.rate_limiter = rate_limiter
         self.media_token_service = media_token_service
         self.april_state_service = april_state_service
+        self.trial_applicant_provider = trial_applicant_provider
         self.email_template_renderer = (
             email_template_renderer or MobileCardEmailTemplateRenderer()
         )
@@ -176,23 +185,33 @@ class MobileCardService:
             raise MobileCardDuplicatePersonError(
                 "More than one person uses this email address. Contact an administrator."
             )
-        if not volunteers:
-            raise MobileCardPersonNotFoundError(
-                "Email not found in the personnel database."
+        trial_applicant = None
+        if not volunteers and self.trial_applicant_provider is not None:
+            trial_applicant = await self.trial_applicant_provider.find_active_trial_applicant_by_email(
+                normalized_email
             )
+        if not volunteers and trial_applicant is None:
+            raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
 
-        volunteer_row = volunteers[0]
         now = datetime.now(UTC)
         access_code = _generate_access_code()
-        await self.repository.store_access_code(
-            volunteer_id=volunteer_row["id"],
-            code_hash=self._hash_access_code(access_code),
-            created_at=now,
-        )
-        logger.info(
-            "Generated mobile-card access code for volunteer %s",
-            volunteer_row["id"],
-        )
+        code_hash = self._hash_access_code(access_code)
+        if volunteers:
+            await self.repository.store_access_code(
+                volunteer_id=volunteers[0]["id"], code_hash=code_hash, created_at=now
+            )
+            subject_id = volunteers[0]["id"]
+            subject_type = "volunteer"
+        else:
+            assert trial_applicant is not None
+            await self.repository.store_trial_access_code(
+                application_id=trial_applicant.application_id,
+                code_hash=code_hash,
+                created_at=now,
+            )
+            subject_id = trial_applicant.application_id
+            subject_type = "trial_application"
+        logger.info("Generated mobile-card access code for %s %s", subject_type, subject_id)
 
         # The code must be durably stored before the email announces it.
         await commit_request_session()
@@ -210,13 +229,13 @@ class MobileCardService:
         except EmailDeliveryError:
             logger.exception(
                 "Failed to deliver access code email for volunteer %s",
-                volunteer_row["id"],
+                subject_id,
             )
             raise MobileCardError(
                 "Could not send access code email. Please try again later."
             )
         logger.info(
-            "Sent mobile-card access code email for volunteer %s", volunteer_row["id"]
+            "Sent mobile-card access code email for %s %s", subject_type, subject_id
         )
         return None
 
@@ -250,15 +269,36 @@ class MobileCardService:
             expires_after=datetime.now(UTC)
             - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
         )
-        if volunteer_row is None:
+        trial_applicant = None
+        if volunteer_row is None and self.trial_applicant_provider is not None:
+            trial_applicant = await self.trial_applicant_provider.find_active_trial_applicant_by_email(
+                normalized_email
+            )
+            if trial_applicant is not None:
+                accepted = await self.repository.consume_trial_access_code(
+                    application_id=trial_applicant.application_id,
+                    code_hash=self._hash_access_code(normalized_access_code),
+                    expires_after=datetime.now(UTC)
+                    - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
+                )
+                if not accepted:
+                    trial_applicant = None
+        if volunteer_row is None and trial_applicant is None:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         await self.rate_limiter.clear(
             *(f"mobile-card:attempt:{key}" for key in attempt_keys)
         )
-        token = self.sessions.build_token({"person_id": volunteer_row["id"]})
-        card = await self._build_card(
-            volunteer_row["id"], include_role_history=include_role_history
-        )
+        if volunteer_row is not None:
+            token = self.sessions.build_token({"person_id": volunteer_row["id"]})
+            card = await self._build_card(
+                volunteer_row["id"], include_role_history=include_role_history
+            )
+        else:
+            assert trial_applicant is not None
+            token = self.sessions.build_token(
+                {"trial_application_id": trial_applicant.application_id}
+            )
+            card = self._build_trial_card(trial_applicant)
         return MobileCardSession(session_token=token, card=card)
 
     async def get_current_card(
@@ -268,6 +308,15 @@ class MobileCardService:
 
         if decoded.is_review:
             card = self._build_review_card(include_role_history=include_role_history)
+        elif decoded.trial_application_id is not None:
+            if self.trial_applicant_provider is None:
+                raise MobileCardInvalidAccessCodeError("Trial access has expired.")
+            trial_applicant = await self.trial_applicant_provider.get_active_trial_applicant(
+                decoded.trial_application_id
+            )
+            if trial_applicant is None:
+                raise MobileCardInvalidAccessCodeError("Trial access has expired.")
+            card = self._build_trial_card(trial_applicant)
         else:
             card = await self._build_card(
                 decoded.person_id or 0, include_role_history=include_role_history
@@ -277,6 +326,34 @@ class MobileCardService:
         return MobileCardCurrentCardResult(
             card=card,
             renewed_session_token=renewed_session_token,
+        )
+
+    def _build_trial_card(self, snapshot: Any) -> MobileCardResponse:
+        photo_url = (
+            self.media_token_service.build_photo_media_url(snapshot.photo_path)
+            if self.media_token_service is not None
+            else None
+        )
+        return MobileCardResponse(
+            person_id=-snapshot.application_id,
+            first_name=snapshot.first_name,
+            last_name=snapshot.last_name,
+            birth_date=snapshot.birth_date,
+            created_at=snapshot.created_at,
+            valid_until=snapshot.trial_ends_at,
+            photo_url=photo_url,
+            pingvin_points=0,
+            active_roles=[
+                MobileCardRole(
+                    name=snapshot.role_name,
+                    group=snapshot.group_name,
+                    discount_level=snapshot.discount_level,
+                    pingvin_points=0,
+                    signed_contract=False,
+                )
+            ],
+            role_history=None,
+            word_of_the_day=_word_of_the_day(),
         )
 
     async def _build_card(
