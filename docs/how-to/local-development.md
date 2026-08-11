@@ -23,6 +23,15 @@ and credentials below at any time.
 
 The app should listen on `http://127.0.0.1:8000`.
 
+For a repository-local start that does not depend on the sibling infra CLI,
+run:
+
+    mise run dev
+
+This prepares the same Docker database and runs the FastAPI server and CSS
+watcher together in the current terminal. Press Ctrl-C to stop the foreground
+services; the Docker database remains available for the next run.
+
 Check health:
 
     curl http://127.0.0.1:8000/health

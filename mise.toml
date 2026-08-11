@@ -12,3 +12,19 @@ bun = "1.3.14"
 # beside this checkout and run `mise install` there first.
 [env]
 _.path = ["{{config_root}}/../infra/bin"]
+
+[tasks.dev]
+description = "Start Postgres, migrate and seed, then run the app and CSS watcher"
+run = [
+  "docker compose -f docker-compose.dev.yml up -d db",
+  "uv run python scripts/dev/bootstrap.py",
+  "mise run --output prefix dev:css ::: dev:server",
+]
+
+[tasks."dev:css"]
+description = "Watch and rebuild Tailwind CSS"
+run = "bun run watch:css"
+
+[tasks."dev:server"]
+description = "Run the FastAPI development server with reload"
+run = "DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/kvarteret_personal_dev APP_ENV=development DEV_ADMIN_EMAIL=dev@kvarteret.dev DEV_ADMIN_PASSWORD=dev-password APP_SECRET_KEY=local-dev-secret uv run uvicorn app.main:create_app --factory --reload --host 127.0.0.1 --port 8000"
