@@ -198,6 +198,7 @@ class VolunteerApplicationDetail:
     trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
     status_history: list["VolunteerApplicationStatusEvent"] | None = None
+    origin_trace_id: str | None = None
 
     @property
     def is_part_of_active_group(self) -> bool:
@@ -444,6 +445,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         friend_invites: list[tuple[str, str]] | None = None,
         inviter_name: str | None = None,
         first_choice_group_name: str | None = None,
+        origin_trace_id: str | None = None,
     ) -> PublicProspectRegistrationResult: ...
     async def create_volunteer_application_invitation(
         self,

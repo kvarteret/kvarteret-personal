@@ -25,6 +25,7 @@ from app.db.table_defs.auth import (
     auth_users,
 )
 from app.db.table_defs.storage import storage_metadata, storage_objects
+from app.db.table_defs.email_delivery import email_deliveries, email_delivery_attempts
 from app.domain.admin_accounts.tables import (
     group_admin_memberships,
     user_accounts,
@@ -71,6 +72,8 @@ __all__ = [
     "course_completions",
     "courses",
     "domain_events",
+    "email_deliveries",
+    "email_delivery_attempts",
     "group_admin_memberships",
     "group_course_requirements",
     "groups",

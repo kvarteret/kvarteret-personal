@@ -10,7 +10,7 @@ from app.infrastructure.storage.local_dir import LocalDirectoryStorage
 
 
 @pytest.mark.asyncio
-async def test_console_email_sender_writes_html_and_logs_links(
+async def test_console_email_sender_writes_html_without_logging_recipient_or_links(
     tmp_path, caplog
 ) -> None:
     sender = ConsoleEmailSender(tmp_path)
@@ -25,8 +25,9 @@ async def test_console_email_sender_writes_html_and_logs_links(
     messages = list(tmp_path.glob("*.html"))
     assert len(messages) == 1
     assert "Apply" in messages[0].read_text(encoding="utf-8")
-    assert "applicant@example.com" in caplog.text
-    assert "http://localhost:8000/apply/token" in caplog.text
+    assert "email.console.saved" in caplog.text
+    assert "applicant@example.com" not in caplog.text
+    assert "http://localhost:8000/apply/token" not in caplog.text
 
 
 def test_local_directory_storage_round_trip(tmp_path) -> None:

@@ -19,6 +19,21 @@
         </h1>
         <p class="text-base leading-7 text-stone-700">{{ volunteer_application.email }}</p>
       </div>
+      {% if latest_email_delivery %}
+        <div class="flex flex-wrap items-center justify-center gap-2 text-sm">
+          <span class="font-medium">E-post:</span>
+          {% if latest_email_delivery.status == 'sent' %}
+            <span class="text-emerald-700">sendt</span>
+          {% elif latest_email_delivery.status == 'pending' %}
+            <span class="text-amber-800">venter / prøver igjen</span>
+          {% else %}
+            <span class="text-red-700">{{ latest_email_delivery.status }}</span>
+          {% endif %}
+          {% if current_user.role.value == 'Admin' %}
+            <a class="text-kvarteret-red" href="/email-deliveries/{{ latest_email_delivery.delivery_id }}">Se leveranse</a>
+          {% endif %}
+        </div>
+      {% endif %}
       <div class="grid w-full gap-4 xl:max-w-5xl xl:grid-cols-[auto_1fr_auto] xl:items-start">
         <div class="flex flex-wrap justify-center xl:justify-start">
           <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteer-applications'; }" type="button">Tilbake</button>

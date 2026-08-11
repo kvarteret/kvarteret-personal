@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import cast
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -43,6 +44,12 @@ from app.domain.mobile_card.repository import (
 )
 from app.domain.volunteers.service import VolunteersService
 from app.domain.volunteers.repository import VolunteersRepository
+from app.email_delivery import (
+    APPLICANT_APPLICATION_RECEIVED,
+    APPLICANT_INVITATION,
+    APPLICANT_PROFILE_COMPLETION,
+    EmailDeliveryRequest,
+)
 
 
 class FakeVolunteersRepository:
@@ -261,9 +268,10 @@ class FakeVolunteerApplicationsRepository:
     async def delete_volunteer_application(self, registration_id: int) -> None:
         self.deleted_registration_ids.append(registration_id)
 
-    async def append_domain_event(self, event, *, subject_id: int) -> None:
+    async def append_domain_event(self, event, *, subject_id: int) -> int:
         self.domain_events = getattr(self, "domain_events", [])
         self.domain_events.append((event.event_type, subject_id))
+        return len(self.domain_events)
 
 
 class FakeMobileCardRepository:
@@ -338,21 +346,26 @@ class FakeTrialApplicantProvider:
         return None
 
 
-def assert_applicant_email_contains(
-    payload: dict[str, str],
+class FakeEmailOutbox:
+    def __init__(self) -> None:
+        self.requests: list[EmailDeliveryRequest] = []
+
+    async def enqueue(self, request: EmailDeliveryRequest):
+        self.requests.append(request)
+        return uuid4()
+
+    async def dispatch_due(self, *, batch_size: int = 10):
+        return None
+
+
+def assert_email_enqueued(
+    request: EmailDeliveryRequest,
     *,
     recipient_email: str,
-    subject: str,
-    invitation_url: str,
-    english_phrase: str,
-    norwegian_phrase: str,
+    template_key: str,
 ) -> None:
-    assert payload["recipient_email"] == recipient_email
-    assert payload["subject"] == subject
-    assert english_phrase in payload["html_body"]
-    assert norwegian_phrase in payload["html_body"]
-    assert invitation_url in payload["html_body"]
-    assert "Direct link / Direkte lenke" in payload["html_body"]
+    assert request.recipient_email == recipient_email
+    assert request.template_key == template_key
 
 
 class FakeMediaTokenService:
@@ -768,7 +781,7 @@ async def test_volunteer_applications_pending_count_is_cached() -> None:
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -799,7 +812,7 @@ async def test_public_prospect_resolves_any_configured_group_slug() -> None:
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
     )
 
     await service.create_public_prospect_registration_record(
@@ -827,12 +840,12 @@ async def test_public_prospect_receives_bilingual_application_confirmation() -> 
     repository.public_prospect_groups = {
         "debatt": PublicProspectGroup(81, "debatt", "Debattkomiteen")
     }
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
     )
 
     await service.create_public_prospect_registration(
@@ -847,9 +860,12 @@ async def test_public_prospect_receives_bilingual_application_confirmation() -> 
         )
     )
 
-    assert email_sender.sent_emails[0]["subject"] == "Den første døren er nå åpen"
-    assert "Det gleder oss å se" in email_sender.sent_emails[0]["html_body"]
-    assert "We are delighted" in email_sender.sent_emails[0]["html_body"]
+    assert len(email_outbox.requests) == 1
+    assert_email_enqueued(
+        email_outbox.requests[0],
+        recipient_email="kari@example.test",
+        template_key=APPLICANT_APPLICATION_RECEIVED,
+    )
 
 
 @pytest.mark.asyncio
@@ -867,7 +883,7 @@ async def test_public_bar_choices_preserve_labels_and_route_only_primary_choice(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
     )
 
     await service.create_public_prospect_registration_record(
@@ -898,7 +914,7 @@ async def test_public_prospect_rejects_an_unknown_group_slug() -> None:
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
     )
 
     with pytest.raises(
@@ -963,7 +979,7 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
         pending_count_cache_ttl_seconds=60,
     )
     service.list_recent_volunteer_registrations = (  # type: ignore[method-assign]
@@ -994,7 +1010,7 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1028,7 +1044,7 @@ async def test_volunteer_applications_submit_does_not_notify_group_admins() -> N
     repository.application_photo_sha1 = "abc123"
     repository.application_photo_filetype = "jpg"
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
@@ -1036,7 +1052,7 @@ async def test_volunteer_applications_submit_does_not_notify_group_admins() -> N
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1055,7 +1071,7 @@ async def test_volunteer_applications_submit_does_not_notify_group_admins() -> N
     )
 
     assert repository.group_admin_recipient_lookup_group_ids == []
-    assert email_sender.sent_emails == []
+    assert email_outbox.requests == []
 
 
 @pytest.mark.asyncio
@@ -1068,7 +1084,7 @@ async def test_volunteer_applications_submit_normalizes_local_phone_number() -> 
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1095,7 +1111,7 @@ async def test_volunteer_applications_submit_rejects_invalid_phone_number() -> N
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1121,7 +1137,7 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1144,7 +1160,7 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
 async def test_volunteer_applications_approve_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.detail_status = "trial"
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
@@ -1152,7 +1168,7 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1165,14 +1181,14 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
     assert refreshed == 2
     assert repository.approved_registration_ids == [7]
     assert repository.count_calls == 2
-    assert email_sender.sent_emails == []
+    assert email_outbox.requests == []
 
 
 @pytest.mark.asyncio
-async def test_starting_trial_sends_bilingual_profile_completion_email() -> None:
+async def test_starting_trial_enqueues_profile_completion_email() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.detail_status = "contacted"
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
@@ -1180,19 +1196,16 @@ async def test_starting_trial_sends_bilingual_profile_completion_email() -> None
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
     )
 
     detail = await service.start_trial(7)
 
     assert detail.status == "trial"
-    assert_applicant_email_contains(
-        email_sender.sent_emails[0],
+    assert_email_enqueued(
+        email_outbox.requests[0],
         recipient_email="registrant@example.com",
-        subject="Din reise starter nå / Your journey starts now",
-        invitation_url="https://personal.kvarteret.no/apply/token-123",
-        english_phrase="Your trial period has now started.",
-        norwegian_phrase="Din prøveperiode er nå i gang.",
+        template_key=APPLICANT_PROFILE_COMPLETION,
     )
 
 
@@ -1204,7 +1217,7 @@ async def test_volunteer_applications_delete_invalidates_pending_count_cache() -
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=FakeEmailSender(),
+        email_outbox=FakeEmailOutbox(),
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1218,9 +1231,9 @@ async def test_volunteer_applications_delete_invalidates_pending_count_cache() -
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_service_sends_email_when_creating_invitation() -> None:
+async def test_volunteer_applications_service_enqueues_email_when_creating_invitation() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
@@ -1228,7 +1241,7 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1240,13 +1253,10 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
 
     assert invite.email == "new@example.test"
     assert repository.created_invites[0]["email"] == "new@example.test"
-    assert_applicant_email_contains(
-        email_sender.sent_emails[0],
+    assert_email_enqueued(
+        email_outbox.requests[0],
         recipient_email="new@example.test",
-        subject="Complete your Kvarteret registration / Fullfør registreringen din hos Kvarteret",
-        invitation_url=f"https://personal.kvarteret.no/apply/{invite.token}",
-        english_phrase="You have been invited to complete your volunteer registration for Det Akademiske Kvarter.",
-        norwegian_phrase="Du er invitert til å fullføre frivilligregistreringen din for Det Akademiske Kvarter.",
+        template_key=APPLICANT_INVITATION,
     )
 
 
@@ -1254,7 +1264,7 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
 async def test_volunteer_applications_service_can_resend_invitation_email() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.detail_status = "new"
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
@@ -1262,48 +1272,49 @@ async def test_volunteer_applications_service_can_resend_invitation_email() -> N
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
         pending_count_cache_ttl_seconds=60,
     )
 
     detail = await service.resend_volunteer_application_invitation(7)
 
     assert detail.registration_id == 7
-    assert_applicant_email_contains(
-        email_sender.sent_emails[0],
+    assert_email_enqueued(
+        email_outbox.requests[0],
         recipient_email="registrant@example.com",
-        subject="Complete your Kvarteret registration / Fullfør registreringen din hos Kvarteret",
-        invitation_url="https://personal.kvarteret.no/apply/token-123",
-        english_phrase="You have been invited to complete your volunteer registration for Det Akademiske Kvarter.",
-        norwegian_phrase="Du er invitert til å fullføre frivilligregistreringen din for Det Akademiske Kvarter.",
+        template_key=APPLICANT_INVITATION,
     )
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_service_can_use_explicit_base_url_without_settings_value() -> None:
+async def test_volunteer_applications_service_enqueues_with_explicit_base_url() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
         pending_count_cache_ttl_seconds=60,
     )
 
-    invite = await service.create_volunteer_application_invitation(
+    await service.create_volunteer_application_invitation(
         "new@example.test",
         base_url="http://localhost:8000",
     )
 
-    assert email_sender.sent_emails[0]["html_body"].find(f"http://localhost:8000/apply/{invite.token}") != -1
+    assert_email_enqueued(
+        email_outbox.requests[0],
+        recipient_email="new@example.test",
+        template_key=APPLICANT_INVITATION,
+    )
 
 
 @pytest.mark.asyncio
 async def test_volunteer_applications_service_rejects_duplicate_email_before_creating_invitation() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.existing_volunteer_ids_by_email = {"existing@example.test": 42}
-    email_sender = FakeEmailSender()
+    email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(
@@ -1311,7 +1322,7 @@ async def test_volunteer_applications_service_rejects_duplicate_email_before_cre
             app_public_base_url="https://personal.kvarteret.no",
         ),
         repository=repository,
-        email_sender=email_sender,
+        email_outbox=email_outbox,
         pending_count_cache_ttl_seconds=60,
     )
 
@@ -1320,7 +1331,7 @@ async def test_volunteer_applications_service_rejects_duplicate_email_before_cre
 
     assert exc_info.value.volunteer_id == 42
     assert repository.created_invites == []
-    assert email_sender.sent_emails == []
+    assert email_outbox.requests == []
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,52 @@
+{% extends "layouts/base.html" %}
+{% from "components/shared/ui_macros.html" import flash_notice, page_header %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    {% call page_header("E-postleveranse", detail.delivery.template_key, detail.delivery.masked_recipient) %}
+      <a class="app-button-secondary" href="/email-deliveries">Tilbake til leveranser</a>
+      {% if detail.delivery.registration_id %}<a class="app-button-secondary" href="/volunteer-applications/{{ detail.delivery.registration_id }}">Se søknad</a>{% endif %}
+    {% endcall %}
+    {{ flash_notice(error_message, "error") }}
+
+    <section class="app-panel grid gap-5 md:grid-cols-2">
+      <div><p class="text-sm text-stone-500">Status</p><p class="mt-1 text-lg font-medium">{{ detail.delivery.status }}</p></div>
+      <div><p class="text-sm text-stone-500">Mottaker</p><p class="mt-1">{{ detail.delivery.masked_recipient }}</p></div>
+      <div><p class="text-sm text-stone-500">Leveranse-ID</p><code class="mt-1 block break-all text-sm">{{ detail.delivery.delivery_id }}</code></div>
+      <div><p class="text-sm text-stone-500">Forretningsreferanse</p><p class="mt-1">{{ detail.delivery.business_type }} / {{ detail.delivery.business_id }}</p></div>
+      <div><p class="text-sm text-stone-500">Siste feilkategori</p><p class="mt-1">{{ detail.delivery.last_error_category or '—' }}</p></div>
+      <div><p class="text-sm text-stone-500">Enqueue trace ID</p><code class="mt-1 block break-all text-sm">{{ detail.delivery.enqueued_trace_id or '—' }}</code></div>
+    </section>
+
+    {% if detail.delivery.status == 'failed' %}
+      <section class="app-panel grid gap-5">
+        <h2 class="text-2xl font-medium">Gjenoppretting</h2>
+        {% if detail.delivery.template_key == 'mobile_card_access_code' %}
+          <p class="text-sm text-stone-700">Tilgangskoder kan være utløpt eller brukt. Be brukeren om å generere en ny kode i stedet.</p>
+        {% else %}
+          <form action="/email-deliveries/{{ detail.delivery.delivery_id }}/retry" method="post">
+            <button class="app-button" type="submit">Opprett ny leveranse og prøv igjen</button>
+          </form>
+        {% endif %}
+        {% if detail.delivery.template_key in ['applicant_invitation', 'applicant_friend_invitation', 'applicant_profile_completion'] %}
+          <form action="/email-deliveries/{{ detail.delivery.delivery_id }}/correct-recipient" class="grid gap-3 md:grid-cols-[1fr_auto] md:items-end" method="post">
+            <label class="grid gap-1"><span class="text-sm text-stone-500">Korrigert e-postadresse</span><input class="app-input" name="recipient_email" required type="email"></label>
+            <button class="app-button-secondary" type="submit">Korriger og opprett ny leveranse</button>
+          </form>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    <section class="app-panel overflow-x-auto">
+      <h2 class="mb-5 text-2xl font-medium">Forsøkshistorikk</h2>
+      <table class="min-w-full border-collapse">
+        <thead><tr class="border-b border-stone-300 text-left text-sm text-stone-500"><th class="px-3 py-3">#</th><th class="px-3 py-3">Steg</th><th class="px-3 py-3">Resultat</th><th class="px-3 py-3">Feilkategori</th><th class="px-3 py-3">SMTP</th><th class="px-3 py-3">Varighet</th></tr></thead>
+        <tbody>
+          {% for attempt in detail.attempts %}
+            <tr class="border-b border-stone-300 text-sm"><td class="px-3 py-3">{{ attempt.attempt_no }}</td><td class="px-3 py-3">{{ attempt.stage }}</td><td class="px-3 py-3">{{ attempt.outcome }}{% if attempt.outcome == 'interrupted' and attempt.stage == 'smtp' %}<p class="mt-1 text-xs text-amber-800">SMTP kan ha akseptert meldingen før arbeideren forsvant.</p>{% endif %}</td><td class="px-3 py-3">{{ attempt.error_category or '—' }}</td><td class="px-3 py-3">{{ attempt.smtp_status or '—' }}</td><td class="px-3 py-3">{{ attempt.duration_ms ~ ' ms' if attempt.duration_ms is not none else '—' }}</td></tr>
+          {% else %}<tr><td class="px-3 py-6 text-sm text-stone-600" colspan="6">Ingen forsøk er registrert ennå.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </section>
+{% endblock %}
