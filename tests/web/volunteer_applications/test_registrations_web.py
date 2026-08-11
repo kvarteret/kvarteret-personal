@@ -5,7 +5,11 @@ from datetime import UTC, date, datetime
 from fastapi.testclient import TestClient
 
 from app.auth.roles import UserRole
-from app.dependencies import get_volunteer_applications_service, get_volunteers_service
+from app.dependencies import (
+    get_email_outbox_service,
+    get_volunteer_applications_service,
+    get_volunteers_service,
+)
 from app.main import create_app
 from app.web.routes.volunteer_applications.pages import _build_promotion_group_options
 from app.domain.volunteer_applications.models import (
@@ -93,7 +97,6 @@ class FakeVolunteerApplicationsService:
                 next_cursor=None,
             ),
         }
-
     async def create_volunteer_application_invitation(
         self,
         email: str,
@@ -296,6 +299,12 @@ class FakeVolunteerApplicationsService:
         ]
 
 
+class FakeEmailOutboxService:
+    async def get_latest_for_registration(self, registration_id: int):
+        assert registration_id == 7
+        return None
+
+
 class FakeVolunteersService:
     async def list_assignment_groups(self) -> list[GroupOption]:
         return [
@@ -466,6 +475,7 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteer_applications_service] = lambda: FakeVolunteerApplicationsService()
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_email_outbox_service] = lambda: FakeEmailOutboxService()
     client = TestClient(app)
 
     response = client.get("/volunteer-applications/7")

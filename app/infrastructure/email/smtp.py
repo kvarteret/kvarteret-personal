@@ -13,6 +13,18 @@ from app.infrastructure.email.protocols import EmailDeliveryError
 class SmtpDeliveryError(EmailDeliveryError):
     """Raised when an email cannot be delivered via SMTP."""
 
+    def __init__(
+        self,
+        category: str,
+        *,
+        retryable: bool,
+        smtp_status: int | None = None,
+    ) -> None:
+        super().__init__(category)
+        self.category = category
+        self.retryable = retryable
+        self.smtp_status = smtp_status
+
 
 class SmtpEmailSender:
     def __init__(self, settings: Settings) -> None:
@@ -76,7 +88,25 @@ def _send_via_smtp(
                 smtp.ehlo()
             smtp.login(account, password)
             smtp.send_message(message)
-        except smtplib.SMTPException as exc:
+        except smtplib.SMTPRecipientsRefused as exc:
+            statuses = [
+                value[0]
+                for value in exc.recipients.values()
+                if isinstance(value, tuple) and isinstance(value[0], int)
+            ]
+            status = statuses[0] if statuses else None
             raise SmtpDeliveryError(
-                f"Failed to deliver email to {recipient_email}: {exc}"
+                "recipient_rejected",
+                retryable=bool(status and 400 <= status < 500),
+                smtp_status=status,
             ) from exc
+        except smtplib.SMTPResponseException as exc:
+            raise SmtpDeliveryError(
+                "smtp_temporary" if 400 <= exc.smtp_code < 500 else "smtp_permanent",
+                retryable=400 <= exc.smtp_code < 500,
+                smtp_status=exc.smtp_code,
+            ) from exc
+        except smtplib.SMTPException as exc:
+            raise SmtpDeliveryError("smtp_protocol", retryable=True) from exc
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            raise SmtpDeliveryError("smtp_connection", retryable=True) from exc

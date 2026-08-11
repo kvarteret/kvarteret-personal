@@ -14,8 +14,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_HREF_PATTERN = re.compile(r'href="([^"]+)"')
-
 
 class ConsoleEmailSender:
     def __init__(self, outbox_dir: str | Path = ".devdata/outbox") -> None:
@@ -28,13 +26,12 @@ class ConsoleEmailSender:
         filename = f"{time.strftime('%Y%m%d-%H%M%S')}-{_slug(subject)}.html"
         path = self.outbox_dir / filename
         path.write_text(html_body, encoding="utf-8")
-        links = _HREF_PATTERN.findall(html_body)
         logger.info(
-            "DEV EMAIL to=%s subject=%r saved=%s links=%s",
-            recipient_email,
-            subject,
-            path,
-            links or "-",
+            "email.console.saved",
+            extra={
+                "event": "email.delivery",
+                "event_data": {"status": "saved"},
+            },
         )
 
 

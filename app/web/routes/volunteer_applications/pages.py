@@ -3,11 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import (
+    get_email_outbox_service,
     get_current_user,
     get_volunteer_applications_service,
     get_volunteers_service,
     require_management_user,
 )
+from app.email_outbox_service import EmailOutboxService
 from app.observability import log_admin_activity
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
 from app.domain.volunteers.options import gender_label
@@ -243,6 +245,9 @@ async def volunteer_application_detail(
     volunteer_applications_service: VolunteerApplicationsService = Depends(
         get_volunteer_applications_service
     ),
+    email_outbox_service: EmailOutboxService = Depends(
+        get_email_outbox_service
+    ),
 ):
     volunteer_application = (
         await volunteer_applications_service.get_volunteer_application_detail(
@@ -253,6 +258,9 @@ async def volunteer_application_detail(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_APP_NOT_FOUND
         )
+    latest_email_delivery = await email_outbox_service.get_latest_for_registration(
+        application_id
+    )
     log_admin_activity(
         request=request,
         user=current_user,
@@ -269,6 +277,7 @@ async def volunteer_application_detail(
             "section": "volunteer-applications",
             "current_user": current_user,
             "volunteer_application": volunteer_application,
+            "latest_email_delivery": latest_email_delivery,
             "gender_label": gender_label,
             "promotion_group_options": _build_promotion_group_options(
                 volunteer_application

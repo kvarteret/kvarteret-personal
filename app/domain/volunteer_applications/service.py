@@ -6,13 +6,7 @@ from asyncio import to_thread
 from secrets import token_hex, token_urlsafe
 
 from app.config import Settings
-from app.db.session import commit_request_session
 from app.errors import NotConfiguredError
-from app.infrastructure.email.applicant_templates import (
-    ApplicantEmailTemplateRenderer,
-    ApplicantEmailTemplateRendererProtocol,
-)
-from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.infrastructure.media.protocols import PhotoProcessorProtocol
 from app.shared.phone_numbers import (
     normalize_phone_number,
@@ -48,6 +42,8 @@ from app.domain.volunteer_applications.models import (
 )
 from app.domain.volunteer_applications.queries import VolunteerApplicationsQueries
 from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkflow
+from app.email_delivery import EmailDeliveryOutboxProtocol
+from app.observability import current_trace_id
 
 _REGISTRATION_NOT_FOUND = "Registration was not found."
 
@@ -80,9 +76,8 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         self,
         settings: Settings,
         repository: VolunteerApplicationsRepositoryProtocol,
-        email_sender: EmailSenderProtocol,
         volunteer_creator: VolunteerCreatorProtocol,
-        applicant_email_renderer: ApplicantEmailTemplateRendererProtocol | None = None,
+        email_outbox: EmailDeliveryOutboxProtocol,
         storage_service: StorageProtocol | None = None,
         photo_processor: PhotoProcessorProtocol | None = None,
         pending_count_cache_ttl_seconds: int = 30,
@@ -93,20 +88,15 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         )
         self.settings = settings
         self.volunteer_creator = volunteer_creator
-        self.email_sender = email_sender
-        self.applicant_email_renderer = applicant_email_renderer or ApplicantEmailTemplateRenderer()
         self.storage_service = storage_service
         self.photo_processor = photo_processor
         self.workflow = VolunteerApplicationWorkflow(
             operations=self,
             side_effects=VolunteerApplicationSideEffects(
                 invalidate_pending_count_cache=self._invalidate_pending_count_cache,
-                send_invitation_email=self._send_invitation_email,
-                send_friend_invitation_email=self._send_friend_invitation_email,
-                send_profile_completion_email=self._send_profile_completion_email,
-                send_application_received_email=self._send_application_received_email,
                 storage_service=storage_service,
             ),
+            email_outbox=email_outbox,
         )
 
     async def create_public_prospect_registration(
@@ -197,6 +187,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             friend_invites=[(friend_email, token_urlsafe(24)) for friend_email in friend_emails],
             inviter_name=_build_full_name(first_name, last_name),
             first_choice_group_name=first_choice_label,
+            origin_trace_id=current_trace_id(),
         )
         return result
 
@@ -681,8 +672,8 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
     async def list_active_group_members(self, group_id: int) -> list[VolunteerApplicationGroupMember]:
         return await self.repository.list_group_members(group_id, include_dropped=False)
 
-    async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> None:
-        await self.repository.append_domain_event(event, subject_id=subject_id)
+    async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> int:
+        return await self.repository.append_domain_event(event, subject_id=subject_id)
 
     def _normalize_friend_emails(
         self,
@@ -748,66 +739,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         if self.storage_service is None:
             raise NotConfiguredError("Supabase credentials are required for storage integration.")
         return self.storage_service
-
-    async def _send_invitation_email(self, *, email: str, token: str, base_url: str | None = None) -> None:
-        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
-        if not resolved_base_url:
-            raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send registration invitation emails.")
-        invitation_url = f"{resolved_base_url}/apply/{token}"
-        rendered_email = self.applicant_email_renderer.render_invitation_email(invitation_url=invitation_url)
-        await commit_request_session()
-        await self.email_sender.send_email(
-            recipient_email=email,
-            subject=rendered_email.subject,
-            html_body=rendered_email.html_body,
-        )
-
-    async def _send_friend_invitation_email(
-        self,
-        *,
-        email: str,
-        token: str,
-        inviter_name: str,
-        first_choice_group_name: str,
-        base_url: str | None = None,
-    ) -> None:
-        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
-        if not resolved_base_url:
-            raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send registration invitation emails.")
-        invitation_url = f"{resolved_base_url}/apply/{token}"
-        rendered_email = self.applicant_email_renderer.render_friend_invitation_email(
-            invitation_url=invitation_url,
-            inviter_name=inviter_name,
-            first_choice_group_name=first_choice_group_name,
-        )
-        await commit_request_session()
-        await self.email_sender.send_email(
-            recipient_email=email,
-            subject=rendered_email.subject,
-            html_body=rendered_email.html_body,
-        )
-
-    async def _send_profile_completion_email(self, *, email: str, token: str, base_url: str | None = None) -> None:
-        resolved_base_url = (base_url or self.settings.app_public_base_url or "").rstrip("/")
-        if not resolved_base_url:
-            raise NotConfiguredError("APP_PUBLIC_BASE_URL is required to send profile completion emails.")
-        invitation_url = f"{resolved_base_url}/apply/{token}"
-        rendered_email = self.applicant_email_renderer.render_profile_completion_email(invitation_url=invitation_url)
-        await commit_request_session()
-        await self.email_sender.send_email(
-            recipient_email=email,
-            subject=rendered_email.subject,
-            html_body=rendered_email.html_body,
-        )
-
-    async def _send_application_received_email(self, *, email: str) -> None:
-        rendered_email = self.applicant_email_renderer.render_application_received_email()
-        await self.email_sender.send_email(
-            recipient_email=email,
-            subject=rendered_email.subject,
-            html_body=rendered_email.html_body,
-        )
-
 
 def _split_full_name(full_name: str) -> tuple[str | None, str]:
     parts = [part for part in full_name.strip().split() if part]

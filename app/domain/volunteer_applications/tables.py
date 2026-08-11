@@ -38,6 +38,7 @@ volunteer_application_invites = Table(
     Column("full_profile_submitted_at", DateTime(timezone=True)),
     Column("promoted_volunteer_id", BigInteger, ForeignKey("public.volunteer_records.id")),
     Column("promoted_at", DateTime(timezone=True)),
+    Column("origin_trace_id", Text),
     Column("created_at", DateTime(timezone=True), nullable=False),
     UniqueConstraint("token", name="uq_volunteer_application_invites_token"),
 )
@@ -98,4 +99,5 @@ domain_events = Table(
     Column("subject_id", BigInteger, nullable=False),
     Column("payload", JSON, nullable=False, server_default="{}"),
     Column("occurred_at", DateTime(timezone=True), nullable=False),
+    Column("trace_id", Text),
 )

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.dependencies import get_volunteer_applications_service
@@ -14,8 +17,10 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
+from app.observability import current_trace_id, emit_event
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class PublicVolunteerProspectRequest(BaseModel):
@@ -95,4 +100,17 @@ async def create_public_volunteer_prospect(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except VolunteerApplicationConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    trace_id = current_trace_id()
+    span = trace.get_current_span()
+    if span.is_recording():
+        span.set_attribute("registration_id", detail.registration_id)
+    emit_event(
+        logger,
+        "volunteer.lifecycle",
+        fields={
+            "registration_id": detail.registration_id,
+            "origin_trace_id": trace_id,
+            "status": "prospect_registered",
+        },
+    )
     return PublicVolunteerProspectResponse(registrationId=detail.registration_id)

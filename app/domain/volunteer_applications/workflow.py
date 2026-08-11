@@ -8,21 +8,33 @@ Every lifecycle action follows the same shape:
    it onto ``VolunteerApplicationConflictError``),
 3. persist the change through the operations protocol,
 4. append the domain event row in the same request transaction,
-5. commit the unit of work,
-6. execute the named side effects (email, cache, storage cleanup).
+5. enqueue durable email work in the same transaction,
+6. commit the unit of work,
+7. execute non-email side effects and request an immediate best-effort dispatch.
 
-Step 5 before step 6 is the commit-before-effect rule: no email may
-announce a state the database can still roll back. Group approval
-promotes every active member inside one transaction (steps 2-4 per
-member, then a single commit), which makes it atomic and all-or-nothing.
+The dispatcher runs only after commit, so no email may announce a state
+the database can still roll back. Group approval promotes every active
+member and enqueues every message inside one transaction, which makes
+the business mutation and delivery intent atomic and all-or-nothing.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
+from opentelemetry import trace
+
 from app.db.session import commit_request_session
+from app.email_delivery import (
+    APPLICANT_APPLICATION_RECEIVED,
+    APPLICANT_FRIEND_INVITATION,
+    APPLICANT_INVITATION,
+    APPLICANT_PROFILE_COMPLETION,
+    EmailDeliveryOutboxProtocol,
+    EmailDeliveryRequest,
+)
 from app.domain.volunteer_applications.state_machine import (
     ApplicationAction,
     ApplicationState,
@@ -32,6 +44,7 @@ from app.domain.volunteer_applications.state_machine import (
     application_transition,
     membership_transition,
 )
+from app.observability import current_trace_id, emit_event
 
 if TYPE_CHECKING:
     from app.domain.volunteer_applications.service import (
@@ -98,7 +111,7 @@ class VolunteerApplicationWorkflowOperations(Protocol):
     ) -> "list[VolunteerApplicationGroupMember]": ...
     async def append_domain_event(
         self, event: DomainEventRecord, *, subject_id: int
-    ) -> None: ...
+    ) -> int: ...
 
 
 class VolunteerApplicationSideEffectsProtocol(Protocol):
@@ -156,9 +169,11 @@ class VolunteerApplicationWorkflow:
         *,
         operations: VolunteerApplicationWorkflowOperations,
         side_effects: VolunteerApplicationSideEffectsProtocol,
+        email_outbox: EmailDeliveryOutboxProtocol,
     ) -> None:
         self.operations = operations
         self.side_effects = side_effects
+        self.email_outbox = email_outbox
 
     async def invite(
         self,
@@ -175,7 +190,7 @@ class VolunteerApplicationWorkflow:
             initial_role_id=initial_role_id,
         )
         # Creation is not a transition; the audit row is appended directly.
-        await self.operations.append_domain_event(
+        event_id = await self.operations.append_domain_event(
             DomainEventRecord(
                 event_type="application_invited",
                 actor_user_account_id=actor_user_account_id,
@@ -185,13 +200,14 @@ class VolunteerApplicationWorkflow:
             ),
             subject_id=invite.registration_id,
         )
+        await self._enqueue_volunteer_email(
+            template_key=APPLICANT_INVITATION,
+            invite=invite,
+            source_domain_event_id=event_id,
+        )
         await commit_request_session()
-        try:
-            await self.side_effects.after_invited(invite, base_url=base_url)
-        except Exception:
-            await self.operations.delete_application_record(invite.registration_id)
-            await commit_request_session()
-            raise
+        await self.side_effects.after_invited(invite, base_url=base_url)
+        await self._dispatch_best_effort()
         return invite
 
     async def register_public_prospect(
@@ -203,7 +219,7 @@ class VolunteerApplicationWorkflow:
         result = await self.operations.create_public_prospect_registration_record(
             registration, base_url=base_url
         )
-        await self.operations.append_domain_event(
+        registration_event_id = await self.operations.append_domain_event(
             DomainEventRecord(
                 event_type="prospect_registered",
                 actor_user_account_id=None,
@@ -218,8 +234,13 @@ class VolunteerApplicationWorkflow:
             ),
             subject_id=result.detail.registration_id,
         )
+        await self._enqueue_volunteer_email(
+            template_key=APPLICANT_APPLICATION_RECEIVED,
+            invite=result.detail,
+            source_domain_event_id=registration_event_id,
+        )
         for invite in result.friend_invites:
-            await self.operations.append_domain_event(
+            event_id = await self.operations.append_domain_event(
                 DomainEventRecord(
                     event_type="application_invited",
                     actor_user_account_id=None,
@@ -232,10 +253,17 @@ class VolunteerApplicationWorkflow:
                 ),
                 subject_id=invite.registration_id,
             )
+            await self._enqueue_volunteer_email(
+                template_key=APPLICANT_FRIEND_INVITATION,
+                invite=invite,
+                source_domain_event_id=event_id,
+            )
         await commit_request_session()
         await self.side_effects.after_public_prospect_registered(
             result, base_url=base_url
         )
+        self._record_lifecycle(result.detail, status="prospect_registered")
+        await self._dispatch_best_effort()
         return result.detail
 
     async def submit(
@@ -270,6 +298,7 @@ class VolunteerApplicationWorkflow:
             )
         await commit_request_session()
         await self.side_effects.after_submitted(detail)
+        self._record_lifecycle(detail, status="application_submitted")
         return detail
 
     async def contact(
@@ -296,6 +325,7 @@ class VolunteerApplicationWorkflow:
             action=ApplicationAction.START_TRIAL,
             actor_user_account_id=actor_user_account_id,
             start_trial=True,
+            email_template_key=APPLICANT_PROFILE_COMPLETION,
         )
         await self.side_effects.after_trial_started(detail, base_url=base_url)
         return detail
@@ -343,6 +373,7 @@ class VolunteerApplicationWorkflow:
         action: ApplicationAction,
         actor_user_account_id: int | None,
         start_trial: bool = False,
+        email_template_key: str | None = None,
     ) -> "VolunteerApplicationDetail":
         existing = await self.operations.get_volunteer_application_detail(
             registration_id
@@ -363,8 +394,9 @@ class VolunteerApplicationWorkflow:
             status=new_state,
             start_trial=start_trial,
         )
+        event_id = None
         if result is not None and result.event is not None:
-            await self.operations.append_domain_event(
+            event_id = await self.operations.append_domain_event(
                 replace(
                     result.event,
                     payload={
@@ -374,7 +406,17 @@ class VolunteerApplicationWorkflow:
                 ),
                 subject_id=registration_id,
             )
+        if email_template_key is not None:
+            if event_id is None:
+                raise RuntimeError("Email-producing domain event was not persisted.")
+            await self._enqueue_volunteer_email(
+                template_key=email_template_key,
+                invite=detail,
+                source_domain_event_id=event_id,
+            )
         await commit_request_session()
+        if email_template_key is not None:
+            await self._dispatch_best_effort()
         return detail
 
     async def approve(
@@ -385,7 +427,7 @@ class VolunteerApplicationWorkflow:
         base_url: str | None,
         actor_user_account_id: int | None = None,
     ) -> int:
-        detail, volunteer_id, event = await self._approve_one(
+        detail, volunteer_id, _ = await self._approve_one(
             registration_id,
             accepted_group_id=accepted_group_id,
             actor_user_account_id=actor_user_account_id,
@@ -394,6 +436,9 @@ class VolunteerApplicationWorkflow:
         await commit_request_session()
         await self.side_effects.after_approved(
             detail, volunteer_id=volunteer_id, base_url=base_url
+        )
+        self._record_lifecycle(
+            detail, status="application_approved", volunteer_id=volunteer_id
         )
         return volunteer_id
 
@@ -408,8 +453,7 @@ class VolunteerApplicationWorkflow:
         """Promote every member in one transaction: all or none.
 
         Database writes for all members happen before the single commit;
-        a failure on any member rolls back every promotion. Emails go
-        out only after the commit succeeds.
+        a failure on any member rolls back every promotion.
         """
         approved: list[tuple["VolunteerApplicationDetail", int]] = []
         for registration_id in registration_ids:
@@ -424,6 +468,9 @@ class VolunteerApplicationWorkflow:
         for detail, volunteer_id in approved:
             await self.side_effects.after_approved(
                 detail, volunteer_id=volunteer_id, base_url=base_url
+            )
+            self._record_lifecycle(
+                detail, status="application_approved", volunteer_id=volunteer_id
             )
         return [volunteer_id for _, volunteer_id in approved]
 
@@ -463,9 +510,10 @@ class VolunteerApplicationWorkflow:
                     "group_action": as_group_action,
                 },
             )
-            await self.operations.append_domain_event(
+            event_id = await self.operations.append_domain_event(
                 event, subject_id=registration_id
             )
+            event = replace(event, event_id=event_id)
         return detail, volunteer_id, event
 
     async def drop_group_invitee(
@@ -496,6 +544,7 @@ class VolunteerApplicationWorkflow:
             )
         await commit_request_session()
         await self.side_effects.after_group_invitee_dropped(detail)
+        self._record_lifecycle(detail, status="group_invitee_dropped")
 
     async def delete(
         self,
@@ -530,6 +579,7 @@ class VolunteerApplicationWorkflow:
             )
         await commit_request_session()
         await self.side_effects.after_deleted(detail)
+        self._record_lifecycle(detail, status="application_deleted")
 
     async def resend_invitation(
         self,
@@ -552,10 +602,82 @@ class VolunteerApplicationWorkflow:
             )
         detail = await self.operations.resend_invitation_record(registration_id)
         if result is not None and result.event is not None:
-            await self.operations.append_domain_event(
+            event_id = await self.operations.append_domain_event(
                 replace(result.event, subject_id=registration_id),
                 subject_id=registration_id,
             )
+            await self._enqueue_volunteer_email(
+                template_key=APPLICANT_INVITATION,
+                invite=detail,
+                source_domain_event_id=event_id,
+            )
         await commit_request_session()
         await self.side_effects.after_invitation_resent(detail, base_url=base_url)
+        self._record_lifecycle(detail, status="invitation_resent")
+        await self._dispatch_best_effort()
         return detail
+
+    async def _enqueue_volunteer_email(
+        self,
+        *,
+        template_key: str,
+        invite: object,
+        source_domain_event_id: int,
+    ) -> None:
+        registration_id = int(getattr(invite, "registration_id"))
+        await self.email_outbox.enqueue(
+            EmailDeliveryRequest(
+                template_key=template_key,
+                template_version=1,
+                recipient_email=str(getattr(invite, "email")),
+                business_type="volunteer_application",
+                business_id=str(registration_id),
+                idempotency_key=(
+                    f"domain-event:{source_domain_event_id}:{template_key}:applicant"
+                ),
+                registration_id=registration_id,
+                source_domain_event_id=source_domain_event_id,
+                enqueued_trace_id=current_trace_id(),
+            )
+        )
+
+    async def _dispatch_best_effort(self) -> None:
+        try:
+            await self.email_outbox.dispatch_due(batch_size=10)
+        except Exception:
+            emit_event(
+                logging.getLogger(__name__),
+                "email.delivery",
+                level=logging.ERROR,
+                fields={
+                    "outcome": "dispatch_deferred",
+                    "error_category": "unexpected",
+                },
+            )
+
+    def _record_lifecycle(
+        self,
+        detail: object,
+        *,
+        status: str,
+        volunteer_id: int | None = None,
+    ) -> None:
+        registration_id = int(getattr(detail, "registration_id"))
+        origin_trace_id = getattr(detail, "origin_trace_id", None)
+        span = trace.get_current_span()
+        if span.is_recording():
+            span.set_attribute("registration_id", registration_id)
+            if origin_trace_id:
+                span.set_attribute("origin_trace_id", origin_trace_id)
+            if volunteer_id is not None:
+                span.set_attribute("volunteer_id", volunteer_id)
+        emit_event(
+            logging.getLogger(__name__),
+            "volunteer.lifecycle",
+            fields={
+                "registration_id": registration_id,
+                "origin_trace_id": origin_trace_id,
+                "volunteer_id": volunteer_id,
+                "status": status,
+            },
+        )
