@@ -115,6 +115,10 @@ def get_email_sender(request: Request):
     return get_container(request).email_sender
 
 
+def get_email_outbox_service(request: Request):
+    return get_container(request).email_outbox_service
+
+
 def get_volunteers_service(request: Request) -> VolunteersService:
     return get_container(request).volunteers_service
 

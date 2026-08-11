@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     review_bypass_email: str | None = Field(default=None)
     review_bypass_token: str | None = Field(default=None)
     log_level: str = Field(default="INFO")
+    posthog_observability_enabled: bool = Field(default=False)
+    posthog_project_token: str | None = Field(default=None)
+    posthog_host: str = Field(default="https://eu.i.posthog.com")
+    otel_service_name: str = Field(default="kvarteret-personal")
+    email_dispatch_enabled: bool = Field(default=True)
+    cron_secret: str | None = Field(default=None)
     session_cookie_name: str = Field(default="kvarteret_session")
     session_ttl_hours: int = Field(default=12)
     session_cache_ttl_seconds: int = Field(default=300)
@@ -133,6 +139,10 @@ class Settings(BaseSettings):
         "review_bypass_email",
         "review_bypass_token",
         "log_level",
+        "posthog_project_token",
+        "posthog_host",
+        "otel_service_name",
+        "cron_secret",
         "session_cookie_name",
         mode="before",
     )
@@ -160,6 +170,15 @@ def validate_production_secrets(settings: Settings) -> Settings:
     ):
         msg = "DEV_ADMIN_EMAIL/DEV_ADMIN_PASSWORD are development-only settings."
         raise ValueError(msg)
+    if settings.posthog_observability_enabled and not settings.posthog_project_token:
+        msg = "POSTHOG_PROJECT_TOKEN is required when PostHog observability is enabled."
+        raise ValueError(msg)
+    if settings.app_env == "production" and settings.email_dispatch_enabled:
+        if not settings.cron_secret:
+            msg = (
+                "CRON_SECRET is required when email dispatch is enabled in production."
+            )
+            raise ValueError(msg)
     return settings
 
 

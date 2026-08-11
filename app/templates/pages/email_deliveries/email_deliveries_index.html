@@ -1,0 +1,62 @@
+{% extends "layouts/base.html" %}
+{% from "components/shared/ui_macros.html" import flash_notice, page_header %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    {{ page_header("Administrasjon", "E-postleveranser", "Postgres er den autoritative historikken for ventende, sendte og mislykkede e-poster.") }}
+    {{ flash_notice(error_message, "error") }}
+
+    <form class="app-panel grid gap-4 md:grid-cols-4 md:items-end" method="get">
+      <label class="grid gap-1">
+        <span class="text-sm text-stone-500">Status</span>
+        <select class="app-input" name="delivery_status">
+          {% for value, label in [("failed", "Mislykket"), ("pending", "Venter / prøver igjen"), ("sent", "Sendt"), ("expired", "Utløpt"), ("cancelled", "Avbrutt"), ("all", "Alle")] %}
+            <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="grid gap-1">
+        <span class="text-sm text-stone-500">Malnøkkel</span>
+        <input class="app-input" name="template_key" value="{{ template_key }}">
+      </label>
+      <label class="grid gap-1">
+        <span class="text-sm text-stone-500">Opprettet etter</span>
+        <input class="app-input" name="created_after" type="date" value="{{ created_after }}">
+      </label>
+      <button class="app-button" type="submit">Filtrer</button>
+    </form>
+
+    <section class="app-panel overflow-x-auto">
+      <table class="min-w-full border-collapse">
+        <thead>
+          <tr class="border-b border-stone-300 text-left text-sm text-stone-500">
+            <th class="px-3 py-4 font-medium">Leveranse</th>
+            <th class="px-3 py-4 font-medium">Mottaker</th>
+            <th class="px-3 py-4 font-medium">Status</th>
+            <th class="px-3 py-4 font-medium">Forsøk</th>
+            <th class="px-3 py-4 font-medium">Neste forsøk</th>
+            <th class="px-3 py-4 font-medium">Opprettet</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for delivery in deliveries %}
+            <tr class="border-b border-stone-300 align-top hover:bg-white/60">
+              <td class="px-3 py-4">
+                <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/email-deliveries/{{ delivery.delivery_id }}">{{ delivery.template_key }}</a>
+                <div class="mt-1 font-mono text-xs text-stone-500">{{ delivery.delivery_id }}</div>
+                {% if delivery.registration_id %}<a class="mt-1 block text-xs text-kvarteret-red" href="/volunteer-applications/{{ delivery.registration_id }}">Søknad #{{ delivery.registration_id }}</a>{% endif %}
+              </td>
+              <td class="px-3 py-4 text-sm text-stone-700">{{ delivery.masked_recipient }}</td>
+              <td class="px-3 py-4 text-sm font-medium">{{ delivery.status }}</td>
+              <td class="px-3 py-4 text-sm text-stone-700">{{ delivery.automatic_attempt_count }}</td>
+              <td class="px-3 py-4 text-sm text-stone-700">{{ delivery.next_attempt_at.strftime('%Y-%m-%d %H:%M') if delivery.status == 'pending' else '—' }}</td>
+              <td class="px-3 py-4 text-sm text-stone-700">{{ delivery.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+          {% else %}
+            <tr><td class="px-3 py-8 text-sm text-stone-600" colspan="6">Ingen leveranser matchet filteret.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </section>
+{% endblock %}

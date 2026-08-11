@@ -35,6 +35,7 @@ from app.domain.volunteer_applications.models import (
 )
 from app.shared.phone_numbers import normalize_phone_number
 from app.media_tokens import MediaTokenService
+from app.observability import current_trace_id
 
 
 class VolunteerApplicationsRepository(SqlAlchemyRepository):
@@ -60,6 +61,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         friend_invites: list[tuple[str, str]] | None = None,
         inviter_name: str | None = None,
         first_choice_group_name: str | None = None,
+        origin_trace_id: str | None = None,
     ) -> PublicProspectRegistrationResult:
         friend_invites = friend_invites or []
         created_friend_invites: list[VolunteerApplicationFriendInvite] = []
@@ -80,6 +82,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         first_choice_label=first_choice_label,
                         second_choice_label=second_choice_label,
                         trial_shift_attended=False,
+                        origin_trace_id=origin_trace_id,
                     )
                     .returning(volunteer_application_invites.c.id)
                 )
@@ -140,6 +143,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             first_choice_label=first_choice_label,
                             second_choice_label=second_choice_label,
                             trial_shift_attended=False,
+                            origin_trace_id=origin_trace_id,
                         )
                         .returning(
                             volunteer_application_invites.c.id,
@@ -663,19 +667,23 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             )
         )
 
-    async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> None:
+    async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> int:
         """Append one audit row; runs in the ambient request transaction
         so the event commits or rolls back with the state change it records."""
-        await self.session.execute(
-            insert(domain_events).values(
+        result = await self.session.execute(
+            insert(domain_events)
+            .values(
                 event_type=event.event_type,
                 actor_user_account_id=event.actor_user_account_id,
                 subject_type=event.subject_type,
                 subject_id=subject_id,
                 payload=event.payload,
                 occurred_at=event.occurred_at,
+                trace_id=event.trace_id or current_trace_id(),
             )
+            .returning(domain_events.c.id)
         )
+        return int(result.scalar_one())
 
     async def _get_detail(self, id_query) -> VolunteerApplicationDetail | None:
         accepted_group = groups.alias("accepted_group")
@@ -702,6 +710,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_application_invites.c.full_profile_submitted_at,
                 volunteer_application_invites.c.promoted_volunteer_id,
                 volunteer_application_invites.c.promoted_at,
+                volunteer_application_invites.c.origin_trace_id,
                 volunteer_application_submissions.c.id.label("pending_volunteer_id"),
                 volunteer_application_submissions.c.first_name,
                 volunteer_application_submissions.c.last_name,
@@ -807,6 +816,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             group_status=row["group_status"],
             group_members=group_members,
             status_history=status_history,
+            origin_trace_id=row["origin_trace_id"],
         )
 
     async def list_status_history(

@@ -4,9 +4,16 @@
   "functions": {
     "api/index.py": {
       "includeFiles": "app/**",
-      "excludeFiles": "{data/**,tests/**,node_modules/**,.venv/**}"
+      "excludeFiles": "{data/**,tests/**,node_modules/**,.venv/**}",
+      "maxDuration": 300
     }
   },
+  "crons": [
+    {
+      "path": "/internal/cron/dispatch-email-deliveries",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

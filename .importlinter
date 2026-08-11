@@ -61,8 +61,6 @@ ignore_imports =
     app.domain.admin_accounts.service -> app.infrastructure.email.admin_account_templates
     app.domain.mobile_card.service -> app.infrastructure.email.protocols
     app.domain.mobile_card.service -> app.infrastructure.email.mobile_card_templates
-    app.domain.volunteer_applications.service -> app.infrastructure.email.protocols
-    app.domain.volunteer_applications.service -> app.infrastructure.email.applicant_templates
     app.domain.volunteer_applications.service -> app.infrastructure.media.protocols
     app.domain.volunteer_applications.service -> app.infrastructure.storage.protocols
     app.domain.volunteer_applications.side_effects -> app.infrastructure.storage.protocols

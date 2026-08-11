@@ -153,6 +153,8 @@ class DomainEventRecord:
     subject_id: int
     payload: dict
     occurred_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    event_id: int | None = None
+    trace_id: str | None = None
 
 
 # ── Transition result ──────────────────────────────────────────────

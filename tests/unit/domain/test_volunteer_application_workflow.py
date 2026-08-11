@@ -3,6 +3,12 @@ from __future__ import annotations
 import pytest
 
 from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkflow
+from app.email_delivery import (
+    APPLICANT_APPLICATION_RECEIVED,
+    APPLICANT_INVITATION,
+    APPLICANT_PROFILE_COMPLETION,
+    EmailDeliveryRequest,
+)
 
 
 class _Record:
@@ -52,13 +58,20 @@ class FakeWorkflowOperations:
     ):
         self.calls.append(("status", status.value))
         self.detail_status = status.value
-        return _Record(registration_id=registration_id, status=status.value)
+        return _Record(
+            registration_id=registration_id,
+            status=status.value,
+            email="applicant@example.test",
+        )
 
     async def approve_application_record(
         self, registration_id: int, *, accepted_group_id: int | None
     ):
         self.calls.append(("approve", registration_id))
-        return _Record(registration_id=registration_id), 12
+        return _Record(
+            registration_id=registration_id,
+            email="applicant@example.test",
+        ), 12
 
     async def drop_group_invitee_record(
         self, registration_id: int, *, dropped_by_user_id: int | None
@@ -109,11 +122,28 @@ class FakeWorkflowOperations:
     async def append_domain_event(self, event, *, subject_id: int):
         self.events = getattr(self, "events", [])
         self.events.append((event.event_type, subject_id))
+        return len(self.events)
+
+
+class FakeEmailOutbox:
+    def __init__(self, *, fail_dispatch: bool = False) -> None:
+        self.fail_dispatch = fail_dispatch
+        self.requests: list[EmailDeliveryRequest] = []
+        self.dispatch_count = 0
+
+    async def enqueue(self, request: EmailDeliveryRequest):
+        self.requests.append(request)
+        return object()
+
+    async def dispatch_due(self, *, batch_size: int = 10):
+        self.dispatch_count += 1
+        if self.fail_dispatch:
+            raise RuntimeError("dispatch failed")
+        return None
 
 
 class FakeWorkflowSideEffects:
-    def __init__(self, *, fail_invite: bool = False) -> None:
-        self.fail_invite = fail_invite
+    def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
     async def after_public_prospect_registered(self, result, *, base_url: str | None):
@@ -121,8 +151,6 @@ class FakeWorkflowSideEffects:
 
     async def after_invited(self, invite, *, base_url: str | None):
         self.calls.append(("after_invited", invite.email))
-        if self.fail_invite:
-            raise RuntimeError("email failed")
 
     async def after_submitted(self, detail):
         self.calls.append(("after_submitted", detail.registration_id))
@@ -147,8 +175,11 @@ class FakeWorkflowSideEffects:
 async def test_workflow_submit_coordinates_record_then_side_effect() -> None:
     operations = FakeWorkflowOperations()
     side_effects = FakeWorkflowSideEffects()
+    email_outbox = FakeEmailOutbox()
     workflow = VolunteerApplicationWorkflow(
-        operations=operations, side_effects=side_effects
+        operations=operations,
+        side_effects=side_effects,
+        email_outbox=email_outbox,
     )
 
     detail = await workflow.submit(
@@ -171,7 +202,9 @@ async def test_workflow_approve_coordinates_record_then_side_effect() -> None:
     operations = FakeWorkflowOperations()
     side_effects = FakeWorkflowSideEffects()
     workflow = VolunteerApplicationWorkflow(
-        operations=operations, side_effects=side_effects
+        operations=operations,
+        side_effects=side_effects,
+        email_outbox=FakeEmailOutbox(),
     )
 
     volunteer_id = await workflow.approve(
@@ -185,34 +218,39 @@ async def test_workflow_approve_coordinates_record_then_side_effect() -> None:
 
 
 @pytest.mark.asyncio
-async def test_workflow_invite_deletes_record_when_side_effect_fails() -> None:
+async def test_workflow_invite_survives_immediate_dispatch_failure() -> None:
     operations = FakeWorkflowOperations()
-    side_effects = FakeWorkflowSideEffects(fail_invite=True)
+    side_effects = FakeWorkflowSideEffects()
+    email_outbox = FakeEmailOutbox(fail_dispatch=True)
     workflow = VolunteerApplicationWorkflow(
-        operations=operations, side_effects=side_effects
+        operations=operations,
+        side_effects=side_effects,
+        email_outbox=email_outbox,
     )
 
-    with pytest.raises(RuntimeError, match="email failed"):
-        await workflow.invite(
-            "new@example.test",
-            base_url="https://personal.example.test",
-            initial_group_id=None,
-            initial_role_id=None,
-        )
+    invite = await workflow.invite(
+        "new@example.test",
+        base_url="https://personal.example.test",
+        initial_group_id=None,
+        initial_role_id=None,
+    )
 
-    assert operations.calls == [
-        ("invite", "new@example.test"),
-        ("delete", 7),
-    ]
+    assert invite.registration_id == 7
+    assert operations.calls == [("invite", "new@example.test")]
     assert side_effects.calls == [("after_invited", "new@example.test")]
+    assert len(email_outbox.requests) == 1
+    assert email_outbox.dispatch_count == 1
 
 
 @pytest.mark.asyncio
 async def test_workflow_register_mark_delete_and_resend_are_traceable() -> None:
     operations = FakeWorkflowOperations()
     side_effects = FakeWorkflowSideEffects()
+    email_outbox = FakeEmailOutbox()
     workflow = VolunteerApplicationWorkflow(
-        operations=operations, side_effects=side_effects
+        operations=operations,
+        side_effects=side_effects,
+        email_outbox=email_outbox,
     )
 
     await workflow.register_public_prospect(
@@ -242,4 +280,9 @@ async def test_workflow_register_mark_delete_and_resend_are_traceable() -> None:
         ("after_trial", 7),
         ("after_deleted", 7),
         ("after_resend", 7),
+    ]
+    assert [request.template_key for request in email_outbox.requests] == [
+        APPLICANT_APPLICATION_RECEIVED,
+        APPLICANT_PROFILE_COMPLETION,
+        APPLICANT_INVITATION,
     ]

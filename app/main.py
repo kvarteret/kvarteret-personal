@@ -13,12 +13,12 @@ from app.api.router import api_router
 from app.db.session import reset_request_session, set_request_session
 from app.errors import NotConfiguredError
 from app.media.router import router as media_router
+from app.internal.router import router as internal_router
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.observability import (
     bind_request_context,
     build_request_id,
     clear_request_context,
-    client_ip_from_request,
     configure_logging,
     log_request,
     log_request_exception,
@@ -26,6 +26,7 @@ from app.observability import (
     reset_request_context,
 )
 from app.runtime import app_lifespan, build_application_container
+from app.telemetry import configure_telemetry
 from app.system.router import router as system_router
 from app.web.csrf import (
     CSRF_COOKIE_NAME,
@@ -44,6 +45,7 @@ def create_app(container=None) -> FastAPI:
     app = FastAPI(title="Kvarteret Personal", lifespan=app_lifespan)
     app.state.container = resolved_container
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    configure_telemetry(app, resolved_container.settings)
 
     _install_security_headers(app)
     _install_method_override_middleware(app)
@@ -106,9 +108,7 @@ def _install_request_session_middleware(app: FastAPI, container) -> None:
     @app.middleware("http")
     async def request_session_middleware(request: Request, call_next):
         try:
-            session_factory = (
-                container.database_runtime_manager.get_session_factory()
-            )
+            session_factory = container.database_runtime_manager.get_session_factory()
         except NotConfiguredError:
             # DB-less environments (some tests, partial local setups):
             # proceed without a session; repositories raise on first use.
@@ -172,9 +172,7 @@ def _install_request_context_middleware(app: FastAPI) -> None:
         request_id = build_request_id(request)
         token = bind_request_context(
             request_id=request_id,
-            method=request.method,
-            path=request.url.path,
-            client_ip=client_ip_from_request(request),
+            http_method=request.method,
         )
         response = None
         try:
@@ -209,6 +207,7 @@ def _install_http_exception_handler(app: FastAPI) -> None:
 
 def _include_routers(app: FastAPI) -> None:
     app.include_router(system_router)
+    app.include_router(internal_router)
     app.include_router(media_router)
     app.include_router(api_router)
     app.include_router(web_router)

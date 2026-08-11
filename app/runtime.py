@@ -58,6 +58,8 @@ from app.infrastructure.storage.service import StorageService
 from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.admin_accounts.repository import AdminAccountsRepository
+from app.email_outbox_service import EmailOutboxService
+
 
 # Keep the app bootable in local and test environments that do not have live
 # Supabase credentials, while still failing fast once a protected auth path is used.
@@ -115,6 +117,7 @@ class ApplicationContainer:
     session_store: SessionStoreProtocol
     storage_service: StorageProtocol | None
     email_sender: EmailSenderProtocol
+    email_outbox_service: EmailOutboxService
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
     volunteers_service: VolunteersService
@@ -158,6 +161,12 @@ def build_application_container(
     email_sender = _build_email_sender(resolved_settings)
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
+    admin_email_renderer = AdminAccountEmailTemplateRenderer()
+    email_outbox_service = EmailOutboxService(
+        settings=resolved_settings,
+        email_sender=email_sender,
+        applicant_renderer=applicant_email_renderer,
+    )
     rate_limiter = PostgresRateLimiter(session_factory=session_factory)
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository()
@@ -178,8 +187,7 @@ def build_application_container(
         repository=VolunteerApplicationsRepository(
             media_token_service=media_token_service,
         ),
-        email_sender=email_sender,
-        applicant_email_renderer=applicant_email_renderer,
+        email_outbox=email_outbox_service,
         storage_service=storage_service,
         photo_processor=process_uploaded_photo,
         pending_count_cache_ttl_seconds=resolved_settings.pending_volunteer_applications_cache_ttl_seconds,
@@ -195,6 +203,7 @@ def build_application_container(
         session_store=session_store,
         storage_service=storage_service,
         email_sender=email_sender,
+        email_outbox_service=email_outbox_service,
         supabase_auth_gateway=supabase_auth_gateway,
         login_service=LoginService(
             repository=auth_repository,
@@ -217,7 +226,7 @@ def build_application_container(
             repository=AdminAccountsRepository(),
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,
             email_sender=email_sender,
-            onboarding_email_renderer=AdminAccountEmailTemplateRenderer(),
+            onboarding_email_renderer=admin_email_renderer,
         ),
         mobile_card_april_state_service=mobile_card_april_state_service,
         mobile_card_service=MobileCardService(
