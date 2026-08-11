@@ -154,6 +154,7 @@ class VolunteersRepository(SqlAlchemyRepository):
         photo_filetype: str | None,
         group_id: int,
         role_id: int | None,
+        contract_signed: bool,
     ) -> int:
         """Onboard a volunteer promoted from an application.
 
@@ -191,7 +192,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                 group_id=group_id,
                 role_id=role_id,
                 semester=get_current_semester_code(),
-                contract_signed=False,
+                contract_signed=contract_signed,
             )
         )
         return volunteer_id

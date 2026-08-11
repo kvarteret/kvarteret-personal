@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
@@ -19,6 +19,7 @@ from app.domain.groups.service import GroupsService
 from app.domain.volunteer_applications.models import (
     PublicProspectGroup,
     PublicProspectRegistrationInput,
+    TrialApplicantCardSnapshot,
 )
 from app.domain.volunteer_applications.service import (
     VolunteerAlreadyExistsError,
@@ -103,6 +104,8 @@ class FakeVolunteerApplicationsRepository:
         self.public_prospect_groups: dict[str, PublicProspectGroup] = {}
         self.public_prospect_role_ids: dict[tuple[int, str], int] = {}
         self.created_public_prospects: list[dict[str, object | None]] = []
+        self.application_submitted = True
+        self.detail_status = "new"
 
     async def create_public_prospect_registration(self, **kwargs):
         self.created_public_prospects.append(kwargs)
@@ -182,10 +185,10 @@ class FakeVolunteerApplicationsRepository:
             token="token-123",
             email="registrant@example.com",
             created_at=datetime.fromisoformat("2026-03-13T12:00:00+00:00"),
-            submitted=True,
+            submitted=self.application_submitted,
             source="invite",
-            status=getattr(self, "detail_status", "submitted"),
-            pending_volunteer_id=8,
+            status=self.detail_status,
+            pending_volunteer_id=8 if self.application_submitted else None,
             first_name="Sample",
             last_name="Registrant",
             phone="00000000",
@@ -215,6 +218,11 @@ class FakeVolunteerApplicationsRepository:
     ) -> None:
         self.saved_registration_ids.append(registration_id)
         self.saved_submission_phones.append(submission.phone)
+
+    async def set_application_status(
+        self, registration_id: int, *, status, start_trial: bool = False
+    ) -> None:
+        self.detail_status = status.value
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return self.existing_volunteer_ids_by_email.get(email.lower())
@@ -269,12 +277,22 @@ class FakeMobileCardRepository:
         self.volunteer_by_email_and_code = volunteer_by_email_and_code
         self.card_snapshot = card_snapshot
         self.stored_access_codes: list[tuple[int, str, datetime]] = []
+        self.stored_trial_access_codes: list[tuple[int, str, datetime]] = []
+        self.accept_trial_code = True
 
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
         return list(self.volunteers_by_email)
 
     async def store_access_code(self, *, volunteer_id: int, code_hash: str, created_at: datetime) -> None:
         self.stored_access_codes.append((volunteer_id, code_hash, created_at))
+
+    async def store_trial_access_code(
+        self, *, application_id: int, code_hash: str, created_at: datetime
+    ) -> None:
+        self.stored_trial_access_codes.append((application_id, code_hash, created_at))
+
+    async def consume_trial_access_code(self, **kwargs) -> bool:
+        return self.accept_trial_code
 
     async def find_volunteer_by_email_and_code(
         self, *, email: str, code_hash: str, expires_after: datetime
@@ -305,6 +323,19 @@ class FakeEmailSender:
                 "html_body": html_body,
             }
         )
+
+
+class FakeTrialApplicantProvider:
+    def __init__(self, snapshot: TrialApplicantCardSnapshot | None) -> None:
+        self.snapshot = snapshot
+
+    async def find_active_trial_applicant_by_email(self, email: str):
+        return self.snapshot
+
+    async def get_active_trial_applicant(self, application_id: int):
+        if self.snapshot and self.snapshot.application_id == application_id:
+            return self.snapshot
+        return None
 
 
 def assert_applicant_email_contains(
@@ -791,6 +822,37 @@ async def test_public_prospect_resolves_any_configured_group_slug() -> None:
 
 
 @pytest.mark.asyncio
+async def test_public_prospect_receives_bilingual_application_confirmation() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.public_prospect_groups = {
+        "debatt": PublicProspectGroup(81, "debatt", "Debattkomiteen")
+    }
+    email_sender = FakeEmailSender()
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_sender=email_sender,
+    )
+
+    await service.create_public_prospect_registration(
+        PublicProspectRegistrationInput(
+            full_name="Kari Nordmann",
+            email="kari@example.test",
+            phone="41234567",
+            study_institution="UiB",
+            background_details=None,
+            first_choice_group_slug="debatt",
+            second_choice_group_slug=None,
+        )
+    )
+
+    assert email_sender.sent_emails[0]["subject"] == "Den første døren er nå åpen"
+    assert "Det gleder oss å se" in email_sender.sent_emails[0]["html_body"]
+    assert "We are delighted" in email_sender.sent_emails[0]["html_body"]
+
+
+@pytest.mark.asyncio
 async def test_public_bar_choices_preserve_labels_and_route_only_primary_choice() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.public_prospect_groups = {
@@ -1081,6 +1143,7 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
 @pytest.mark.asyncio
 async def test_volunteer_applications_approve_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "trial"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
@@ -1102,19 +1165,41 @@ async def test_volunteer_applications_approve_invalidates_pending_count_cache() 
     assert refreshed == 2
     assert repository.approved_registration_ids == [7]
     assert repository.count_calls == 2
+    assert email_sender.sent_emails == []
+
+
+@pytest.mark.asyncio
+async def test_starting_trial_sends_bilingual_profile_completion_email() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "contacted"
+    email_sender = FakeEmailSender()
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(
+            app_secret_key="test-secret",
+            app_public_base_url="https://personal.kvarteret.no",
+        ),
+        repository=repository,
+        email_sender=email_sender,
+    )
+
+    detail = await service.start_trial(7)
+
+    assert detail.status == "trial"
     assert_applicant_email_contains(
         email_sender.sent_emails[0],
         recipient_email="registrant@example.com",
-        subject="Complete your Kvarteret profile / Fullfør Kvarteret-profilen din",
+        subject="Din reise starter nå / Your journey starts now",
         invitation_url="https://personal.kvarteret.no/apply/token-123",
-        english_phrase="You are now registered as a volunteer at Det Akademiske Kvarter.",
-        norwegian_phrase="Du er nå registrert som frivillig i Det Akademiske Kvarter.",
+        english_phrase="Your trial period has now started.",
+        norwegian_phrase="Din prøveperiode er nå i gang.",
     )
 
 
 @pytest.mark.asyncio
 async def test_volunteer_applications_delete_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
+    repository.application_submitted = False
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
@@ -1168,7 +1253,7 @@ async def test_volunteer_applications_service_sends_email_when_creating_invitati
 @pytest.mark.asyncio
 async def test_volunteer_applications_service_can_resend_invitation_email() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    repository.detail_status = "invited"
+    repository.detail_status = "new"
     email_sender = FakeEmailSender()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
@@ -1295,6 +1380,70 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
     assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"]), "expected a 6-digit code in the email"
     assert "This code expires in 10 minutes." in email_sender.sent_emails[0]["html_body"]
     assert "If you did not request this code" in email_sender.sent_emails[0]["html_body"]
+
+
+@pytest.mark.asyncio
+async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
+    trial_ends_at = datetime.now(UTC) + timedelta(days=21)
+    snapshot = TrialApplicantCardSnapshot(
+        application_id=77,
+        first_name="Ada",
+        last_name="Lovelace",
+        birth_date=None,
+        created_at=datetime(2026, 8, 1, tzinfo=UTC),
+        trial_ends_at=trial_ends_at,
+        photo_path="trial.jpg",
+        group_name="Bar",
+        role_name="Prøvefrivillig",
+        discount_level=1,
+    )
+    repository = FakeMobileCardRepository()
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=repository,  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
+        media_token_service=FakeMediaTokenService(),  # type: ignore[arg-type]
+        trial_applicant_provider=FakeTrialApplicantProvider(snapshot),
+    )
+
+    await service.request_access_code("trial@example.com")
+    session = await service.create_session("trial@example.com", "123456")
+
+    assert repository.stored_trial_access_codes[0][0] == 77
+    assert session.card.person_id == -77
+    assert session.card.valid_until == trial_ends_at
+    assert session.card.photo_url == "/media/photos/trial.jpg?token=test"
+    assert session.card.active_roles[0].signed_contract is False
+
+
+@pytest.mark.asyncio
+async def test_trial_session_is_rejected_after_trial_is_no_longer_active() -> None:
+    snapshot = TrialApplicantCardSnapshot(
+        application_id=77,
+        first_name="Ada",
+        last_name="Lovelace",
+        birth_date=None,
+        created_at=datetime(2026, 8, 1, tzinfo=UTC),
+        trial_ends_at=datetime.now(UTC) + timedelta(days=1),
+        photo_path="trial.jpg",
+        group_name="Bar",
+        role_name="Prøvefrivillig",
+        discount_level=1,
+    )
+    provider = FakeTrialApplicantProvider(snapshot)
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=FakeMobileCardRepository(),  # type: ignore[arg-type]
+        email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
+        trial_applicant_provider=provider,
+    )
+    token = service.sessions.build_token({"trial_application_id": 77})
+    provider.snapshot = None
+
+    with pytest.raises(MobileCardInvalidAccessCodeError, match="expired"):
+        await service.get_current_card(token)
 
 
 @pytest.mark.asyncio

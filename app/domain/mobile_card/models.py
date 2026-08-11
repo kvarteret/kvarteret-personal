@@ -105,4 +105,5 @@ class DecodedMobileCardSession:
     age_seconds: int
     is_review: bool
     person_id: int | None
+    trial_application_id: int | None
     remaining_seconds: int

@@ -21,6 +21,7 @@ def test_build_filters_can_require_current_signed_contract() -> None:
 
     assert "role_assignments.contract_signed IS true" in compiled
     assert "role_assignments.semester =" in compiled
+    assert "volunteer_application_invites.status = 'not_volunteer'" in compiled
 
 
 def test_volunteer_search_stmt_includes_group_role_and_email_matching() -> None:
@@ -54,3 +55,4 @@ def test_volunteer_search_stmt_can_require_active_signed_contract() -> None:
 
     assert "public.role_assignments.contract_signed IS true" in compiled
     assert "public.role_assignments.semester =" in compiled
+    assert "public.volunteer_application_invites.status = 'not_volunteer'" in compiled

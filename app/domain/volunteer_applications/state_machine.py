@@ -4,21 +4,17 @@ Encodes the application lifecycle as explicit states, actions, and
 transitions.  Every state/action pair is either legal (produces a
 ``TransitionResult``) or illegal (raises ``IllegalTransition``).
 
-The state diagram (verified against production data and the live routes
-on 2026-06-10; the public-signup flow approves prospects after a trial
-shift, and the post-approval profile-completion email reuses the same
-/apply/{token} link, so SUBMIT_PROFILE is legal from PROMOTED)::
+The application status is deliberately independent of whether the applicant
+has completed every profile field. The five user-facing states are::
 
-    prospect  ──submit-profile────────►  submitted
-    invited   ──submit-profile────────►  submitted
-    submitted ──submit-profile────────►  submitted   (edits before approval)
-    promoted  ──submit-profile────────►  promoted    (post-approval completion)
-    invited   ──resend-invitation─────►  invited
-    {prospect,invited,submitted} ──mark-trial-shift──► (unchanged)
-    prospect  ──approve───────────────►  promoted    (requires submission row)
-    submitted ──approve───────────────►  promoted
-    submitted ──reject────────────────►  rejected
-    {prospect,invited,submitted} ──delete──► (removed)
+    new ──contact─────────────────────► contacted
+    contacted ──start-trial───────────► trial
+    trial ──promote───────────────────► volunteer
+    {new,contacted,trial,volunteer} ──reject──► not_volunteer
+    not_volunteer ──reopen────────────► contacted
+
+``SUBMIT_PROFILE`` keeps the current lifecycle state. This lets a candidate
+complete the profile after the trial has started without moving backwards.
 
 Membership states (per group member)::
 
@@ -38,11 +34,11 @@ from enum import StrEnum
 
 
 class ApplicationState(StrEnum):
-    PROSPECT = "prospect"
-    INVITED = "invited"
-    SUBMITTED = "submitted"
-    PROMOTED = "promoted"
-    REJECTED = "rejected"
+    NEW = "new"
+    CONTACTED = "contacted"
+    TRIAL = "trial"
+    VOLUNTEER = "volunteer"
+    NOT_VOLUNTEER = "not_volunteer"
 
 
 class MembershipState(StrEnum):
@@ -53,9 +49,12 @@ class MembershipState(StrEnum):
 class ApplicationAction(StrEnum):
     SUBMIT_PROFILE = "submit_profile"
     RESEND_INVITATION = "resend_invitation"
-    MARK_TRIAL_SHIFT = "mark_trial_shift"
-    APPROVE = "approve"
+    CONTACT = "contact"
+    START_TRIAL = "start_trial"
+    PROMOTE = "promote"
     REJECT = "reject"
+    REOPEN = "reopen"
+    RESTORE_VOLUNTEER = "restore_volunteer"
     DELETE = "delete"
     DROP_MEMBER = "drop_member"
 
@@ -74,17 +73,26 @@ class IllegalTransition(ValueError):
 _TRANSITIONS: dict[
     tuple[ApplicationState, ApplicationAction], ApplicationState
 ] = {
-    (ApplicationState.PROSPECT, ApplicationAction.SUBMIT_PROFILE): ApplicationState.SUBMITTED,
-    (ApplicationState.INVITED, ApplicationAction.SUBMIT_PROFILE): ApplicationState.SUBMITTED,
-    (ApplicationState.SUBMITTED, ApplicationAction.SUBMIT_PROFILE): ApplicationState.SUBMITTED,
-    (ApplicationState.PROMOTED, ApplicationAction.SUBMIT_PROFILE): ApplicationState.PROMOTED,
-    (ApplicationState.INVITED, ApplicationAction.RESEND_INVITATION): ApplicationState.INVITED,
-    (ApplicationState.PROSPECT, ApplicationAction.MARK_TRIAL_SHIFT): ApplicationState.PROSPECT,
-    (ApplicationState.INVITED, ApplicationAction.MARK_TRIAL_SHIFT): ApplicationState.INVITED,
-    (ApplicationState.SUBMITTED, ApplicationAction.MARK_TRIAL_SHIFT): ApplicationState.SUBMITTED,
-    (ApplicationState.PROSPECT, ApplicationAction.APPROVE): ApplicationState.PROMOTED,
-    (ApplicationState.SUBMITTED, ApplicationAction.APPROVE): ApplicationState.PROMOTED,
-    (ApplicationState.SUBMITTED, ApplicationAction.REJECT): ApplicationState.REJECTED,
+    **{
+        (state, ApplicationAction.SUBMIT_PROFILE): state
+        for state in (
+            ApplicationState.NEW,
+            ApplicationState.CONTACTED,
+            ApplicationState.TRIAL,
+            ApplicationState.VOLUNTEER,
+        )
+    },
+    (ApplicationState.NEW, ApplicationAction.RESEND_INVITATION): ApplicationState.NEW,
+    (ApplicationState.CONTACTED, ApplicationAction.RESEND_INVITATION): ApplicationState.CONTACTED,
+    (ApplicationState.NEW, ApplicationAction.CONTACT): ApplicationState.CONTACTED,
+    (ApplicationState.CONTACTED, ApplicationAction.START_TRIAL): ApplicationState.TRIAL,
+    (ApplicationState.TRIAL, ApplicationAction.PROMOTE): ApplicationState.VOLUNTEER,
+    (ApplicationState.NEW, ApplicationAction.REJECT): ApplicationState.NOT_VOLUNTEER,
+    (ApplicationState.CONTACTED, ApplicationAction.REJECT): ApplicationState.NOT_VOLUNTEER,
+    (ApplicationState.TRIAL, ApplicationAction.REJECT): ApplicationState.NOT_VOLUNTEER,
+    (ApplicationState.VOLUNTEER, ApplicationAction.REJECT): ApplicationState.NOT_VOLUNTEER,
+    (ApplicationState.NOT_VOLUNTEER, ApplicationAction.REOPEN): ApplicationState.CONTACTED,
+    (ApplicationState.NOT_VOLUNTEER, ApplicationAction.RESTORE_VOLUNTEER): ApplicationState.VOLUNTEER,
 }
 
 # Actions that result in row removal (no target state).
@@ -191,8 +199,9 @@ def application_transition(
     """
     ctx = context or TransitionContext()
 
-    # Deletion is allowed for any pre-promotion state.
-    if action in _DELETE_ACTIONS and state != ApplicationState.PROMOTED:
+    # Deletion is reserved for records that have not entered an operational
+    # lifecycle. The service adds the profile/submission guard.
+    if action in _DELETE_ACTIONS and state == ApplicationState.NEW:
         return TransitionResult(
             new_state=state,
             event=DomainEventRecord(
@@ -204,9 +213,9 @@ def application_transition(
             ),
         )
 
-    # Guards: per-person approval of active group members is illegal,
-    # and approval requires applicant details to promote from.
-    if action == ApplicationAction.APPROVE:
+    # Guards: per-person promotion of active group members is illegal,
+    # and promotion requires applicant details to create the volunteer.
+    if action == ApplicationAction.PROMOTE:
         if ctx.is_part_of_active_group:
             raise IllegalTransition(
                 "Cannot approve an individual application that is part of "
@@ -233,7 +242,7 @@ def application_transition(
             # volunteer profile, not re-applying.
             event_type=(
                 "profile_completed"
-                if state == ApplicationState.PROMOTED
+                if state in (ApplicationState.TRIAL, ApplicationState.VOLUNTEER)
                 else "application_submitted"
             ),
             actor_user_account_id=ctx.actor_user_account_id,
@@ -242,7 +251,25 @@ def application_transition(
             payload={"previous_state": state.value},
         )
 
-    elif action == ApplicationAction.APPROVE:
+    elif action == ApplicationAction.CONTACT:
+        event = DomainEventRecord(
+            event_type="application_contacted",
+            actor_user_account_id=ctx.actor_user_account_id,
+            subject_type="application",
+            subject_id=0,
+            payload={"previous_state": state.value},
+        )
+
+    elif action == ApplicationAction.START_TRIAL:
+        event = DomainEventRecord(
+            event_type="trial_started",
+            actor_user_account_id=ctx.actor_user_account_id,
+            subject_type="application",
+            subject_id=0,
+            payload={"previous_state": state.value},
+        )
+
+    elif action == ApplicationAction.PROMOTE:
         effects = (SendApprovalEmail(
             registration_id=0,  # caller fills in
             volunteer_id=0,     # caller fills in
@@ -264,9 +291,18 @@ def application_transition(
             payload={"previous_state": state.value},
         )
 
-    elif action == ApplicationAction.MARK_TRIAL_SHIFT:
+    elif action == ApplicationAction.REOPEN:
         event = DomainEventRecord(
-            event_type="trial_shift_marked",
+            event_type="application_reopened",
+            actor_user_account_id=ctx.actor_user_account_id,
+            subject_type="application",
+            subject_id=0,
+            payload={"previous_state": state.value},
+        )
+
+    elif action == ApplicationAction.RESTORE_VOLUNTEER:
+        event = DomainEventRecord(
+            event_type="application_volunteer_restored",
             actor_user_account_id=ctx.actor_user_account_id,
             subject_type="application",
             subject_id=0,

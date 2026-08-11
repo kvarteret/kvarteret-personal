@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
+from math import ceil
 from typing import Protocol
 
 from app.domain.volunteer_applications.state_machine import (
+    ApplicationState,
     MembershipState,
 )
 
@@ -97,6 +99,7 @@ class VolunteerApplicationGroupMember:
     last_name: str | None
     trial_shift_attended: bool
     promoted_volunteer_id: int | None
+    application_status: str | None = None
     dropped_at: datetime | None = None
 
     @property
@@ -138,6 +141,20 @@ class VolunteerApplicationListItem:
     group_role: str | None = None
     group_status: str | None = None
     group_members: list[VolunteerApplicationGroupMember] | None = None
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+
+    @property
+    def status_label(self) -> str:
+        return application_status_label(self.status)
+
+    @property
+    def trial_days_remaining(self) -> int | None:
+        return trial_days_remaining(self.trial_ends_at)
+
+    @property
+    def trial_expired(self) -> bool:
+        return self.trial_ends_at is not None and trial_days_remaining(self.trial_ends_at) == 0
 
 
 @dataclass(slots=True)
@@ -178,6 +195,9 @@ class VolunteerApplicationDetail:
     group_role: str | None = None
     group_status: str | None = None
     group_members: list[VolunteerApplicationGroupMember] | None = None
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    status_history: list["VolunteerApplicationStatusEvent"] | None = None
 
     @property
     def is_part_of_active_group(self) -> bool:
@@ -188,6 +208,49 @@ class VolunteerApplicationDetail:
         return any(
             member.active and member.registration_id != self.registration_id for member in self.group_members or []
         )
+
+    @property
+    def status_label(self) -> str:
+        return application_status_label(self.status)
+
+    @property
+    def trial_days_remaining(self) -> int | None:
+        return trial_days_remaining(self.trial_ends_at)
+
+    @property
+    def trial_active(self) -> bool:
+        return self.status == "trial" and (self.trial_days_remaining or 0) > 0
+
+    @property
+    def trial_expired(self) -> bool:
+        return self.status == "trial" and self.trial_ends_at is not None and not self.trial_active
+
+    @property
+    def profile_complete(self) -> bool:
+        return self.submitted and self.photo_sha1 is not None and self.photo_filetype is not None
+
+
+@dataclass(frozen=True, slots=True)
+class VolunteerApplicationStatusEvent:
+    event_type: str
+    status: str
+    actor_display_name: str | None
+    actor_user_account_id: int | None
+    occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TrialApplicantCardSnapshot:
+    application_id: int
+    first_name: str
+    last_name: str
+    birth_date: date | None
+    created_at: datetime
+    trial_ends_at: datetime
+    photo_path: str
+    group_name: str
+    role_name: str
+    discount_level: int | None
 
 
 @dataclass(slots=True)
@@ -286,8 +349,17 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         photo_content: bytes | None = None,
         photo_content_type: str | None = None,
     ) -> VolunteerApplicationDetail: ...
-    async def mark_trial_shift_attended(
-        self, registration_id: int, *, attended: bool
+    async def mark_contacted(
+        self, registration_id: int
+    ) -> VolunteerApplicationDetail: ...
+    async def start_trial(
+        self, registration_id: int, *, base_url: str | None = None
+    ) -> VolunteerApplicationDetail: ...
+    async def reject_volunteer_application(
+        self, registration_id: int
+    ) -> VolunteerApplicationDetail: ...
+    async def reopen_volunteer_application(
+        self, registration_id: int
     ) -> VolunteerApplicationDetail: ...
     async def approve_volunteer_application(
         self,
@@ -327,7 +399,29 @@ class VolunteerCreatorProtocol(Protocol):
         photo_filetype: str | None,
         group_id: int,
         role_id: int | None,
+        contract_signed: bool,
     ) -> int: ...
+
+
+_APPLICATION_STATUS_LABELS = {
+    "new": "Ny",
+    "contacted": "Kontaktet",
+    "trial": "På prøve",
+    "volunteer": "Frivillig",
+    "not_volunteer": "Ikke frivillig",
+}
+
+
+def application_status_label(status: str) -> str:
+    return _APPLICATION_STATUS_LABELS.get(status, status)
+
+
+def trial_days_remaining(trial_ends_at: datetime | None, *, now: datetime | None = None) -> int | None:
+    if trial_ends_at is None:
+        return None
+    current = now or datetime.now(UTC)
+    end = trial_ends_at if trial_ends_at.tzinfo is not None else trial_ends_at.replace(tzinfo=UTC)
+    return max(0, ceil((end - current).total_seconds() / 86_400))
 
 
 class VolunteerApplicationsRepositoryProtocol(Protocol):
@@ -359,13 +453,6 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         initial_group_id: int | None = None,
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite: ...
-    async def list_volunteer_applications(
-        self,
-    ) -> list[VolunteerApplicationListItem]: ...
-    async def list_recent_volunteer_registrations(
-        self, *, limit: int, before_volunteer_id: int | None = None
-    ) -> list[dict]: ...
-    async def list_recent_registration_group_members(self, group_id: int) -> list[dict]: ...
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
@@ -380,7 +467,19 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         photo_sha1: str | None,
         photo_filetype: str | None,
     ) -> None: ...
-    async def set_trial_shift_attended(self, registration_id: int, *, attended: bool) -> None: ...
+    async def set_application_status(
+        self,
+        registration_id: int,
+        *,
+        status: ApplicationState,
+        start_trial: bool = False,
+    ) -> None: ...
+    async def find_active_trial_applicant_by_email(
+        self, email: str
+    ) -> TrialApplicantCardSnapshot | None: ...
+    async def get_active_trial_applicant(
+        self, application_id: int
+    ) -> TrialApplicantCardSnapshot | None: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
     async def find_active_registration_id_by_email(self, email: str) -> int | None: ...
     async def list_group_members(

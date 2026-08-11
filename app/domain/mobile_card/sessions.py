@@ -53,8 +53,13 @@ class MobileCardSessionManager:
 
         is_review = payload.get("review") is True
         person_id = payload.get("person_id")
+        trial_application_id = payload.get("trial_application_id")
 
-        if not is_review and not isinstance(person_id, int):
+        if (
+            not is_review
+            and not isinstance(person_id, int)
+            and not isinstance(trial_application_id, int)
+        ):
             self._log_invalid("malformed")
             raise MobileCardInvalidSessionError(
                 _UNKNOWN_SESSION_TOKEN, reason="malformed"
@@ -67,6 +72,11 @@ class MobileCardSessionManager:
             age_seconds=age_seconds,
             is_review=is_review,
             person_id=person_id if isinstance(person_id, int) else None,
+            trial_application_id=(
+                trial_application_id
+                if isinstance(trial_application_id, int)
+                else None
+            ),
             remaining_seconds=remaining_seconds,
         )
 
@@ -76,11 +86,12 @@ class MobileCardSessionManager:
         if decoded.remaining_seconds > self._renewal_threshold_seconds():
             return None
 
-        payload = (
-            {"person_id": 0, "review": True}
-            if decoded.is_review
-            else {"person_id": decoded.person_id or 0}
-        )
+        if decoded.is_review:
+            payload = {"person_id": 0, "review": True}
+        elif decoded.trial_application_id is not None:
+            payload = {"trial_application_id": decoded.trial_application_id}
+        else:
+            payload = {"person_id": decoded.person_id or 0}
         renewed_token = self.build_token(payload)
         logger.info(
             "mobile-card session renewed",

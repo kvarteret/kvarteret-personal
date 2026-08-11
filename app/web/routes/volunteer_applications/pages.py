@@ -28,6 +28,8 @@ router = APIRouter()
 @router.get("/volunteer-applications")
 async def volunteer_applications_index(
     request: Request,
+    q: str | None = None,
+    application_status: str | None = None,
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(
         get_volunteer_applications_service
@@ -37,9 +39,14 @@ async def volunteer_applications_index(
     volunteer_applications = (
         await volunteer_applications_service.list_volunteer_applications()
     )
+    volunteer_applications = _filter_volunteer_applications(
+        volunteer_applications,
+        query=q,
+        application_status=application_status,
+    )
     recent_registrations_page = (
         await volunteer_applications_service.list_recent_volunteer_registrations_page(
-            limit=20
+            limit=10
         )
     )
     group_options = await volunteers_service.list_assignment_groups()
@@ -64,6 +71,8 @@ async def volunteer_applications_index(
             "group_options": group_options,
             "role_options": [],
             "selected_group_id": None,
+            "application_query": q or "",
+            "selected_application_status": application_status or "",
         },
     )
 
@@ -105,7 +114,7 @@ async def volunteer_recent_registrations(
 ):
     recent_registrations_page = (
         await volunteer_applications_service.list_recent_volunteer_registrations_page(
-            limit=20,
+            limit=10,
             cursor=cursor,
         )
     )
@@ -119,6 +128,38 @@ async def volunteer_recent_registrations(
             "next_cursor": recent_registrations_page.next_cursor,
         },
     )
+
+
+def _filter_volunteer_applications(
+    applications,
+    *,
+    query: str | None,
+    application_status: str | None,
+):
+    normalized_query = (query or "").strip().casefold()
+    allowed_statuses = {"new", "contacted", "trial", "volunteer", "not_volunteer"}
+    normalized_status = application_status if application_status in allowed_statuses else None
+    return [
+        application
+        for application in applications
+        if (normalized_status is None or application.status == normalized_status)
+        and (
+            not normalized_query
+            or normalized_query
+            in " ".join(
+                filter(
+                    None,
+                    [
+                        application.first_name,
+                        application.last_name,
+                        application.email,
+                        application.phone,
+                        application.study_institution,
+                    ],
+                )
+            ).casefold()
+        )
+    ]
 
 
 @router.get("/apply/{token}")

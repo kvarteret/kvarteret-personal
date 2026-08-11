@@ -16,8 +16,8 @@
         padding="0"
       />
     </mj-attributes>
-    <mj-title>Complete your Kvarteret profile</mj-title>
-    <mj-preview>Finish the rest of your profile in Det Akademiske Kvarter.</mj-preview>
+    <mj-title>Din reise starter nå</mj-title>
+    <mj-preview>Prøveperioden din har startet.</mj-preview>
   </mj-head>
   <mj-body>
     <mj-section padding="0" background-color="#f54b4b">
@@ -29,17 +29,17 @@
           color="#ffffff"
           padding="20px 24px"
         >
-          Complete your profile
+          Din reise starter nå / Your journey starts now
         </mj-text>
       </mj-column>
     </mj-section>
     <mj-section padding="0" background-color="#ffffff">
       <mj-column>
         <mj-text padding="24px 24px 0">
-          You are now registered as a volunteer at Det Akademiske Kvarter. Use the link below to complete the rest of your profile.
+          Your trial period has now started. Complete your profile to access your temporary staff ID, internal benefits, and relevant information during your trial period.
         </mj-text>
         <mj-text padding="14px 24px 0">
-          Du er nå registrert som frivillig i Det Akademiske Kvarter. Bruk lenken under for å fullføre resten av profilen din.
+          Din prøveperiode er nå i gang. Fullfør profilen din for å få tilgang til midlertidig internbevis, interne goder og relevant informasjon gjennom prøveperioden.
         </mj-text>
         <mj-button href="{{ invitation_url }}" padding="24px 24px 0">
           Complete your profile / Fullfør profilen din

@@ -3,14 +3,11 @@
 {% block page_content %}
   <section class="grid gap-7">
     <header class="grid justify-items-center gap-3 pt-3 text-center">
-      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Nye frivillige</h1>
-      <p class="max-w-3xl text-base leading-7 text-stone-700">
-        Følg opp nye prospekter, registrer prøvedugnad og promoter frivillige inn i databasen.
-      </p>
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Søknader</h1>
     </header>
 
-    <section class="app-panel">
-      <h2 class="text-2xl font-medium tracking-tight text-stone-900">Opprett invitasjon</h2>
+    <details class="app-panel">
+      <summary class="app-button inline-flex cursor-pointer list-none">Opprett invitasjon</summary>
       <form action="/volunteer-applications" class="mt-5 grid gap-4" method="post">
         <label class="grid flex-1 gap-1">
           <span class="text-sm text-stone-500">E-postadresse</span>
@@ -21,6 +18,25 @@
           Gruppe og verv er valgfritt. Hvis de settes, opprettes et første verv automatisk når frivilligen blir godkjent.
         </p>
         <button class="app-button" type="submit">Opprett invitasjon</button>
+      </form>
+    </details>
+
+    <section class="app-panel">
+      <form action="/volunteer-applications" class="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] md:items-end" method="get">
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Søk i søknader</span>
+          <input class="app-input" name="q" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
+        </label>
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Status</span>
+          <select class="app-input" name="application_status">
+            <option value="">Alle statuser</option>
+            {% for value, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
+              <option value="{{ value }}" {% if selected_application_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="app-button" type="submit">Søk</button>
       </form>
     </section>
 
