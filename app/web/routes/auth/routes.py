@@ -5,15 +5,23 @@ import logging
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature
+from pydantic import ValidationError
 
 from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginError, LoginService
+from app.auth.password_reset_service import (
+    PasswordResetRequest,
+    PasswordResetServiceProtocol,
+    password_reset_account_key,
+    password_reset_ip_key,
+)
 from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.dependencies import (
     get_current_user,
     get_login_service,
     get_mobile_card_april_state_service,
+    get_password_reset_service,
     get_rate_limiter,
     get_session_cookie_signer,
     get_session_store,
@@ -28,6 +36,11 @@ from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.web.templates import templates
 
 _LOGIN_TEMPLATE = "pages/auth/login.html"
+_FORGOT_PASSWORD_TEMPLATE = "pages/auth/forgot_password.html"
+_PASSWORD_RESET_SENT_MESSAGE = (
+    "Hvis e-postadressen tilhører en konto, har vi sendt en lenke for å "
+    "tilbakestille passordet."
+)
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
@@ -186,6 +199,97 @@ async def login_submit(
         session_id=result.session.session_id,
     )
     return response
+
+
+@router.get("/forgot-password")
+async def forgot_password_page(
+    request: Request,
+    sent: bool = False,
+    current_user=Depends(get_current_user),
+):
+    if current_user is not None:
+        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    return templates.TemplateResponse(
+        request,
+        _FORGOT_PASSWORD_TEMPLATE,
+        {
+            "title": "Glemt passord",
+            "section": "login",
+            "error_message": None,
+            "message": _PASSWORD_RESET_SENT_MESSAGE if sent else None,
+            "email": "",
+        },
+    )
+
+
+@router.post("/forgot-password")
+async def forgot_password_submit(
+    request: Request,
+    email: str = Form(...),
+    password_reset_service: PasswordResetServiceProtocol = Depends(
+        get_password_reset_service
+    ),
+    settings=Depends(get_settings),
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+):
+    try:
+        reset_request = PasswordResetRequest(email=email)
+    except ValidationError:
+        return templates.TemplateResponse(
+            request,
+            _FORGOT_PASSWORD_TEMPLATE,
+            {
+                "title": "Glemt passord",
+                "section": "login",
+                "error_message": "Skriv inn en gyldig e-postadresse.",
+                "message": None,
+                "email": email.strip(),
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalized_email = str(reset_request.email).lower()
+    throttle_keys = [
+        password_reset_account_key(normalized_email, settings.app_secret_key)
+    ]
+    client_ip = client_ip_from_request(request)
+    if client_ip:
+        throttle_keys.append(password_reset_ip_key(client_ip, settings.app_secret_key))
+    try:
+        for key in throttle_keys:
+            await rate_limiter.hit(
+                key,
+                limit=settings.password_reset_attempt_limit,
+                window_seconds=settings.password_reset_attempt_window_seconds,
+            )
+    except RateLimitExceeded:
+        return templates.TemplateResponse(
+            request,
+            _FORGOT_PASSWORD_TEMPLATE,
+            {
+                "title": "Glemt passord",
+                "section": "login",
+                "error_message": "For mange forespørsler. Prøv igjen senere.",
+                "message": None,
+                "email": normalized_email,
+            },
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    origin = (settings.app_public_base_url or str(request.base_url)).rstrip("/")
+    try:
+        await password_reset_service.send_reset_email(
+            email=normalized_email,
+            redirect_to=f"{origin}/set-password",
+        )
+    except Exception:
+        # The response deliberately remains identical for unknown accounts and
+        # delivery failures to prevent account enumeration.
+        logger.exception("Password reset email delivery failed.")
+    return RedirectResponse(
+        url="/forgot-password?sent=1",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/logout")

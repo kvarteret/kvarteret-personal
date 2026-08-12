@@ -77,6 +77,17 @@ class DevAuthGateway:
     ) -> str:
         return f"http://localhost:8000/dev/auth-link?type={link_type}&email={email}"
 
+    async def send_password_reset_email(
+        self, *, email: str, redirect_to: str | None = None
+    ) -> None:
+        logger.info(
+            "Development password reset requested.",
+            extra={
+                "event": "auth.password_reset.requested",
+                "event_data": {"status": "accepted"},
+            },
+        )
+
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None:
         return None
 

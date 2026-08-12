@@ -218,6 +218,19 @@
         "title": "Body_feedback_submit_feedback_post",
         "type": "object"
       },
+      "Body_forgot_password_submit_forgot_password_post": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "Body_forgot_password_submit_forgot_password_post",
+        "type": "object"
+      },
       "Body_group_role_assignments_create_groups__group_id__role_assignments_post": {
         "properties": {
           "contract_signed": {
@@ -2811,6 +2824,78 @@
           }
         },
         "summary": "Feedback Panel"
+      }
+    },
+    "/forgot-password": {
+      "get": {
+        "operationId": "forgot_password_page_forgot_password_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sent",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Sent",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forgot Password Page"
+      },
+      "post": {
+        "operationId": "forgot_password_submit_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_forgot_password_submit_forgot_password_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forgot Password Submit"
       }
     },
     "/groups": {

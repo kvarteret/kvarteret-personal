@@ -13,6 +13,7 @@ from app.dependencies import (
     get_current_user,
     get_login_service,
     get_mobile_card_april_state_service,
+    get_password_reset_service,
     get_rate_limiter,
     get_session_store,
     get_volunteers_service,
@@ -55,6 +56,19 @@ class FakeLoginService:
             ),
             user=make_authenticated_user(UserRole.ADMIN),
         )
+
+
+class FakePasswordResetService:
+    def __init__(self, *, delivered: bool = True, should_fail: bool = False) -> None:
+        self.delivered = delivered
+        self.should_fail = should_fail
+        self.calls: list[dict[str, str]] = []
+
+    async def send_reset_email(self, *, email: str, redirect_to: str) -> bool:
+        self.calls.append({"email": email, "redirect_to": redirect_to})
+        if self.should_fail:
+            raise RuntimeError("upstream failure with sensitive details")
+        return self.delivered
 
 
 class FakeVolunteersService:
@@ -235,6 +249,118 @@ def test_login_sets_cookie_and_protected_page_renders() -> None:
     assert people_response.status_code == 200
     assert "Sample Person" in people_response.text
     assert "Ny frivillig" in people_response.text
+
+
+def test_login_page_links_to_password_reset_form() -> None:
+    response = TestClient(create_app()).get("/login")
+
+    assert response.status_code == 200
+    assert 'href="/forgot-password"' in response.text
+    assert "Glemt passord?" in response.text
+
+
+def test_password_reset_page_renders() -> None:
+    response = TestClient(create_app()).get("/forgot-password")
+
+    assert response.status_code == 200
+    assert "Send tilbakestillingslenke" in response.text
+    assert 'type="email"' in response.text
+
+
+def test_password_reset_submission_calls_service_and_returns_generic_message() -> None:
+    app = create_app()
+    service = FakePasswordResetService()
+    app.dependency_overrides[get_password_reset_service] = lambda: service
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
+    client = TestClient(app)
+
+    response = client.post(
+        "/forgot-password",
+        data={"email": " ADMIN@example.com "},
+        follow_redirects=False,
+    )
+    confirmation = client.get(response.headers["location"])
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/forgot-password?sent=1"
+    assert service.calls == [
+        {
+            "email": "admin@example.com",
+            "redirect_to": "http://testserver/set-password",
+        }
+    ]
+    assert confirmation.status_code == 200
+    assert "Hvis e-postadressen tilhører en konto" in confirmation.text
+
+
+def test_password_reset_response_does_not_reveal_delivery_failure() -> None:
+    responses = []
+    for service in (
+        FakePasswordResetService(delivered=False),
+        FakePasswordResetService(should_fail=True),
+    ):
+        app = create_app()
+        app.dependency_overrides[get_password_reset_service] = lambda: service
+        app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
+        responses.append(
+            TestClient(app).post(
+                "/forgot-password",
+                data={"email": "unknown@example.com"},
+                follow_redirects=False,
+            )
+        )
+
+    assert [
+        (response.status_code, response.headers["location"]) for response in responses
+    ] == [
+        (303, "/forgot-password?sent=1"),
+        (303, "/forgot-password?sent=1"),
+    ]
+
+
+def test_password_reset_rejects_invalid_email() -> None:
+    app = create_app()
+    service = FakePasswordResetService()
+    app.dependency_overrides[get_password_reset_service] = lambda: service
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
+
+    response = TestClient(app).post(
+        "/forgot-password",
+        data={"email": "not-an-email"},
+    )
+
+    assert response.status_code == 400
+    assert "Skriv inn en gyldig e-postadresse" in response.text
+    assert service.calls == []
+
+
+def test_password_reset_is_rate_limited() -> None:
+    app = create_app()
+    service = FakePasswordResetService()
+    limiter = InMemoryRateLimiter()
+    app.dependency_overrides[get_password_reset_service] = lambda: service
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
+    client = TestClient(app)
+
+    for _ in range(5):
+        assert (
+            client.post(
+                "/forgot-password",
+                data={"email": "admin@example.com"},
+                follow_redirects=False,
+            ).status_code
+            == 303
+        )
+
+    response = client.post(
+        "/forgot-password",
+        data={"email": "admin@example.com"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 429
+    assert "For mange forespørsler" in response.text
+    assert len(service.calls) == 5
 
 
 def test_group_admin_sees_registrations_and_new_volunteer_but_not_admin_accounts() -> None:

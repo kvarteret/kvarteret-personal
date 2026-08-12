@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.auth.cookies import SessionCookieSigner
 from app.auth.dev_auth import DevAuthGateway
 from app.auth.login_service import LoginService
+from app.auth.password_reset_service import PasswordResetService
 from app.auth.repository import DatabaseAuthRepository
 from app.auth.session_store import (
     SessionRepositoryProtocol,
@@ -93,6 +94,11 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     ):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
+    async def send_password_reset_email(
+        self, *, email: str, redirect_to: str | None = None
+    ):
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
+
     async def update_user_password(self, auth_user_id, password: str):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
@@ -120,6 +126,7 @@ class ApplicationContainer:
     email_outbox_service: EmailOutboxService
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
+    password_reset_service: PasswordResetService
     volunteers_service: VolunteersService
     role_assignments_service: RoleAssignmentsService
     groups_service: GroupsService
@@ -209,6 +216,9 @@ def build_application_container(
             repository=auth_repository,
             supabase_auth=supabase_auth_gateway,
             session_store=session_store,
+        ),
+        password_reset_service=PasswordResetService(
+            auth_gateway=supabase_auth_gateway,
         ),
         volunteers_service=volunteers_service,
         role_assignments_service=RoleAssignmentsService(
