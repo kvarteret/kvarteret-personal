@@ -13,6 +13,7 @@ from app.observability import log_admin_activity
 from app.domain.groups.service import GroupsService
 from app.domain.volunteers.options import GENDER_OPTIONS
 from app.domain.volunteers.service import VolunteersService
+from app.shared.semester import get_current_semester_code
 from app.web.templates import templates
 
 router = APIRouter()
@@ -116,6 +117,13 @@ async def volunteer_detail(
         )
     can_manage_profile = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
     can_manage_photo = can_manage_profile
+    current_semester_code = get_current_semester_code()
+    role_assignments = await volunteers_service.list_role_assignments(volunteer_id)
+    is_active_volunteer = any(
+        assignment.semester_code == current_semester_code
+        and assignment.contract_signed
+        for assignment in role_assignments
+    )
     if current_user.role == UserRole.ADMIN:
         log_admin_activity(
             request=request,
@@ -134,6 +142,7 @@ async def volunteer_detail(
             "volunteer": volunteer,
             "can_manage_volunteer_profile": can_manage_profile,
             "can_manage_volunteer_photo": can_manage_photo,
+            "is_active_volunteer": is_active_volunteer,
             "gender_options": GENDER_OPTIONS,
             "duplicate_application_id": request.query_params.get(
                 "duplicate_application_id"

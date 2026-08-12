@@ -12,8 +12,13 @@ from app.dependencies import (
 from app.email_outbox_service import EmailOutboxService
 from app.observability import log_admin_activity
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
-from app.domain.volunteers.options import GENDER_OPTIONS, gender_label
+from app.domain.volunteers.options import (
+    GENDER_OPTIONS,
+    SEMESTER_TERM_OPTIONS,
+    gender_label,
+)
 from app.domain.volunteers.service import VolunteersService
+from app.shared.semester import get_current_semester_code
 from app.web.i18n import (
     activate_public_locale,
     apply_locale_vary_header,
@@ -83,11 +88,28 @@ async def volunteer_applications_index(
 async def volunteer_application_assignment_fields(
     request: Request,
     group_id: int | None = None,
+    accepted_group_id: int | None = None,
+    application_id: int | None = None,
     current_user=Depends(require_management_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
-    group_options = await volunteers_service.list_assignment_groups()
-    selected_group_id = group_id if group_id is not None else None
+    if application_id is not None:
+        application = (
+            await volunteer_applications_service.get_volunteer_application_detail(
+                application_id
+            )
+        )
+        if application is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=_APP_NOT_FOUND
+            )
+        group_options = _build_promotion_group_options(application)
+    else:
+        group_options = await volunteers_service.list_assignment_groups()
+    selected_group_id = group_id if group_id is not None else accepted_group_id
     role_options = (
         await volunteers_service.list_assignment_roles(selected_group_id)
         if selected_group_id is not None
@@ -101,6 +123,10 @@ async def volunteer_application_assignment_fields(
             "group_options": group_options,
             "selected_group_id": selected_group_id,
             "role_options": role_options,
+            "application_id": application_id,
+            "group_field_name": "accepted_group_id" if application_id else "group_id",
+            "role_field_name": "accepted_role_id" if application_id else "role_id",
+            "role_required": application_id is not None,
         },
     )
 
@@ -248,6 +274,7 @@ async def volunteer_application_detail(
     email_outbox_service: EmailOutboxService = Depends(
         get_email_outbox_service
     ),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     volunteer_application = (
         await volunteer_applications_service.get_volunteer_application_detail(
@@ -261,6 +288,17 @@ async def volunteer_application_detail(
     latest_email_delivery = await email_outbox_service.get_latest_for_registration(
         application_id
     )
+    promotion_group_options = _build_promotion_group_options(volunteer_application)
+    selected_promotion_group_id = (
+        volunteer_application.initial_group_id
+        or volunteer_application.first_choice_group_id
+    )
+    promotion_role_options = (
+        await volunteers_service.list_assignment_roles(selected_promotion_group_id)
+        if selected_promotion_group_id is not None
+        else []
+    )
+    current_semester_code = get_current_semester_code()
     log_admin_activity(
         request=request,
         user=current_user,
@@ -280,9 +318,11 @@ async def volunteer_application_detail(
             "latest_email_delivery": latest_email_delivery,
             "gender_label": gender_label,
             "gender_options": GENDER_OPTIONS,
-            "promotion_group_options": _build_promotion_group_options(
-                volunteer_application
-            ),
+            "promotion_group_options": promotion_group_options,
+            "promotion_role_options": promotion_role_options,
+            "selected_promotion_group_id": selected_promotion_group_id,
+            "semester_term_options": SEMESTER_TERM_OPTIONS,
+            "current_semester_code": current_semester_code,
         },
     )
 

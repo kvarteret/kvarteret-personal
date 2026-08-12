@@ -48,13 +48,22 @@
         </div>
       {% endif %}
       <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ volunteer.full_name }}</h1>
-      <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">
-        {{ volunteer.pingvin_points }} pingvinpoeng{% if volunteer.discount_level_label %} · {{ volunteer.discount_level_label }}{% endif %}
+      <div class="flex flex-wrap items-center justify-center gap-3">
+        <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">
+          {{ volunteer.pingvin_points }} pingvinpoeng{% if volunteer.discount_level_label %} · {{ volunteer.discount_level_label }}{% endif %}
+        </div>
+        {% if is_active_volunteer %}
+          <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">Aktiv frivillig</div>
+        {% endif %}
       </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
         {% if can_manage_volunteer_profile %}
-          <button class="app-button-secondary" type="button" @click="if (editing) { $refs.profileForm.reset(); editing = false } else { editing = true }" x-text="editing ? 'Avbryt endring' : 'Endre'"></button>
+          <div class="grid min-h-11" :class="editing ? 'grid-cols-2' : 'grid-cols-1'">
+            <button class="app-button-secondary" type="button" @click="editing = true" x-show="!editing">Endre</button>
+            <button class="inline-flex min-h-11 items-center justify-center border-2 border-kvarteret-ink bg-lime-500 px-4 font-semibold text-kvarteret-ink hover:bg-lime-600" form="volunteer-profile-form" type="submit" x-cloak x-show="editing">Lagre</button>
+            <button class="inline-flex min-h-11 items-center justify-center border-2 border-l-0 border-kvarteret-ink bg-kvarteret-red px-4 font-semibold text-white hover:bg-kvarteret-red-dark" type="button" @click="$refs.profileForm.reset(); editing = false" x-cloak x-show="editing">Avbryt</button>
+          </div>
         {% endif %}
         {% if volunteer.registration_log_entry %}
           <a class="app-button-secondary" href="/volunteer-applications/{{ volunteer.registration_log_entry.registration_id }}">Åpne frivilligsøknad</a>
@@ -75,7 +84,7 @@
             <span class="text-sm text-stone-500">Opprettet {{ volunteer.created_at.strftime("%Y-%m-%d") }}</span>
           </div>
           {% if can_manage_volunteer_profile %}
-            <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post" x-ref="profileForm">
+            <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" id="volunteer-profile-form" method="post" x-ref="profileForm">
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fornavn</span>
                 <input class="app-input app-input-lockable" name="first_name" type="text" value="{{ volunteer.first_name or '' }}" disabled :disabled="!editing">
@@ -112,10 +121,6 @@
                 <span class="text-sm text-stone-500">Postnummer</span>
                 <input class="app-input app-input-lockable" name="postal_code" type="text" value="{{ volunteer.postal_code or '' }}" disabled :disabled="!editing">
               </label>
-              <div class="flex flex-wrap gap-3 md:col-span-2" x-cloak x-show="editing">
-                <button class="app-button" type="submit">Lagre endringer</button>
-                <button class="app-button-secondary" type="button" @click="$refs.profileForm.reset(); editing = false">Avbryt</button>
-              </div>
             </form>
           {% else %}
             <dl class="grid gap-5 md:grid-cols-2">
@@ -151,7 +156,7 @@
           <section class="app-panel">
             <div class="mb-5 flex items-center justify-between gap-3">
               <h2 class="text-2xl font-medium tracking-tight text-stone-900">Registreringslogg</h2>
-              <a class="app-button-secondary" href="/volunteer-applications/{{ volunteer.registration_log_entry.registration_id }}">Åpne søknad #{{ volunteer.registration_log_entry.registration_id }}</a>
+              <span class="text-sm text-stone-500">Søknad #{{ volunteer.registration_log_entry.registration_id }}</span>
             </div>
             <dl class="grid gap-5 md:grid-cols-2">
               <div class="border-b border-stone-300 pb-3">

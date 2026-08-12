@@ -37,13 +37,10 @@
       {% endif %}
       <div class="flex w-full flex-wrap justify-center gap-3">
         {{ history_back_button('/volunteer-applications', 'Tilbake til søknader') }}
-        {% if volunteer_application.promoted_volunteer_id %}
-          <a class="app-button" href="/volunteers/{{ volunteer_application.promoted_volunteer_id }}">Åpne frivilligprofil</a>
-        {% endif %}
       </div>
 
       <div class="grid w-full gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div class="flex min-h-20 flex-col items-center justify-center border-2 border-kvarteret-ink bg-kvarteret-sand px-4 py-3 text-center font-semibold uppercase tracking-wide">
+        <div class="flex min-h-20 flex-col items-center justify-center px-4 py-3 text-center font-semibold uppercase tracking-wide {% if volunteer_application.status == 'volunteer' %}self-center rounded-full bg-kvarteret-sand shadow-md{% else %}border-2 border-kvarteret-ink bg-kvarteret-sand{% endif %}">
           {% if volunteer_application.status == "new" %}
             <span>Ny forespørsel</span>
           {% elif volunteer_application.status == "contacted" %}
@@ -60,9 +57,13 @@
         </div>
 
         {% if volunteer_application.promoted_volunteer_id %}
-          <a class="app-button-secondary min-h-20" href="/volunteers/{{ volunteer_application.promoted_volunteer_id }}#volunteer-profile">Endre profil</a>
+          <a class="app-button-secondary min-h-20" href="/volunteers/{{ volunteer_application.promoted_volunteer_id }}#volunteer-profile">Åpne frivilligprofil</a>
         {% else %}
-          <button class="app-button-secondary min-h-20" type="button" @click="if (editing) { $refs.applicationForm.reset(); editing = false } else { editing = true }" x-text="editing ? 'Avbryt endring' : 'Endre'"></button>
+          <div class="grid min-h-20" :class="editing ? 'grid-cols-2' : 'grid-cols-1'">
+            <button class="app-button-secondary min-h-20" type="button" @click="editing = true" x-show="!editing">Endre</button>
+            <button class="inline-flex min-h-20 items-center justify-center border-2 border-kvarteret-ink bg-lime-500 px-3 font-semibold text-kvarteret-ink hover:bg-lime-600" form="application-profile-form" type="submit" x-cloak x-show="editing">Lagre</button>
+            <button class="inline-flex min-h-20 items-center justify-center border-2 border-l-0 border-kvarteret-ink bg-kvarteret-red px-3 font-semibold text-white hover:bg-kvarteret-red-dark" type="button" @click="$refs.applicationForm.reset(); editing = false" x-cloak x-show="editing">Avbryt</button>
+          </div>
         {% endif %}
 
         <div class="grid">
@@ -72,29 +73,62 @@
             </form>
           {% elif volunteer_application.status == "contacted" %}
             <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/trial" class="grid" method="post">
-              <button class="app-button-secondary min-h-20" type="submit">Start prøvetid<br><span class="text-sm">30 dager</span></button>
+              <button class="app-button-secondary min-h-20 flex-col leading-tight" type="submit"><span>Start prøvetid</span><span class="text-sm">(30 dager)</span></button>
             </form>
           {% elif volunteer_application.status == "trial" %}
             {% if volunteer_application.is_part_of_active_group %}
               <div class="flex min-h-20 items-center border-2 border-kvarteret-ink bg-kvarteret-surface px-4 py-3 text-center text-sm">Godkjennes sammen med gruppen fra søknadslisten.</div>
             {% else %}
-              <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" class="grid gap-2" method="post">
-                {% if promotion_group_options %}
-                  <select aria-label="Velg gruppe ved promotering" class="app-input" name="accepted_group_id">
-                    {% for option in promotion_group_options %}
-                      <option value="{{ option.group_id }}" {% if option.group_id == volunteer_application.initial_group_id or (volunteer_application.initial_group_id is none and loop.first) %}selected{% endif %}>{{ option.name }}</option>
-                    {% endfor %}
-                  </select>
-                {% endif %}
-                <button class="app-button-secondary min-h-14" type="submit" {% if not promotion_group_options %}disabled{% endif %}>Oppgrader til frivillig</button>
-              </form>
+              <button class="app-button-secondary h-full min-h-20 w-full" type="button" @click="$refs.promotionDialog.showModal()" {% if not promotion_group_options %}disabled{% endif %}>Oppgrader til frivillig</button>
+              <dialog class="m-auto w-[min(94vw,52rem)] border-2 border-kvarteret-ink bg-kvarteret-background p-0 text-left text-kvarteret-ink backdrop:bg-stone-950/60" x-ref="promotionDialog" @click.self="$refs.promotionDialog.close()">
+                <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" class="grid gap-6 p-6 md:p-8" method="post">
+                  <div class="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 class="text-3xl font-medium tracking-tight">Historikk</h2>
+                      <p class="mt-2 text-stone-600">Registrer det første vervet når søkeren oppgraderes til frivillig.</p>
+                    </div>
+                    <button aria-label="Lukk" class="text-3xl leading-none" type="button" @click="$refs.promotionDialog.close()">&times;</button>
+                  </div>
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <label class="grid gap-1">
+                      <span class="text-sm text-stone-500">År</span>
+                      <input class="app-input bg-white" max="3000" min="1900" name="assignment_year" required type="number" value="{{ current_semester_code // 10 }}">
+                    </label>
+                    <label class="grid gap-1">
+                      <span class="text-sm text-stone-500">Semester</span>
+                      <select class="app-input bg-white" name="assignment_term" required>
+                        {% for term_value, term_label in semester_term_options %}
+                          <option value="{{ term_value }}" {% if term_value|int == current_semester_code % 10 %}selected{% endif %}>{{ term_label }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                  </div>
+                  {% set group_options = promotion_group_options %}
+                  {% set role_options = promotion_role_options %}
+                  {% set selected_group_id = selected_promotion_group_id %}
+                  {% set selected_role_id = volunteer_application.initial_role_id %}
+                  {% set application_id = volunteer_application.registration_id %}
+                  {% set group_field_name = 'accepted_group_id' %}
+                  {% set role_field_name = 'accepted_role_id' %}
+                  {% set role_required = true %}
+                  {% include "components/volunteer_applications/volunteer_application_assignment_fields.html" %}
+                  <label class="inline-flex items-center gap-3 text-stone-700">
+                    <input class="h-5 w-5 accent-kvarteret-red" name="contract_signed" type="checkbox" value="true">
+                    Signert kontrakt
+                  </label>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <button class="app-button" type="submit">Oppgrader til frivillig</button>
+                    <button class="app-button-secondary" type="button" @click="$refs.promotionDialog.close()">Avbryt</button>
+                  </div>
+                </form>
+              </dialog>
             {% endif %}
           {% elif volunteer_application.status == "not_volunteer" %}
             <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/{% if volunteer_application.promoted_volunteer_id %}restore-volunteer{% else %}reopen{% endif %}" class="grid" method="post">
               <button class="app-button-secondary min-h-20" type="submit">{% if volunteer_application.promoted_volunteer_id %}Gjenopprett frivillig{% else %}Gjenåpne som kontaktet{% endif %}</button>
             </form>
           {% elif volunteer_application.promoted_volunteer_id %}
-            <a class="app-button-secondary min-h-20" href="/volunteers/{{ volunteer_application.promoted_volunteer_id }}">Se frivilligprofil</a>
+            <div></div>
           {% else %}
             <div></div>
           {% endif %}
@@ -155,7 +189,7 @@
             Personopplysninger redigeres på den <a class="font-semibold underline decoration-kvarteret-red decoration-2 underline-offset-4" href="/volunteers/{{ volunteer_application.promoted_volunteer_id }}#volunteer-profile">tilknyttede frivilligprofilen</a>. Søknaden beholdes som historikk.
           </p>
         {% endif %}
-        <form action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post" x-ref="applicationForm">
+        <form action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" id="application-profile-form" method="post" x-ref="applicationForm">
           <label class="grid gap-1"><span class="text-sm text-stone-500">Fornavn</span><input class="app-input app-input-lockable" name="first_name" type="text" value="{{ volunteer_application.first_name or '' }}" disabled :disabled="!editing || {{ 'true' if volunteer_application.promoted_volunteer_id else 'false' }}"></label>
           <label class="grid gap-1"><span class="text-sm text-stone-500">Etternavn</span><input class="app-input app-input-lockable" name="last_name" required type="text" value="{{ volunteer_application.last_name or '' }}" disabled :disabled="!editing || {{ 'true' if volunteer_application.promoted_volunteer_id else 'false' }}"></label>
           <label class="grid gap-1"><span class="text-sm text-stone-500">E-post</span><input class="app-input app-input-lockable" name="email" required type="email" value="{{ volunteer_application.email }}" disabled :disabled="!editing || {{ 'true' if volunteer_application.promoted_volunteer_id else 'false' }}"></label>
@@ -166,12 +200,6 @@
           <label class="grid gap-1"><span class="text-sm text-stone-500">Postnummer</span><input class="app-input app-input-lockable" name="postal_code" pattern="[0-9]{4}" type="text" value="{{ volunteer_application.postal_code or '' }}" disabled :disabled="!editing || {{ 'true' if volunteer_application.promoted_volunteer_id else 'false' }}"></label>
           <label class="grid gap-1 md:col-span-2"><span class="text-sm text-stone-500">Adresse</span><input class="app-input app-input-lockable" name="address" type="text" value="{{ volunteer_application.address or '' }}" disabled :disabled="!editing || {{ 'true' if volunteer_application.promoted_volunteer_id else 'false' }}"></label>
           <label class="grid gap-1 md:col-span-2"><span class="text-sm text-stone-500">Bakgrunn</span><textarea class="app-input app-input-lockable min-h-28" name="background_details" disabled :disabled="!editing || {{ 'true' if volunteer_application.promoted_volunteer_id else 'false' }}">{{ volunteer_application.background_details or '' }}</textarea></label>
-          {% if not volunteer_application.promoted_volunteer_id %}
-            <div class="flex flex-wrap gap-3 md:col-span-2" x-cloak x-show="editing">
-              <button class="app-button" type="submit">Lagre endringer</button>
-              <button class="app-button-secondary" type="button" @click="$refs.applicationForm.reset(); editing = false">Avbryt</button>
-            </div>
-          {% endif %}
         </form>
       </section>
 
@@ -215,9 +243,7 @@
           {% if volunteer_application.promoted_volunteer_id %}
             <div class="border-b border-stone-300 pb-3">
               <dt class="text-sm text-stone-500">Opprettet frivillig</dt>
-              <dd class="mt-1 text-stone-900">
-                <a class="underline decoration-kvarteret-red decoration-2 underline-offset-4" href="/volunteers/{{ volunteer_application.promoted_volunteer_id }}">Åpne profil #{{ volunteer_application.promoted_volunteer_id }}</a>
-              </dd>
+              <dd class="mt-1 text-stone-900">Profil #{{ volunteer_application.promoted_volunteer_id }}</dd>
             </div>
             <div class="border-b border-stone-300 pb-3">
               <dt class="text-sm text-stone-500">Profilutfylling</dt>

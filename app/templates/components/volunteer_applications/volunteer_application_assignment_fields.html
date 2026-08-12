@@ -3,9 +3,9 @@
     <span class="text-sm text-stone-500">Gruppe</span>
     <select
       class="app-input"
-      name="group_id"
+      name="{{ group_field_name or 'group_id' }}"
       hx-disinherit="hx-select hx-target hx-swap"
-      hx-get="/volunteer-applications/assignment-fields"
+      hx-get="/volunteer-applications/assignment-fields{% if application_id %}?application_id={{ application_id }}{% endif %}"
       hx-include="this"
       hx-swap="outerHTML"
       hx-target="#volunteer-application-assignment-fields"
@@ -21,10 +21,10 @@
   </label>
   <label class="grid gap-1">
     <span class="text-sm text-stone-500">Verv</span>
-    <select class="app-input" name="role_id">
+    <select class="app-input" name="{{ role_field_name or 'role_id' }}" {% if role_required %}required{% endif %}>
       <option value="" {% if not role_options %}selected{% endif %}>Ingen initialt verv</option>
       {% for role in role_options %}
-        <option value="{{ role.role_id }}">{{ role.role_name }}</option>
+        <option value="{{ role.role_id }}" {% if role.role_id == selected_role_id %}selected{% endif %}>{{ role.role_name }}</option>
       {% endfor %}
     </select>
   </label>

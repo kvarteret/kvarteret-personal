@@ -255,6 +255,10 @@ class FakeVolunteerApplicationsService:
         registration_id: int,
         *,
         accepted_group_id: int | None = None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
         base_url: str | None = None,
         actor_user_account_id: int | None = None,
     ) -> int:
@@ -333,6 +337,10 @@ class DuplicateApprovalVolunteerApplicationsService(FakeVolunteerApplicationsSer
         registration_id: int,
         *,
         accepted_group_id: int | None = None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
         base_url: str | None = None,
         actor_user_account_id: int | None = None,
     ) -> int:
@@ -494,6 +502,12 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Registrering" in response.text
     assert "registrant@example.com" in response.text
     assert "Oppgrader til frivillig" in response.text
+    assert "Registrer det første vervet" in response.text
+    assert 'name="assignment_year"' in response.text
+    assert 'name="assignment_term"' in response.text
+    assert 'name="accepted_group_id"' in response.text
+    assert 'name="accepted_role_id"' in response.text
+    assert "Lagre endringer" not in response.text
     assert "På prøve" in response.text
     assert 'x-data="{ editing: false }"' in response.text
     assert 'class="app-input app-input-lockable"' in response.text

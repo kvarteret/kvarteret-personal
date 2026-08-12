@@ -250,6 +250,10 @@
     -webkit-text-fill-color: var(--foreground);
   }
 
+  .app-input-lockable:not(:disabled) {
+    background-color: white;
+  }
+
   textarea.app-input-lockable:disabled {
     resize: none;
   }

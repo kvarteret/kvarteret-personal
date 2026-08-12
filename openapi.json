@@ -637,13 +637,51 @@
           "accepted_group_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Accepted Group Id"
+          },
+          "accepted_role_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Role Id"
+          },
+          "assignment_term": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Term"
+          },
+          "assignment_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignment Year"
+          },
+          "contract_signed": {
+            "default": true,
+            "title": "Contract Signed",
+            "type": "boolean"
           }
         },
         "title": "Body_volunteer_application_approve_volunteer_applications__application_id__approval_post",
@@ -4376,6 +4414,38 @@
                 }
               ],
               "title": "Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "accepted_group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accepted Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "application_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Application Id"
             }
           }
         ],
