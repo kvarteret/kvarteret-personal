@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
@@ -236,6 +237,47 @@ async def test_now_playing_service_serves_stale_snapshot_after_refresh_failure()
     assert second.cache_hit is True
     assert second.cache_stale is True
     assert second.state["name"] == "Track"
+
+
+@pytest.mark.asyncio
+async def test_now_playing_service_backs_off_and_logs_once_per_outage(caplog) -> None:
+    clock = {"now": 0.0}
+    request_count = 0
+    repository = FakeIntegrationTokensRepository(
+        token=FakeIntegrationToken(
+            "spotify", "database-refresh-token", datetime.now(UTC), 5
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(500, json={"error": "server_error"})
+
+    service = NowPlayingService(
+        Settings(
+            app_public_base_url="https://personal.kvarteret.no",
+            spotify_client_id="spotify-client-id",
+            spotify_client_secret="spotify-client-secret",
+        ),
+        repository=repository,  # type: ignore[arg-type]
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        now_fn=lambda: clock["now"],
+    )
+
+    with caplog.at_level(logging.ERROR):
+        await service.get_state()
+        clock["now"] = 30.0
+        await service.get_state()
+        clock["now"] = 61.0
+        await service.get_state()
+    await service.aclose()
+
+    assert request_count == 2
+    assert sum(
+        record.message == "Failed to fetch now playing track"
+        for record in caplog.records
+    ) == 1
 
 
 @pytest.mark.asyncio
