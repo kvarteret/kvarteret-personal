@@ -45,6 +45,10 @@ def build_previews() -> list[EmailPreview]:
     applicant_profile_email = applicant_renderer.render_profile_completion_email(
         invitation_url="https://personal.kvarteret.no/apply/profile-token-preview",
     )
+    applicant_friend_email = applicant_renderer.render_friend_invitation_email(
+        invitation_url="https://personal.kvarteret.no/apply/friend-token-preview",
+        inviter_name="Inga Inviter",
+    )
     mobile_card_email = mobile_card_renderer.render_access_code_email(
         access_code="483921",
         expires_in_minutes=10,
@@ -74,6 +78,12 @@ def build_previews() -> list[EmailPreview]:
             title="Applicant Profile Completion",
             subject=applicant_profile_email.subject,
             html_body=applicant_profile_email.html_body,
+        ),
+        EmailPreview(
+            slug="applicant_friend_invitation",
+            title="Applicant Friend Invitation",
+            subject=applicant_friend_email.subject,
+            html_body=applicant_friend_email.html_body,
         ),
         EmailPreview(
             slug="admin_account_onboarding",

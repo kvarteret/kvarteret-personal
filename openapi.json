@@ -687,19 +687,6 @@
         "title": "Body_volunteer_application_approve_volunteer_applications__application_id__approval_post",
         "type": "object"
       },
-      "Body_volunteer_application_group_approve_volunteer_applications_groups__group_id__approval_post": {
-        "properties": {
-          "accepted_group_id": {
-            "title": "Accepted Group Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "accepted_group_id"
-        ],
-        "title": "Body_volunteer_application_group_approve_volunteer_applications_groups__group_id__approval_post",
-        "type": "object"
-      },
       "Body_volunteer_application_submit_apply__token__post": {
         "properties": {
           "address": {
@@ -4235,7 +4222,24 @@
                   "type": "null"
                 }
               ],
+              "default": "active",
               "title": "Application Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
             }
           }
         ],
@@ -4370,53 +4374,6 @@
           }
         },
         "summary": "Volunteer Application Assignment Fields"
-      }
-    },
-    "/volunteer-applications/groups/{group_id}/approval": {
-      "post": {
-        "operationId": "volunteer_application_group_approve_volunteer_applications_groups__group_id__approval_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "group_id",
-            "required": true,
-            "schema": {
-              "title": "Group Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_volunteer_application_group_approve_volunteer_applications_groups__group_id__approval_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Volunteer Application Group Approve"
       }
     },
     "/volunteer-applications/recent-registrations": {
@@ -4616,43 +4573,6 @@
           }
         },
         "summary": "Volunteer Application Mark Contacted"
-      }
-    },
-    "/volunteer-applications/{application_id}/drop-from-group": {
-      "post": {
-        "operationId": "volunteer_application_drop_from_group_volunteer_applications__application_id__drop_from_group_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "application_id",
-            "required": true,
-            "schema": {
-              "title": "Application Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Volunteer Application Drop From Group"
       }
     },
     "/volunteer-applications/{application_id}/reject": {

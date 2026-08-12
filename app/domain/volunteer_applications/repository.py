@@ -10,8 +10,7 @@ from app.domain.admin_accounts.tables import group_admin_memberships, user_accou
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import assignment_roles
 from app.domain.volunteer_applications.tables import (
-    volunteer_application_group_members,
-    volunteer_application_groups,
+    volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
 )
@@ -19,7 +18,6 @@ from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.domain.volunteer_applications.state_machine import (
     ApplicationState,
     DomainEventRecord,
-    MembershipState,
 )
 from app.domain.volunteer_applications.tables import domain_events
 from app.domain.volunteer_applications.models import (
@@ -28,7 +26,7 @@ from app.domain.volunteer_applications.models import (
     TrialApplicantCardSnapshot,
     VolunteerApplicationDetail,
     VolunteerApplicationFriendInvite,
-    VolunteerApplicationGroupMember,
+    VolunteerApplicationFriendRelationship,
     VolunteerApplicationInvite,
     VolunteerApplicationSubmissionInput,
     VolunteerApplicationStatusEvent,
@@ -60,7 +58,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         second_choice_group_id: int | None,
         friend_invites: list[tuple[str, str]] | None = None,
         inviter_name: str | None = None,
-        first_choice_group_name: str | None = None,
         origin_trace_id: str | None = None,
     ) -> PublicProspectRegistrationResult:
         friend_invites = friend_invites or []
@@ -90,30 +87,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .mappings()
             .one()
         )
-        group_id: int | None = None
-        if friend_invites:
-            group_row = (
-                (
-                    await session.execute(
-                        insert(volunteer_application_groups)
-                        .values(created_at=func.now())
-                        .returning(volunteer_application_groups.c.id)
-                    )
-                )
-                .mappings()
-                .one()
-            )
-            group_id = group_row["id"]
-            await session.execute(
-                insert(volunteer_application_group_members).values(
-                    group_id=group_id,
-                    invite_id=inserted["id"],
-                    applicant_email=email,
-                    role="inviter",
-                    status=MembershipState.ACTIVE,
-                    created_at=func.now(),
-                )
-            )
         await session.execute(
             insert(volunteer_application_submissions).values(
                 invite_id=inserted["id"],
@@ -134,7 +107,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                         .values(
                             token=friend_token,
                             email=friend_email,
-                            source="group_invite",
+                            source="friend_invite",
                             status=ApplicationState.NEW,
                             initial_group_id=initial_group_id,
                             initial_role_id=initial_role_id,
@@ -155,14 +128,13 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 .mappings()
                 .one()
             )
-            assert group_id is not None
             await session.execute(
-                insert(volunteer_application_group_members).values(
-                    group_id=group_id,
-                    invite_id=friend_row["id"],
-                    applicant_email=friend_row["email"],
-                    role="invitee",
-                    status=MembershipState.ACTIVE,
+                insert(volunteer_application_friend_invitations).values(
+                    inviter_application_id=inserted["id"],
+                    invitee_application_id=friend_row["id"],
+                    inviter_name_snapshot=inviter_name,
+                    inviter_email_snapshot=email,
+                    invitee_email_snapshot=friend_row["email"],
                     created_at=func.now(),
                 )
             )
@@ -172,7 +144,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     token=friend_row["token"],
                     email=friend_row["email"],
                     inviter_name=inviter_name or email,
-                    first_choice_group_name=first_choice_group_name or "",
                 )
             )
         detail = await self.get_volunteer_application_detail(inserted["id"])
@@ -445,62 +416,87 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .limit(1)
         )
 
-    async def list_group_members(
-        self,
-        group_id: int,
-        *,
-        include_dropped: bool = True,
-    ) -> list[VolunteerApplicationGroupMember]:
+    async def get_friend_inviter(
+        self, invitee_application_id: int
+    ) -> VolunteerApplicationFriendRelationship | None:
+        inviter_submission = volunteer_application_submissions.alias("inviter_submission")
+        invitee_submission = volunteer_application_submissions.alias("invitee_submission")
         stmt = (
             select(
-                volunteer_application_group_members.c.group_id,
-                volunteer_application_group_members.c.invite_id,
-                volunteer_application_group_members.c.applicant_email,
-                volunteer_application_group_members.c.role,
-                volunteer_application_group_members.c.status,
-                volunteer_application_group_members.c.dropped_at,
-                volunteer_application_invites.c.full_profile_submitted_at,
-                volunteer_application_invites.c.trial_shift_attended,
-                volunteer_application_invites.c.promoted_volunteer_id,
-                volunteer_application_invites.c.status.label("application_status"),
-                volunteer_application_submissions.c.id.label("pending_volunteer_id"),
-                volunteer_application_submissions.c.first_name,
-                volunteer_application_submissions.c.last_name,
+                volunteer_application_friend_invitations.c.id,
+                volunteer_application_friend_invitations.c.inviter_application_id,
+                volunteer_application_friend_invitations.c.invitee_application_id,
+                volunteer_application_friend_invitations.c.inviter_name_snapshot,
+                volunteer_application_friend_invitations.c.inviter_email_snapshot,
+                volunteer_application_friend_invitations.c.invitee_email_snapshot,
+                volunteer_application_friend_invitations.c.created_at,
+                volunteer_application_friend_invitations.c.legacy_dropped_at,
+                volunteer_application_friend_invitations.c.legacy_dropped_by_user_account_id,
+                inviter_submission.c.first_name.label("inviter_first_name"),
+                inviter_submission.c.last_name.label("inviter_last_name"),
+                invitee_submission.c.first_name.label("invitee_first_name"),
+                invitee_submission.c.last_name.label("invitee_last_name"),
             )
             .select_from(
-                volunteer_application_group_members.outerjoin(
-                    volunteer_application_invites,
-                    volunteer_application_invites.c.id == volunteer_application_group_members.c.invite_id,
+                volunteer_application_friend_invitations.outerjoin(
+                    inviter_submission,
+                    inviter_submission.c.invite_id
+                    == volunteer_application_friend_invitations.c.inviter_application_id,
                 ).outerjoin(
-                    volunteer_application_submissions,
-                    volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id,
+                    invitee_submission,
+                    invitee_submission.c.invite_id
+                    == volunteer_application_friend_invitations.c.invitee_application_id,
                 )
             )
-            .where(volunteer_application_group_members.c.group_id == group_id)
-            .order_by(volunteer_application_group_members.c.id.asc())
-        )
-        if not include_dropped:
-            stmt = stmt.where(volunteer_application_group_members.c.status == MembershipState.ACTIVE)
-        session = self.session
-        rows = (await session.execute(stmt)).mappings().all()
-        return [
-            VolunteerApplicationGroupMember(
-                group_id=row["group_id"],
-                registration_id=row["invite_id"],
-                email=row["applicant_email"],
-                role=row["role"],
-                status=row["status"],
-                submitted=row["full_profile_submitted_at"] is not None,
-                pending_volunteer_id=row["pending_volunteer_id"],
-                first_name=row["first_name"],
-                last_name=row["last_name"],
-                trial_shift_attended=bool(row["trial_shift_attended"]),
-                promoted_volunteer_id=row["promoted_volunteer_id"],
-                application_status=row["application_status"],
-                dropped_at=row["dropped_at"],
+            .where(
+                volunteer_application_friend_invitations.c.invitee_application_id
+                == invitee_application_id
             )
-            for row in rows
-        ]
+            .limit(1)
+        )
+        row = (await self.session.execute(stmt)).mappings().first()
+        return _friend_relationship_from_row(row) if row is not None else None
+
+    async def list_friend_invitees(
+        self, inviter_application_id: int
+    ) -> list[VolunteerApplicationFriendRelationship]:
+        inviter_submission = volunteer_application_submissions.alias("inviter_submission")
+        invitee_submission = volunteer_application_submissions.alias("invitee_submission")
+        stmt = (
+            select(
+                volunteer_application_friend_invitations.c.id,
+                volunteer_application_friend_invitations.c.inviter_application_id,
+                volunteer_application_friend_invitations.c.invitee_application_id,
+                volunteer_application_friend_invitations.c.inviter_name_snapshot,
+                volunteer_application_friend_invitations.c.inviter_email_snapshot,
+                volunteer_application_friend_invitations.c.invitee_email_snapshot,
+                volunteer_application_friend_invitations.c.created_at,
+                volunteer_application_friend_invitations.c.legacy_dropped_at,
+                volunteer_application_friend_invitations.c.legacy_dropped_by_user_account_id,
+                inviter_submission.c.first_name.label("inviter_first_name"),
+                inviter_submission.c.last_name.label("inviter_last_name"),
+                invitee_submission.c.first_name.label("invitee_first_name"),
+                invitee_submission.c.last_name.label("invitee_last_name"),
+            )
+            .select_from(
+                volunteer_application_friend_invitations.outerjoin(
+                    inviter_submission,
+                    inviter_submission.c.invite_id
+                    == volunteer_application_friend_invitations.c.inviter_application_id,
+                ).outerjoin(
+                    invitee_submission,
+                    invitee_submission.c.invite_id
+                    == volunteer_application_friend_invitations.c.invitee_application_id,
+                )
+            )
+            .where(
+                volunteer_application_friend_invitations.c.inviter_application_id
+                == inviter_application_id
+            )
+            .order_by(volunteer_application_friend_invitations.c.id.asc())
+        )
+        rows = (await self.session.execute(stmt)).mappings().all()
+        return [_friend_relationship_from_row(row) for row in rows]
 
     async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
         stmt = (
@@ -646,27 +642,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             delete(volunteer_application_invites).where(volunteer_application_invites.c.id == registration_id)
         )
 
-    async def drop_group_invitee(
-        self,
-        registration_id: int,
-        *,
-        dropped_by_user_id: int | None = None,
-    ) -> None:
-        session = self.session
-        await session.execute(
-            update(volunteer_application_group_members)
-            .where(
-                volunteer_application_group_members.c.invite_id == registration_id,
-                volunteer_application_group_members.c.role == "invitee",
-                volunteer_application_group_members.c.status == MembershipState.ACTIVE,
-            )
-            .values(
-                status=MembershipState.DROPPED,
-                dropped_at=func.now(),
-                dropped_by_user_account_id=dropped_by_user_id,
-            )
-        )
-
     async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> int:
         """Append one audit row; runs in the ambient request transaction
         so the event commits or rolls back with the state change it records."""
@@ -690,7 +665,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         first_choice_group = groups.alias("first_choice_group")
         second_choice_group = groups.alias("second_choice_group")
         accepted_role = assignment_roles.alias("accepted_role")
-        group_membership = volunteer_application_group_members.alias("group_membership")
         detail_stmt = (
             select(
                 volunteer_application_invites.c.id,
@@ -733,18 +707,11 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                     volunteer_application_invites.c.second_choice_label,
                     second_choice_group.c.name,
                 ).label("second_choice_group_name"),
-                group_membership.c.group_id.label("group_id"),
-                group_membership.c.role.label("group_role"),
-                group_membership.c.status.label("group_status"),
             )
             .select_from(
                 volunteer_application_invites.outerjoin(
                     volunteer_application_submissions,
                     volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id,
-                )
-                .outerjoin(
-                    group_membership,
-                    group_membership.c.invite_id == volunteer_application_invites.c.id,
                 )
                 .outerjoin(
                     accepted_group,
@@ -770,7 +737,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         row = (await session.execute(detail_stmt)).mappings().first()
         if row is None:
             return None
-        group_members = await self.list_group_members(row["group_id"]) if row["group_id"] is not None else None
+        invited_by = await self.get_friend_inviter(row["id"])
+        friend_invitees = await self.list_friend_invitees(row["id"])
         status_history = await self.list_status_history(row["id"])
         return VolunteerApplicationDetail(
             registration_id=row["id"],
@@ -811,10 +779,8 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             trial_ends_at=row["trial_ends_at"],
             promoted_volunteer_id=row["promoted_volunteer_id"],
             promoted_at=row["promoted_at"],
-            group_id=row["group_id"],
-            group_role=row["group_role"],
-            group_status=row["group_status"],
-            group_members=group_members,
+            invited_by=invited_by,
+            friend_invitees=friend_invitees,
             status_history=status_history,
             origin_trace_id=row["origin_trace_id"],
         )
@@ -891,3 +857,25 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         if row is None:
             return {"group_name": None, "role_name": None}
         return {"group_name": row["group_name"], "role_name": row["role_name"]}
+
+
+def _friend_relationship_from_row(row) -> VolunteerApplicationFriendRelationship:
+    inviter_name = _join_name(row["inviter_first_name"], row["inviter_last_name"])
+    invitee_name = _join_name(row["invitee_first_name"], row["invitee_last_name"])
+    return VolunteerApplicationFriendRelationship(
+        relationship_id=row["id"],
+        inviter_application_id=row["inviter_application_id"],
+        invitee_application_id=row["invitee_application_id"],
+        inviter_name=inviter_name or row["inviter_name_snapshot"],
+        inviter_email=row["inviter_email_snapshot"],
+        invitee_name=invitee_name,
+        invitee_email=row["invitee_email_snapshot"],
+        created_at=row["created_at"],
+        legacy_dropped_at=row["legacy_dropped_at"],
+        legacy_dropped_by_user_account_id=row["legacy_dropped_by_user_account_id"],
+    )
+
+
+def _join_name(first_name: str | None, last_name: str | None) -> str | None:
+    name = " ".join(part.strip() for part in (first_name, last_name) if part and part.strip())
+    return name or None

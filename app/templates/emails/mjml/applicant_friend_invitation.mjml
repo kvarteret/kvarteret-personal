@@ -7,24 +7,24 @@
       <mj-text font-size="16px" line-height="24px" padding="0" />
       <mj-button background-color="#f54b4b" color="#ffffff" border="0" border-radius="0" font-size="16px" font-weight="700" inner-padding="14px 20px" padding="0" />
     </mj-attributes>
-    <mj-title>Complete your Kvarteret registration</mj-title>
-    <mj-preview>Complete your registration in Det Akademiske Kvarter.</mj-preview>
+    <mj-title>Friend invitation to volunteer at Samfunnet i Bergen</mj-title>
+    <mj-preview>Apply individually as a volunteer at Samfunnet i Bergen.</mj-preview>
   </mj-head>
   <mj-body>
     <mj-section padding="0" background-color="#f54b4b">
       <mj-column>
         <mj-text font-size="24px" line-height="32px" font-weight="700" color="#ffffff" padding="20px 24px">
-          Complete your registration
+          Friend invitation
         </mj-text>
       </mj-column>
     </mj-section>
     <mj-section padding="0" background-color="#ffffff">
       <mj-column>
-        <mj-text padding="24px 24px 0">{{ inviter_name }} invited you to register as a volunteer for Det Akademiske Kvarter.</mj-text>
-        <mj-text padding="14px 24px 0">{{ inviter_name }} har invitert deg til å registrere deg som frivillig hos Det Akademiske Kvarter.</mj-text>
-        <mj-text padding="14px 24px 0">You were invited to apply for {{ first_choice_group_name }} together. You are under no obligation to participate.</mj-text>
-        <mj-text padding="14px 24px 0">Dere er meldt opp mot {{ first_choice_group_name }} sammen. Du er ikke forpliktet til å bli med.</mj-text>
-        <mj-button href="{{ invitation_url }}" padding="24px 24px 0">Complete your details / Fullfør detaljene dine</mj-button>
+        <mj-text padding="24px 24px 0">{{ inviter_name }} invited you to become a volunteer together at Samfunnet i Bergen.</mj-text>
+        <mj-text padding="14px 24px 0">{{ inviter_name }} har invitert deg til å bli frivillig sammen på Samfunnet i Bergen!</mj-text>
+        <mj-text padding="14px 24px 0">You send your own individual application. Applications are processed separately, while your wish to start together is kept as an informational note. Participation is not binding.</mj-text>
+        <mj-text padding="14px 24px 0">Du sender inn din egen søknad. Søknadene behandles hver for seg, mens ønsket om å begynne sammen beholdes som et informasjonsnotat. Deltakelse er ikke bindende.</mj-text>
+        <mj-button href="{{ invitation_url }}" padding="24px 24px 0">Apply individually / Søk selv</mj-button>
         <mj-text padding="20px 24px 6px" font-size="14px" line-height="22px">Direct link / Direkte lenke</mj-text>
         <mj-text padding="0 24px 24px" font-size="14px" line-height="22px">
           <a href="{{ invitation_url }}" style="color:#f54b4b; word-break:break-word;">{{ invitation_url }}</a>

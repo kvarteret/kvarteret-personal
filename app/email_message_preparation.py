@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.config import Settings
 from app.db.session import current_session
 from app.domain.volunteer_applications.tables import (
-    volunteer_application_group_members,
+    volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
 )
@@ -76,15 +76,6 @@ class EmailMessagePreparer:
                     select(
                         volunteer_application_invites.c.token,
                         volunteer_application_invites.c.email,
-                        volunteer_application_invites.c.first_choice_label,
-                        volunteer_application_group_members.c.group_id,
-                    )
-                    .select_from(
-                        volunteer_application_invites.outerjoin(
-                            volunteer_application_group_members,
-                            volunteer_application_group_members.c.invite_id
-                            == volunteer_application_invites.c.id,
-                        )
                     )
                     .where(volunteer_application_invites.c.id == registration_id)
                     .limit(1)
@@ -113,36 +104,36 @@ class EmailMessagePreparer:
                 invitation_url=invitation_url
             )
         else:
-            inviter = await self._load_friend_inviter(invite["group_id"])
+            inviter = await self._load_friend_inviter(registration_id)
             if inviter is None:
                 raise EmailPreparationFailure("inviter_record_missing")
             rendered = self.applicant_renderer.render_friend_invitation_email(
                 invitation_url=invitation_url,
                 inviter_name=inviter["name"],
-                first_choice_group_name=invite["first_choice_label"] or "Kvarteret",
             )
         return PreparedEmail(invite["email"], rendered.subject, rendered.html_body)
 
-    async def _load_friend_inviter(self, group_id: int | None) -> dict[str, str] | None:
-        if group_id is None:
-            return None
+    async def _load_friend_inviter(self, invitee_application_id: int) -> dict[str, str] | None:
+        inviter_submission = volunteer_application_submissions.alias("friend_inviter_submission")
         row = (
             (
                 await _session().execute(
                     select(
-                        volunteer_application_submissions.c.first_name,
-                        volunteer_application_submissions.c.last_name,
+                        volunteer_application_friend_invitations.c.inviter_name_snapshot,
+                        volunteer_application_friend_invitations.c.inviter_email_snapshot,
+                        inviter_submission.c.first_name,
+                        inviter_submission.c.last_name,
                     )
                     .select_from(
-                        volunteer_application_group_members.join(
-                            volunteer_application_submissions,
-                            volunteer_application_submissions.c.invite_id
-                            == volunteer_application_group_members.c.invite_id,
+                        volunteer_application_friend_invitations.outerjoin(
+                            inviter_submission,
+                            inviter_submission.c.invite_id
+                            == volunteer_application_friend_invitations.c.inviter_application_id,
                         )
                     )
                     .where(
-                        volunteer_application_group_members.c.group_id == group_id,
-                        volunteer_application_group_members.c.role == "inviter",
+                        volunteer_application_friend_invitations.c.invitee_application_id
+                        == invitee_application_id
                     )
                     .limit(1)
                 )
@@ -152,7 +143,14 @@ class EmailMessagePreparer:
         )
         if row is None:
             return None
-        return {"name": " ".join(filter(None, [row["first_name"], row["last_name"]]))}
+        current_name = " ".join(
+            filter(None, [row["first_name"], row["last_name"]])
+        ).strip()
+        return {
+            "name": current_name
+            or row["inviter_name_snapshot"]
+            or row["inviter_email_snapshot"]
+        }
 
 def _session():
     session = current_session()

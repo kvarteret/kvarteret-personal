@@ -24,7 +24,6 @@ from app.domain.courses.tables import course_completions, courses
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
 from app.domain.volunteer_applications.tables import (
-    volunteer_application_group_members,
     volunteer_application_invites,
 )
 from app.domain.volunteers.models import (
@@ -470,9 +469,6 @@ class VolunteersQueries(SqlAlchemyRepository):
                     volunteer_application_invites.c.second_choice_label,
                     second_choice_group.c.name,
                 ).label("second_choice_group_name"),
-                volunteer_application_group_members.c.group_id.label("registration_group_id"),
-                volunteer_application_group_members.c.role.label("registration_group_role"),
-                volunteer_application_group_members.c.status.label("registration_group_status"),
             )
             .select_from(
                 volunteer_records.outerjoin(
@@ -502,10 +498,6 @@ class VolunteersQueries(SqlAlchemyRepository):
                 .outerjoin(
                     second_choice_group,
                     second_choice_group.c.id == volunteer_application_invites.c.second_choice_group_id,
-                )
-                .outerjoin(
-                    volunteer_application_group_members,
-                    volunteer_application_group_members.c.invite_id == volunteer_application_invites.c.id,
                 )
             )
             .where(volunteer_records.c.id == volunteer_id)

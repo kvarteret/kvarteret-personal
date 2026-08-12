@@ -23,7 +23,6 @@ class ApplicantEmailTemplateRendererProtocol(Protocol):
         *,
         invitation_url: str,
         inviter_name: str,
-        first_choice_group_name: str,
     ) -> ApplicantEmail: ...
 
     def render_profile_completion_email(
@@ -61,15 +60,13 @@ class ApplicantEmailTemplateRenderer:
         *,
         invitation_url: str,
         inviter_name: str,
-        first_choice_group_name: str,
     ) -> ApplicantEmail:
         return ApplicantEmail(
-            subject="Complete your Kvarteret registration / Fullfør registreringen din hos Kvarteret",
+            subject=f"{inviter_name} har invitert deg til å bli frivillig sammen på Samfunnet i Bergen!",
             html_body=self._render(
                 "applicant_friend_invitation.html",
                 invitation_url=invitation_url,
                 inviter_name=inviter_name,
-                first_choice_group_name=first_choice_group_name,
             ),
         )
 

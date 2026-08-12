@@ -721,7 +721,7 @@ def test_recent_registrations_fragment_renders_next_page() -> None:
     assert volunteer_applications_service.recent_registration_calls == [{"limit": 10, "cursor": "12"}]
 
 
-def test_recent_registrations_groups_people_from_same_signup() -> None:
+def test_recent_registrations_render_people_individually() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     volunteer_applications_service = FakeVolunteerApplicationsService()
@@ -738,10 +738,6 @@ def test_recent_registrations_groups_people_from_same_signup() -> None:
         latest_semester_code=20261,
         latest_semester_label="Spring 2026",
         registration_id=31,
-        group_id=9,
-        group_role="inviter",
-        group_status="active",
-        renders_group=True,
     )
     invitee = RecentVolunteerRegistrationItem(
         volunteer_id=22,
@@ -756,12 +752,7 @@ def test_recent_registrations_groups_people_from_same_signup() -> None:
         latest_semester_code=20261,
         latest_semester_label="Spring 2026",
         registration_id=32,
-        group_id=9,
-        group_role="invitee",
-        group_status="active",
     )
-    inviter.group_members = [inviter, invitee]
-    invitee.group_members = [inviter, invitee]
     volunteer_applications_service.recent_registration_pages = {
         None: RecentVolunteerRegistrationPage(
             items=[inviter, invitee],
@@ -777,13 +768,12 @@ def test_recent_registrations_groups_people_from_same_signup() -> None:
     response = client.get("/volunteer-applications")
 
     assert response.status_code == 200
-    assert "Grupperegistrering" in response.text
+    assert "Grupperegistrering" not in response.text
     assert "Første valg:" in response.text
     assert "Andre valg:" in response.text
     assert "Komitéønsker" not in response.text
     assert response.text.count("Inviter Person") == 1
     assert response.text.count("Invitee Person") == 1
-    assert "(inviterer)" in response.text
 
 
 def test_group_admin_can_open_new_volunteer_page_with_all_groups() -> None:

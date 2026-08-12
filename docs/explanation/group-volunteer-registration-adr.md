@@ -1,6 +1,11 @@
 # ADR: Group Volunteer Registration
 
-Status: Accepted with follow-up needed.
+Status: Superseded on 2026-08-12.
+
+This document is retained as historical context for the retired grouped
+registration model. The current model uses independent applications linked by
+`volunteer_application_friend_invitations`; see [The Volunteer Application
+Lifecycle](volunteer-application-lifecycle.md).
 
 ## Context
 

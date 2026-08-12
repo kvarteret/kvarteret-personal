@@ -98,8 +98,7 @@ async def clean_database(e2e_engine):
     """Truncate the lifecycle tables before each test."""
     tables = [
         "domain_events",
-        "volunteer_application_group_members",
-        "volunteer_application_groups",
+        "volunteer_application_friend_invitations",
         "volunteer_application_submissions",
         "volunteer_application_invites",
         "role_assignments",

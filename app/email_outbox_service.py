@@ -15,7 +15,7 @@ from app.config import Settings
 from app.db.session import commit_request_session
 from app.domain.volunteer_applications.tables import (
     domain_events,
-    volunteer_application_group_members,
+    volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
 )
@@ -447,9 +447,20 @@ class EmailOutboxService:
             .values(email=normalized)
         )
         await session.execute(
-            update(volunteer_application_group_members)
-            .where(volunteer_application_group_members.c.invite_id == registration_id)
-            .values(applicant_email=normalized)
+            update(volunteer_application_friend_invitations)
+            .where(
+                volunteer_application_friend_invitations.c.invitee_application_id
+                == registration_id
+            )
+            .values(invitee_email_snapshot=normalized)
+        )
+        await session.execute(
+            update(volunteer_application_friend_invitations)
+            .where(
+                volunteer_application_friend_invitations.c.inviter_application_id
+                == registration_id
+            )
+            .values(inviter_email_snapshot=normalized)
         )
         if promoted_id is not None:
             await session.execute(

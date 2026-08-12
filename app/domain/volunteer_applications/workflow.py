@@ -13,9 +13,8 @@ Every lifecycle action follows the same shape:
 7. execute non-email side effects and request an immediate best-effort dispatch.
 
 The dispatcher runs only after commit, so no email may announce a state
-the database can still roll back. Group approval promotes every active
-member and enqueues every message inside one transaction, which makes
-the business mutation and delivery intent atomic and all-or-nothing.
+the database can still roll back. Each application is approved and enqueued
+independently, so one applicant's lifecycle never controls another's.
 """
 
 from __future__ import annotations
@@ -39,10 +38,8 @@ from app.domain.volunteer_applications.state_machine import (
     ApplicationAction,
     ApplicationState,
     DomainEventRecord,
-    MembershipState,
     TransitionContext,
     application_transition,
-    membership_transition,
 )
 from app.observability import current_trace_id, emit_event
 
@@ -51,7 +48,6 @@ if TYPE_CHECKING:
         PublicProspectRegistrationInput,
         PublicProspectRegistrationResult,
         VolunteerApplicationDetail,
-        VolunteerApplicationGroupMember,
         VolunteerApplicationInvite,
         VolunteerApplicationSubmissionInput,
     )
@@ -98,9 +94,6 @@ class VolunteerApplicationWorkflowOperations(Protocol):
         assignment_term: int | None = None,
         contract_signed: bool = True,
     ) -> "tuple[VolunteerApplicationDetail, int]": ...
-    async def drop_group_invitee_record(
-        self, registration_id: int, *, dropped_by_user_id: int | None
-    ) -> "VolunteerApplicationDetail": ...
     async def delete_application_record(
         self, registration_id: int
     ) -> "VolunteerApplicationDetail": ...
@@ -113,9 +106,6 @@ class VolunteerApplicationWorkflowOperations(Protocol):
     async def get_volunteer_application_by_token(
         self, token: str
     ) -> "VolunteerApplicationDetail | None": ...
-    async def list_active_group_members(
-        self, group_id: int
-    ) -> "list[VolunteerApplicationGroupMember]": ...
     async def append_domain_event(
         self, event: DomainEventRecord, *, subject_id: int
     ) -> int: ...
@@ -144,9 +134,6 @@ class VolunteerApplicationSideEffectsProtocol(Protocol):
         volunteer_id: int,
         base_url: str | None,
     ) -> None: ...
-    async def after_group_invitee_dropped(
-        self, detail: "VolunteerApplicationDetail",
-    ) -> None: ...
     async def after_deleted(
         self, detail: "VolunteerApplicationDetail",
     ) -> None: ...
@@ -159,13 +146,9 @@ def _approval_context(
     detail: "VolunteerApplicationDetail",
     *,
     actor_user_account_id: int | None,
-    as_group_action: bool,
 ) -> TransitionContext:
     return TransitionContext(
         actor_user_account_id=actor_user_account_id,
-        is_part_of_active_group=(
-            False if as_group_action else detail.is_part_of_active_group
-        ),
         has_submission=detail.pending_volunteer_id is not None,
     )
 
@@ -256,6 +239,9 @@ class VolunteerApplicationWorkflow:
                     payload={
                         "email": invite.email,
                         "invited_by_registration_id": result.detail.registration_id,
+                        "inviter_name": invite.inviter_name,
+                        "inviter_email": result.detail.email,
+                        "invitee_email": invite.email,
                     },
                 ),
                 subject_id=invite.registration_id,
@@ -446,7 +432,6 @@ class VolunteerApplicationWorkflow:
             assignment_term=assignment_term,
             contract_signed=contract_signed,
             actor_user_account_id=actor_user_account_id,
-            as_group_action=False,
         )
         await commit_request_session()
         await self.side_effects.after_approved(
@@ -456,38 +441,6 @@ class VolunteerApplicationWorkflow:
             detail, status="application_approved", volunteer_id=volunteer_id
         )
         return volunteer_id
-
-    async def approve_group(
-        self,
-        registration_ids: list[int],
-        *,
-        accepted_group_id: int,
-        base_url: str | None,
-        actor_user_account_id: int | None = None,
-    ) -> list[int]:
-        """Promote every member in one transaction: all or none.
-
-        Database writes for all members happen before the single commit;
-        a failure on any member rolls back every promotion.
-        """
-        approved: list[tuple["VolunteerApplicationDetail", int]] = []
-        for registration_id in registration_ids:
-            detail, volunteer_id, _ = await self._approve_one(
-                registration_id,
-                accepted_group_id=accepted_group_id,
-                actor_user_account_id=actor_user_account_id,
-                as_group_action=True,
-            )
-            approved.append((detail, volunteer_id))
-        await commit_request_session()
-        for detail, volunteer_id in approved:
-            await self.side_effects.after_approved(
-                detail, volunteer_id=volunteer_id, base_url=base_url
-            )
-            self._record_lifecycle(
-                detail, status="application_approved", volunteer_id=volunteer_id
-            )
-        return [volunteer_id for _, volunteer_id in approved]
 
     async def _approve_one(
         self,
@@ -499,7 +452,6 @@ class VolunteerApplicationWorkflow:
         assignment_term: int | None = None,
         contract_signed: bool = True,
         actor_user_account_id: int | None,
-        as_group_action: bool,
     ) -> "tuple[VolunteerApplicationDetail, int, DomainEventRecord | None]":
         existing = await self.operations.get_volunteer_application_detail(
             registration_id
@@ -512,7 +464,6 @@ class VolunteerApplicationWorkflow:
                 context=_approval_context(
                     existing,
                     actor_user_account_id=actor_user_account_id,
-                    as_group_action=as_group_action,
                 ),
             )
         detail, volunteer_id = await self.operations.approve_application_record(
@@ -531,7 +482,6 @@ class VolunteerApplicationWorkflow:
                 payload={
                     **result.event.payload,
                     "volunteer_id": volunteer_id,
-                    "group_action": as_group_action,
                 },
             )
             event_id = await self.operations.append_domain_event(
@@ -539,36 +489,6 @@ class VolunteerApplicationWorkflow:
             )
             event = replace(event, event_id=event_id)
         return detail, volunteer_id, event
-
-    async def drop_group_invitee(
-        self,
-        registration_id: int,
-        *,
-        dropped_by_user_id: int | None,
-    ) -> None:
-        existing = await self.operations.get_volunteer_application_detail(
-            registration_id
-        )
-        result = None
-        if existing is not None and existing.group_status is not None:
-            result = membership_transition(
-                MembershipState(existing.group_status),
-                ApplicationAction.DROP_MEMBER,
-                context=TransitionContext(
-                    actor_user_account_id=dropped_by_user_id
-                ),
-            )
-        detail = await self.operations.drop_group_invitee_record(
-            registration_id, dropped_by_user_id=dropped_by_user_id
-        )
-        if result is not None and result.event is not None:
-            await self.operations.append_domain_event(
-                replace(result.event, subject_id=registration_id),
-                subject_id=registration_id,
-            )
-        await commit_request_session()
-        await self.side_effects.after_group_invitee_dropped(detail)
-        self._record_lifecycle(detail, status="group_invitee_dropped")
 
     async def delete(
         self,

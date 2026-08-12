@@ -153,9 +153,6 @@ class VolunteerRegistrationLogEntry:
     status: str
     first_choice_group_name: str | None
     second_choice_group_name: str | None
-    group_id: int | None = None
-    group_role: str | None = None
-    group_status: str | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> VolunteerRegistrationLogEntry:
@@ -166,9 +163,6 @@ class VolunteerRegistrationLogEntry:
             status=row["registration_status"],
             first_choice_group_name=row.get("first_choice_group_name"),
             second_choice_group_name=row.get("second_choice_group_name"),
-            group_id=row.get("registration_group_id"),
-            group_role=row.get("registration_group_role"),
-            group_status=row.get("registration_group_status"),
         )
 
 

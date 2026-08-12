@@ -76,9 +76,6 @@
                 <button class="app-button-secondary min-h-20 flex-col leading-tight" type="submit"><span>Start prøvetid</span><span class="text-sm">(30 dager)</span></button>
               </form>
             {% elif volunteer_application.status == "trial" %}
-              {% if volunteer_application.is_part_of_active_group %}
-                <div class="flex min-h-20 items-center border-2 border-kvarteret-ink bg-kvarteret-surface px-4 py-3 text-center text-sm">Godkjennes sammen med gruppen fra søknadslisten.</div>
-              {% else %}
                 <button class="app-button-secondary h-full min-h-20 w-full" type="button" onclick="document.getElementById('promotion-dialog').showModal()" {% if not promotion_group_options %}disabled{% endif %}>Oppgrader til frivillig</button>
                 <dialog aria-labelledby="promotion-dialog-title" class="m-auto w-[min(94vw,52rem)] border-2 border-kvarteret-ink bg-kvarteret-background p-0 text-left text-kvarteret-ink backdrop:bg-stone-950/60" id="promotion-dialog" onclick="if (event.target === this) this.close()">
                   <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" class="grid gap-6 p-6 md:p-8" method="post">
@@ -119,7 +116,6 @@
                   </div>
                   </form>
                 </dialog>
-              {% endif %}
             {% elif volunteer_application.status == "not_volunteer" %}
               <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/{% if volunteer_application.promoted_volunteer_id %}restore-volunteer{% else %}reopen{% endif %}" class="grid" method="post">
                 <button class="app-button-secondary min-h-20" type="submit">{% if volunteer_application.promoted_volunteer_id %}Gjenopprett frivillig{% else %}Gjenåpne som kontaktet{% endif %}</button>
@@ -139,36 +135,32 @@
     </header>
 
     <div class="grid gap-6 xl:grid-cols-2">
-      {% if volunteer_application.group_id and volunteer_application.group_members %}
+      {% if volunteer_application.invited_by or volunteer_application.friend_invitees %}
         <section class="app-panel xl:col-span-2">
           <div class="mb-5 flex items-center justify-between gap-3">
-            <h2 class="text-2xl font-medium tracking-tight text-stone-900">Grupperegistrering</h2>
-            <span class="text-sm text-stone-500">{% if volunteer_application.group_role == "inviter" %}Inviterer{% else %}Invitert{% endif %}</span>
+            <h2 class="text-2xl font-medium tracking-tight text-stone-900">Venneinvitasjon</h2>
+            <span class="text-sm text-stone-500">Informasjon, ikke felles behandling</span>
           </div>
-          <div class="grid gap-3">
-            {% for member in volunteer_application.group_members %}
-              <div class="flex flex-col gap-3 border border-stone-300 p-3 lg:flex-row lg:items-center lg:justify-between {% if not member.active %}opacity-60{% endif %}">
-                <div class="grid gap-1">
-                  <p class="text-sm font-medium text-stone-900">
-                    {{ member.display_name }}
-                    {% if member.role == "inviter" %}<span class="text-stone-500">(inviterer)</span>{% endif %}
-                    {% if not member.active %}<span class="text-stone-500">(fjernet {{ member.dropped_at.strftime("%Y-%m-%d") if member.dropped_at else "" }})</span>{% endif %}
-                  </p>
-                  <p class="text-sm text-stone-600">{{ member.email }}</p>
-                  <p class="text-sm text-stone-700">{% if member.submitted %}Søkt inn{% else %}Venter på innsending{% endif %}</p>
-                </div>
-                <div class="flex flex-wrap gap-3">
-                  {% if member.registration_id %}
-                    <a class="app-button-secondary" href="/volunteer-applications/{{ member.registration_id }}">Se søknad</a>
+          {% if volunteer_application.invited_by %}
+            <p class="text-sm text-kvarteret-red">
+              Invitert av {{ volunteer_application.invited_by.inviter_display_name }} til å søke sammen.
+              {% if volunteer_application.invited_by.inviter_application_id %}
+                <a class="underline decoration-2 underline-offset-4" href="/volunteer-applications/{{ volunteer_application.invited_by.inviter_application_id }}">Åpne inviterens søknad</a>
+              {% endif %}
+            </p>
+          {% endif %}
+          {% if volunteer_application.friend_invitees %}
+            <div class="mt-4 grid gap-2 text-sm text-kvarteret-red">
+              <p>Du inviterte følgende til å søke sammen:</p>
+              {% for friend in volunteer_application.friend_invitees %}
+                <p class="pl-3">
+                  {{ friend.invitee_display_name }} ({{ friend.invitee_email }}){% if friend.historical %} · historisk{% endif %}
+                  {% if friend.invitee_application_id %}
+                    · <a class="underline decoration-2 underline-offset-4" href="/volunteer-applications/{{ friend.invitee_application_id }}">Åpne søknad</a>
                   {% endif %}
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-          {% if volunteer_application.group_role == "invitee" and volunteer_application.group_status == "active" %}
-            <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/drop-from-group" class="mt-5" method="post" onsubmit="return window.confirm('Fjerne denne invitasjonen fra grupperegistreringen? Søknaden bevares for historikk.');">
-              <button class="app-button-secondary" type="submit">Fjern fra gruppe</button>
-            </form>
+                </p>
+              {% endfor %}
+            </div>
           {% endif %}
         </section>
       {% endif %}
@@ -202,7 +194,7 @@
         <dl class="grid gap-5">
           <div class="border-b border-stone-300 pb-3">
             <dt class="text-sm text-stone-500">Kilde</dt>
-            <dd class="mt-1 text-stone-900">{% if volunteer_application.source == "public_signup" %}blifrivillig.no{% elif volunteer_application.source == "group_invite" %}Venneinvitasjon{% else %}Direkte invitasjon{% endif %}</dd>
+            <dd class="mt-1 text-stone-900">{% if volunteer_application.source == "public_signup" %}blifrivillig.no{% elif volunteer_application.source == "friend_invite" %}Venneinvitasjon{% else %}Direkte invitasjon{% endif %}</dd>
           </div>
           <div class="border-b border-stone-300 pb-3">
             <dt class="text-sm text-stone-500">Første valg</dt>
@@ -239,7 +231,7 @@
               <dd class="mt-1 text-stone-900">{% if volunteer_application.submitted %}Fullført{% else %}Venter på at frivilligen fyller ut resten{% endif %}</dd>
             </div>
           {% endif %}
-          {% if volunteer_application.source in ["invite", "group_invite"] %}
+          {% if volunteer_application.source in ["invite", "friend_invite"] %}
             <div class="border-b border-stone-300 pb-3">
               <dt class="text-sm text-stone-500">Registreringslenke</dt>
               <dd class="mt-1 text-stone-900"><a class="underline decoration-kvarteret-red decoration-2 underline-offset-4" href="/apply/{{ volunteer_application.token }}">/apply/{{ volunteer_application.token }}</a></dd>

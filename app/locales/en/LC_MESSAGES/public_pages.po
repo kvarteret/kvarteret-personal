@@ -21,8 +21,8 @@ msgstr "Your trial period has now started. Complete your profile to access your 
 msgid "Invitation for %(email)s"
 msgstr "Invitation for %(email)s"
 
-msgid "Your details have been submitted. A group manager can now approve you in the personnel database."
-msgstr "Your details have been submitted. A group manager can now approve you in the personnel database."
+msgid "Your details have been submitted. A manager can now review your individual application in the personnel database."
+msgstr "Your details have been submitted. A manager can now review your individual application in the personnel database."
 
 msgid "First name"
 msgstr "First name"
@@ -78,8 +78,8 @@ msgstr "Your application has been received"
 msgid "Thank you. The rest of your profile is saved in the personnel database, and you do not need to submit again."
 msgstr "Thank you. The rest of your profile is saved in the personnel database, and you do not need to submit again."
 
-msgid "A group manager must approve your application before you are created in the personnel database. You do not need to submit again."
-msgstr "A group manager must approve your application before you are created in the personnel database. You do not need to submit again."
+msgid "A manager must review your individual application before you are created in the personnel database. You do not need to submit again."
+msgstr "A manager must review your individual application before you are created in the personnel database. You do not need to submit again."
 
 msgid "Status"
 msgstr "Status"

@@ -15,7 +15,6 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import assignment_roles, role_assignments
 from app.domain.volunteer_applications.tables import (
-    volunteer_application_group_members,
     volunteer_application_invites,
     volunteer_application_submissions,
 )
@@ -46,7 +45,6 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
         first_choice_group = groups.alias("first_choice_group")
         second_choice_group = groups.alias("second_choice_group")
         accepted_role = assignment_roles.alias("accepted_role")
-        group_membership = volunteer_application_group_members.alias("group_membership")
         stmt = (
             select(
                 volunteer_application_invites.c.id,
@@ -81,17 +79,10 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                     volunteer_application_invites.c.second_choice_label,
                     second_choice_group.c.name,
                 ).label("second_choice_group_name"),
-                group_membership.c.group_id.label("group_id"),
-                group_membership.c.role.label("group_role"),
-                group_membership.c.status.label("group_status"),
             )
             .select_from(
                 volunteer_application_invites.outerjoin(
                     volunteer_application_submissions, volunteer_application_submissions.c.invite_id == volunteer_application_invites.c.id
-                )
-                .outerjoin(
-                    group_membership,
-                    group_membership.c.invite_id == volunteer_application_invites.c.id,
                 )
                 .outerjoin(
                     accepted_group,
@@ -113,10 +104,12 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
         )
         session = self.session
         rows = (await session.execute(stmt)).mappings().all()
-        group_ids = {row["group_id"] for row in rows if row["group_id"] is not None}
-        group_members_by_id = {
-            group_id: await self.repository.list_group_members(group_id)
-            for group_id in group_ids
+        friend_relationships = {
+            row["id"]: (
+                await self.repository.get_friend_inviter(row["id"]),
+                await self.repository.list_friend_invitees(row["id"]),
+            )
+            for row in rows
         }
         return [
             VolunteerApplicationListItem(
@@ -146,10 +139,8 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 trial_ends_at=row["trial_ends_at"],
                 promoted_volunteer_id=row["promoted_volunteer_id"],
                 promoted_at=row["promoted_at"],
-                group_id=row["group_id"],
-                group_role=row["group_role"],
-                group_status=row["group_status"],
-                group_members=group_members_by_id.get(row["group_id"]),
+                invited_by=friend_relationships[row["id"]][0],
+                friend_invitees=friend_relationships[row["id"]][1],
             )
             for row in rows
         ]
@@ -199,9 +190,6 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 volunteer_photos.c.sha1.label("photo_sha1"),
                 volunteer_photos.c.filetype.label("photo_filetype"),
                 volunteer_application_invites.c.id.label("registration_id"),
-                volunteer_application_group_members.c.group_id.label("group_id"),
-                volunteer_application_group_members.c.role.label("group_role"),
-                volunteer_application_group_members.c.status.label("group_status"),
             )
             .select_from(
                 volunteer_records.outerjoin(
@@ -215,82 +203,12 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 .outerjoin(
                     volunteer_application_invites, volunteer_application_invites.c.promoted_volunteer_id == volunteer_records.c.id
                 )
-                .outerjoin(
-                    volunteer_application_group_members,
-                    volunteer_application_group_members.c.invite_id == volunteer_application_invites.c.id,
-                )
             )
             .order_by(volunteer_records.c.id.desc())
             .limit(limit)
         )
         if before_volunteer_id is not None:
             stmt = stmt.where(volunteer_records.c.id < before_volunteer_id)
-        session = self.session
-        rows = (await session.execute(stmt)).mappings().all()
-        return [dict(row) for row in rows]
-
-    async def list_recent_registration_group_members(self, group_id: int) -> list[dict]:
-        latest_assignment_rank = (
-            func.row_number()
-            .over(
-                partition_by=role_assignments.c.volunteer_id,
-                order_by=(role_assignments.c.id.desc(),),
-            )
-            .label("assignment_rank")
-        )
-        latest_assignment_rows = (
-            select(
-                role_assignments.c.volunteer_id.label("volunteer_id"),
-                role_assignments.c.group_id.label("latest_group_id"),
-                role_assignments.c.role_id.label("latest_role_id"),
-                role_assignments.c.semester.label("latest_semester_code"),
-                latest_assignment_rank,
-            )
-        ).subquery()
-        latest_assignment = (
-            select(
-                latest_assignment_rows.c.volunteer_id,
-                latest_assignment_rows.c.latest_group_id,
-                latest_assignment_rows.c.latest_role_id,
-                latest_assignment_rows.c.latest_semester_code,
-            ).where(latest_assignment_rows.c.assignment_rank == 1)
-        ).subquery()
-        stmt = (
-            select(
-                volunteer_records.c.id,
-                volunteer_records.c.first_name,
-                volunteer_records.c.last_name,
-                volunteer_records.c.email,
-                volunteer_records.c.phone,
-                volunteer_records.c.created_at,
-                latest_assignment.c.latest_semester_code,
-                groups.c.name.label("latest_group_name"),
-                assignment_roles.c.name.label("latest_role_name"),
-                volunteer_photos.c.sha1.label("photo_sha1"),
-                volunteer_photos.c.filetype.label("photo_filetype"),
-                volunteer_application_invites.c.id.label("registration_id"),
-                volunteer_application_group_members.c.group_id.label("group_id"),
-                volunteer_application_group_members.c.role.label("group_role"),
-                volunteer_application_group_members.c.status.label("group_status"),
-            )
-            .select_from(
-                volunteer_application_group_members.join(
-                    volunteer_application_invites,
-                    volunteer_application_invites.c.id == volunteer_application_group_members.c.invite_id,
-                )
-                .join(volunteer_records, volunteer_records.c.id == volunteer_application_invites.c.promoted_volunteer_id)
-                .outerjoin(
-                    latest_assignment, latest_assignment.c.volunteer_id == volunteer_records.c.id
-                )
-                .outerjoin(groups, groups.c.id == latest_assignment.c.latest_group_id)
-                .outerjoin(assignment_roles, assignment_roles.c.id == latest_assignment.c.latest_role_id)
-                .outerjoin(
-                    volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
-                )
-            )
-            .where(volunteer_application_group_members.c.group_id == group_id)
-            .order_by(volunteer_application_group_members.c.id.asc())
-        )
         session = self.session
         rows = (await session.execute(stmt)).mappings().all()
         return [dict(row) for row in rows]
@@ -309,21 +227,6 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
         has_more = len(rows) > safe_limit
         visible_rows = rows[:safe_limit]
         items = [self._map_recent_registration_row(row) for row in visible_rows]
-        group_ids = sorted({item.group_id for item in items if item.group_id is not None})
-        group_members_by_id: dict[int, list[RecentVolunteerRegistrationItem]] = {}
-        for group_id in group_ids:
-            group_members_by_id[group_id] = [
-                self._map_recent_registration_row(row)
-                for row in await self.list_recent_registration_group_members(group_id)
-            ]
-        for item in items:
-            if item.group_id is not None:
-                item.group_members = group_members_by_id.get(item.group_id, [])
-        seen_group_ids: set[int] = set()
-        for item in items:
-            if item.group_id is not None and item.group_id not in seen_group_ids:
-                item.renders_group = True
-                seen_group_ids.add(item.group_id)
         return RecentVolunteerRegistrationPage(
             items=items,
             limit=safe_limit,
@@ -356,9 +259,6 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 else None
             ),
             registration_id=row.get("registration_id"),
-            group_id=row.get("group_id"),
-            group_role=row.get("group_role"),
-            group_status=row.get("group_status"),
         )
 
     async def count_pending_volunteer_applications(self) -> int:

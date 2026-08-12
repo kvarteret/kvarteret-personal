@@ -98,8 +98,6 @@ class FakeVolunteerApplicationsRepository:
         self.approved_registration_ids: list[int] = []
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, object | None]] = []
-        self.group_admin_email_recipients: dict[int, list[str]] = {}
-        self.group_admin_recipient_lookup_group_ids: list[int] = []
         self.existing_volunteer_ids_by_email: dict[str, int] = {}
         self.active_registration_ids_by_email: dict[str, int] = {}
         self.application_photo_sha1: str | None = None
@@ -107,7 +105,6 @@ class FakeVolunteerApplicationsRepository:
         self.application_photo_url: str | None = None
         self.media_token_service = None
         self.recent_registration_rows: list[dict] = []
-        self.recent_registration_group_rows: dict[int, list[dict]] = {}
         self.public_prospect_groups: dict[str, PublicProspectGroup] = {}
         self.public_prospect_role_ids: dict[tuple[int, str], int] = {}
         self.created_public_prospects: list[dict[str, object | None]] = []
@@ -174,9 +171,6 @@ class FakeVolunteerApplicationsRepository:
         ]
         return rows[:limit]
 
-    async def list_recent_registration_group_members(self, group_id: int):
-        return list(self.recent_registration_group_rows.get(group_id, []))
-
     async def count_pending_volunteer_applications(self) -> int:
         self.count_calls += 1
         return self.pending_count
@@ -242,16 +236,6 @@ class FakeVolunteerApplicationsRepository:
 
     async def find_public_prospect_role_id(self, *, group_id: int, role_name: str) -> int | None:
         return self.public_prospect_role_ids.get((group_id, role_name))
-
-    async def list_group_members(self, group_id: int, *, include_dropped: bool = True):
-        return []
-
-    async def drop_group_invitee(self, registration_id: int, *, dropped_by_user_id: int | None = None) -> None:
-        pass
-
-    async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
-        self.group_admin_recipient_lookup_group_ids.append(group_id)
-        return list(self.group_admin_email_recipients.get(group_id, []))
 
     async def role_matches_group(self, *, role_id: int, group_id: int) -> bool:
         return True
@@ -937,7 +921,7 @@ async def test_public_prospect_rejects_an_unknown_group_slug() -> None:
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_recent_registrations_attach_group_members() -> None:
+async def test_volunteer_applications_recent_registrations_are_individual() -> None:
     repository = FakeVolunteerApplicationsRepository()
     inviter_row = {
         "id": 21,
@@ -952,9 +936,6 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
         "photo_sha1": None,
         "photo_filetype": None,
         "registration_id": 31,
-        "group_id": 9,
-        "group_role": "inviter",
-        "group_status": "active",
     }
     invitee_row = {
         "id": 22,
@@ -969,12 +950,8 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
         "photo_sha1": None,
         "photo_filetype": None,
         "registration_id": 32,
-        "group_id": 9,
-        "group_role": "invitee",
-        "group_status": "active",
     }
     repository.recent_registration_rows = [invitee_row, inviter_row]
-    repository.recent_registration_group_rows = {9: [inviter_row, invitee_row]}
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
@@ -985,18 +962,12 @@ async def test_volunteer_applications_recent_registrations_attach_group_members(
     service.list_recent_volunteer_registrations = (  # type: ignore[method-assign]
         repository.list_recent_volunteer_registrations
     )
-    service.list_recent_registration_group_members = (  # type: ignore[method-assign]
-        repository.list_recent_registration_group_members
-    )
 
     page = await service.list_recent_volunteer_registrations_page()
 
-    assert page.items[0].group_id == 9
-    assert page.items[0].renders_group is True
-    assert page.items[1].renders_group is False
-    assert [member.full_name for member in page.items[0].group_members or []] == [
-        "Inviter Person",
+    assert [item.full_name for item in page.items] == [
         "Invitee Person",
+        "Inviter Person",
     ]
 
 
@@ -1038,9 +1009,8 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_submit_does_not_notify_group_admins() -> None:
+async def test_volunteer_applications_submit_does_not_enqueue_email() -> None:
     repository = FakeVolunteerApplicationsRepository()
-    repository.group_admin_email_recipients = {3: ["leader@example.test", "second@example.test"]}
     repository.application_photo_sha1 = "abc123"
     repository.application_photo_filetype = "jpg"
     repository.application_photo_url = "/media/photos/abc123.jpg?token=test"
@@ -1070,7 +1040,6 @@ async def test_volunteer_applications_submit_does_not_notify_group_admins() -> N
         base_url="https://personal.kvarteret.no",
     )
 
-    assert repository.group_admin_recipient_lookup_group_ids == []
     assert email_outbox.requests == []
 
 

@@ -21,7 +21,6 @@ from app.domain.volunteer_applications.state_machine import (
     ApplicationState,
     DomainEventRecord,
     IllegalTransition,
-    MembershipState,
 )
 from app.domain.volunteer_applications.models import (
     ActiveVolunteerRegistrationExistsError,
@@ -32,7 +31,6 @@ from app.domain.volunteer_applications.models import (
     VolunteerApplicationDetail,
     VolunteerApplicationFieldConflictError,
     VolunteerApplicationFieldValidationError,
-    VolunteerApplicationGroupMember,
     VolunteerApplicationInvite,
     VolunteerApplicationNotFoundError,
     VolunteerApplicationValidationError,
@@ -187,7 +185,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             second_choice_group_id=(second_choice_group.group_id if second_choice_group else None),
             friend_invites=[(friend_email, token_urlsafe(24)) for friend_email in friend_emails],
             inviter_name=_build_full_name(first_name, last_name),
-            first_choice_group_name=first_choice_label,
             origin_trace_id=current_trace_id(),
         )
         return result
@@ -529,7 +526,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationConflictError("Registration is missing prospect details.")
         if detail.promoted_volunteer_id is not None:
             raise VolunteerApplicationConflictError("Registration has already been promoted.")
-        self._ensure_group_members_ready_for_promotion(detail)
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(detail.email)
         if duplicate_volunteer is not None:
             raise VolunteerAlreadyExistsError(duplicate_volunteer, detail.email)
@@ -589,59 +585,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         )
         return detail, volunteer_id
 
-    async def approve_volunteer_application_group(
-        self,
-        group_id: int,
-        *,
-        accepted_group_id: int,
-        base_url: str | None = None,
-        actor_user_account_id: int | None = None,
-    ) -> list[int]:
-        members = await self.repository.list_group_members(group_id, include_dropped=False)
-        active_registration_ids = [
-            member.registration_id for member in members if member.registration_id is not None and member.active
-        ]
-        if not active_registration_ids:
-            raise VolunteerApplicationNotFoundError("Group registration was not found.")
-        if any(not member.submitted for member in members if member.active):
-            raise VolunteerApplicationConflictError(
-                "Kan ikke godkjenne før alle gruppemedlemmer har sendt inn sin søknad."
-            )
-        try:
-            return await self.workflow.approve_group(
-                active_registration_ids,
-                accepted_group_id=accepted_group_id,
-                base_url=base_url,
-                actor_user_account_id=actor_user_account_id,
-            )
-        except IllegalTransition as exc:
-            raise VolunteerApplicationConflictError(str(exc)) from exc
-
-    async def drop_group_invitee(
-        self,
-        registration_id: int,
-        *,
-        dropped_by_user_id: int | None = None,
-    ) -> None:
-        try:
-            await self.workflow.drop_group_invitee(registration_id, dropped_by_user_id=dropped_by_user_id)
-        except IllegalTransition as exc:
-            raise VolunteerApplicationConflictError(str(exc)) from exc
-
-    async def drop_group_invitee_record(
-        self,
-        registration_id: int,
-        *,
-        dropped_by_user_id: int | None = None,
-    ) -> VolunteerApplicationDetail:
-        detail = await self.get_volunteer_application_detail(registration_id)
-        if detail is None:
-            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
-        if detail.group_role != "invitee" or detail.group_status != MembershipState.ACTIVE:
-            raise VolunteerApplicationConflictError("Only active group invitees can be removed from a group.")
-        await self.repository.drop_group_invitee(registration_id, dropped_by_user_id=dropped_by_user_id)
-        return detail
-
     async def delete_volunteer_application(
         self,
         registration_id: int,
@@ -695,9 +638,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         return detail
 
-    async def list_active_group_members(self, group_id: int) -> list[VolunteerApplicationGroupMember]:
-        return await self.repository.list_group_members(group_id, include_dropped=False)
-
     async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> int:
         return await self.repository.append_domain_event(event, subject_id=subject_id)
 
@@ -743,17 +683,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
                 raise VolunteerApplicationFieldConflictError(
                     "Én av vennene har allerede en is_active søknad.",
                     {"friendEmails": {str(index): "Denne e-postadressen har allerede en is_active søknad."}},
-                )
-
-    def _ensure_group_members_ready_for_promotion(self, detail: VolunteerApplicationDetail) -> None:
-        if not detail.group_id or detail.group_status != MembershipState.ACTIVE:
-            return
-        for member in detail.group_members or []:
-            if member.registration_id == detail.registration_id or not member.active:
-                continue
-            if not member.submitted:
-                raise VolunteerApplicationConflictError(
-                    "Kan ikke godkjenne før alle gruppemedlemmer har sendt inn sin søknad."
                 )
 
     def _require_photo_processor(self) -> PhotoProcessorProtocol:

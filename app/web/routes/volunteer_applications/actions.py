@@ -132,37 +132,6 @@ async def volunteer_application_approve(
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/volunteer-applications/groups/{group_id}/approval")
-async def volunteer_application_group_approve(
-    request: Request,
-    group_id: int,
-    accepted_group_id: str = Form(...),
-    current_user=Depends(require_management_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
-):
-    parsed_group_id = int(accepted_group_id) if accepted_group_id and accepted_group_id.strip() else None
-    if parsed_group_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a group before promoting this group.")
-    try:
-        volunteer_ids = await volunteer_applications_service.approve_volunteer_application_group(
-            group_id,
-            accepted_group_id=parsed_group_id,
-            base_url=str(request.base_url).rstrip("/"),
-            actor_user_account_id=current_user.user_account_id,
-        )
-    except (VolunteerApplicationNotFoundError, VolunteerApplicationConflictError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    log_admin_activity(
-        request=request,
-        user=current_user,
-        action="volunteer_application.approve_group",
-        subject_type="volunteer_application_group",
-        subject_id=group_id,
-        details={"volunteer_ids": volunteer_ids},
-    )
-    return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
-
-
 @router.post("/volunteer-applications/{application_id}/contact")
 async def volunteer_application_mark_contacted(
     request: Request,
@@ -315,35 +284,6 @@ async def volunteer_application_restore_volunteer(
         subject_type="volunteer_application",
         subject_id=application_id,
         details={"status": detail.status},
-    )
-    return RedirectResponse(
-        url=f"/volunteer-applications/{application_id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
-@router.post("/volunteer-applications/{application_id}/drop-from-group")
-async def volunteer_application_drop_from_group(
-    request: Request,
-    application_id: int,
-    current_user=Depends(require_management_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
-):
-    try:
-        await volunteer_applications_service.drop_group_invitee(
-            application_id,
-            dropped_by_user_id=current_user.user_account_id,
-        )
-    except VolunteerApplicationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except VolunteerApplicationConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    log_admin_activity(
-        request=request,
-        user=current_user,
-        action="volunteer_application.drop_group_invitee",
-        subject_type="volunteer_application",
-        subject_id=application_id,
     )
     return RedirectResponse(
         url=f"/volunteer-applications/{application_id}",
