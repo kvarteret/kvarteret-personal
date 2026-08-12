@@ -10,10 +10,10 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from app.config import Settings
 from app.observability import JsonLogFormatter
@@ -57,24 +57,26 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
         )
         trace_provider = TracerProvider(resource=resource)
         trace_provider.add_span_processor(
-            SimpleSpanProcessor(
+            BatchSpanProcessor(
                 OTLPSpanExporter(
                     endpoint=f"{settings.posthog_host.rstrip('/')}/i/v1/traces",
                     headers=headers,
                     timeout=5,
-                )
+                ),
+                schedule_delay_millis=1000,
             )
         )
         trace.set_tracer_provider(trace_provider)
 
         logger_provider = LoggerProvider(resource=resource)
         logger_provider.add_log_record_processor(
-            SimpleLogRecordProcessor(
+            BatchLogRecordProcessor(
                 OTLPLogExporter(
                     endpoint=f"{settings.posthog_host.rstrip('/')}/i/v1/logs",
                     headers=headers,
                     timeout=5,
-                )
+                ),
+                schedule_delay_millis=1000,
             )
         )
         logging.getLogger().addHandler(
