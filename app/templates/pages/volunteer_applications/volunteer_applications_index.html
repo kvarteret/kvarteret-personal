@@ -22,7 +22,7 @@
     </details>
 
     <section class="app-panel">
-      <form action="/volunteer-applications" class="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] md:items-end" method="get">
+      <form action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_minmax(12rem,auto)_auto]" method="get">
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Søk i søknader</span>
           <input class="app-input" name="q" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
@@ -33,6 +33,15 @@
             <option value="">Alle statuser</option>
             {% for value, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
               <option value="{{ value }}" {% if selected_application_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="grid gap-1">
+          <span class="text-sm text-stone-500">Gruppe</span>
+          <select class="app-input" name="group_id">
+            <option value="">Alle grupper</option>
+            {% for group in group_options %}
+              <option value="{{ group.group_id }}"{% if selected_application_group_id == group.group_id %} selected{% endif %}>{{ group.name }}</option>
             {% endfor %}
           </select>
         </label>

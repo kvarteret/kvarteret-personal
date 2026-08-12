@@ -33,6 +33,7 @@ async def volunteer_applications_index(
     request: Request,
     q: str | None = None,
     application_status: str | None = None,
+    group_id: int | None = None,
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(
         get_volunteer_applications_service
@@ -46,6 +47,7 @@ async def volunteer_applications_index(
         volunteer_applications,
         query=q,
         application_status=application_status,
+        group_id=group_id,
     )
     recent_registrations_page = (
         await volunteer_applications_service.list_recent_volunteer_registrations_page(
@@ -76,6 +78,7 @@ async def volunteer_applications_index(
             "selected_group_id": None,
             "application_query": q or "",
             "selected_application_status": application_status or "",
+            "selected_application_group_id": group_id,
         },
     )
 
@@ -159,6 +162,7 @@ def _filter_volunteer_applications(
     *,
     query: str | None,
     application_status: str | None,
+    group_id: int | None,
 ):
     normalized_query = (query or "").strip().casefold()
     allowed_statuses = {"new", "contacted", "trial", "volunteer", "not_volunteer"}
@@ -167,6 +171,15 @@ def _filter_volunteer_applications(
         application
         for application in applications
         if (normalized_status is None or application.status == normalized_status)
+        and (
+            group_id is None
+            or group_id
+            in {
+                application.initial_group_id,
+                application.first_choice_group_id,
+                application.second_choice_group_id,
+            }
+        )
         and (
             not normalized_query
             or normalized_query
