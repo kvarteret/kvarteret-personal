@@ -16,10 +16,6 @@ has completed every profile field. The five user-facing states are::
 ``SUBMIT_PROFILE`` keeps the current lifecycle state. This lets a candidate
 complete the profile after the trial has started without moving backwards.
 
-Membership states (per group member)::
-
-    active ──drop──► dropped
-
 See ``docs/adr/003-domain-event-log.md`` for the audit design.
 """
 
@@ -41,11 +37,6 @@ class ApplicationState(StrEnum):
     NOT_VOLUNTEER = "not_volunteer"
 
 
-class MembershipState(StrEnum):
-    ACTIVE = "active"
-    DROPPED = "dropped"
-
-
 class ApplicationAction(StrEnum):
     SUBMIT_PROFILE = "submit_profile"
     RESEND_INVITATION = "resend_invitation"
@@ -56,7 +47,6 @@ class ApplicationAction(StrEnum):
     REOPEN = "reopen"
     RESTORE_VOLUNTEER = "restore_volunteer"
     DELETE = "delete"
-    DROP_MEMBER = "drop_member"
 
 
 # ── Errors ─────────────────────────────────────────────────────────
@@ -97,14 +87,6 @@ _TRANSITIONS: dict[
 
 # Actions that result in row removal (no target state).
 _DELETE_ACTIONS = {ApplicationAction.DELETE}
-
-# Membership transitions.
-_MEMBERSHIP_TRANSITIONS: dict[
-    tuple[MembershipState, ApplicationAction], MembershipState
-] = {
-    (MembershipState.ACTIVE, ApplicationAction.DROP_MEMBER): MembershipState.DROPPED,
-}
-
 
 # ── Side effects ───────────────────────────────────────────────────
 
@@ -162,25 +144,20 @@ class DomainEventRecord:
 
 @dataclass(frozen=True, slots=True)
 class TransitionResult:
-    new_state: ApplicationState | MembershipState
+    new_state: ApplicationState
     effects: tuple[Effect, ...] = ()
     event: DomainEventRecord | None = None
 
 
 # ── Transition context ─────────────────────────────────────────────
 
-# Contextual data that guards need but that isn't part of the state
-# machine itself (e.g. "is this application part of a group?").
+# Contextual data that guards need but that isn't part of the state machine
+# itself, such as whether the applicant has submitted their details.
 
 
 @dataclass(frozen=True, slots=True)
 class TransitionContext:
     actor_user_account_id: int | None = None
-    # Whether the application is part of an active group registration
-    # with other active members. Used by the APPROVE guard: per-person
-    # approval of an active group member is illegal; only the group
-    # action may promote them (and it passes False here).
-    is_part_of_active_group: bool = False
     # Whether a submission row (applicant details) exists. APPROVE
     # requires one: there is nothing to promote without it.
     has_submission: bool = True
@@ -215,14 +192,8 @@ def application_transition(
             ),
         )
 
-    # Guards: per-person promotion of active group members is illegal,
-    # and promotion requires applicant details to create the volunteer.
+    # Promotion requires applicant details to create the volunteer.
     if action == ApplicationAction.PROMOTE:
-        if ctx.is_part_of_active_group:
-            raise IllegalTransition(
-                "Cannot approve an individual application that is part of "
-                "an active group registration. Use group approval instead."
-            )
         if not ctx.has_submission:
             raise IllegalTransition(
                 "Cannot approve an application without submitted details."
@@ -321,29 +292,3 @@ def application_transition(
         )
 
     return TransitionResult(new_state=new_state, effects=effects, event=event)
-
-
-def membership_transition(
-    state: MembershipState,
-    action: ApplicationAction,
-    *,
-    context: TransitionContext | None = None,
-) -> TransitionResult:
-    """Compute the result of applying *action* to a membership *state*."""
-    ctx = context or TransitionContext()
-
-    new_state = _MEMBERSHIP_TRANSITIONS.get((state, action))
-    if new_state is None:
-        raise IllegalTransition(
-            f"Cannot apply action '{action.value}' to membership state '{state.value}'."
-        )
-
-    event = DomainEventRecord(
-        event_type="group_member_dropped",
-        actor_user_account_id=ctx.actor_user_account_id,
-        subject_type="group_member",
-        subject_id=0,
-        payload={"previous_state": state.value},
-    )
-
-    return TransitionResult(new_state=new_state, event=event)

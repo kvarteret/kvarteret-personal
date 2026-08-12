@@ -9,7 +9,6 @@ from typing import Protocol
 
 from app.domain.volunteer_applications.state_machine import (
     ApplicationState,
-    MembershipState,
 )
 
 
@@ -77,7 +76,6 @@ class VolunteerApplicationFriendInvite:
     token: str
     email: str
     inviter_name: str
-    first_choice_group_name: str
 
 
 @dataclass(slots=True)
@@ -86,29 +84,30 @@ class PublicProspectRegistrationResult:
     friend_invites: list[VolunteerApplicationFriendInvite]
 
 
-@dataclass(slots=True)
-class VolunteerApplicationGroupMember:
-    group_id: int
-    registration_id: int | None
-    email: str
-    role: str
-    status: str
-    submitted: bool
-    pending_volunteer_id: int | None
-    first_name: str | None
-    last_name: str | None
-    trial_shift_attended: bool
-    promoted_volunteer_id: int | None
-    application_status: str | None = None
-    dropped_at: datetime | None = None
+@dataclass(frozen=True, slots=True)
+class VolunteerApplicationFriendRelationship:
+    relationship_id: int
+    inviter_application_id: int | None
+    invitee_application_id: int | None
+    inviter_name: str | None
+    inviter_email: str
+    invitee_name: str | None
+    invitee_email: str
+    created_at: datetime
+    legacy_dropped_at: datetime | None = None
+    legacy_dropped_by_user_account_id: int | None = None
 
     @property
-    def active(self) -> bool:
-        return self.status == MembershipState.ACTIVE
+    def inviter_display_name(self) -> str:
+        return self.inviter_name or self.inviter_email
 
     @property
-    def display_name(self) -> str:
-        return build_full_name(self.first_name, self.last_name or "") or self.email
+    def invitee_display_name(self) -> str:
+        return self.invitee_name or self.invitee_email
+
+    @property
+    def historical(self) -> bool:
+        return self.legacy_dropped_at is not None
 
 
 @dataclass(slots=True)
@@ -137,10 +136,8 @@ class VolunteerApplicationListItem:
     trial_shift_attended: bool = False
     promoted_volunteer_id: int | None = None
     promoted_at: datetime | None = None
-    group_id: int | None = None
-    group_role: str | None = None
-    group_status: str | None = None
-    group_members: list[VolunteerApplicationGroupMember] | None = None
+    invited_by: VolunteerApplicationFriendRelationship | None = None
+    friend_invitees: list[VolunteerApplicationFriendRelationship] | None = None
     trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
 
@@ -191,24 +188,12 @@ class VolunteerApplicationDetail:
     trial_shift_marked_at: datetime | None = None
     promoted_volunteer_id: int | None = None
     promoted_at: datetime | None = None
-    group_id: int | None = None
-    group_role: str | None = None
-    group_status: str | None = None
-    group_members: list[VolunteerApplicationGroupMember] | None = None
+    invited_by: VolunteerApplicationFriendRelationship | None = None
+    friend_invitees: list[VolunteerApplicationFriendRelationship] | None = None
     trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
     status_history: list["VolunteerApplicationStatusEvent"] | None = None
     origin_trace_id: str | None = None
-
-    @property
-    def is_part_of_active_group(self) -> bool:
-        """True when this application belongs to an active group with
-        other active members — per-person approval is then illegal."""
-        if not self.group_id or self.group_status != MembershipState.ACTIVE:
-            return False
-        return any(
-            member.active and member.registration_id != self.registration_id for member in self.group_members or []
-        )
 
     @property
     def status_label(self) -> str:
@@ -269,11 +254,6 @@ class RecentVolunteerRegistrationItem:
     latest_semester_label: str | None = None
     photo_url: str | None = None
     registration_id: int | None = None
-    group_id: int | None = None
-    group_role: str | None = None
-    group_status: str | None = None
-    group_members: list[RecentVolunteerRegistrationItem] | None = None
-    renders_group: bool = False
 
 
 @dataclass(slots=True)
@@ -449,7 +429,6 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         second_choice_group_id: int | None,
         friend_invites: list[tuple[str, str]] | None = None,
         inviter_name: str | None = None,
-        first_choice_group_name: str | None = None,
         origin_trace_id: str | None = None,
     ) -> PublicProspectRegistrationResult: ...
     async def create_volunteer_application_invitation(
@@ -489,10 +468,12 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     ) -> TrialApplicantCardSnapshot | None: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
     async def find_active_registration_id_by_email(self, email: str) -> int | None: ...
-    async def list_group_members(
-        self, group_id: int, *, include_dropped: bool = True
-    ) -> list[VolunteerApplicationGroupMember]: ...
-    async def drop_group_invitee(self, registration_id: int, *, dropped_by_user_id: int | None = None) -> None: ...
+    async def get_friend_inviter(
+        self, invitee_application_id: int
+    ) -> VolunteerApplicationFriendRelationship | None: ...
+    async def list_friend_invitees(
+        self, inviter_application_id: int
+    ) -> list[VolunteerApplicationFriendRelationship]: ...
     async def role_matches_group(self, *, role_id: int, group_id: int) -> bool: ...
     async def mark_promoted(self, *, registration_id: int, volunteer_id: int, accepted_group_id: int) -> None: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...

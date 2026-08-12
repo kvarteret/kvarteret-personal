@@ -6,11 +6,9 @@ from app.domain.volunteer_applications.state_machine import (
     ApplicationAction,
     ApplicationState,
     IllegalTransition,
-    MembershipState,
     SendApprovalEmail,
     TransitionContext,
     application_transition,
-    membership_transition,
 )
 
 
@@ -45,23 +43,6 @@ def test_application_transition_matrix(state, action):
             application_transition(state, action)
     else:
         assert application_transition(state, action).new_state == expected
-
-
-@pytest.mark.parametrize(
-    "state,action,expected",
-    [
-        (MembershipState.ACTIVE, ApplicationAction.DROP_MEMBER, MembershipState.DROPPED),
-        (MembershipState.ACTIVE, ApplicationAction.SUBMIT_PROFILE, None),
-        (MembershipState.DROPPED, ApplicationAction.DROP_MEMBER, None),
-        (MembershipState.DROPPED, ApplicationAction.SUBMIT_PROFILE, None),
-    ],
-)
-def test_membership_transition_matrix(state, action, expected):
-    if expected is None:
-        with pytest.raises(IllegalTransition):
-            membership_transition(state, action)
-    else:
-        assert membership_transition(state, action).new_state == expected
 
 
 def test_contact_and_trial_start_emit_audit_events():
@@ -99,13 +80,13 @@ def test_promote_requires_submission():
         )
 
 
-def test_promote_blocked_for_active_group_member():
-    with pytest.raises(IllegalTransition, match="group approval"):
-        application_transition(
-            ApplicationState.TRIAL,
-            ApplicationAction.PROMOTE,
-            context=TransitionContext(is_part_of_active_group=True),
-        )
+def test_promote_is_independent_of_friend_relationships():
+    result = application_transition(
+        ApplicationState.TRIAL,
+        ApplicationAction.PROMOTE,
+    )
+
+    assert result.new_state == ApplicationState.VOLUNTEER
 
 
 def test_terminal_decision_can_be_reconsidered():

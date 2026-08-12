@@ -125,7 +125,7 @@ flowchart LR
         raTables[("role_assignments\nassignment_roles")]
     end
     subgraph volunteer_applications
-        vaTables[("volunteer_application_invites\n_submissions, _groups, _group_members\ndomain_events")]
+        vaTables[("volunteer_application_invites\n_submissions, friend invitations\ndomain_events")]
     end
     subgraph groups
         gTables[("groups")]

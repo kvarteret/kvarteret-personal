@@ -101,9 +101,13 @@ UPDATE volunteer_application_submissions s SET
     photo_sha1 = NULL,
     photo_filetype = NULL;
 
-UPDATE volunteer_application_group_members SET
-    applicant_email = CASE
-        WHEN invite_id IS NOT NULL THEN 'applicant.' || invite_id || '@example.dev'
+UPDATE volunteer_application_friend_invitations SET
+    inviter_email_snapshot = CASE
+        WHEN inviter_application_id IS NOT NULL THEN 'applicant.' || inviter_application_id || '@example.dev'
+        ELSE 'applicant.m' || id || '@example.dev'
+    END,
+    invitee_email_snapshot = CASE
+        WHEN invitee_application_id IS NOT NULL THEN 'applicant.' || invitee_application_id || '@example.dev'
         ELSE 'applicant.m' || id || '@example.dev'
     END;
 
@@ -124,7 +128,7 @@ VERIFICATION_CHECKS: list[tuple[str, str]] = [
     ("invite tokens", "SELECT count(*) FROM volunteer_application_invites WHERE token NOT LIKE 'dev-token-%'"),
     ("submission emails", "SELECT count(*) FROM volunteer_application_submissions WHERE email NOT LIKE '%@example.dev'"),
     ("submission free text", "SELECT count(*) FROM volunteer_application_submissions WHERE bakgrunn IS NOT NULL OR internkortaccesstoken IS NOT NULL"),
-    ("group member emails", "SELECT count(*) FROM volunteer_application_group_members WHERE applicant_email NOT LIKE '%@example.dev'"),
+    ("friend invitation emails", "SELECT count(*) FROM volunteer_application_friend_invitations WHERE inviter_email_snapshot NOT LIKE '%@example.dev' OR invitee_email_snapshot NOT LIKE '%@example.dev'"),
     ("admin emails", "SELECT count(*) FROM user_accounts WHERE email NOT LIKE '%@kvarteret.dev'"),
     ("photos excluded", "SELECT count(*) FROM volunteer_photos"),
     ("sessions excluded", "SELECT count(*) FROM web_sessions"),

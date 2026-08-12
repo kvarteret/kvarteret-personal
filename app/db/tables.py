@@ -46,8 +46,7 @@ from app.domain.role_assignments.tables import assignment_roles, role_assignment
 from app.domain.spotify.tables import integration_tokens
 from app.domain.volunteer_applications.tables import (
     domain_events,
-    volunteer_application_group_members,
-    volunteer_application_groups,
+    volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
 )
@@ -87,8 +86,7 @@ __all__ = [
     "storage_metadata",
     "storage_objects",
     "user_accounts",
-    "volunteer_application_group_members",
-    "volunteer_application_groups",
+    "volunteer_application_friend_invitations",
     "volunteer_application_invites",
     "volunteer_application_submissions",
     "volunteer_cards",

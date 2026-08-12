@@ -60,7 +60,7 @@ coordinates:
 - `submit`
 - `mark_trial_shift_attended`
 - `approve`
-- `drop_group_invitee`
+- `approve`
 - `delete`
 - `resend_invitation`
 

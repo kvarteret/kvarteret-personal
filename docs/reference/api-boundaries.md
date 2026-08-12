@@ -95,7 +95,7 @@ in both repositories. The explicit bar-area routing table is owned by Personal
 because it maps public Sanity choices to Personal roles. An established group
 slug is immutable even if the group's display name is later changed.
 
-The request body accepts `friend_emails` (up to two). When present, the backend creates an application group: the submitter becomes the group's inviter, each friend gets their own invitation with a personal `/apply/{token}` link delivered by email, and admins later approve the whole group atomically. Field-level validation errors for friend emails come back under `fieldErrors.friendEmails`.
+The request body accepts `friend_emails` (up to two). When present, the backend creates one ordinary application for the submitter and one ordinary application per friend, linked by invitation relationship records. Each friend gets a personal `/apply/{token}` link delivered by email; applications are reviewed and approved independently. Field-level validation errors for friend emails come back under `fieldErrors.friendEmails`.
 
 ## `frontend-eventside`
 

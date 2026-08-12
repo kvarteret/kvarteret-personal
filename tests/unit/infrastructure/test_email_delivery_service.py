@@ -12,14 +12,14 @@ from app.db.metadata import public_metadata
 from app.db.session import reset_request_session, set_request_session
 from app.domain.volunteer_applications.tables import (
     domain_events,
-    volunteer_application_group_members,
-    volunteer_application_groups,
+    volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
 )
 from app.domain.volunteers.tables import volunteer_records
 from app.email_delivery import (
     APPLICANT_APPLICATION_RECEIVED,
+    APPLICANT_FRIEND_INVITATION,
     APPLICANT_INVITATION,
     EmailDeliveryRequest,
 )
@@ -41,10 +41,17 @@ class FakeSender:
 
 
 class FakeApplicantRenderer:
+    def __init__(self) -> None:
+        self.friend_calls: list[dict[str, str]] = []
+
     def render_application_received_email(self):
         return Rendered()
 
     def render_invitation_email(self, **_kwargs):
+        return Rendered()
+
+    def render_friend_invitation_email(self, **kwargs):
+        self.friend_calls.append(kwargs)
         return Rendered()
 
 
@@ -70,8 +77,7 @@ async def session():
     tables = [
         volunteer_records,
         volunteer_application_invites,
-        volunteer_application_groups,
-        volunteer_application_group_members,
+        volunteer_application_friend_invitations,
         volunteer_application_submissions,
         domain_events,
         email_deliveries,
@@ -114,6 +120,54 @@ async def _seed_application(session) -> None:
             source="admin_invite",
             status="invited",
             trial_shift_attended=False,
+            created_at=datetime.now(UTC),
+        )
+    )
+
+
+async def _seed_friend_applications(session) -> None:
+    await session.execute(
+        insert(volunteer_application_invites),
+        [
+            {
+                "id": 6,
+                "token": str(uuid4()),
+                "email": "inviter@example.test",
+                "source": "public_signup",
+                "status": "trial",
+                "trial_shift_attended": False,
+                "created_at": datetime.now(UTC),
+            },
+            {
+                "id": 7,
+                "token": "friend-token",
+                "email": "friend@example.test",
+                "source": "friend_invite",
+                "status": "new",
+                "trial_shift_attended": False,
+                "created_at": datetime.now(UTC),
+            },
+        ],
+    )
+    await session.execute(
+        insert(volunteer_application_submissions).values(
+            id=1,
+            invite_id=6,
+            first_name="Current",
+            last_name="Inviter",
+            email="inviter@example.test",
+            gender="A",
+            created_at=datetime.now(UTC),
+        )
+    )
+    await session.execute(
+        insert(volunteer_application_friend_invitations).values(
+            id=1,
+            inviter_application_id=6,
+            invitee_application_id=7,
+            inviter_name_snapshot="Snapshot Inviter",
+            inviter_email_snapshot="inviter@example.test",
+            invitee_email_snapshot="friend@example.test",
             created_at=datetime.now(UTC),
         )
     )
@@ -208,6 +262,45 @@ async def test_application_receipt_uses_existing_renderer_without_public_base_ur
 
     assert summary.sent_count == 1
     assert sender.sent == 1
+
+
+@pytest.mark.asyncio
+async def test_friend_invitation_uses_inviter_application_and_snapshot_fallback(session) -> None:
+    await _seed_friend_applications(session)
+    clock = Clock()
+    sender = FakeSender()
+    renderer = FakeApplicantRenderer()
+    service = EmailOutboxService(
+        settings=Settings(
+            app_secret_key="test-secret",
+            app_public_base_url="https://personal.example.test",
+        ),
+        email_sender=sender,
+        applicant_renderer=renderer,  # type: ignore[arg-type]
+        now=clock,
+    )
+    await service.enqueue(
+        EmailDeliveryRequest(
+            template_key=APPLICANT_FRIEND_INVITATION,
+            template_version=1,
+            recipient_email="friend@example.test",
+            business_type="volunteer_application",
+            business_id="7",
+            idempotency_key="application:7:friend-invitation:v1",
+            registration_id=7,
+        )
+    )
+    await session.commit()
+
+    summary = await service.dispatch_due()
+
+    assert summary.sent_count == 1
+    assert renderer.friend_calls == [
+        {
+            "invitation_url": "https://personal.example.test/apply/friend-token",
+            "inviter_name": "Current Inviter",
+        }
+    ]
 
 
 @pytest.mark.asyncio

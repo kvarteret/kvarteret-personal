@@ -41,9 +41,6 @@ class VolunteerApplicationSideEffects:
         self.invalidate_pending_count_cache()
         return None
 
-    async def after_group_invitee_dropped(self, detail: Any) -> None:
-        self.invalidate_pending_count_cache()
-
     async def after_deleted(self, detail: Any) -> None:
         self.invalidate_pending_count_cache()
         storage_path = _build_photo_storage_path(detail.photo_sha1, detail.photo_filetype)

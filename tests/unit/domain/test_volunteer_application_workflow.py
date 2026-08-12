@@ -80,12 +80,6 @@ class FakeWorkflowOperations:
             email="applicant@example.test",
         ), 12
 
-    async def drop_group_invitee_record(
-        self, registration_id: int, *, dropped_by_user_id: int | None
-    ):
-        self.calls.append(("drop", registration_id))
-        return _Record(registration_id=registration_id)
-
     async def delete_application_record(self, registration_id: int):
         self.calls.append(("delete", registration_id))
         return _Record(
@@ -103,10 +97,8 @@ class FakeWorkflowOperations:
             status=self.detail_status,
             email="applicant@example.test",
             pending_volunteer_id=8,
-            group_id=None,
-            group_status=None,
-            group_members=None,
-            is_part_of_active_group=False,
+            invited_by=None,
+            friend_invitees=None,
         )
 
     async def get_volunteer_application_by_token(self, token: str):
@@ -116,15 +108,9 @@ class FakeWorkflowOperations:
             status="new",
             email="applicant@example.test",
             pending_volunteer_id=None,
-            group_id=None,
-            group_status=None,
-            group_members=None,
-            is_part_of_active_group=False,
+            invited_by=None,
+            friend_invitees=None,
         )
-
-    async def list_active_group_members(self, group_id: int):
-        self.calls.append(("list_members", group_id))
-        return []
 
     async def append_domain_event(self, event, *, subject_id: int):
         self.events = getattr(self, "events", [])
@@ -167,9 +153,6 @@ class FakeWorkflowSideEffects:
 
     async def after_approved(self, detail, *, volunteer_id: int, base_url: str | None):
         self.calls.append(("after_approved", volunteer_id))
-
-    async def after_group_invitee_dropped(self, detail):
-        self.calls.append(("after_drop", detail.registration_id))
 
     async def after_deleted(self, detail):
         self.calls.append(("after_deleted", detail.registration_id))

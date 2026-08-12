@@ -3,10 +3,10 @@
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
+    Index,
     JSON,
     Table,
     Text,
@@ -20,7 +20,7 @@ _SET_NULL = "SET NULL"
 volunteer_application_invites = Table(
     "volunteer_application_invites",
     public_metadata,
-    Column("id", BigInteger, primary_key=True),
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("token", Text, nullable=False),
     Column("email", Text, nullable=False),
     Column("source", Text, nullable=False),
@@ -43,28 +43,42 @@ volunteer_application_invites = Table(
     UniqueConstraint("token", name="uq_volunteer_application_invites_token"),
 )
 
-volunteer_application_groups = Table(
-    "volunteer_application_groups",
+volunteer_application_friend_invitations = Table(
+    "volunteer_application_friend_invitations",
     public_metadata,
-    Column("id", BigInteger, primary_key=True),
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column(
+        "inviter_application_id",
+        BigInteger,
+        ForeignKey("public.volunteer_application_invites.id", ondelete=_SET_NULL),
+    ),
+    Column(
+        "invitee_application_id",
+        BigInteger,
+        ForeignKey("public.volunteer_application_invites.id", ondelete=_SET_NULL),
+    ),
+    Column("inviter_name_snapshot", Text),
+    Column("inviter_email_snapshot", Text, nullable=False),
+    Column("invitee_email_snapshot", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
-)
-
-volunteer_application_group_members = Table(
-    "volunteer_application_group_members",
-    public_metadata,
-    Column("id", BigInteger, primary_key=True),
-    Column("group_id", BigInteger, ForeignKey("public.volunteer_application_groups.id"), nullable=False),
-    Column("invite_id", BigInteger, ForeignKey("public.volunteer_application_invites.id", ondelete=_SET_NULL)),
-    Column("applicant_email", Text, nullable=False),
-    Column("role", Text, nullable=False),
-    Column("status", Text, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("dropped_at", DateTime(timezone=True)),
-    Column("dropped_by_user_account_id", BigInteger),
-    CheckConstraint("role in ('inviter', 'invitee')", name="ck_volunteer_application_group_members_role"),
-    CheckConstraint("status in ('active', 'dropped')", name="ck_volunteer_application_group_members_status"),
-    UniqueConstraint("group_id", "invite_id", name="uq_volunteer_application_group_members_invite"),
+    Column("legacy_dropped_at", DateTime(timezone=True)),
+    Column(
+        "legacy_dropped_by_user_account_id",
+        BigInteger,
+        ForeignKey("public.user_accounts.id", ondelete=_SET_NULL),
+    ),
+    UniqueConstraint(
+        "invitee_application_id",
+        name="uq_volunteer_application_friend_invitations_invitee",
+    ),
+    Index(
+        "ix_va_friend_invites_inviter_id",
+        "inviter_application_id",
+    ),
+    Index(
+        "ix_va_friend_invites_invitee_id",
+        "invitee_application_id",
+    ),
 )
 
 volunteer_application_submissions = Table(

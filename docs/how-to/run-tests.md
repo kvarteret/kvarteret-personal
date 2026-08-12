@@ -41,7 +41,7 @@ Migrate and run:
     DATABASE_URL=$E2E_URL uv run alembic upgrade head
     E2E_DATABASE_URL=$E2E_URL DATABASE_URL=$E2E_URL uv run pytest tests/e2e -q
 
-The suite skips cleanly when `E2E_DATABASE_URL` is unset, truncates its tables per test, and asserts directly against the database with SQL. The two journeys are the full two-friend lifecycle (signup → emails → atomic group approval → deletion) and an induced-failure test proving group approval rolls back all-or-nothing.
+The suite skips cleanly when `E2E_DATABASE_URL` is unset, truncates its tables per test, and asserts directly against the database with SQL. The two-friend journey covers signup, relationship snapshots, separate emails, independent approval while one friend is incomplete, and deletion.
 
 Tear down when done:
 
@@ -59,4 +59,4 @@ Tear down when done:
 
 ## Extending the E2E Suite
 
-The harness cost is paid; a new journey is ~50 lines in `tests/e2e/`. Good candidates: the solo prospect flow (trial shift → approve from `prospect`), reject, drop-member-then-approve-group, and the mobile-card access-code → session flow (which also exercises the Postgres rate limiter end to end).
+The harness cost is paid; a new journey is ~50 lines in `tests/e2e/`. Good candidates: the solo prospect flow (trial shift → approve from `prospect`), reject, and the mobile-card access-code → session flow (which also exercises the Postgres rate limiter end to end).

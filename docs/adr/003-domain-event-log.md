@@ -8,14 +8,14 @@
 
 The volunteer application lifecycle is the most important business process in
 `kvarteret-personal`.  Every state change — invitation, submission, approval,
-rejection, trial shift, deletion, group membership changes — must be auditable
+rejection, trial shift, and deletion — must be auditable
 so that administrators can reconstruct who did what and when.
 
 The domain already follows a "history as truth" pattern: `role_assignments`
 (formerly `historie`) is an append-only table from which "currently active
 volunteer" is derived.  The registration tables (`volunteer_application_invites`,
-`volunteer_application_submissions`, `volunteer_application_group_members`) carry
-timestamps (`created_at`, `promoted_at`, `dropped_at`, `trial_shift_marked_at`)
+`volunteer_application_submissions`, and friend-invitation relationship records
+carry timestamps (`created_at`, `promoted_at`, `trial_shift_marked_at`)
 but these record *when* without recording *who* acted or *what* the previous
 state was.
 
@@ -30,10 +30,9 @@ as the state change itself, so the event and the state are atomically consistent
 - `id` (bigint, PK)
 - `event_type` (text) — e.g. `application_submitted`, `application_approved`,
   `application_rejected`, `application_deleted`, `trial_shift_marked`,
-  `group_member_dropped`
 - `actor_user_account_id` (bigint, nullable) — the admin user who performed the
   action, or `NULL` for automated/public actions
-- `subject_type` (text) — e.g. `application`, `group_member`
+- `subject_type` (text) — e.g. `application`
 - `subject_id` (bigint) — the primary key of the subject row
 - `payload` (jsonb) — free-form metadata, minimally `{"previous_state": "..."}`
 - `occurred_at` (timestamptz) — when the event was recorded

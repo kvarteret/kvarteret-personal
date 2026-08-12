@@ -110,9 +110,6 @@ class FakeVolunteersService:
                 status="promoted",
                 first_choice_group_name="Skjenkegruppen",
                 second_choice_group_name=None,
-                group_id=3,
-                group_role="invitee",
-                group_status="active",
             ),
         )
 
@@ -402,7 +399,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Skjenkegruppen" in detail_response.text
     assert "N/A" in detail_response.text
     assert "Komitéønsker" not in detail_response.text
-    assert "invitee · active" in detail_response.text
+    assert "Individuell søknad" in detail_response.text
     assert service.list_page_calls[0]["only_active"] is True
 
 

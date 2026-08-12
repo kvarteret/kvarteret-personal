@@ -3,7 +3,7 @@
 Deterministic (seeded RNG) and entirely fake: groups and courses with
 real-looking structure, ~40 volunteers with role history and course
 completions, and a handful of pending applications including a
-two-friend group that can be approved from the admin UI.
+    inviter and friend applications that can be processed independently.
 
 Used by ``scripts/dev/bootstrap.py`` when no anonymized snapshot exists.
 """
@@ -34,8 +34,7 @@ from app.db.tables import (
     groups,
     role_assignments,
     user_accounts,
-    volunteer_application_group_members,
-    volunteer_application_groups,
+    volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
     volunteer_records,
@@ -271,13 +270,7 @@ async def seed(database_url: str) -> None:
                 )
             )
 
-            friend_group_id = (
-                await session.execute(
-                    insert(volunteer_application_groups)
-                    .values(created_at=now - timedelta(days=3))
-                    .returning(volunteer_application_groups.c.id)
-                )
-            ).scalar_one()
+            friend_application_ids: dict[str, int] = {}
             for offset, (token, email, first, role) in enumerate(
                 [
                     ("dev-friends-inviter", "inviter.friend@example.dev", "Inga", "inviter"),
@@ -290,7 +283,7 @@ async def seed(database_url: str) -> None:
                         .values(
                             token=token,
                             email=email,
-                            source="public_signup" if role == "inviter" else "group_invite",
+                            source="public_signup" if role == "inviter" else "friend_invite",
                             status="trial",
                             first_choice_group_id=group_ids["Skjenkegruppen"],
                             trial_started_at=now - timedelta(days=1),
@@ -301,6 +294,7 @@ async def seed(database_url: str) -> None:
                         .returning(volunteer_application_invites.c.id)
                     )
                 ).scalar_one()
+                friend_application_ids[role] = invite_id
                 await session.execute(
                     insert(volunteer_application_submissions).values(
                         invite_id=invite_id,
@@ -315,16 +309,16 @@ async def seed(database_url: str) -> None:
                         created_at=now - timedelta(days=1),
                     )
                 )
-                await session.execute(
-                    insert(volunteer_application_group_members).values(
-                        group_id=friend_group_id,
-                        invite_id=invite_id,
-                        applicant_email=email,
-                        role=role,
-                        status="active",
-                        created_at=now - timedelta(days=3),
-                    )
+            await session.execute(
+                insert(volunteer_application_friend_invitations).values(
+                    inviter_application_id=friend_application_ids["inviter"],
+                    invitee_application_id=friend_application_ids["invitee"],
+                    inviter_name_snapshot="Inga Vennesøker",
+                    inviter_email_snapshot="inviter.friend@example.dev",
+                    invitee_email_snapshot="invitee.friend@example.dev",
+                    created_at=now - timedelta(days=3),
                 )
+            )
 
             print(f"Seeded {len(volunteer_ids)} volunteers, {len(GROUPS)} groups, 4 applications.")
         await ensure_dev_admin(runtime)
