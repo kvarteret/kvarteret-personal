@@ -29,6 +29,7 @@ _SPOTIFY_CURRENTLY_PLAYING_URL = (
 _SPOTIFY_PROVIDER = "spotify"
 _SPOTIFY_SCOPES = "user-read-currently-playing user-read-playback-state"
 _STATE_MAX_AGE_SECONDS = 600
+_FAILURE_BACKOFF_SECONDS = 60.0
 
 
 class SpotifyOAuthError(RuntimeError):
@@ -70,6 +71,8 @@ class NowPlayingService:
         self._cache_entry: _CacheEntry | None = None
         self._refresh_token_cache: str | None = None
         self._refresh_token_cache_loaded = False
+        self._failure_backoff_until = 0.0
+        self._failure_logged = False
         self._state_serializer = URLSafeTimedSerializer(
             settings.app_secret_key, salt="kvarteret-spotify-oauth"
         )
@@ -90,6 +93,9 @@ class NowPlayingService:
                 cache_seconds=cache_seconds,
             )
 
+        if self._now_fn() < self._failure_backoff_until:
+            return self._failure_fallback(cache_seconds)
+
         try:
             return await self._get_state_with_cache(
                 refresh_token=refresh_token,
@@ -97,13 +103,8 @@ class NowPlayingService:
                 stale_grace_seconds=stale_grace_seconds,
             )
         except Exception:
-            logger.exception("Failed to fetch now playing track")
-            return NowPlayingResult(
-                state=self._default_state(authorized=True),
-                cache_hit=False,
-                cache_stale=False,
-                cache_seconds=cache_seconds,
-            )
+            self._record_fetch_failure()
+            return self._failure_fallback(cache_seconds)
 
     def build_authorize_url(
         self, *, session_id: str, user_account_id: int | None
@@ -161,6 +162,7 @@ class NowPlayingService:
         )
         self._refresh_token_cache = refresh_token
         self._cache_entry = None
+        self._clear_fetch_failure()
 
     async def clear_shared_token(self) -> None:
         try:
@@ -174,6 +176,7 @@ class NowPlayingService:
             ) from exc
         self._refresh_token_cache = None
         self._cache_entry = None
+        self._clear_fetch_failure()
 
     async def has_shared_refresh_token(self) -> bool:
         return bool(await self._get_refresh_token())
@@ -235,19 +238,18 @@ class NowPlayingService:
         try:
             fresh_state = await self._fetch_state_uncached(refresh_token)
         except Exception:
+            self._record_fetch_failure()
             if (
                 entry
                 and _cache_age_seconds(now, entry)
                 <= cache_seconds + stale_grace_seconds
             ):
-                logger.warning(
-                    "Serving stale now-playing snapshot after refresh failure"
-                )
                 return _result(
                     entry, cache_hit=True, cache_stale=True, cache_seconds=cache_seconds
                 )
             raise
 
+        self._clear_fetch_failure()
         self._cache_entry = _CacheEntry(
             state=dict(fresh_state), fetched_at=self._now_fn()
         )
@@ -434,6 +436,31 @@ class NowPlayingService:
             "progressPercent": None,
             "connectUrl": self._connect_url(),
         }
+
+    def _record_fetch_failure(self) -> None:
+        self._failure_backoff_until = self._now_fn() + _FAILURE_BACKOFF_SECONDS
+        if not self._failure_logged:
+            logger.exception("Failed to fetch now playing track")
+            self._failure_logged = True
+
+    def _clear_fetch_failure(self) -> None:
+        self._failure_backoff_until = 0.0
+        self._failure_logged = False
+
+    def _failure_fallback(self, cache_seconds: float) -> NowPlayingResult:
+        if self._cache_entry is not None:
+            return _result(
+                self._cache_entry,
+                cache_hit=True,
+                cache_stale=True,
+                cache_seconds=cache_seconds,
+            )
+        return NowPlayingResult(
+            state=self._default_state(authorized=True),
+            cache_hit=False,
+            cache_stale=False,
+            cache_seconds=cache_seconds,
+        )
 
     def _connect_url(self) -> str:
         public_base_url = (self.settings.app_public_base_url or "").strip().rstrip("/")

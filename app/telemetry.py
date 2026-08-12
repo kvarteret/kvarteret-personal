@@ -14,12 +14,14 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 from app.config import Settings
 from app.observability import JsonLogFormatter
 
 logger = logging.getLogger(__name__)
 _httpx_instrumented = False
+_TRACE_SAMPLE_RATE = 0.1
 
 
 class _SanitizedLoggingHandler(LoggingHandler):
@@ -39,6 +41,13 @@ class _SanitizedLoggingHandler(LoggingHandler):
         super().emit(safe_record)
 
 
+def _build_trace_provider(resource: Resource) -> TracerProvider:
+    return TracerProvider(
+        resource=resource,
+        sampler=ParentBased(TraceIdRatioBased(_TRACE_SAMPLE_RATE)),
+    )
+
+
 def configure_telemetry(app: FastAPI, settings: Settings) -> None:
     """Install best-effort OTLP logs and traces for the current process."""
     global _httpx_instrumented
@@ -55,7 +64,7 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
                 "cloud.region": os.getenv("VERCEL_REGION", "unknown"),
             }
         )
-        trace_provider = TracerProvider(resource=resource)
+        trace_provider = _build_trace_provider(resource)
         trace_provider.add_span_processor(
             BatchSpanProcessor(
                 OTLPSpanExporter(
