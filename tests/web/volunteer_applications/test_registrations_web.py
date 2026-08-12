@@ -22,7 +22,7 @@ from app.domain.volunteer_applications.models import (
     VolunteerApplicationInvite,
 )
 from app.domain.volunteers.models import AssignmentRoleOption, GroupOption
-from tests.support.helpers import csrf_headers, make_authenticated_user, override_authenticated_user, prime_csrf
+from tests.support.helpers import make_authenticated_user, override_authenticated_user
 
 
 class FakeVolunteerApplicationsService:
@@ -35,7 +35,6 @@ class FakeVolunteerApplicationsService:
         self.resent_registration_ids: list[int] = []
         self.recent_registration_calls: list[dict[str, object | None]] = []
         self.submission_calls: list[dict[str, object | None]] = []
-        self.updated_profile_calls: list[dict[str, object]] = []
         self.approval_calls: list[dict[str, object | None]] = []
         self.volunteer_applications = [
             VolunteerApplicationListItem(
@@ -244,14 +243,6 @@ class FakeVolunteerApplicationsService:
             }
         )
         return await self.get_volunteer_application_by_token(token)
-
-    async def update_volunteer_application_profile(self, registration_id, profile):
-        self.updated_profile_calls.append(
-            {"registration_id": registration_id, "profile": profile}
-        )
-        detail = await self.get_volunteer_application_detail(registration_id)
-        assert detail is not None
-        return detail
 
     async def approve_volunteer_application(
         self,
@@ -520,10 +511,10 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert 'name="assignment_term"' in response.text
     assert 'name="accepted_group_id"' in response.text
     assert 'name="accepted_role_id"' in response.text
-    assert "Lagre endringer" in response.text
+    assert "Lagre endringer" not in response.text
     assert "På prøve" in response.text
     assert ">Endre</button>" not in response.text
-    assert 'class="app-input bg-white"' in response.text
+    assert '<dl class="grid gap-5 md:grid-cols-2">' in response.text
     assert 'x-data="{ editing: false }"' not in response.text
     assert "Første valg" in response.text
     assert "Andre valg" in response.text
@@ -551,41 +542,6 @@ def test_promoted_application_uses_profile_badge_for_active_status() -> None:
     assert "Aktiv frivillig" in response.text
     assert "Lagre endringer" not in response.text
     assert "Personopplysninger redigeres" not in response.text
-
-
-def test_management_user_can_update_unpromoted_application_profile() -> None:
-    app = create_app()
-    override_authenticated_user(app, make_authenticated_user())
-    service = FakeVolunteerApplicationsService()
-    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
-    client = TestClient(app)
-    prime_csrf(client)
-
-    response = client.patch(
-        "/volunteer-applications/7",
-        data={
-            "email": "updated@example.test",
-            "first_name": "Updated",
-            "last_name": "Applicant",
-            "phone": "+4791234567",
-            "birth_date": "2000-01-02",
-            "gender": "A",
-            "address": "Ny adresse 1",
-            "postal_code": "5000",
-            "study_institution": "UiB",
-            "background_details": "Bakgrunn",
-        },
-        headers=csrf_headers(client),
-        follow_redirects=False,
-    )
-
-    assert response.status_code == 303
-    assert response.headers["location"] == "/volunteer-applications/7"
-    assert len(service.updated_profile_calls) == 1
-    updated = service.updated_profile_calls[0]
-    assert updated["registration_id"] == 7
-    assert updated["profile"].email == "updated@example.test"
-    assert updated["profile"].birth_date == date(2000, 1, 2)
 
 
 def test_promotion_form_preserves_unchecked_contract_state() -> None:

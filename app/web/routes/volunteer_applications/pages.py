@@ -12,11 +12,7 @@ from app.dependencies import (
 from app.email_outbox_service import EmailOutboxService
 from app.observability import log_admin_activity
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
-from app.domain.volunteers.options import (
-    GENDER_OPTIONS,
-    SEMESTER_TERM_OPTIONS,
-    gender_label,
-)
+from app.domain.volunteers.options import SEMESTER_TERM_OPTIONS, gender_label
 from app.domain.volunteers.service import VolunteersService
 from app.shared.semester import get_current_semester_code
 from app.web.i18n import (
@@ -317,7 +313,6 @@ async def volunteer_application_detail(
             "volunteer_application": volunteer_application,
             "latest_email_delivery": latest_email_delivery,
             "gender_label": gender_label,
-            "gender_options": GENDER_OPTIONS,
             "promotion_group_options": promotion_group_options,
             "promotion_role_options": promotion_role_options,
             "selected_promotion_group_id": selected_promotion_group_id,

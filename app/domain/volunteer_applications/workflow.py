@@ -62,7 +62,7 @@ class VolunteerApplicationWorkflowOperations(Protocol):
         self,
         registration: "PublicProspectRegistrationInput",
         *,
-        base_url: str | None = None,
+        base_url: str | None,
     ) -> "PublicProspectRegistrationResult": ...
     async def create_invitation_record(
         self,
@@ -498,8 +498,8 @@ class VolunteerApplicationWorkflow:
         assignment_year: int | None = None,
         assignment_term: int | None = None,
         contract_signed: bool = True,
-        actor_user_account_id: int | None = None,
-        as_group_action: bool = False,
+        actor_user_account_id: int | None,
+        as_group_action: bool,
     ) -> "tuple[VolunteerApplicationDetail, int, DomainEventRecord | None]":
         existing = await self.operations.get_volunteer_application_detail(
             registration_id

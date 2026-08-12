@@ -16,7 +16,6 @@ from app.observability import log_admin_activity
 from app.infrastructure.media.photo_processing import InvalidPhotoError, PhotoUploadTooLargeError
 from app.domain.volunteer_applications.service import (
     VolunteerApplicationConflictError,
-    VolunteerApplicationAdminUpdateInput,
     VolunteerAlreadyExistsError,
     VolunteerApplicationNotFoundError,
     VolunteerApplicationSubmissionInput,
@@ -83,58 +82,6 @@ async def volunteer_applications_create_invite(
         },
     )
     return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.patch("/volunteer-applications/{application_id}")
-async def volunteer_application_update_profile(
-    request: Request,
-    application_id: int,
-    email: str = Form(...),
-    first_name: str | None = Form(default=None),
-    last_name: str = Form(...),
-    phone: str | None = Form(default=None),
-    birth_date: str | None = Form(default=None),
-    gender: str = Form(default="A"),
-    address: str | None = Form(default=None),
-    postal_code: str | None = Form(default=None),
-    study_institution: str | None = Form(default=None),
-    background_details: str | None = Form(default=None),
-    current_user=Depends(require_management_user),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(
-        get_volunteer_applications_service
-    ),
-):
-    try:
-        await volunteer_applications_service.update_volunteer_application_profile(
-            application_id,
-            VolunteerApplicationAdminUpdateInput(
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                phone=phone,
-                birth_date=date.fromisoformat(birth_date) if birth_date else None,
-                gender=gender,
-                address=address,
-                postal_code=postal_code,
-                study_institution=study_institution,
-                background_details=background_details,
-            ),
-        )
-    except VolunteerApplicationNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except (VolunteerApplicationConflictError, VolunteerApplicationValidationError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    log_admin_activity(
-        request=request,
-        user=current_user,
-        action="volunteer_application.update_profile",
-        subject_type="volunteer_application",
-        subject_id=application_id,
-    )
-    return RedirectResponse(
-        url=f"/volunteer-applications/{application_id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
 
 
 @router.post("/volunteer-applications/{application_id}/approval")

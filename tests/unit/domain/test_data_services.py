@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import uuid4
 
@@ -21,7 +21,6 @@ from app.domain.volunteer_applications.models import (
     PublicProspectGroup,
     PublicProspectRegistrationInput,
     TrialApplicantCardSnapshot,
-    VolunteerApplicationAdminUpdateInput,
 )
 from app.domain.volunteer_applications.service import (
     VolunteerAlreadyExistsError,
@@ -114,7 +113,6 @@ class FakeVolunteerApplicationsRepository:
         self.created_public_prospects: list[dict[str, object | None]] = []
         self.application_submitted = True
         self.detail_status = "new"
-        self.updated_application_profiles: list[tuple[int, VolunteerApplicationAdminUpdateInput]] = []
 
     async def create_public_prospect_registration(self, **kwargs):
         self.created_public_prospects.append(kwargs)
@@ -227,13 +225,6 @@ class FakeVolunteerApplicationsRepository:
     ) -> None:
         self.saved_registration_ids.append(registration_id)
         self.saved_submission_phones.append(submission.phone)
-
-    async def update_application_profile(
-        self,
-        registration_id: int,
-        profile: VolunteerApplicationAdminUpdateInput,
-    ) -> None:
-        self.updated_application_profiles.append((registration_id, profile))
 
     async def set_application_status(
         self, registration_id: int, *, status, start_trial: bool = False
@@ -1044,44 +1035,6 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
     assert repository.saved_registration_ids == [7]
     assert repository.saved_submission_phones == ["+4799999998"]
     assert repository.count_calls == 2
-
-
-@pytest.mark.asyncio
-async def test_admin_application_profile_update_normalizes_values() -> None:
-    repository = FakeVolunteerApplicationsRepository()
-    service = VolunteerApplicationsService(
-        volunteer_creator=FakeVolunteerCreator(),
-        settings=Settings(app_secret_key="test-secret"),
-        repository=repository,
-        email_outbox=FakeEmailOutbox(),
-    )
-
-    detail = await service.update_volunteer_application_profile(
-        7,
-        VolunteerApplicationAdminUpdateInput(
-            email="  APPLICANT@EXAMPLE.TEST ",
-            first_name="  Ada ",
-            last_name=" Lovelace ",
-            phone="95230903",
-            birth_date=date(1815, 12, 10),
-            gender="k",
-            address="  Example address ",
-            postal_code="5000",
-            study_institution="  UiB ",
-            background_details="  Erfaring ",
-        ),
-    )
-
-    assert detail.registration_id == 7
-    registration_id, profile = repository.updated_application_profiles[0]
-    assert registration_id == 7
-    assert profile.email == "applicant@example.test"
-    assert profile.first_name == "Ada"
-    assert profile.last_name == "Lovelace"
-    assert profile.phone == "+4795230903"
-    assert profile.gender == "K"
-    assert profile.address == "Example address"
-    assert profile.study_institution == "UiB"
 
 
 @pytest.mark.asyncio

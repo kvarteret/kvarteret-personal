@@ -79,12 +79,12 @@
               {% if volunteer_application.is_part_of_active_group %}
                 <div class="flex min-h-20 items-center border-2 border-kvarteret-ink bg-kvarteret-surface px-4 py-3 text-center text-sm">Godkjennes sammen med gruppen fra søknadslisten.</div>
               {% else %}
-                <button class="app-button-secondary h-full min-h-20 w-full" type="button" @click="$refs.promotionDialog.showModal()" {% if not promotion_group_options %}disabled{% endif %}>Oppgrader til frivillig</button>
-                <dialog aria-labelledby="promotion-dialog-title" class="m-auto w-[min(94vw,52rem)] border-2 border-kvarteret-ink bg-kvarteret-background p-0 text-left text-kvarteret-ink backdrop:bg-stone-950/60" x-ref="promotionDialog" @click.self="$refs.promotionDialog.close()">
+                <button class="app-button-secondary h-full min-h-20 w-full" type="button" onclick="document.getElementById('promotion-dialog').showModal()" {% if not promotion_group_options %}disabled{% endif %}>Oppgrader til frivillig</button>
+                <dialog aria-labelledby="promotion-dialog-title" class="m-auto w-[min(94vw,52rem)] border-2 border-kvarteret-ink bg-kvarteret-background p-0 text-left text-kvarteret-ink backdrop:bg-stone-950/60" id="promotion-dialog" onclick="if (event.target === this) this.close()">
                   <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" class="grid gap-6 p-6 md:p-8" method="post">
                   <div class="flex items-start justify-between gap-4">
                     <h2 class="text-3xl font-medium tracking-tight" id="promotion-dialog-title">Historikk</h2>
-                    <button aria-label="Lukk" class="text-3xl leading-none" type="button" @click="$refs.promotionDialog.close()">&times;</button>
+                    <button aria-label="Lukk" class="text-3xl leading-none" type="button" onclick="this.closest('dialog').close()">&times;</button>
                   </div>
                   <div class="grid gap-4 md:grid-cols-2">
                     <label class="grid gap-1">
@@ -115,7 +115,7 @@
                   </label>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <button class="app-button" type="submit">Oppgrader til frivillig</button>
-                    <button class="app-button-secondary" type="button" @click="$refs.promotionDialog.close()">Avbryt</button>
+                      <button class="app-button-secondary" type="button" onclick="this.closest('dialog').close()">Avbryt</button>
                   </div>
                   </form>
                 </dialog>
@@ -178,23 +178,18 @@
           <h2 class="text-2xl font-medium tracking-tight text-stone-900">Søkerprofil</h2>
           <span class="text-sm text-stone-500">Sendt inn {{ volunteer_application.created_at.strftime("%Y-%m-%d") }}</span>
         </div>
-        <form action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post">
-          <label class="grid gap-1"><span class="text-sm text-stone-500">Fornavn</span><input class="app-input bg-white" name="first_name" type="text" value="{{ volunteer_application.first_name or '' }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1"><span class="text-sm text-stone-500">Etternavn</span><input class="app-input bg-white" name="last_name" required type="text" value="{{ volunteer_application.last_name or '' }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1"><span class="text-sm text-stone-500">E-post</span><input class="app-input bg-white" name="email" required type="email" value="{{ volunteer_application.email }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1"><span class="text-sm text-stone-500">Telefon</span><input class="app-input bg-white" name="phone" type="tel" value="{{ volunteer_application.phone or '' }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1"><span class="text-sm text-stone-500">Studiested</span><input class="app-input bg-white" name="study_institution" type="text" value="{{ volunteer_application.study_institution or '' }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1"><span class="text-sm text-stone-500">Fødselsdato</span><input class="app-input bg-white" name="birth_date" type="date" value="{{ volunteer_application.birth_date.isoformat() if volunteer_application.birth_date else '' }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1"><span class="text-sm text-stone-500">Kjønn</span><select class="app-input bg-white" name="gender" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}>{% for option in gender_options %}<option value="{{ option.code }}" {% if volunteer_application.gender == option.code %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
-          <label class="grid gap-1"><span class="text-sm text-stone-500">Postnummer</span><input class="app-input bg-white" name="postal_code" pattern="[0-9]{4}" type="text" value="{{ volunteer_application.postal_code or '' }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1 md:col-span-2"><span class="text-sm text-stone-500">Adresse</span><input class="app-input bg-white" name="address" type="text" value="{{ volunteer_application.address or '' }}" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}></label>
-          <label class="grid gap-1 md:col-span-2"><span class="text-sm text-stone-500">Bakgrunn</span><textarea class="app-input min-h-28 bg-white" name="background_details" {% if volunteer_application.promoted_volunteer_id %}disabled{% endif %}>{{ volunteer_application.background_details or '' }}</textarea></label>
-          {% if not volunteer_application.promoted_volunteer_id %}
-            <div class="md:col-span-2">
-              <button class="app-button" type="submit">Lagre endringer</button>
-            </div>
-          {% endif %}
-        </form>
+        <dl class="grid gap-5 md:grid-cols-2">
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Fornavn</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.first_name or "Ikke satt" }}</dd></div>
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Etternavn</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.last_name or "Ikke satt" }}</dd></div>
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">E-post</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.email }}</dd></div>
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Telefon</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.phone or "Ingen telefon" }}</dd></div>
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Studiested</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.study_institution or "Ikke oppgitt" }}</dd></div>
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Fødselsdato</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.birth_date.isoformat() if volunteer_application.birth_date else "Ikke satt" }}</dd></div>
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Kjønn</dt><dd class="mt-1 text-stone-900">{{ gender_label(volunteer_application.gender) }}</dd></div>
+          <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Postnummer</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.postal_code or "Ikke satt" }}</dd></div>
+          <div class="border-b border-stone-300 pb-3 md:col-span-2"><dt class="text-sm text-stone-500">Adresse</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.address or "Ingen adresse" }}</dd></div>
+          <div class="border-b border-stone-300 pb-3 md:col-span-2"><dt class="text-sm text-stone-500">Bakgrunn</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.background_details or "Ingen ekstra informasjon" }}</dd></div>
+        </dl>
       </section>
 
       <section class="app-panel">
