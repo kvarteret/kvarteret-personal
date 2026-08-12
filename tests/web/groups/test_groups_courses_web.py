@@ -355,6 +355,8 @@ def test_groups_and_courses_pages_render() -> None:
     assert "Vervet har medlemmer og kan ikke slettes." in group_detail_response.text
     assert "disabled" in group_detail_response.text
     assert 'hx-boost="true"' in group_detail_response.text
+    assert "htmx-ext-preload" not in group_detail_response.text
+    assert 'hx-ext="morph"' in group_detail_response.text
     assert 'hx-swap="morph:innerHTML"' in group_detail_response.text
     assert 'hx-select="#page-shell"' not in group_detail_response.text
     assert 'hx-target="#page-shell"' not in group_detail_response.text
