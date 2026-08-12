@@ -5,8 +5,22 @@ import logging
 import sys
 from typing import Any, cast
 
+from opentelemetry.sdk.resources import Resource
+
 from app.observability import JsonLogFormatter, sanitize_fields
-from app.telemetry import _SanitizedLoggingHandler
+from app.telemetry import (
+    _SanitizedLoggingHandler,
+    _TRACE_SAMPLE_RATE,
+    _build_trace_provider,
+)
+
+
+def test_trace_sample_rate_is_ten_percent() -> None:
+    provider = _build_trace_provider(Resource.create({}))
+
+    assert _TRACE_SAMPLE_RATE == 0.1
+    assert "root:TraceIdRatioBased{0.1}" in provider.sampler.get_description()
+    provider.shutdown()
 
 
 def test_allowlist_and_redaction_drop_sentinel_pii() -> None:
