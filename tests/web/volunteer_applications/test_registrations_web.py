@@ -425,6 +425,8 @@ def test_volunteer_application_pages_render() -> None:
     assert 'x-show="inviteOpen"' not in admin_response.text
     assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
     assert 'name="application_status"' in admin_response.text
+    assert 'name="group_id"' in admin_response.text
+    assert '<option value="3">Bar</option>' in admin_response.text
     assert "Siste nye frivillige" in admin_response.text
     assert "Ny Frivillig" in admin_response.text
     assert 'hx-get="/volunteer-applications/recent-registrations"' in admin_response.text
@@ -446,6 +448,31 @@ def test_volunteer_application_pages_render() -> None:
     assert 'pattern="\\+[1-9][0-9]{7,14}"' not in public_response.text
     assert 'placeholder="91234567"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
+
+
+def test_volunteer_applications_can_be_filtered_by_group() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    volunteer_applications_service = FakeVolunteerApplicationsService()
+    volunteer_applications_service.volunteer_applications[0].second_choice_group_id = 8
+    volunteer_applications_service.volunteer_applications[0].second_choice_group_name = "Ukjent"
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    initial_group_response = client.get("/volunteer-applications?group_id=3")
+    choice_group_response = client.get("/volunteer-applications?group_id=8")
+    non_matching_response = client.get("/volunteer-applications?group_id=99")
+
+    assert initial_group_response.status_code == 200
+    assert "registrant@example.com" in initial_group_response.text
+    assert '<option value="3" selected>Bar</option>' in initial_group_response.text
+    assert choice_group_response.status_code == 200
+    assert "registrant@example.com" in choice_group_response.text
+    assert '<option value="8" selected>Ukjent</option>' in choice_group_response.text
+    assert non_matching_response.status_code == 200
+    assert "registrant@example.com" not in non_matching_response.text
+    assert "Ingen åpne frivilligsøknader." in non_matching_response.text
 
 
 def test_volunteer_application_pages_render_in_norwegian_when_browser_prefers_norwegian() -> None:
