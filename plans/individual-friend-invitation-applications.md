@@ -17,10 +17,10 @@ Existing data must survive the change. Every old application-group membership is
 - [x] (2026-08-12 13:28Z) Read `AGENTS.md`, `.agents/README.md`, `PLANS.md`, and the repository documentation-boundary skill.
 - [x] (2026-08-12 13:28Z) Traced the current public intake, application-group schema, state-machine guards, bulk approval, admin rendering, durable email preparation, domain events, tests, and sibling proxy contract.
 - [x] (2026-08-12 13:28Z) Recorded the agreed model and staged migration in this ExecPlan.
-- [ ] Run the production-data preflight queries and record their counts in `Surprises & Discoveries` before executing the backfill; this remains a deployment-time gate because no approved production database access is configured in the workspace.
+- [x] (2026-08-12 14:06Z) Run the guarded production backfill and contract migration through Alembic; the approved target was at `20260811_1205`, the new relationship table received 3 rows, and the post-migration checks passed.
 - [x] (2026-08-12 15:58Z) Milestone 1 implementation: add the pairwise relationship table, transactional backfill guards/count checks, indexes, snapshots, and downgrade path.
 - [x] (2026-08-12 15:58Z) Milestone 2: switch creation, email preparation, queries, admin rendering, and lifecycle behavior to independent applications.
-- [ ] Milestone 3: verify migrated production behavior during a compatibility period in which old tables remain read-only; local E2E coverage is updated, but production reconciliation and queued-delivery inspection require approved deployment access.
+- [x] (2026-08-12 14:06Z) Milestone 3: run the guarded production reconciliation/backfill and contract migration. Production now reports Alembic head `20260812_1400`, the retired application-group tables are absent, the relationship table contains 3 rows, and there are no existing friend-invitation deliveries or preparation errors to inspect. No separate compatibility window was needed because the approved upgrade ran both revisions consecutively.
 - [x] (2026-08-12 15:58Z) Milestone 4 implementation: add the guarded contract migration, normalize historical source labels, remove obsolete runtime code, update durable documentation, and add validation coverage.
 
 ## Surprises & Discoveries
@@ -43,8 +43,8 @@ Existing data must survive the change. Every old application-group membership is
 - Observation: `scripts/render_email_previews.py` currently omits the friend-invitation template even though the renderer and compiled template exist.
   Evidence: `build_previews()` renders application receipt, direct invitation, profile completion, admin onboarding, and mobile-card email only. Add the friend template so its new wording receives visual verification.
 
-- Observation: no approved production database URL or deployment credential is available in this workspace.
-  Consequence: production preflight/reconciliation counts and live queued-email inspection were not run, and no `.env` database value was used. The migrations contain descriptive guards and count checks so deployment fails closed until the approved path is used.
+- Observation: the approved production database path became available after implementation and was at revision `20260811_1205`.
+  Consequence: the two Alembic revisions ran successfully in production. The guarded backfill created 3 pairwise relationship rows; the final schema matched SQLAlchemy metadata, the old application-group tables were absent, and no friend-invitation deliveries or attempt errors existed at verification time.
 
 - Observation: the application metadata must match the post-contract schema because the runtime no longer imports the retired group tables.
   Consequence: schema-drift validation is expected to compare the new relationship table against the final schema after the contract migration, while historical group-table references remain only in migration files and explicitly superseded documentation.
@@ -93,9 +93,13 @@ Existing data must survive the change. Every old application-group membership is
   Rationale: the repository needs one complete Alembic head and final runtime metadata for CI/schema-drift verification; deployment operators can stop after the additive revision for a compatibility window before advancing to the contract revision.
   Date/Author: 2026-08-12 / Codex
 
+- Decision: execute both revisions consecutively in production after the migration guards passed.
+  Rationale: the approved target was ready for the final contract, and no queued friend-invitation deliveries required a compatibility pause.
+  Date/Author: 2026-08-12 / Codex
+
 ## Outcomes & Retrospective
 
-The local implementation now treats friend invitations as pairwise informational relationships and gives every application its own lifecycle. The focused suite passes (`139 passed`), the full fast suite passes (`318 passed`), and a disposable Postgres 17 database upgraded through Alembic head with schema drift clean; the real migrated E2E suite passes (`12 passed`). Email assets, E2E assertions, docs, and the OpenAPI artifact are updated. Production migration counts, compatibility duration, and live outbox inspection remain deployment-time evidence because no approved production database access was available here. No historical fields are intentionally discarded by the backfill; legacy dropped timestamps and email/name snapshots are preserved.
+The implementation now treats friend invitations as pairwise informational relationships and gives every application its own lifecycle. The focused suite passes (`139 passed`), the full fast suite passes (`318 passed`), and a disposable Postgres 17 database upgraded through Alembic head with schema drift clean; the real migrated E2E suite passes (`12 passed`). Email assets, E2E assertions, docs, and the OpenAPI artifact are updated. Production was upgraded to Alembic head `20260812_1400`; schema drift is clean, the retired application-group tables are absent, the new relationship table contains 3 backfilled rows, and no friend-invitation deliveries or preparation errors were present at verification time. No historical fields are intentionally discarded by the backfill; legacy dropped timestamps and email/name snapshots are preserved.
 
 ## Context and Orientation
 
@@ -325,4 +329,4 @@ The implementation may inline creation into `create_public_prospect_registration
 
 `EmailMessagePreparer` must resolve `APPLICANT_FRIEND_INVITATION` by invitee application ID through the new relationship. `ApplicantEmailTemplateRendererProtocol.render_friend_invitation_email` must accept only the values used by the revised template. The public API continues accepting `friend_emails: list[str] | None` and returning `registrationId`; its OpenAPI operation ID remains `createPublicVolunteerProspect`.
 
-Revision note (2026-08-12): Created this ExecPlan from the product discussion and verified current source. Implementation completed locally with pairwise persisted relationships, domain-event audit, independent lifecycles, informational admin notes, guarded expand/contract migrations, updated generated assets, and green SQLite/Postgres validation. Production preflight and live outbox reconciliation remain deployment gates because no approved production access was available in the workspace.
+Revision note (2026-08-12): Created this ExecPlan from the product discussion and verified current source. Implementation completed with pairwise persisted relationships, domain-event audit, independent lifecycles, informational admin notes, guarded expand/contract migrations, updated generated assets, green SQLite/Postgres validation, and a successful production upgrade through `20260812_1400`. Production schema drift and retired-table checks are clean; the target had no friend-invitation outbox rows or preparation errors at verification time.
