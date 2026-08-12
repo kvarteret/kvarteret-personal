@@ -102,6 +102,7 @@ class FakeVolunteersService:
             pingvin_points=8,
             photo_url="/media/photos/abc123.jpg?token=test",
             current_discount_level=2,
+            is_active=True,
             registration_log_entry=VolunteerRegistrationLogEntry(
                 registration_id=44,
                 created_at=datetime(2026, 5, 21, tzinfo=UTC),
@@ -745,6 +746,7 @@ def test_volunteer_detail_page_renders_discount_level_label() -> None:
     assert response.status_code == 200
     assert "8 pingvinpoeng · dorg" in response.text
     assert "Aktiv frivillig" in response.text
+    assert 'class="grid grid-cols-2" x-cloak x-show="editing"' in response.text
     assert response.text.count("Åpne frivilligsøknad") == 1
     assert "Lagre endringer" not in response.text
 

@@ -19,7 +19,7 @@
           <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="sr-only" id="volunteer-photo-input" name="photo" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" required type="file">
           <label class="grid h-52 w-52 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md transition hover:shadow-lg" for="volunteer-photo-input" title="Klikk for å endre profilbilde">
             {% if volunteer.photo_url %}
-              <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ volunteer.photo_url }}">
+              <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="high" src="{{ volunteer.photo_url }}">
             {% else %}
               {{ volunteer.last_name[:1] }}
             {% endif %}
@@ -41,7 +41,7 @@
       {% else %}
         <div class="grid h-52 w-52 place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md">
           {% if volunteer.photo_url %}
-            <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ volunteer.photo_url }}">
+            <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="high" src="{{ volunteer.photo_url }}">
           {% else %}
             {{ volunteer.last_name[:1] }}
           {% endif %}
@@ -52,17 +52,19 @@
         <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">
           {{ volunteer.pingvin_points }} pingvinpoeng{% if volunteer.discount_level_label %} · {{ volunteer.discount_level_label }}{% endif %}
         </div>
-        {% if is_active_volunteer %}
+        {% if volunteer.is_active %}
           <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">Aktiv frivillig</div>
         {% endif %}
       </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
         {% if can_manage_volunteer_profile %}
-          <div class="grid min-h-11" :class="editing ? 'grid-cols-2' : 'grid-cols-1'">
+          <div class="grid min-h-11">
             <button class="app-button-secondary" type="button" @click="editing = true" x-show="!editing">Endre</button>
-            <button class="inline-flex min-h-11 items-center justify-center border-2 border-kvarteret-ink bg-lime-500 px-4 font-semibold text-kvarteret-ink hover:bg-lime-600" form="volunteer-profile-form" type="submit" x-cloak x-show="editing">Lagre</button>
-            <button class="inline-flex min-h-11 items-center justify-center border-2 border-l-0 border-kvarteret-ink bg-kvarteret-red px-4 font-semibold text-white hover:bg-kvarteret-red-dark" type="button" @click="$refs.profileForm.reset(); editing = false" x-cloak x-show="editing">Avbryt</button>
+            <div class="grid grid-cols-2" x-cloak x-show="editing">
+              <button class="inline-flex min-h-11 items-center justify-center border-2 border-kvarteret-ink bg-lime-500 px-4 font-semibold text-kvarteret-ink hover:bg-lime-600" form="volunteer-profile-form" type="submit">Lagre</button>
+              <button class="inline-flex min-h-11 items-center justify-center border-2 border-l-0 border-kvarteret-ink bg-kvarteret-red px-4 font-semibold text-white hover:bg-kvarteret-red-dark" type="button" @click="$refs.profileForm.reset(); editing = false">Avbryt</button>
+            </div>
           </div>
         {% endif %}
         {% if volunteer.registration_log_entry %}

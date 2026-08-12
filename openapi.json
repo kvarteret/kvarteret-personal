@@ -679,7 +679,7 @@
             "title": "Assignment Year"
           },
           "contract_signed": {
-            "default": true,
+            "default": false,
             "title": "Contract Signed",
             "type": "boolean"
           }

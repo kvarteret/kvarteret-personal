@@ -35,6 +35,7 @@ class FakeVolunteerApplicationsService:
         self.recent_registration_calls: list[dict[str, object | None]] = []
         self.submission_calls: list[dict[str, object | None]] = []
         self.updated_profile_calls: list[dict[str, object]] = []
+        self.approval_calls: list[dict[str, object | None]] = []
         self.volunteer_applications = [
             VolunteerApplicationListItem(
                 registration_id=7,
@@ -262,6 +263,16 @@ class FakeVolunteerApplicationsService:
         base_url: str | None = None,
         actor_user_account_id: int | None = None,
     ) -> int:
+        self.approval_calls.append(
+            {
+                "registration_id": registration_id,
+                "accepted_group_id": accepted_group_id,
+                "accepted_role_id": accepted_role_id,
+                "assignment_year": assignment_year,
+                "assignment_term": assignment_term,
+                "contract_signed": contract_signed,
+            }
+        )
         return 12
 
     async def mark_contacted(self, registration_id: int, *, actor_user_account_id=None):
@@ -510,6 +521,7 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Lagre endringer" not in response.text
     assert "På prøve" in response.text
     assert 'x-data="{ editing: false }"' in response.text
+    assert 'class="grid grid-cols-2" x-cloak x-show="editing"' in response.text
     assert 'class="app-input app-input-lockable"' in response.text
     assert ':disabled="!editing || false"' in response.text
     assert "Første valg" in response.text
@@ -553,6 +565,37 @@ def test_management_user_can_update_unpromoted_application_profile() -> None:
     assert updated["registration_id"] == 7
     assert updated["profile"].email == "updated@example.test"
     assert updated["profile"].birth_date == date(2000, 1, 2)
+
+
+def test_promotion_form_preserves_unchecked_contract_state() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.post(
+        "/volunteer-applications/7/approval",
+        data={
+            "accepted_group_id": "3",
+            "accepted_role_id": "9",
+            "assignment_year": "2026",
+            "assignment_term": "2",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert service.approval_calls == [
+        {
+            "registration_id": 7,
+            "accepted_group_id": 3,
+            "accepted_role_id": 9,
+            "assignment_year": 2026,
+            "assignment_term": 2,
+            "contract_signed": False,
+        }
+    ]
 
 
 def test_contact_trial_and_reject_actions_follow_required_order() -> None:

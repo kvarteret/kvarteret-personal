@@ -242,6 +242,7 @@ class VolunteerDetail:
     photo_url: str | None
     current_discount_level: int | None = None
     registration_log_entry: VolunteerRegistrationLogEntry | None = None
+    is_active: bool = False
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> VolunteerDetail:
@@ -269,6 +270,7 @@ class VolunteerDetail:
                 if row.get("registration_id") is not None
                 else None
             ),
+            is_active=bool(row.get("is_active")),
         )
 
     @property

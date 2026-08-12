@@ -145,7 +145,7 @@ async def volunteer_application_approve(
     accepted_role_id: int | None = Form(default=None),
     assignment_year: int | None = Form(default=None),
     assignment_term: int | None = Form(default=None),
-    contract_signed: bool = Form(default=True),
+    contract_signed: bool = Form(default=False),
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):

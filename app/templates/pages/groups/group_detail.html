@@ -2,6 +2,7 @@
 {% from "components/shared/ui_macros.html" import blocker_notice, form_field, history_back_button, lazy_panel, page_header %}
 
 {% block page_content %}
+  <script src="{{ url_for('static', path='js/volunteer-picker.js') }}"></script>
   <section class="grid gap-7">
     {% call page_header("Gruppeinformasjon", group.name, group.description or "Ingen beskrivelse") %}
       {% if can_manage_group %}
