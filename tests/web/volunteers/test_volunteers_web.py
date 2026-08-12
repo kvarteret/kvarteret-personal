@@ -379,7 +379,7 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Laster historikk" in detail_response.text
     assert "Laster kurs" in detail_response.text
     # Documents panel removed — "Laster filer" no longer rendered
-    assert "Laster kort og pårørende" in detail_response.text
+    assert detail_response.text.count("Laster relasjoner") == 1
     assert "name=\"gender\"" in detail_response.text
     assert 'type="file"' in detail_response.text
     assert 'enctype="multipart/form-data"' in detail_response.text
@@ -392,6 +392,8 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Slett frivillig" in detail_response.text
     assert "Registreringslogg" in detail_response.text
     assert "#44" in detail_response.text
+    assert 'href="/volunteer-applications/44"' in detail_response.text
+    assert ':disabled="!editing"' in detail_response.text
     assert "Første valg" in detail_response.text
     assert "Andre valg" in detail_response.text
     assert "Skjenkegruppen" in detail_response.text

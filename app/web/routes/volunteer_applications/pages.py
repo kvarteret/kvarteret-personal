@@ -12,7 +12,7 @@ from app.dependencies import (
 from app.email_outbox_service import EmailOutboxService
 from app.observability import log_admin_activity
 from app.domain.volunteer_applications.service import VolunteerApplicationsService
-from app.domain.volunteers.options import gender_label
+from app.domain.volunteers.options import GENDER_OPTIONS, gender_label
 from app.domain.volunteers.service import VolunteersService
 from app.web.i18n import (
     activate_public_locale,
@@ -279,6 +279,7 @@ async def volunteer_application_detail(
             "volunteer_application": volunteer_application,
             "latest_email_delivery": latest_email_delivery,
             "gender_label": gender_label,
+            "gender_options": GENDER_OPTIONS,
             "promotion_group_options": _build_promotion_group_options(
                 volunteer_application
             ),

@@ -2,7 +2,7 @@
 {% from "components/shared/ui_macros.html" import lazy_panel %}
 
 {% block page_content %}
-  <section class="grid gap-7">
+  <section class="grid gap-7" x-data="{ editing: false }">
     {% if duplicate_application_id %}
       <section class="app-panel border-l-4 border-amber-500 bg-amber-50">
         <p class="text-sm font-semibold text-amber-900">Denne søknaden ble ikke godkjent som ny frivillig.</p>
@@ -54,6 +54,12 @@
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
         {% if can_manage_volunteer_profile %}
+          <button class="app-button-secondary" type="button" @click="if (editing) { $refs.profileForm.reset(); editing = false } else { editing = true }" x-text="editing ? 'Avbryt endring' : 'Endre'"></button>
+        {% endif %}
+        {% if volunteer.registration_log_entry %}
+          <a class="app-button-secondary" href="/volunteer-applications/{{ volunteer.registration_log_entry.registration_id }}">Åpne frivilligsøknad</a>
+        {% endif %}
+        {% if can_manage_volunteer_profile %}
           <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=DELETE" method="post">
             <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit" onclick="return confirm('Slette denne frivilligen? Dette fjerner historikk, filer, kort og profilbilde.')">Slett frivillig</button>
           </form>
@@ -63,36 +69,36 @@
 
     <div class="grid gap-6 xl:grid-cols-2">
       <div class="grid gap-6">
-        <section class="app-panel">
+        <section class="app-panel" id="volunteer-profile">
           <div class="mb-5 flex items-center justify-between gap-3">
             <h2 class="text-2xl font-medium tracking-tight text-stone-900">Frivilligprofil</h2>
             <span class="text-sm text-stone-500">Opprettet {{ volunteer.created_at.strftime("%Y-%m-%d") }}</span>
           </div>
           {% if can_manage_volunteer_profile %}
-            <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post">
+            <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post" x-ref="profileForm">
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fornavn</span>
-                <input class="app-input" name="first_name" type="text" value="{{ volunteer.first_name or '' }}">
+                <input class="app-input app-input-lockable" name="first_name" type="text" value="{{ volunteer.first_name or '' }}" disabled :disabled="!editing">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Etternavn</span>
-                <input class="app-input" name="last_name" required type="text" value="{{ volunteer.last_name }}">
+                <input class="app-input app-input-lockable" name="last_name" required type="text" value="{{ volunteer.last_name }}" disabled :disabled="!editing">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">E-post</span>
-                <input class="app-input" name="email" type="email" value="{{ volunteer.email or '' }}">
+                <input class="app-input app-input-lockable" name="email" type="email" value="{{ volunteer.email or '' }}" disabled :disabled="!editing">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Telefon</span>
-                <input class="app-input" name="phone" type="text" value="{{ volunteer.phone or '' }}">
+                <input class="app-input app-input-lockable" name="phone" type="text" value="{{ volunteer.phone or '' }}" disabled :disabled="!editing">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fødselsdato</span>
-                <input class="app-input" name="birth_date" type="date" value="{{ volunteer.birth_date.isoformat() if volunteer.birth_date else '' }}">
+                <input class="app-input app-input-lockable" name="birth_date" type="date" value="{{ volunteer.birth_date.isoformat() if volunteer.birth_date else '' }}" disabled :disabled="!editing">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Kjønn</span>
-                <select class="app-input" name="gender">
+                <select class="app-input app-input-lockable" name="gender" disabled :disabled="!editing">
                   {% for option in gender_options %}
                     <option value="{{ option.code }}" {% if volunteer.gender_code == option.code %}selected{% endif %}>{{ option.label }}</option>
                   {% endfor %}
@@ -100,14 +106,15 @@
               </label>
               <label class="grid gap-1 md:col-span-2">
                 <span class="text-sm text-stone-500">Adresse</span>
-                <input class="app-input" name="address" type="text" value="{{ volunteer.address or '' }}">
+                <input class="app-input app-input-lockable" name="address" type="text" value="{{ volunteer.address or '' }}" disabled :disabled="!editing">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Postnummer</span>
-                <input class="app-input" name="postal_code" type="text" value="{{ volunteer.postal_code or '' }}">
+                <input class="app-input app-input-lockable" name="postal_code" type="text" value="{{ volunteer.postal_code or '' }}" disabled :disabled="!editing">
               </label>
-              <div class="md:col-span-2">
+              <div class="flex flex-wrap gap-3 md:col-span-2" x-cloak x-show="editing">
                 <button class="app-button" type="submit">Lagre endringer</button>
+                <button class="app-button-secondary" type="button" @click="$refs.profileForm.reset(); editing = false">Avbryt</button>
               </div>
             </form>
           {% else %}
@@ -144,7 +151,7 @@
           <section class="app-panel">
             <div class="mb-5 flex items-center justify-between gap-3">
               <h2 class="text-2xl font-medium tracking-tight text-stone-900">Registreringslogg</h2>
-              <span class="text-sm text-stone-500">#{{ volunteer.registration_log_entry.registration_id }}</span>
+              <a class="app-button-secondary" href="/volunteer-applications/{{ volunteer.registration_log_entry.registration_id }}">Åpne søknad #{{ volunteer.registration_log_entry.registration_id }}</a>
             </div>
             <dl class="grid gap-5 md:grid-cols-2">
               <div class="border-b border-stone-300 pb-3">
@@ -179,9 +186,12 @@
               </div>
             </dl>
           </section>
+        {% else %}
+          <section class="app-panel">
+            <h2 class="text-2xl font-medium tracking-tight text-stone-900">Frivilligsøknad</h2>
+            <p class="mt-3 text-sm text-stone-600">Denne frivilligen har ingen tilknyttet søknad. Eldre frivillige kan være opprettet før søknadsflyten ble tatt i bruk.</p>
+          </section>
         {% endif %}
-
-        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/relations/panel', 'Laster kort og pårørende...') }}
       </div>
 
       <div class="grid gap-6">

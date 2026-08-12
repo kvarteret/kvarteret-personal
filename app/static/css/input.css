@@ -238,6 +238,22 @@
     border-color: var(--kvarteret-red);
   }
 
+  .app-input-lockable:disabled {
+    min-height: auto;
+    cursor: default;
+    border-color: transparent;
+    border-bottom-color: color-mix(in srgb, var(--border) 24%, transparent);
+    background: transparent;
+    padding: 0.25rem 0 0.65rem;
+    color: var(--foreground);
+    opacity: 1;
+    -webkit-text-fill-color: var(--foreground);
+  }
+
+  textarea.app-input-lockable:disabled {
+    resize: none;
+  }
+
   .app-button {
     @apply inline-flex min-h-12 items-center justify-center bg-kvarteret-red px-6 font-semibold text-primary-foreground;
     border: 2px solid var(--border);

@@ -296,6 +296,20 @@ class VolunteerApplicationSubmissionInput:
 
 
 @dataclass(slots=True)
+class VolunteerApplicationAdminUpdateInput:
+    email: str
+    first_name: str | None
+    last_name: str
+    phone: str | None
+    birth_date: date | None
+    gender: str
+    address: str | None
+    postal_code: str | None
+    study_institution: str | None
+    background_details: str | None
+
+
+@dataclass(slots=True)
 class PublicProspectRegistrationInput:
     full_name: str
     email: str
@@ -340,6 +354,11 @@ class VolunteerApplicationsServiceProtocol(Protocol):
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
+    async def update_volunteer_application_profile(
+        self,
+        registration_id: int,
+        profile: VolunteerApplicationAdminUpdateInput,
+    ) -> VolunteerApplicationDetail: ...
     async def submit_volunteer_application(
         self,
         token: str,
@@ -458,6 +477,11 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def count_pending_volunteer_applications(self) -> int: ...
     async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
+    async def update_application_profile(
+        self,
+        registration_id: int,
+        profile: VolunteerApplicationAdminUpdateInput,
+    ) -> None: ...
     async def find_public_prospect_groups_by_slugs(self, slugs: list[str]) -> dict[str, PublicProspectGroup]: ...
     async def find_public_prospect_role_id(self, *, group_id: int, role_name: str) -> int | None: ...
     async def save_submission(

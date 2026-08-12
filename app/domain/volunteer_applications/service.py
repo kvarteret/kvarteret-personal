@@ -28,6 +28,7 @@ from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationResult,
     VolunteerAlreadyExistsError,
     VolunteerApplicationConflictError,
+    VolunteerApplicationAdminUpdateInput,
     VolunteerApplicationDetail,
     VolunteerApplicationFieldConflictError,
     VolunteerApplicationFieldValidationError,
@@ -237,6 +238,42 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
     async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None:
         return await self.repository.get_volunteer_application_by_token(token)
+
+    async def update_volunteer_application_profile(
+        self,
+        registration_id: int,
+        profile: VolunteerApplicationAdminUpdateInput,
+    ) -> VolunteerApplicationDetail:
+        existing = await self.get_volunteer_application_detail(registration_id)
+        if existing is None:
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
+        if existing.promoted_volunteer_id is not None:
+            raise VolunteerApplicationConflictError(
+                "Edit personal details on the linked volunteer profile."
+            )
+
+        profile.email = profile.email.strip().lower()
+        profile.first_name = _normalize_optional_text(profile.first_name)
+        profile.last_name = profile.last_name.strip()
+        profile.phone = normalize_phone_number(_normalize_optional_text(profile.phone))
+        profile.gender = profile.gender.strip().upper()
+        profile.address = _normalize_optional_text(profile.address)
+        profile.postal_code = _normalize_optional_text(profile.postal_code)
+        profile.study_institution = _normalize_optional_text(profile.study_institution)
+        profile.background_details = _normalize_optional_text(profile.background_details)
+        if not profile.email:
+            raise VolunteerApplicationValidationError("E-postadresse er påkrevd.")
+        if not profile.last_name:
+            raise VolunteerApplicationValidationError("Etternavn er påkrevd.")
+        if profile.gender not in {"M", "K", "A"}:
+            profile.gender = "A"
+        _check_postal_code(profile.postal_code)
+
+        await self.repository.update_application_profile(registration_id, profile)
+        updated = await self.get_volunteer_application_detail(registration_id)
+        if updated is None:
+            raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
+        return updated
 
     async def submit_volunteer_application(
         self,

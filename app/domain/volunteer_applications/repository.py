@@ -27,6 +27,7 @@ from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationResult,
     TrialApplicantCardSnapshot,
     VolunteerApplicationDetail,
+    VolunteerApplicationAdminUpdateInput,
     VolunteerApplicationFriendInvite,
     VolunteerApplicationGroupMember,
     VolunteerApplicationInvite,
@@ -404,6 +405,55 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(volunteer_application_invites.c.id == registration_id)
             .values(full_profile_submitted_at=func.now())
         )
+
+    async def update_application_profile(
+        self,
+        registration_id: int,
+        profile: VolunteerApplicationAdminUpdateInput,
+    ) -> None:
+        """Update the application-owned profile before it becomes a volunteer."""
+        session = self.session
+        await session.execute(
+            update(volunteer_application_invites)
+            .where(volunteer_application_invites.c.id == registration_id)
+            .values(email=profile.email)
+        )
+        await session.execute(
+            update(volunteer_application_group_members)
+            .where(volunteer_application_group_members.c.invite_id == registration_id)
+            .values(applicant_email=profile.email)
+        )
+        existing_submission_id = await session.scalar(
+            select(volunteer_application_submissions.c.id)
+            .where(volunteer_application_submissions.c.invite_id == registration_id)
+            .limit(1)
+        )
+        values = {
+            "first_name": profile.first_name,
+            "last_name": profile.last_name,
+            "email": profile.email,
+            "phone": profile.phone,
+            "birth_date": profile.birth_date,
+            "gender": profile.gender,
+            "street_address": profile.address,
+            "postal_code": profile.postal_code,
+            "studiested": profile.study_institution,
+            "bakgrunn": profile.background_details,
+        }
+        if existing_submission_id is None:
+            await session.execute(
+                insert(volunteer_application_submissions).values(
+                    invite_id=registration_id,
+                    created_at=func.now(),
+                    **values,
+                )
+            )
+        else:
+            await session.execute(
+                update(volunteer_application_submissions)
+                .where(volunteer_application_submissions.c.invite_id == registration_id)
+                .values(**values)
+            )
 
     async def set_application_status(
         self,
