@@ -15,7 +15,6 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.courses.tables import course_completions
 from app.domain.role_assignments.tables import role_assignments
 from app.domain.volunteer_applications.tables import volunteer_application_invites
-from app.shared.semester import get_current_semester_code
 from app.domain.volunteers.tables import (
     volunteer_cards,
     volunteer_next_of_kin,
@@ -154,11 +153,12 @@ class VolunteersRepository(SqlAlchemyRepository):
         photo_filetype: str | None,
         group_id: int,
         role_id: int | None,
+        semester_code: int,
         contract_signed: bool,
     ) -> int:
         """Onboard a volunteer promoted from an application.
 
-        Creates the volunteer record with its photo and the initial role
+        Creates the volunteer record with its photo and the selected initial role
         assignment — the same row family ``delete_volunteer`` removes on
         offboarding. Called by the applications workflow through the
         ``VolunteerCreatorProtocol`` port wired in ``app/runtime.py``.
@@ -191,7 +191,7 @@ class VolunteersRepository(SqlAlchemyRepository):
                 volunteer_id=volunteer_id,
                 group_id=group_id,
                 role_id=role_id,
-                semester=get_current_semester_code(),
+                semester=semester_code,
                 contract_signed=contract_signed,
             )
         )

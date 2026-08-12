@@ -89,7 +89,14 @@ class VolunteerApplicationWorkflowOperations(Protocol):
         start_trial: bool = False,
     ) -> "VolunteerApplicationDetail": ...
     async def approve_application_record(
-        self, registration_id: int, *, accepted_group_id: int | None
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
     ) -> "tuple[VolunteerApplicationDetail, int]": ...
     async def drop_group_invitee_record(
         self, registration_id: int, *, dropped_by_user_id: int | None
@@ -424,12 +431,20 @@ class VolunteerApplicationWorkflow:
         registration_id: int,
         *,
         accepted_group_id: int | None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
         base_url: str | None,
         actor_user_account_id: int | None = None,
     ) -> int:
         detail, volunteer_id, _ = await self._approve_one(
             registration_id,
             accepted_group_id=accepted_group_id,
+            accepted_role_id=accepted_role_id,
+            assignment_year=assignment_year,
+            assignment_term=assignment_term,
+            contract_signed=contract_signed,
             actor_user_account_id=actor_user_account_id,
             as_group_action=False,
         )
@@ -479,6 +494,10 @@ class VolunteerApplicationWorkflow:
         registration_id: int,
         *,
         accepted_group_id: int | None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
         actor_user_account_id: int | None,
         as_group_action: bool,
     ) -> "tuple[VolunteerApplicationDetail, int, DomainEventRecord | None]":
@@ -497,7 +516,12 @@ class VolunteerApplicationWorkflow:
                 ),
             )
         detail, volunteer_id = await self.operations.approve_application_record(
-            registration_id, accepted_group_id=accepted_group_id
+            registration_id,
+            accepted_group_id=accepted_group_id,
+            accepted_role_id=accepted_role_id,
+            assignment_year=assignment_year,
+            assignment_term=assignment_term,
+            contract_signed=contract_signed,
         )
         event = None
         if result is not None and result.event is not None:

@@ -438,6 +438,7 @@ class VolunteersQueries(SqlAlchemyRepository):
     ) -> dict[str, Any] | None:
         points = pingvin_points_subquery()
         discount_levels = current_discount_level_subquery()
+        active_volunteers = current_active_volunteers_subquery()
         first_choice_group = groups.alias("first_choice_group")
         second_choice_group = groups.alias("second_choice_group")
         stmt = (
@@ -454,6 +455,7 @@ class VolunteersQueries(SqlAlchemyRepository):
                 volunteer_records.c.postal_code,
                 func.coalesce(points.c.pingvin_points, 0).label("pingvin_points"),
                 discount_levels.c.current_discount_level,
+                active_volunteers.c.volunteer_id.is_not(None).label("is_active"),
                 volunteer_photos.c.sha1,
                 volunteer_photos.c.filetype,
                 volunteer_application_invites.c.id.label("registration_id"),
@@ -484,6 +486,10 @@ class VolunteersQueries(SqlAlchemyRepository):
                 .outerjoin(
                     discount_levels,
                     discount_levels.c.volunteer_id == volunteer_records.c.id,
+                )
+                .outerjoin(
+                    active_volunteers,
+                    active_volunteers.c.volunteer_id == volunteer_records.c.id,
                 )
                 .outerjoin(
                     volunteer_application_invites,
