@@ -11,7 +11,10 @@ from app.dependencies import (
     get_volunteers_service,
 )
 from app.main import create_app
-from app.web.routes.volunteer_applications.pages import _build_promotion_group_options
+from app.web.routes.volunteer_applications.pages import (
+    _build_promotion_group_options,
+    _filter_volunteer_applications,
+)
 from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationInput,
     RecentVolunteerRegistrationItem,
@@ -405,6 +408,50 @@ class MissingPhotoVolunteerApplicationsService(FakeVolunteerApplicationsService)
         from app.domain.volunteer_applications.service import VolunteerApplicationValidationError
 
         raise VolunteerApplicationValidationError("Profilbilde er påkrevd.")
+
+
+def test_volunteer_applications_active_filter_excludes_completed_outcomes() -> None:
+    applications = [
+        VolunteerApplicationListItem(
+            registration_id=index,
+            token=f"token-{index}",
+            email=f"person-{index}@example.com",
+            created_at=datetime(2026, 3, 13, tzinfo=UTC),
+            submitted=True,
+            source="invite",
+            status=status,
+            pending_volunteer_id=None,
+            first_name="Sample",
+            last_name=status,
+            phone=None,
+            study_institution=None,
+            background_details=None,
+        )
+        for index, status in enumerate(
+            ("new", "contacted", "trial", "volunteer", "not_volunteer"),
+            start=1,
+        )
+    ]
+
+    active = _filter_volunteer_applications(
+        applications,
+        query=None,
+        application_status="active",
+        group_id=None,
+    )
+    all_applications = _filter_volunteer_applications(
+        applications,
+        query=None,
+        application_status="",
+        group_id=None,
+    )
+
+    assert [application.status for application in active] == [
+        "new",
+        "contacted",
+        "trial",
+    ]
+    assert len(all_applications) == 5
 
 
 def test_volunteer_application_pages_render() -> None:

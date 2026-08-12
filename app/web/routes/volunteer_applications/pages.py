@@ -32,7 +32,7 @@ router = APIRouter()
 async def volunteer_applications_index(
     request: Request,
     q: str | None = None,
-    application_status: str | None = None,
+    application_status: str | None = "active",
     group_id: int | None = None,
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(
@@ -77,7 +77,7 @@ async def volunteer_applications_index(
             "role_options": [],
             "selected_group_id": None,
             "application_query": q or "",
-            "selected_application_status": application_status or "",
+            "selected_application_status": application_status if application_status is not None else "active",
             "selected_application_group_id": group_id,
         },
     )
@@ -166,11 +166,25 @@ def _filter_volunteer_applications(
 ):
     normalized_query = (query or "").strip().casefold()
     allowed_statuses = {"new", "contacted", "trial", "volunteer", "not_volunteer"}
-    normalized_status = application_status if application_status in allowed_statuses else None
+    if application_status == "active":
+        status_filter = None
+        excluded_statuses = {"volunteer", "not_volunteer"}
+    elif application_status in allowed_statuses:
+        status_filter = {application_status}
+        excluded_statuses = set()
+    elif application_status == "":
+        status_filter = None
+        excluded_statuses = set()
+    else:
+        status_filter = None
+        excluded_statuses = {"volunteer", "not_volunteer"}
     return [
         application
         for application in applications
-        if (normalized_status is None or application.status == normalized_status)
+        if (
+            (status_filter is None or application.status in status_filter)
+            and application.status not in excluded_statuses
+        )
         and (
             group_id is None
             or group_id

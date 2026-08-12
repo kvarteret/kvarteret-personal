@@ -30,6 +30,7 @@
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Status</span>
           <select class="app-input" name="application_status">
+            <option value="active" {% if selected_application_status == "active" %}selected{% endif %}>Aktive søknader</option>
             <option value="">Alle statuser</option>
             {% for value, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
               <option value="{{ value }}" {% if selected_application_status == value %}selected{% endif %}>{{ label }}</option>
