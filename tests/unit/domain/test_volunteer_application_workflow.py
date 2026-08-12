@@ -65,7 +65,14 @@ class FakeWorkflowOperations:
         )
 
     async def approve_application_record(
-        self, registration_id: int, *, accepted_group_id: int | None
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
     ):
         self.calls.append(("approve", registration_id))
         return _Record(

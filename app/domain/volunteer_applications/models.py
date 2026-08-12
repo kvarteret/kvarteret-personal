@@ -367,6 +367,10 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         registration_id: int,
         *,
         accepted_group_id: int | None = None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
         base_url: str | None = None,
     ) -> int: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...
@@ -400,6 +404,7 @@ class VolunteerCreatorProtocol(Protocol):
         photo_filetype: str | None,
         group_id: int,
         role_id: int | None,
+        semester_code: int,
         contract_signed: bool,
     ) -> int: ...
 

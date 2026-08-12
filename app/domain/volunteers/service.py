@@ -72,6 +72,7 @@ class VolunteersService(VolunteersQueries):
         photo_filetype: str | None,
         group_id: int,
         role_id: int | None,
+        semester_code: int,
         contract_signed: bool,
     ) -> int:
         """Create a volunteer from an approved application; returns the id."""
@@ -88,6 +89,7 @@ class VolunteersService(VolunteersQueries):
             photo_filetype=photo_filetype,
             group_id=group_id,
             role_id=role_id,
+            semester_code=semester_code,
             contract_signed=contract_signed,
         )
 

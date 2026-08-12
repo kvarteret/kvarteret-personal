@@ -19,7 +19,7 @@
           <input accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" class="sr-only" id="volunteer-photo-input" name="photo" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" required type="file">
           <label class="grid h-52 w-52 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md transition hover:shadow-lg" for="volunteer-photo-input" title="Klikk for å endre profilbilde">
             {% if volunteer.photo_url %}
-              <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ volunteer.photo_url }}">
+              <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="high" src="{{ volunteer.photo_url }}">
             {% else %}
               {{ volunteer.last_name[:1] }}
             {% endif %}
@@ -41,18 +41,26 @@
       {% else %}
         <div class="grid h-52 w-52 place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md">
           {% if volunteer.photo_url %}
-            <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ volunteer.photo_url }}">
+            <img alt="{{ volunteer.full_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="high" src="{{ volunteer.photo_url }}">
           {% else %}
             {{ volunteer.last_name[:1] }}
           {% endif %}
         </div>
       {% endif %}
       <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ volunteer.full_name }}</h1>
-      <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">
-        {{ volunteer.pingvin_points }} pingvinpoeng{% if volunteer.discount_level_label %} · {{ volunteer.discount_level_label }}{% endif %}
+      <div class="flex flex-wrap items-center justify-center gap-3">
+        <div class="app-profile-badge">
+          {{ volunteer.pingvin_points }} pingvinpoeng{% if volunteer.discount_level_label %} · {{ volunteer.discount_level_label }}{% endif %}
+        </div>
+        {% if volunteer.is_active %}
+          <div class="app-profile-badge">Aktiv frivillig</div>
+        {% endif %}
       </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
+        {% if volunteer.registration_log_entry %}
+          <a class="app-button-secondary" href="/volunteer-applications/{{ volunteer.registration_log_entry.registration_id }}">Åpne frivilligsøknad</a>
+        {% endif %}
         {% if can_manage_volunteer_profile %}
           <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=DELETE" method="post">
             <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit" onclick="return confirm('Slette denne frivilligen? Dette fjerner historikk, filer, kort og profilbilde.')">Slett frivillig</button>
@@ -63,7 +71,7 @@
 
     <div class="grid gap-6 xl:grid-cols-2">
       <div class="grid gap-6">
-        <section class="app-panel">
+        <section class="app-panel" id="volunteer-profile">
           <div class="mb-5 flex items-center justify-between gap-3">
             <h2 class="text-2xl font-medium tracking-tight text-stone-900">Frivilligprofil</h2>
             <span class="text-sm text-stone-500">Opprettet {{ volunteer.created_at.strftime("%Y-%m-%d") }}</span>
@@ -72,27 +80,27 @@
             <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post">
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fornavn</span>
-                <input class="app-input" name="first_name" type="text" value="{{ volunteer.first_name or '' }}">
+                <input class="app-input bg-white" name="first_name" type="text" value="{{ volunteer.first_name or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Etternavn</span>
-                <input class="app-input" name="last_name" required type="text" value="{{ volunteer.last_name }}">
+                <input class="app-input bg-white" name="last_name" required type="text" value="{{ volunteer.last_name }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">E-post</span>
-                <input class="app-input" name="email" type="email" value="{{ volunteer.email or '' }}">
+                <input class="app-input bg-white" name="email" type="email" value="{{ volunteer.email or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Telefon</span>
-                <input class="app-input" name="phone" type="text" value="{{ volunteer.phone or '' }}">
+                <input class="app-input bg-white" name="phone" type="text" value="{{ volunteer.phone or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fødselsdato</span>
-                <input class="app-input" name="birth_date" type="date" value="{{ volunteer.birth_date.isoformat() if volunteer.birth_date else '' }}">
+                <input class="app-input bg-white" name="birth_date" type="date" value="{{ volunteer.birth_date.isoformat() if volunteer.birth_date else '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Kjønn</span>
-                <select class="app-input" name="gender">
+                <select class="app-input bg-white" name="gender">
                   {% for option in gender_options %}
                     <option value="{{ option.code }}" {% if volunteer.gender_code == option.code %}selected{% endif %}>{{ option.label }}</option>
                   {% endfor %}
@@ -100,11 +108,11 @@
               </label>
               <label class="grid gap-1 md:col-span-2">
                 <span class="text-sm text-stone-500">Adresse</span>
-                <input class="app-input" name="address" type="text" value="{{ volunteer.address or '' }}">
+                <input class="app-input bg-white" name="address" type="text" value="{{ volunteer.address or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Postnummer</span>
-                <input class="app-input" name="postal_code" type="text" value="{{ volunteer.postal_code or '' }}">
+                <input class="app-input bg-white" name="postal_code" type="text" value="{{ volunteer.postal_code or '' }}">
               </label>
               <div class="md:col-span-2">
                 <button class="app-button" type="submit">Lagre endringer</button>
@@ -144,7 +152,7 @@
           <section class="app-panel">
             <div class="mb-5 flex items-center justify-between gap-3">
               <h2 class="text-2xl font-medium tracking-tight text-stone-900">Registreringslogg</h2>
-              <span class="text-sm text-stone-500">#{{ volunteer.registration_log_entry.registration_id }}</span>
+              <span class="text-sm text-stone-500">Søknad #{{ volunteer.registration_log_entry.registration_id }}</span>
             </div>
             <dl class="grid gap-5 md:grid-cols-2">
               <div class="border-b border-stone-300 pb-3">
@@ -180,8 +188,6 @@
             </dl>
           </section>
         {% endif %}
-
-        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/relations/panel', 'Laster kort og pårørende...') }}
       </div>
 
       <div class="grid gap-6">

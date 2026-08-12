@@ -12,6 +12,7 @@ from app.shared.phone_numbers import (
     normalize_phone_number,
     normalize_required_phone_number,
 )
+from app.shared.semester import get_current_semester_code
 from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.volunteer_applications.side_effects import (
     VolunteerApplicationSideEffects,
@@ -490,6 +491,10 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         registration_id: int,
         *,
         accepted_group_id: int | None = None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
         base_url: str | None = None,
         actor_user_account_id: int | None = None,
     ) -> int:
@@ -497,6 +502,10 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             return await self.workflow.approve(
                 registration_id,
                 accepted_group_id=accepted_group_id,
+                accepted_role_id=accepted_role_id,
+                assignment_year=assignment_year,
+                assignment_term=assignment_term,
+                contract_signed=contract_signed,
                 base_url=base_url,
                 actor_user_account_id=actor_user_account_id,
             )
@@ -508,6 +517,10 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         registration_id: int,
         *,
         accepted_group_id: int | None = None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
     ) -> tuple[VolunteerApplicationDetail, int]:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
@@ -533,12 +546,24 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationConflictError("Choose a group before promoting this prospect.")
         if allowed_group_ids and resolved_group_id not in allowed_group_ids:
             raise VolunteerApplicationConflictError("The chosen group is not one of the registered committee choices.")
-        if detail.initial_role_id is not None and not (
-            await self.repository.role_matches_group(role_id=detail.initial_role_id, group_id=resolved_group_id)
+        resolved_role_id = accepted_role_id or detail.initial_role_id
+        if resolved_role_id is not None and not (
+            await self.repository.role_matches_group(role_id=resolved_role_id, group_id=resolved_group_id)
         ):
             raise VolunteerApplicationConflictError(
                 "The selected initial assignment_roles is no longer valid for the chosen group."
             )
+        if assignment_year is not None and not 1900 <= assignment_year <= 3000:
+            raise VolunteerApplicationConflictError("Year must be between 1900 and 3000.")
+        if assignment_term is not None and assignment_term not in {1, 2}:
+            raise VolunteerApplicationConflictError("Choose a valid semester.")
+        if (assignment_year is None) != (assignment_term is None):
+            raise VolunteerApplicationConflictError("Choose both year and semester.")
+        semester_code = (
+            assignment_year * 10 + assignment_term
+            if assignment_year is not None and assignment_term is not None
+            else get_current_semester_code()
+        )
         # The volunteers module owns onboarding; this module only flips
         # its own invite row once the owning service reports the new id.
         volunteer_id = await self.volunteer_creator.create_from_application(
@@ -553,8 +578,9 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             photo_sha1=detail.photo_sha1,
             photo_filetype=detail.photo_filetype,
             group_id=resolved_group_id,
-            role_id=detail.initial_role_id,
-            contract_signed=True,
+            role_id=resolved_role_id,
+            semester_code=semester_code,
+            contract_signed=contract_signed,
         )
         await self.repository.mark_promoted(
             registration_id=detail.registration_id,

@@ -9,9 +9,7 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/idiomorph@0.7.4/dist/idiomorph-ext.min.js"></script>
     <script src="https://unpkg.com/htmx-ext-preload@2.1.0/preload.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
     <script defer src="{{ url_for('static', path='js/vercel-observability.js') }}" type="module"></script>
-    <script defer src="{{ url_for('static', path='js/volunteer-picker.js') }}"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
       (() => {
@@ -86,7 +84,6 @@
   </head>
   <body class="min-h-screen bg-kvarteret-background text-kvarteret-ink" hx-boost="true" hx-ext="morph,preload" hx-swap="morph:innerHTML">
     {% set header_logo = url_for('static', path='images/internbevis-header.png') %}
-    {% set login_logo = url_for('static', path='images/internbevis-logo.png') %}
     {% set rendered_content %}
       {% block page_content %}{% endblock %}
     {% endset %}

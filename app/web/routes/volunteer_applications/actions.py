@@ -88,15 +88,22 @@ async def volunteer_applications_create_invite(
 async def volunteer_application_approve(
     request: Request,
     application_id: int,
-    accepted_group_id: str | None = Form(default=None),
+    accepted_group_id: int | None = Form(default=None),
+    accepted_role_id: int | None = Form(default=None),
+    assignment_year: int | None = Form(default=None),
+    assignment_term: int | None = Form(default=None),
+    contract_signed: bool = Form(default=False),
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
-    parsed_group_id = int(accepted_group_id) if accepted_group_id and accepted_group_id.strip() else None
     try:
         volunteer_id = await volunteer_applications_service.approve_volunteer_application(
             application_id,
-            accepted_group_id=parsed_group_id,
+            accepted_group_id=accepted_group_id,
+            accepted_role_id=accepted_role_id,
+            assignment_year=assignment_year,
+            assignment_term=assignment_term,
+            contract_signed=contract_signed,
             base_url=str(request.base_url).rstrip("/"),
             actor_user_account_id=current_user.user_account_id,
         )
@@ -113,7 +120,14 @@ async def volunteer_application_approve(
         action="volunteer_application.approve",
         subject_type="volunteer_application",
         subject_id=application_id,
-        details={"volunteer_id": volunteer_id},
+        details={
+            "volunteer_id": volunteer_id,
+            "group_id": accepted_group_id,
+            "role_id": accepted_role_id,
+            "year": assignment_year,
+            "term": assignment_term,
+            "contract_signed": contract_signed,
+        },
     )
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
