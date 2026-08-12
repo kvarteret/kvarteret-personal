@@ -28,6 +28,7 @@ from tests.support.helpers import csrf_headers, make_authenticated_user, overrid
 class FakeVolunteerApplicationsService:
     def __init__(self) -> None:
         self.detail_status = "trial"
+        self.detail_promoted_volunteer_id: int | None = None
         self.deleted_registration_ids: list[int] = []
         self.created_invites: list[dict[str, int | str | None]] = []
         self.public_prospect_calls: list[dict[str, object | None]] = []
@@ -220,6 +221,7 @@ class FakeVolunteerApplicationsService:
             first_choice_group_name="Halvtimen",
             second_choice_group_id=3,
             second_choice_group_name="Grøndahls",
+            promoted_volunteer_id=self.detail_promoted_volunteer_id,
         )
 
     async def submit_volunteer_application(
@@ -513,17 +515,16 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Registrering" in response.text
     assert "registrant@example.com" in response.text
     assert "Oppgrader til frivillig" in response.text
-    assert "Registrer det første vervet" in response.text
+    assert "Registrer det første vervet" not in response.text
     assert 'name="assignment_year"' in response.text
     assert 'name="assignment_term"' in response.text
     assert 'name="accepted_group_id"' in response.text
     assert 'name="accepted_role_id"' in response.text
-    assert "Lagre endringer" not in response.text
+    assert "Lagre endringer" in response.text
     assert "På prøve" in response.text
-    assert 'x-data="{ editing: false }"' in response.text
-    assert 'class="grid grid-cols-2" x-cloak x-show="editing"' in response.text
-    assert 'class="app-input app-input-lockable"' in response.text
-    assert ':disabled="!editing || false"' in response.text
+    assert ">Endre</button>" not in response.text
+    assert 'class="app-input bg-white"' in response.text
+    assert 'x-data="{ editing: false }"' not in response.text
     assert "Første valg" in response.text
     assert "Andre valg" in response.text
     assert "Halvtimen" in response.text
@@ -537,6 +538,7 @@ def test_promoted_application_uses_profile_badge_for_active_status() -> None:
     override_authenticated_user(app, make_authenticated_user())
     service = FakeVolunteerApplicationsService()
     service.detail_status = "volunteer"
+    service.detail_promoted_volunteer_id = 12
     app.dependency_overrides[get_volunteer_applications_service] = lambda: service
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_email_outbox_service] = lambda: FakeEmailOutboxService()
@@ -547,6 +549,8 @@ def test_promoted_application_uses_profile_badge_for_active_status() -> None:
     assert response.status_code == 200
     assert '<div class="app-profile-badge">' in response.text
     assert "Aktiv frivillig" in response.text
+    assert "Lagre endringer" not in response.text
+    assert "Personopplysninger redigeres" not in response.text
 
 
 def test_management_user_can_update_unpromoted_application_profile() -> None:

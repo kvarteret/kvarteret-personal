@@ -2,7 +2,7 @@
 {% from "components/shared/ui_macros.html" import lazy_panel %}
 
 {% block page_content %}
-  <section class="grid gap-7" x-data="{ editing: false }">
+  <section class="grid gap-7">
     {% if duplicate_application_id %}
       <section class="app-panel border-l-4 border-amber-500 bg-amber-50">
         <p class="text-sm font-semibold text-amber-900">Denne søknaden ble ikke godkjent som ny frivillig.</p>
@@ -58,15 +58,6 @@
       </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="app-button-secondary" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href = '/volunteers'; }" type="button">Tilbake til frivillige</button>
-        {% if can_manage_volunteer_profile %}
-          <div class="grid min-h-11">
-            <button class="app-button-secondary" type="button" @click="editing = true" x-show="!editing">Endre</button>
-            <div class="grid grid-cols-2" x-cloak x-show="editing">
-              <button class="inline-flex min-h-11 items-center justify-center border-2 border-kvarteret-ink bg-lime-500 px-4 font-semibold text-kvarteret-ink hover:bg-lime-600" form="volunteer-profile-form" type="submit">Lagre</button>
-              <button class="inline-flex min-h-11 items-center justify-center border-2 border-l-0 border-kvarteret-ink bg-kvarteret-red px-4 font-semibold text-white hover:bg-kvarteret-red-dark" type="button" @click="$refs.profileForm.reset(); editing = false">Avbryt</button>
-            </div>
-          </div>
-        {% endif %}
         {% if volunteer.registration_log_entry %}
           <a class="app-button-secondary" href="/volunteer-applications/{{ volunteer.registration_log_entry.registration_id }}">Åpne frivilligsøknad</a>
         {% endif %}
@@ -86,30 +77,30 @@
             <span class="text-sm text-stone-500">Opprettet {{ volunteer.created_at.strftime("%Y-%m-%d") }}</span>
           </div>
           {% if can_manage_volunteer_profile %}
-            <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" id="volunteer-profile-form" method="post" x-ref="profileForm">
+            <form action="/volunteers/{{ volunteer.volunteer_id }}?_method=PATCH" class="grid gap-5 md:grid-cols-2" method="post">
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fornavn</span>
-                <input class="app-input app-input-lockable" name="first_name" type="text" value="{{ volunteer.first_name or '' }}" disabled :disabled="!editing">
+                <input class="app-input bg-white" name="first_name" type="text" value="{{ volunteer.first_name or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Etternavn</span>
-                <input class="app-input app-input-lockable" name="last_name" required type="text" value="{{ volunteer.last_name }}" disabled :disabled="!editing">
+                <input class="app-input bg-white" name="last_name" required type="text" value="{{ volunteer.last_name }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">E-post</span>
-                <input class="app-input app-input-lockable" name="email" type="email" value="{{ volunteer.email or '' }}" disabled :disabled="!editing">
+                <input class="app-input bg-white" name="email" type="email" value="{{ volunteer.email or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Telefon</span>
-                <input class="app-input app-input-lockable" name="phone" type="text" value="{{ volunteer.phone or '' }}" disabled :disabled="!editing">
+                <input class="app-input bg-white" name="phone" type="text" value="{{ volunteer.phone or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Fødselsdato</span>
-                <input class="app-input app-input-lockable" name="birth_date" type="date" value="{{ volunteer.birth_date.isoformat() if volunteer.birth_date else '' }}" disabled :disabled="!editing">
+                <input class="app-input bg-white" name="birth_date" type="date" value="{{ volunteer.birth_date.isoformat() if volunteer.birth_date else '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Kjønn</span>
-                <select class="app-input app-input-lockable" name="gender" disabled :disabled="!editing">
+                <select class="app-input bg-white" name="gender">
                   {% for option in gender_options %}
                     <option value="{{ option.code }}" {% if volunteer.gender_code == option.code %}selected{% endif %}>{{ option.label }}</option>
                   {% endfor %}
@@ -117,12 +108,15 @@
               </label>
               <label class="grid gap-1 md:col-span-2">
                 <span class="text-sm text-stone-500">Adresse</span>
-                <input class="app-input app-input-lockable" name="address" type="text" value="{{ volunteer.address or '' }}" disabled :disabled="!editing">
+                <input class="app-input bg-white" name="address" type="text" value="{{ volunteer.address or '' }}">
               </label>
               <label class="grid gap-1">
                 <span class="text-sm text-stone-500">Postnummer</span>
-                <input class="app-input app-input-lockable" name="postal_code" type="text" value="{{ volunteer.postal_code or '' }}" disabled :disabled="!editing">
+                <input class="app-input bg-white" name="postal_code" type="text" value="{{ volunteer.postal_code or '' }}">
               </label>
+              <div class="md:col-span-2">
+                <button class="app-button" type="submit">Lagre endringer</button>
+              </div>
             </form>
           {% else %}
             <dl class="grid gap-5 md:grid-cols-2">
@@ -192,11 +186,6 @@
                 <dd class="mt-1 text-stone-900">{{ volunteer.registration_log_entry.second_choice_group_name or "N/A" }}</dd>
               </div>
             </dl>
-          </section>
-        {% else %}
-          <section class="app-panel">
-            <h2 class="text-2xl font-medium tracking-tight text-stone-900">Frivilligsøknad</h2>
-            <p class="mt-3 text-sm text-stone-600">Denne frivilligen har ingen tilknyttet søknad. Eldre frivillige kan være opprettet før søknadsflyten ble tatt i bruk.</p>
           </section>
         {% endif %}
       </div>
