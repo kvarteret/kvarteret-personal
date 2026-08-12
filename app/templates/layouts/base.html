@@ -8,36 +8,10 @@
     <link href="{{ url_for('static', path='css/output.css') }}" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/idiomorph@0.7.4/dist/idiomorph-ext.min.js"></script>
-    <script src="https://unpkg.com/htmx-ext-preload@2.1.0/preload.js"></script>
     <script defer src="{{ url_for('static', path='js/vercel-observability.js') }}" type="module"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
       (() => {
-        const PRELOAD_VALUE = "mouseover";
-
-        function isInternalNavigableLink(link) {
-          const href = link.getAttribute("href");
-          return Boolean(
-            href &&
-              href.startsWith("/") &&
-              !href.startsWith("//") &&
-              !link.dataset.noPreload &&
-              !link.hasAttribute("download") &&
-              !link.hasAttribute("target")
-          );
-        }
-
-        function applyDefaultLinkPreload(root) {
-          if (!root) return;
-          const links = root.matches?.("a[href]") ? [root] : root.querySelectorAll?.("a[href]");
-          if (!links) return;
-          for (const link of links) {
-            if (!isInternalNavigableLink(link) || link.hasAttribute("preload")) continue;
-            link.setAttribute("preload", PRELOAD_VALUE);
-            if (window.htmx) window.htmx.process(link);
-          }
-        }
-
         function currentCsrfToken() {
           return document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
         }
@@ -60,12 +34,10 @@
         }
 
         document.addEventListener("DOMContentLoaded", () => {
-          applyDefaultLinkPreload(document.body);
           applyCsrfFields(document.body);
         });
         document.addEventListener("htmx:load", (event) => {
           const root = event.detail?.elt;
-          applyDefaultLinkPreload(root);
           applyCsrfFields(root);
           if (window.Alpine?.initTree && root) {
             window.Alpine.initTree(root);
@@ -82,7 +54,7 @@
       })();
     </script>
   </head>
-  <body class="min-h-screen bg-kvarteret-background text-kvarteret-ink" hx-boost="true" hx-ext="morph,preload" hx-swap="morph:innerHTML">
+  <body class="min-h-screen bg-kvarteret-background text-kvarteret-ink" hx-boost="true" hx-ext="morph" hx-swap="morph:innerHTML">
     {% set header_logo = url_for('static', path='images/internbevis-header.png') %}
     {% set rendered_content %}
       {% block page_content %}{% endblock %}
