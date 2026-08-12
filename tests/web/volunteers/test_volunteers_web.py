@@ -746,6 +746,7 @@ def test_volunteer_detail_page_renders_discount_level_label() -> None:
     assert response.status_code == 200
     assert "8 pingvinpoeng · dorg" in response.text
     assert "Aktiv frivillig" in response.text
+    assert response.text.count('class="app-profile-badge"') == 2
     assert 'class="grid grid-cols-2" x-cloak x-show="editing"' in response.text
     assert response.text.count("Åpne frivilligsøknad") == 1
     assert "Lagre endringer" not in response.text

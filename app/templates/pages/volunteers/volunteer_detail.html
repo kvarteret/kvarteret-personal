@@ -49,11 +49,11 @@
       {% endif %}
       <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">{{ volunteer.full_name }}</h1>
       <div class="flex flex-wrap items-center justify-center gap-3">
-        <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">
+        <div class="app-profile-badge">
           {{ volunteer.pingvin_points }} pingvinpoeng{% if volunteer.discount_level_label %} · {{ volunteer.discount_level_label }}{% endif %}
         </div>
         {% if volunteer.is_active %}
-          <div class="inline-flex items-center rounded-full bg-kvarteret-sand px-4 py-2 text-sm font-semibold text-kvarteret-night shadow-md">Aktiv frivillig</div>
+          <div class="app-profile-badge">Aktiv frivillig</div>
         {% endif %}
       </div>
       <div class="flex flex-wrap justify-center gap-3">

@@ -532,6 +532,23 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Lenke" not in response.text
 
 
+def test_promoted_application_uses_profile_badge_for_active_status() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    service.detail_status = "volunteer"
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_email_outbox_service] = lambda: FakeEmailOutboxService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications/7")
+
+    assert response.status_code == 200
+    assert '<div class="app-profile-badge">' in response.text
+    assert "Aktiv frivillig" in response.text
+
+
 def test_management_user_can_update_unpromoted_application_profile() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())

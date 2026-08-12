@@ -40,19 +40,24 @@
       </div>
 
       <div class="grid w-full gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div class="flex min-h-20 flex-col items-center justify-center px-4 py-3 text-center font-semibold uppercase tracking-wide {% if volunteer_application.status == 'volunteer' %}self-center rounded-full bg-kvarteret-sand shadow-md{% else %}border-2 border-kvarteret-ink bg-kvarteret-sand{% endif %}">
-          {% if volunteer_application.status == "new" %}
-            <span>Ny forespørsel</span>
-          {% elif volunteer_application.status == "contacted" %}
-            <span>Kontaktet</span>
-          {% elif volunteer_application.status == "trial" %}
-            <span>{% if volunteer_application.trial_expired %}Prøvetid utløpt{% else %}Prøvetid pågår{% endif %}</span>
-            <span class="text-sm normal-case tracking-normal">{% if volunteer_application.trial_expired %}Internbevis deaktivert{% else %}{{ volunteer_application.trial_days_remaining }} dager igjen{% endif %}</span>
-          {% elif volunteer_application.status == "volunteer" %}
-            <span>Aktiv frivillig</span>
-            {% if volunteer_application.promoted_at %}<span class="text-sm normal-case tracking-normal">Siden {{ volunteer_application.promoted_at.strftime("%d.%m.%Y") }}</span>{% endif %}
+        <div class="flex min-h-20 items-center justify-center">
+          {% if volunteer_application.status == "volunteer" %}
+            <div class="app-profile-badge">
+              Aktiv frivillig{% if volunteer_application.promoted_at %} · siden {{ volunteer_application.promoted_at.strftime("%d.%m.%Y") }}{% endif %}
+            </div>
           {% else %}
-            <span>Ikke frivillig</span>
+            <div class="flex min-h-20 w-full flex-col items-center justify-center border-2 border-kvarteret-ink bg-kvarteret-sand px-4 py-3 text-center font-semibold uppercase tracking-wide">
+              {% if volunteer_application.status == "new" %}
+                <span>Ny forespørsel</span>
+              {% elif volunteer_application.status == "contacted" %}
+                <span>Kontaktet</span>
+              {% elif volunteer_application.status == "trial" %}
+                <span>{% if volunteer_application.trial_expired %}Prøvetid utløpt{% else %}Prøvetid pågår{% endif %}</span>
+                <span class="text-sm normal-case tracking-normal">{% if volunteer_application.trial_expired %}Internbevis deaktivert{% else %}{{ volunteer_application.trial_days_remaining }} dager igjen{% endif %}</span>
+              {% else %}
+                <span>Ikke frivillig</span>
+              {% endif %}
+            </div>
           {% endif %}
         </div>
 
