@@ -892,6 +892,42 @@ async def test_public_bar_choices_preserve_labels_and_route_only_primary_choice(
 
 
 @pytest.mark.asyncio
+async def test_public_quiz_choice_routes_to_kultur_and_preserves_quiz_label() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.public_prospect_groups = {
+        "kultur": PublicProspectGroup(
+            group_id=289,
+            slug="kultur",
+            name="Kultur",
+        ),
+    }
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+
+    await service.create_public_prospect_registration_record(
+        PublicProspectRegistrationInput(
+            full_name="Kari Nordmann",
+            email="kari@example.test",
+            phone="41234567",
+            study_institution="UiB",
+            background_details=None,
+            first_choice_group_slug="quiz-gruppen",
+            second_choice_group_slug=None,
+        )
+    )
+
+    created = repository.created_public_prospects[0]
+    assert created["first_choice_group_id"] == 289
+    assert created["first_choice_label"] == "Quiz-gruppen"
+    assert created["initial_group_id"] is None
+    assert created["initial_role_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_public_prospect_rejects_an_unknown_group_slug() -> None:
     repository = FakeVolunteerApplicationsRepository()
     service = VolunteerApplicationsService(
