@@ -96,6 +96,8 @@ class Settings(BaseSettings):
     session_cache_ttl_seconds: int = Field(default=300)
     login_attempt_limit: int = Field(default=10)
     login_attempt_window_seconds: int = Field(default=900)
+    password_reset_attempt_limit: int = Field(default=5)
+    password_reset_attempt_window_seconds: int = Field(default=3600)
     pending_volunteer_applications_cache_ttl_seconds: int = Field(default=30)
     volunteer_detail_cache_ttl_seconds: int = Field(default=300)
     admin_accounts_cache_ttl_seconds: int = Field(default=60)

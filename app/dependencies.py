@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Request, status
 
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
+from app.auth.password_reset_service import PasswordResetService
 from app.db.rate_limit import RateLimiter
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
@@ -101,6 +102,10 @@ def _require_admin_user(
 
 def get_login_service(request: Request) -> LoginService:
     return get_container(request).login_service
+
+
+def get_password_reset_service(request: Request) -> PasswordResetService:
+    return get_container(request).password_reset_service
 
 
 def get_rate_limiter(request: Request) -> RateLimiter:
