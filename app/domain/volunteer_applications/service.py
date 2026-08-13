@@ -52,6 +52,7 @@ _PUBLIC_PROSPECT_ROLE_ROUTES = {
     "kokkegruppen": ("skjenke-gruppen", "Kokk", "Kokkegruppen"),
     "stjernebarn": ("skjenke-gruppen", "Stjernebarn", "Stjernebarn"),
     "stjernesalen": ("skjenke-gruppen", "Stjernebarn", "Stjernesalen"),
+    "quiz-gruppen": ("kultur", None, "Quiz-gruppen"),
 }
 
 
@@ -153,7 +154,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             second_choice_label = None
 
         suggested_role_id = None
-        if first_choice_route is not None:
+        if first_choice_route is not None and first_choice_route[1] is not None:
             suggested_role_id = await self.repository.find_public_prospect_role_id(
                 group_id=first_choice_group.group_id,
                 role_name=first_choice_route[1],
