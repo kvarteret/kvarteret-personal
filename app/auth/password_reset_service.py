@@ -6,6 +6,11 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
+from app.infrastructure.email.password_reset_templates import (
+    PasswordResetEmailTemplateRendererProtocol,
+)
+from app.infrastructure.email.protocols import EmailSenderProtocol
+
 
 class PasswordResetRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -18,9 +23,14 @@ class PasswordResetServiceProtocol(Protocol):
 
 
 class PasswordResetAuthGatewayProtocol(Protocol):
-    async def send_password_reset_email(
-        self, *, email: str, redirect_to: str | None = None
-    ) -> None: ...
+    async def generate_link(
+        self,
+        *,
+        link_type: str,
+        email: str,
+        redirect_to: str | None = None,
+        metadata: dict | None = None,
+    ) -> str: ...
 
 
 class PasswordResetService:
@@ -28,15 +38,26 @@ class PasswordResetService:
         self,
         *,
         auth_gateway: PasswordResetAuthGatewayProtocol,
+        email_sender: EmailSenderProtocol,
+        email_renderer: PasswordResetEmailTemplateRendererProtocol,
     ) -> None:
         self.auth_gateway = auth_gateway
+        self.email_sender = email_sender
+        self.email_renderer = email_renderer
 
     async def send_reset_email(self, *, email: str, redirect_to: str) -> bool:
         request = PasswordResetRequest(email=email)
         normalized_email = str(request.email).lower()
-        await self.auth_gateway.send_password_reset_email(
+        setup_url = await self.auth_gateway.generate_link(
+            link_type="recovery",
             email=normalized_email,
             redirect_to=redirect_to,
+        )
+        rendered = self.email_renderer.render_password_reset_email(setup_url=setup_url)
+        await self.email_sender.send_email(
+            recipient_email=normalized_email,
+            subject=rendered.subject,
+            html_body=rendered.html_body,
         )
         return True
 

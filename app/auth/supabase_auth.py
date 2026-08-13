@@ -33,9 +33,6 @@ class SupabaseAuthGatewayProtocol(Protocol):
         redirect_to: str | None = None,
         metadata: dict | None = None,
     ) -> str: ...
-    async def send_password_reset_email(
-        self, *, email: str, redirect_to: str | None = None
-    ) -> None: ...
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None: ...
     async def update_password_with_access_token(
         self, access_token: str, password: str
@@ -155,20 +152,6 @@ class SupabaseAuthGateway:
                     verification_type=verification_type,
                 )
         return action_link
-
-    async def send_password_reset_email(
-        self, *, email: str, redirect_to: str | None = None
-    ) -> None:
-        params = {"redirect_to": redirect_to} if redirect_to else None
-        await self._request(
-            "POST",
-            "recover",
-            params=params,
-            json={
-                "email": email,
-                "gotrue_meta_security": {"captcha_token": None},
-            },
-        )
 
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None:
         await self._request(

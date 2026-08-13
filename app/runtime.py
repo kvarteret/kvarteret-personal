@@ -30,6 +30,9 @@ from app.infrastructure.email.applicant_templates import ApplicantEmailTemplateR
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
 )
+from app.infrastructure.email.password_reset_templates import (
+    PasswordResetEmailTemplateRenderer,
+)
 from app.infrastructure.email.console import ConsoleEmailSender
 from app.infrastructure.media.photo_processing import process_uploaded_photo
 from app.infrastructure.email.smtp import SmtpEmailSender
@@ -91,11 +94,6 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
         email: str,
         redirect_to: str | None = None,
         metadata: dict | None = None,
-    ):
-        raise NotConfiguredError(self._MISSING_CREDENTIALS)
-
-    async def send_password_reset_email(
-        self, *, email: str, redirect_to: str | None = None
     ):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
@@ -174,6 +172,7 @@ def build_application_container(
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
     admin_email_renderer = AdminAccountEmailTemplateRenderer()
+    password_reset_email_renderer = PasswordResetEmailTemplateRenderer()
     email_outbox_service = EmailOutboxService(
         settings=resolved_settings,
         email_sender=email_sender,
@@ -224,6 +223,8 @@ def build_application_container(
         ),
         password_reset_service=PasswordResetService(
             auth_gateway=supabase_auth_gateway,
+            email_sender=email_sender,
+            email_renderer=password_reset_email_renderer,
         ),
         volunteers_service=volunteers_service,
         role_assignments_service=RoleAssignmentsService(
