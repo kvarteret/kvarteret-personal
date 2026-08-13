@@ -569,6 +569,7 @@
       "Body_set_password_submit_set_password_post": {
         "properties": {
           "access_token": {
+            "default": "",
             "title": "Access Token",
             "type": "string"
           },
@@ -579,10 +580,19 @@
           "password": {
             "title": "Password",
             "type": "string"
+          },
+          "token_hash": {
+            "default": "",
+            "title": "Token Hash",
+            "type": "string"
+          },
+          "verification_type": {
+            "default": "",
+            "title": "Verification Type",
+            "type": "string"
           }
         },
         "required": [
-          "access_token",
           "password",
           "confirm_password"
         ],

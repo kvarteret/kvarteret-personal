@@ -105,6 +105,11 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def update_password_with_access_token(self, access_token: str, password: str):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
+    async def update_password_with_token_hash(
+        self, token_hash: str, verification_type: str, password: str
+    ):
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
+
     async def delete_user(self, auth_user_id):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 

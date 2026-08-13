@@ -96,6 +96,11 @@ class DevAuthGateway:
     ) -> None:
         return None
 
+    async def update_password_with_token_hash(
+        self, token_hash: str, verification_type: str, password: str
+    ) -> None:
+        return None
+
     async def delete_user(self, auth_user_id: UUID) -> None:
         return None
 

@@ -337,6 +337,8 @@ async def set_password_page(
             "section": "set-password",
             "error_message": error,
             "access_token": None,
+            "token_hash": None,
+            "verification_type": None,
         },
     )
 
@@ -344,14 +346,20 @@ async def set_password_page(
 @router.post("/set-password")
 async def set_password_submit(
     request: Request,
-    access_token: str = Form(...),
+    access_token: str = Form(default=""),
+    token_hash: str = Form(default=""),
+    verification_type: str = Form(default=""),
     password: str = Form(...),
     confirm_password: str = Form(...),
     supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
     error_message = None
     normalized_access_token = access_token.strip()
-    if not normalized_access_token:
+    normalized_token_hash = token_hash.strip()
+    normalized_verification_type = verification_type.strip()
+    if not normalized_access_token and not normalized_token_hash:
+        error_message = "Password setup link is missing or invalid."
+    elif normalized_token_hash and normalized_verification_type != "recovery":
         error_message = "Password setup link is missing or invalid."
     elif len(password) < 8:
         error_message = "Passordet må være minst 8 tegn."
@@ -359,9 +367,16 @@ async def set_password_submit(
         error_message = "Passordene må være like."
     else:
         try:
-            await supabase_auth_gateway.update_password_with_access_token(
-                normalized_access_token, password
-            )
+            if normalized_token_hash:
+                await supabase_auth_gateway.update_password_with_token_hash(
+                    normalized_token_hash,
+                    normalized_verification_type,
+                    password,
+                )
+            else:
+                await supabase_auth_gateway.update_password_with_access_token(
+                    normalized_access_token, password
+                )
         except Exception:
             logger.exception("Failed to set password from onboarding link.")
             error_message = "Kunne ikke sette passordet akkurat nå."
@@ -374,6 +389,8 @@ async def set_password_submit(
                 "section": "set-password",
                 "error_message": error_message,
                 "access_token": normalized_access_token,
+                "token_hash": normalized_token_hash,
+                "verification_type": normalized_verification_type,
             },
             status_code=status.HTTP_400_BAD_REQUEST,
         )

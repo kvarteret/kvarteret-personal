@@ -125,6 +125,7 @@ class FakeSupabaseAuthGateway:
         self.generated_link = None
         self.updated_password = None
         self.updated_password_with_access_token = None
+        self.updated_password_with_token_hash = None
 
     async def sign_in_with_password(self, email: str, password: str):
         if password != "CorrectPassword123":
@@ -150,13 +151,25 @@ class FakeSupabaseAuthGateway:
         metadata: dict | None = None,
     ):
         self.generated_link = (link_type, email, redirect_to, metadata)
-        return "https://supabase.example.test/verify?token=setup-token"
+        return (
+            "http://testserver/set-password"
+            "#token_hash=hashed-setup-token&type=recovery"
+        )
 
     async def update_user_password(self, auth_user_id, password: str) -> None:
         self.updated_password = (auth_user_id, password)
 
     async def update_password_with_access_token(self, access_token: str, password: str) -> None:
         self.updated_password_with_access_token = (access_token, password)
+
+    async def update_password_with_token_hash(
+        self, token_hash: str, verification_type: str, password: str
+    ) -> None:
+        self.updated_password_with_token_hash = (
+            token_hash,
+            verification_type,
+            password,
+        )
 
     async def delete_user(self, auth_user_id) -> None:
         self.deleted_user = auth_user_id
@@ -304,7 +317,10 @@ def test_admin_account_create_redirects_and_calls_services() -> None:
     )
     sent_email = admin_accounts_service.sent_onboarding_emails[0]
     assert sent_email["recipient_email"] == "new.admin@example.test"
-    assert sent_email["setup_url"] == "https://supabase.example.test/verify?token=setup-token"
+    assert sent_email["setup_url"] == (
+        "http://testserver/set-password"
+        "#token_hash=hashed-setup-token&type=recovery"
+    )
     assert sent_email["username"] == "new.admin"
     assert sent_email["display_name"] == "New Admin"
     assert sent_email["role_name"] == "Admin"
@@ -461,6 +477,44 @@ def test_set_password_redirects_to_login_after_success() -> None:
     assert response.status_code == 303
     assert response.headers["location"] == "/login?message=Passordet+er+satt.+Du+kan+logge+inn+na."
     assert supabase_auth_gateway.updated_password_with_access_token == ("access-token-123", "UpdatedPassword123")
+
+
+
+def test_set_password_verifies_recovery_token_hash_on_submit() -> None:
+    app = create_app()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+
+    response = TestClient(app).post(
+        "/set-password",
+        data={
+            "token_hash": "hashed-recovery-token",
+            "verification_type": "recovery",
+            "password": "UpdatedPassword123",
+            "confirm_password": "UpdatedPassword123",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert supabase_auth_gateway.updated_password_with_token_hash == (
+        "hashed-recovery-token",
+        "recovery",
+        "UpdatedPassword123",
+    )
+
+
+def test_set_password_missing_token_returns_form_error_instead_of_422() -> None:
+    response = TestClient(create_app()).post(
+        "/set-password",
+        data={
+            "password": "UpdatedPassword123",
+            "confirm_password": "UpdatedPassword123",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Password setup link is missing or invalid." in response.text
 
 
 def test_admin_account_delete_uses_safe_error_message_on_provider_failure() -> None:
