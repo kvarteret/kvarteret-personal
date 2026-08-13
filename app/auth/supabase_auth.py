@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Protocol
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 import httpx
@@ -35,6 +36,9 @@ class SupabaseAuthGatewayProtocol(Protocol):
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None: ...
     async def update_password_with_access_token(
         self, access_token: str, password: str
+    ) -> None: ...
+    async def update_password_with_token_hash(
+        self, token_hash: str, verification_type: str, password: str
     ) -> None: ...
     async def delete_user(self, auth_user_id: UUID) -> None: ...
     async def aclose(self) -> None: ...
@@ -134,9 +138,19 @@ class SupabaseAuthGateway:
         if metadata:
             payload["data"] = metadata
         response = await self._request("POST", "admin/generate_link", json=payload)
-        action_link = response.json().get("action_link")
+        response_payload = response.json()
+        action_link = response_payload.get("action_link")
         if not isinstance(action_link, str) or not action_link:
             raise NotConfiguredError("Supabase did not return an email action link.")
+        hashed_token = response_payload.get("hashed_token")
+        verification_type = response_payload.get("verification_type")
+        if redirect_to and isinstance(hashed_token, str) and hashed_token:
+            if isinstance(verification_type, str) and verification_type:
+                return _password_setup_link(
+                    redirect_to,
+                    token_hash=hashed_token,
+                    verification_type=verification_type,
+                )
         return action_link
 
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None:
@@ -155,6 +169,21 @@ class SupabaseAuthGateway:
             json={"password": password},
             headers={"Authorization": f"Bearer {access_token}"},
         )
+
+    async def update_password_with_token_hash(
+        self, token_hash: str, verification_type: str, password: str
+    ) -> None:
+        if verification_type != "recovery":
+            raise ValueError("Unsupported password setup verification type.")
+        response = await self._request(
+            "POST",
+            "verify",
+            json={"token_hash": token_hash, "type": verification_type},
+        )
+        access_token = response.json().get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise NotConfiguredError("Supabase did not return a recovery session.")
+        await self.update_password_with_access_token(access_token, password)
 
     async def delete_user(self, auth_user_id: UUID) -> None:
         await self._request(
@@ -193,3 +222,18 @@ def _extract_user_id(payload: dict[str, Any]) -> UUID | None:
     if payload.get("id"):
         return UUID(str(payload["id"]))
     return None
+
+
+def _password_setup_link(
+    redirect_to: str, *, token_hash: str, verification_type: str
+) -> str:
+    parts = urlsplit(redirect_to)
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            parts.path,
+            parts.query,
+            urlencode({"token_hash": token_hash, "type": verification_type}),
+        )
+    )

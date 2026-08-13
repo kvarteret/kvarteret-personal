@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.auth.cookies import SessionCookieSigner
 from app.auth.dev_auth import DevAuthGateway
 from app.auth.login_service import LoginService
+from app.auth.password_reset_service import PasswordResetService
 from app.auth.repository import DatabaseAuthRepository
 from app.auth.session_store import (
     SessionRepositoryProtocol,
@@ -28,6 +29,9 @@ from app.infrastructure.email.admin_account_templates import (
 from app.infrastructure.email.applicant_templates import ApplicantEmailTemplateRenderer
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
+)
+from app.infrastructure.email.password_reset_templates import (
+    PasswordResetEmailTemplateRenderer,
 )
 from app.infrastructure.email.console import ConsoleEmailSender
 from app.infrastructure.media.photo_processing import process_uploaded_photo
@@ -99,6 +103,11 @@ class UnconfiguredSupabaseAuthGateway(SupabaseAuthGatewayProtocol):
     async def update_password_with_access_token(self, access_token: str, password: str):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
+    async def update_password_with_token_hash(
+        self, token_hash: str, verification_type: str, password: str
+    ):
+        raise NotConfiguredError(self._MISSING_CREDENTIALS)
+
     async def delete_user(self, auth_user_id):
         raise NotConfiguredError(self._MISSING_CREDENTIALS)
 
@@ -120,6 +129,7 @@ class ApplicationContainer:
     email_outbox_service: EmailOutboxService
     supabase_auth_gateway: SupabaseAuthGatewayProtocol
     login_service: LoginService
+    password_reset_service: PasswordResetService
     volunteers_service: VolunteersService
     role_assignments_service: RoleAssignmentsService
     groups_service: GroupsService
@@ -162,6 +172,7 @@ def build_application_container(
     mobile_card_email_renderer = MobileCardEmailTemplateRenderer()
     applicant_email_renderer = ApplicantEmailTemplateRenderer()
     admin_email_renderer = AdminAccountEmailTemplateRenderer()
+    password_reset_email_renderer = PasswordResetEmailTemplateRenderer()
     email_outbox_service = EmailOutboxService(
         settings=resolved_settings,
         email_sender=email_sender,
@@ -209,6 +220,11 @@ def build_application_container(
             repository=auth_repository,
             supabase_auth=supabase_auth_gateway,
             session_store=session_store,
+        ),
+        password_reset_service=PasswordResetService(
+            auth_gateway=supabase_auth_gateway,
+            email_sender=email_sender,
+            email_renderer=password_reset_email_renderer,
         ),
         volunteers_service=volunteers_service,
         role_assignments_service=RoleAssignmentsService(
