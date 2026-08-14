@@ -8,13 +8,20 @@ contact, trial, profile submission, independent promotion, and deletion.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import re
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from fastapi import Request
 from sqlalchemy import text
 
+from app.api.request_auth import (
+    VerifiedVolunteerProspectRequest,
+    require_signed_volunteer_prospect,
+)
 from app.auth.roles import UserRole
 from app.config import Settings
 from app.dependencies import (
@@ -52,6 +59,20 @@ CANONICAL_GROUPS = [
 ]
 
 
+async def _verified_e2e_prospect_request(
+    request: Request,
+) -> VerifiedVolunteerProspectRequest:
+    idempotency_header = request.headers.get("X-Kvarteret-Idempotency-Key")
+    return VerifiedVolunteerProspectRequest(
+        body=await request.body(),
+        idempotency_key=(
+            UUID(idempotency_header) if idempotency_header else uuid4()
+        ),
+        client_key="v1=" + "0" * 64,
+        signature_version="v2",
+    )
+
+
 @pytest.fixture
 def email_outbox(monkeypatch) -> CapturingEmailSender:
     outbox = CapturingEmailSender()
@@ -75,6 +96,9 @@ def app(clean_database, email_outbox, storage):
     )
     container = build_application_container(settings)
     application = create_app(container)
+    application.dependency_overrides[
+        require_signed_volunteer_prospect
+    ] = _verified_e2e_prospect_request
     admin = make_authenticated_user(UserRole.ADMIN)
     application.dependency_overrides[get_current_user] = lambda: admin
     application.dependency_overrides[require_authenticated_user] = lambda: admin
@@ -216,6 +240,153 @@ async def test_public_prospect_resolves_both_group_choices(app, e2e_engine):
             "second_choice_label": "Festkomiteen",
         }
     ]
+
+
+async def test_public_prospect_concurrent_retries_create_one_result(
+    app,
+    e2e_engine,
+):
+    await _seed_group(e2e_engine)
+    payload = {
+        "full_name": "Idempotent Applicant",
+        "email": "idempotent@example.com",
+        "phone": "+4741234567",
+        "study_institution": "UiB",
+        "first_choice_group_slug": GROUP_SLUG,
+    }
+
+    async def submit(idempotency_key: str, submitted_payload: dict[str, str]):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="https://personal.e2e.test",
+        ) as client:
+            return await client.post(
+                "/api/v1/volunteer-prospects",
+                json=submitted_payload,
+                headers={"X-Kvarteret-Idempotency-Key": idempotency_key},
+            )
+
+    responses = await asyncio.gather(
+        submit("123e4567-e89b-42d3-a456-426614174001", payload),
+        submit(
+            "123e4567-e89b-42d3-a456-426614174002",
+            {
+                **payload,
+                "full_name": "  Idempotent   Applicant  ",
+                "email": "IDEMPOTENT@example.com",
+                "phone": "+47 412 34 567",
+                "study_institution": "  UiB  ",
+            },
+        ),
+    )
+
+    assert [response.status_code for response in responses] == [201, 201]
+    assert responses[0].json() == responses[1].json()
+    counts = (
+        await _fetch_all(
+            e2e_engine,
+            "SELECT"
+            " (SELECT count(*) FROM public.volunteer_application_invites) AS invites,"
+            " (SELECT count(*) FROM public.volunteer_prospect_idempotency_keys) AS keys,"
+            " (SELECT count(*) FROM public.volunteer_prospect_submissions) AS submissions,"
+            " (SELECT count(*) FROM public.email_deliveries) AS emails",
+        )
+    )[0]
+    assert counts == {"invites": 1, "keys": 2, "submissions": 1, "emails": 1}
+
+
+async def test_public_prospect_rejects_idempotency_key_reuse_with_new_content(
+    app,
+    e2e_engine,
+):
+    await _seed_group(e2e_engine)
+    idempotency_key = "123e4567-e89b-42d3-a456-426614174001"
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://personal.e2e.test",
+    ) as client:
+        first = await client.post(
+            "/api/v1/volunteer-prospects",
+            json={
+                "full_name": "First Applicant",
+                "email": "first@example.com",
+                "phone": "+4741234567",
+                "study_institution": "UiB",
+                "first_choice_group_slug": GROUP_SLUG,
+            },
+            headers={"X-Kvarteret-Idempotency-Key": idempotency_key},
+        )
+        conflict = await client.post(
+            "/api/v1/volunteer-prospects",
+            json={
+                "full_name": "Second Applicant",
+                "email": "second@example.com",
+                "phone": "+4741234567",
+                "study_institution": "UiB",
+                "first_choice_group_slug": GROUP_SLUG,
+            },
+            headers={"X-Kvarteret-Idempotency-Key": idempotency_key},
+        )
+
+    assert first.status_code == 201
+    assert conflict.status_code == 409
+    invites = await _fetch_all(
+        e2e_engine,
+        "SELECT email FROM public.volunteer_application_invites",
+    )
+    assert invites == [{"email": "first@example.com"}]
+
+
+async def test_deleted_public_prospect_can_reapply_with_same_content(
+    app,
+    e2e_engine,
+):
+    await _seed_group(e2e_engine)
+    idempotency_key = "123e4567-e89b-42d3-a456-426614174001"
+    payload = {
+        "full_name": "Returning Applicant",
+        "email": "returning@example.com",
+        "phone": "+4741234567",
+        "study_institution": "UiB",
+        "first_choice_group_slug": GROUP_SLUG,
+    }
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="https://personal.e2e.test",
+    ) as client:
+        first = await client.post(
+            "/api/v1/volunteer-prospects",
+            json=payload,
+            headers={"X-Kvarteret-Idempotency-Key": idempotency_key},
+        )
+        async with e2e_engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM public.volunteer_application_submissions")
+            )
+            await connection.execute(
+                text("DELETE FROM public.volunteer_application_invites")
+            )
+        second = await client.post(
+            "/api/v1/volunteer-prospects",
+            json=payload,
+            headers={"X-Kvarteret-Idempotency-Key": idempotency_key},
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json() != second.json()
+    counts = (
+        await _fetch_all(
+            e2e_engine,
+            "SELECT"
+            " (SELECT count(*) FROM public.volunteer_prospect_idempotency_keys) AS keys,"
+            " (SELECT count(*) FROM public.volunteer_prospect_submissions) AS submissions",
+        )
+    )[0]
+    assert counts == {"keys": 1, "submissions": 1}
 
 
 async def test_public_bar_choices_keep_distinct_metadata_and_route_primary_role(

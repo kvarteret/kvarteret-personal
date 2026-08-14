@@ -1,3 +1,6 @@
+from typing import Literal
+from urllib.parse import urlsplit
+
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,12 +12,23 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_env: str = Field(default="development")
+    app_env: Literal["development", "test", "production"] | None = Field(
+        default=None
+    )
     # Development-harness credentials; refused in production.
     dev_admin_email: str | None = Field(default=None)
     dev_admin_password: str | None = Field(default=None)
     app_secret_key: str = Field(default="change-me")
     app_public_base_url: str | None = Field(default=None)
+    volunteer_prospect_hmac_secret: str | None = Field(default=None)
+    volunteer_prospect_hmac_previous_secret: str | None = Field(default=None)
+    volunteer_prospect_max_body_bytes: int = Field(default=16 * 1024, gt=0)
+    volunteer_prospect_route_limit: int = Field(default=120, gt=0)
+    volunteer_prospect_route_window_seconds: int = Field(default=60, gt=0)
+    volunteer_prospect_client_limit: int = Field(default=10, gt=0)
+    volunteer_prospect_client_window_seconds: int = Field(default=600, gt=0)
+    volunteer_prospect_email_limit: int = Field(default=3, gt=0)
+    volunteer_prospect_email_window_seconds: int = Field(default=3600, gt=0)
     supabase_url: str | None = Field(default=None)
     supabase_secret_key: str | None = Field(default=None)
     azure_blob_connection_string: str | None = Field(default=None)
@@ -117,6 +131,8 @@ class Settings(BaseSettings):
         "dev_admin_password",
         "app_secret_key",
         "app_public_base_url",
+        "volunteer_prospect_hmac_secret",
+        "volunteer_prospect_hmac_previous_secret",
         "supabase_url",
         "supabase_secret_key",
         "azure_blob_connection_string",
@@ -164,14 +180,57 @@ class Settings(BaseSettings):
 
 
 def validate_production_secrets(settings: Settings) -> Settings:
-    if settings.app_env == "production" and settings.app_secret_key == "change-me":
-        msg = "APP_SECRET_KEY must be set to a non-default value in production."
+    if settings.app_env is None:
+        msg = "APP_ENV must be explicitly set to development, test, or production."
         raise ValueError(msg)
     if settings.app_env != "development" and (
         settings.dev_admin_email or settings.dev_admin_password
     ):
         msg = "DEV_ADMIN_EMAIL/DEV_ADMIN_PASSWORD are development-only settings."
         raise ValueError(msg)
+    if settings.app_env == "production":
+        if settings.app_secret_key == "change-me" or len(settings.app_secret_key) < 32:
+            msg = (
+                "APP_SECRET_KEY must be a non-default value of at least 32 "
+                "characters in production."
+            )
+            raise ValueError(msg)
+        if not settings.app_public_base_url:
+            msg = "APP_PUBLIC_BASE_URL is required in production."
+            raise ValueError(msg)
+        public_url = urlsplit(settings.app_public_base_url)
+        if (
+            public_url.scheme != "https"
+            or not public_url.netloc
+            or public_url.username is not None
+            or public_url.password is not None
+            or public_url.path not in {"", "/"}
+            or public_url.query
+            or public_url.fragment
+        ):
+            msg = (
+                "APP_PUBLIC_BASE_URL must be an HTTPS origin without credentials, "
+                "a path, query, or fragment in production."
+            )
+            raise ValueError(msg)
+        if (
+            not settings.volunteer_prospect_hmac_secret
+            or len(settings.volunteer_prospect_hmac_secret) < 32
+        ):
+            msg = (
+                "VOLUNTEER_PROSPECT_HMAC_SECRET must be at least 32 characters "
+                "in production."
+            )
+            raise ValueError(msg)
+        if (
+            settings.volunteer_prospect_hmac_previous_secret
+            and len(settings.volunteer_prospect_hmac_previous_secret) < 32
+        ):
+            msg = (
+                "VOLUNTEER_PROSPECT_HMAC_PREVIOUS_SECRET must be at least 32 "
+                "characters when configured."
+            )
+            raise ValueError(msg)
     if settings.posthog_observability_enabled and not settings.posthog_project_token:
         msg = "POSTHOG_PROJECT_TOKEN is required when PostHog observability is enabled."
         raise ValueError(msg)

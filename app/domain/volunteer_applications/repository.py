@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import delete, exists, func, insert, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import SqlAlchemyRepository
@@ -13,6 +15,8 @@ from app.domain.volunteer_applications.tables import (
     volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
+    volunteer_prospect_idempotency_keys,
+    volunteer_prospect_submissions,
 )
 from app.domain.volunteers.tables import volunteer_photos, volunteer_records
 from app.domain.volunteer_applications.state_machine import (
@@ -22,6 +26,7 @@ from app.domain.volunteer_applications.state_machine import (
 from app.domain.volunteer_applications.tables import domain_events
 from app.domain.volunteer_applications.models import (
     PublicProspectGroup,
+    PublicProspectRequestClaim,
     PublicProspectRegistrationResult,
     TrialApplicantCardSnapshot,
     VolunteerApplicationDetail,
@@ -30,6 +35,7 @@ from app.domain.volunteer_applications.models import (
     VolunteerApplicationInvite,
     VolunteerApplicationSubmissionInput,
     VolunteerApplicationStatusEvent,
+    VolunteerProspectIdempotencyConflictError,
 )
 from app.shared.phone_numbers import normalize_phone_number
 from app.media_tokens import MediaTokenService
@@ -39,6 +45,119 @@ from app.observability import current_trace_id
 class VolunteerApplicationsRepository(SqlAlchemyRepository):
     def __init__(self, media_token_service: MediaTokenService | None = None) -> None:
         self.media_token_service = media_token_service
+
+    async def claim_public_prospect_request(
+        self,
+        *,
+        idempotency_key: UUID,
+        request_hash: str,
+        now: datetime,
+    ) -> PublicProspectRequestClaim:
+        existing_hash = await self.session.scalar(
+            select(volunteer_prospect_idempotency_keys.c.request_hash).where(
+                volunteer_prospect_idempotency_keys.c.idempotency_key
+                == idempotency_key
+            )
+        )
+        if existing_hash is None:
+            try:
+                async with self.session.begin_nested():
+                    await self.session.execute(
+                        insert(volunteer_prospect_idempotency_keys).values(
+                            idempotency_key=idempotency_key,
+                            request_hash=request_hash,
+                            created_at=now,
+                        )
+                    )
+            except IntegrityError:
+                pass
+            existing_hash = await self.session.scalar(
+                select(volunteer_prospect_idempotency_keys.c.request_hash).where(
+                    volunteer_prospect_idempotency_keys.c.idempotency_key
+                    == idempotency_key
+                )
+            )
+        if existing_hash != request_hash:
+            raise VolunteerProspectIdempotencyConflictError(
+                "Idempotency key was already used with different request content."
+            )
+
+        existing_submission = (
+            (
+                await self.session.execute(
+                    select(
+                        volunteer_prospect_submissions.c.status,
+                        volunteer_prospect_submissions.c.registration_id,
+                    ).where(
+                        volunteer_prospect_submissions.c.request_hash == request_hash
+                    )
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if existing_submission is None:
+            try:
+                async with self.session.begin_nested():
+                    await self.session.execute(
+                        insert(volunteer_prospect_submissions).values(
+                            request_hash=request_hash,
+                            status="processing",
+                            registration_id=None,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+                return PublicProspectRequestClaim(created=True)
+            except IntegrityError:
+                existing_submission = (
+                    (
+                        await self.session.execute(
+                            select(
+                                volunteer_prospect_submissions.c.status,
+                                volunteer_prospect_submissions.c.registration_id,
+                            ).where(
+                                volunteer_prospect_submissions.c.request_hash
+                                == request_hash
+                            )
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+
+        if (
+            existing_submission is None
+            or existing_submission["status"] != "completed"
+            or existing_submission["registration_id"] is None
+        ):
+            raise RuntimeError("Volunteer prospect idempotency state is incomplete.")
+        return PublicProspectRequestClaim(
+            created=False,
+            registration_id=int(existing_submission["registration_id"]),
+        )
+
+    async def complete_public_prospect_request(
+        self,
+        *,
+        request_hash: str,
+        registration_id: int,
+        now: datetime,
+    ) -> None:
+        result = await self.session.execute(
+            update(volunteer_prospect_submissions)
+            .where(
+                volunteer_prospect_submissions.c.request_hash == request_hash,
+                volunteer_prospect_submissions.c.status == "processing",
+            )
+            .values(
+                status="completed",
+                registration_id=registration_id,
+                updated_at=now,
+            )
+        )
+        if result.rowcount != 1:
+            raise RuntimeError("Volunteer prospect idempotency claim was lost.")
 
     async def create_public_prospect_registration(
         self,

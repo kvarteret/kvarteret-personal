@@ -78,8 +78,9 @@ Current public arrangement pages and feeds read from Sanity, not from
 `app/[locale]/arrangementer/page.tsx`, `app/api/events/feed/route.ts`, and
 `app/api/ical/route.ts`.
 
-`samfunnetibergen/src/app/api/volunteer-prospects/route.ts` validates the
-public recruitment form, then posts to `POST /api/v1/volunteer-prospects`.
+`samfunnetibergen/apps/web/src/app/api/volunteer-prospects/route.ts` validates the
+public recruitment form, then posts server-to-server to
+`POST /api/v1/volunteer-prospects`.
 Sanity choice slugs are forwarded unchanged. Most choices resolve directly
 through Personal's stable, unique `groups.slug` column. Public bar-area choices
 such as Halvtimen and Grøndahls instead resolve to a suggested role in the
@@ -96,6 +97,85 @@ because it maps public Sanity choices to Personal roles. An established group
 slug is immutable even if the group's display name is later changed.
 
 The request body accepts `friend_emails` (up to two). When present, the backend creates one ordinary application for the submitter and one ordinary application per friend, linked by invitation relationship records. Each friend gets a personal `/apply/{token}` link delivered by email; applications are reviewed and approved independently. Field-level validation errors for friend emails come back under `fieldErrors.friendEmails`.
+
+### Volunteer-prospect request authentication
+
+Personal accepts prospect creation only from a caller that holds the shared
+`VOLUNTEER_PROSPECT_HMAC_SECRET`. The website signs the exact serialized JSON
+body in
+`samfunnetibergen/apps/web/src/lib/integrations/kvarteret-personal/volunteer-prospect-signing.ts`.
+Personal verifies it in `app/api/request_auth.py` before the application service
+runs. The secret is server-only and must never use a browser-visible
+`NEXT_PUBLIC_*` variable.
+
+Each request carries:
+
+    X-Kvarteret-Timestamp: <Unix seconds>
+    X-Kvarteret-Nonce: <lowercase UUID>
+    X-Kvarteret-Idempotency-Key: <lowercase UUID>
+    X-Kvarteret-Client-Key: v1=<64 lowercase HMAC-SHA256 hex characters>
+    X-Kvarteret-Signature: v2=<64 lowercase HMAC-SHA256 hex characters>
+
+The v2 signed message is the following newline-separated canonical form, with no
+trailing newline:
+
+    v2
+    <timestamp>
+    <nonce>
+    <idempotency key>
+    <client key>
+    POST
+    /api/v1/volunteer-prospects
+    <SHA-256 hex digest of the exact body bytes>
+
+The client key is `v1=` plus the lowercase HMAC-SHA256 hex digest of the
+canonical client IP, keyed with the website-only
+`VOLUNTEER_PROSPECT_CLIENT_KEY_SECRET`. The website derives it from
+Vercel-owned forwarding headers and never forwards, logs, or stores the raw IP.
+The separate client-key secret must not be shared with Personal or exposed to
+the browser. Because the client key is bound into the server-to-server v2
+signature, a browser cannot choose a new key to evade the limit.
+
+Personal permits at most five minutes of clock skew and consumes each verified
+nonce once through the Postgres-backed rate limiter. Missing, stale, altered,
+malformed, and replayed requests fail before prospect creation. HMAC
+authenticates the server holding the secret; it does not prove that a human
+submitted the website form.
+
+The exact body is capped at 16,384 bytes before JSON parsing. Personal then
+rejects unknown fields and enforces these maxima: full name 201 characters,
+email 254, phone 16, study institution 160, background details 2,000, each
+choice slug 100, each friend email 254, and two friend emails. The website uses
+matching or narrower limits for first and last names.
+
+Every authenticated request counts against a shared Postgres fixed-window
+route limit. V2 requests also count against the opaque client key, and valid
+JSON requests count against an HMAC-keyed normalized-email limit. Defaults are
+120 requests per route per minute, 10 per client per ten minutes, and 3 per
+email per hour. Exceeding a limit returns `429` with `Retry-After`; a limiter
+storage failure fails closed with `503`.
+
+The idempotency UUID and an application-secret-keyed HMAC of the normalized
+payload are stored transactionally with prospect creation. Reusing a key with
+different normalized content returns `409`. Retrying identical content, even
+with a different key, returns the first registration and does not enqueue
+duplicate emails or create duplicate friend applications. The idempotency
+records, application, lifecycle events, and durable email rows commit atomically.
+Deleting the application also removes its normalized-payload claim, so a later
+genuine reapplication is not blocked by an orphaned deduplication result; the
+original idempotency key remains bound to the same content.
+
+For the v2 cutover, provision the signing secret in both Vercel projects and the
+separate client-key secret only in `samfunnetibergen`. Apply the Personal
+migration and deploy Personal first; this release accepts both the established
+v1 signature and v2. Then deploy the website v2 signer. Remove v1 acceptance in
+a later Personal release after production traffic confirms the website cutover.
+
+To rotate the signing secret without downtime, put the new value in Personal's
+`VOLUNTEER_PROSPECT_HMAC_SECRET` and the old value in
+`VOLUNTEER_PROSPECT_HMAC_PREVIOUS_SECRET`; deploy Personal, switch the website
+to the new value, verify submissions, and finally remove the previous value.
+There is deliberately no unsigned compatibility mode.
 
 ## `frontend-eventside`
 

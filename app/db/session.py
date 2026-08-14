@@ -128,6 +128,13 @@ async def commit_request_session() -> None:
         await session.commit()
 
 
+async def rollback_request_session() -> None:
+    """Roll back the active request transaction after a coordinated failure."""
+    session = current_session()
+    if session is not None and session.in_transaction():
+        await session.rollback()
+
+
 @asynccontextmanager
 async def session_scope(
     runtime: DatabaseRuntime,
