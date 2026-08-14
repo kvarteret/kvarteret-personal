@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, exists, func, insert, select, update
+from sqlalchemy import delete, exists, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import SqlAlchemyRepository
@@ -419,84 +419,91 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
     async def get_friend_inviter(
         self, invitee_application_id: int
     ) -> VolunteerApplicationFriendRelationship | None:
-        inviter_submission = volunteer_application_submissions.alias("inviter_submission")
-        invitee_submission = volunteer_application_submissions.alias("invitee_submission")
-        stmt = (
-            select(
-                volunteer_application_friend_invitations.c.id,
-                volunteer_application_friend_invitations.c.inviter_application_id,
-                volunteer_application_friend_invitations.c.invitee_application_id,
-                volunteer_application_friend_invitations.c.inviter_name_snapshot,
-                volunteer_application_friend_invitations.c.inviter_email_snapshot,
-                volunteer_application_friend_invitations.c.invitee_email_snapshot,
-                volunteer_application_friend_invitations.c.created_at,
-                volunteer_application_friend_invitations.c.legacy_dropped_at,
-                volunteer_application_friend_invitations.c.legacy_dropped_by_user_account_id,
-                inviter_submission.c.first_name.label("inviter_first_name"),
-                inviter_submission.c.last_name.label("inviter_last_name"),
-                invitee_submission.c.first_name.label("invitee_first_name"),
-                invitee_submission.c.last_name.label("invitee_last_name"),
-            )
-            .select_from(
-                volunteer_application_friend_invitations.outerjoin(
-                    inviter_submission,
-                    inviter_submission.c.invite_id
-                    == volunteer_application_friend_invitations.c.inviter_application_id,
-                ).outerjoin(
-                    invitee_submission,
-                    invitee_submission.c.invite_id
-                    == volunteer_application_friend_invitations.c.invitee_application_id,
-                )
-            )
-            .where(
-                volunteer_application_friend_invitations.c.invitee_application_id
-                == invitee_application_id
-            )
-            .limit(1)
-        )
-        row = (await self.session.execute(stmt)).mappings().first()
-        return _friend_relationship_from_row(row) if row is not None else None
+        return (
+            await self.list_friend_relationships([invitee_application_id])
+        ).get(invitee_application_id, (None, []))[0]
 
     async def list_friend_invitees(
         self, inviter_application_id: int
     ) -> list[VolunteerApplicationFriendRelationship]:
+        return (
+            await self.list_friend_relationships([inviter_application_id])
+        ).get(inviter_application_id, (None, []))[1]
+
+    async def list_friend_relationships(
+        self, application_ids: list[int]
+    ) -> dict[
+        int,
+        tuple[
+            VolunteerApplicationFriendRelationship | None,
+            list[VolunteerApplicationFriendRelationship],
+        ],
+    ]:
+        application_ids = list(dict.fromkeys(application_ids))
+        relationships_by_application_id = {
+            application_id: (None, []) for application_id in application_ids
+        }
+        if not application_ids:
+            return relationships_by_application_id
+
         inviter_submission = volunteer_application_submissions.alias("inviter_submission")
         invitee_submission = volunteer_application_submissions.alias("invitee_submission")
+        friend_invitation = volunteer_application_friend_invitations
         stmt = (
             select(
-                volunteer_application_friend_invitations.c.id,
-                volunteer_application_friend_invitations.c.inviter_application_id,
-                volunteer_application_friend_invitations.c.invitee_application_id,
-                volunteer_application_friend_invitations.c.inviter_name_snapshot,
-                volunteer_application_friend_invitations.c.inviter_email_snapshot,
-                volunteer_application_friend_invitations.c.invitee_email_snapshot,
-                volunteer_application_friend_invitations.c.created_at,
-                volunteer_application_friend_invitations.c.legacy_dropped_at,
-                volunteer_application_friend_invitations.c.legacy_dropped_by_user_account_id,
+                friend_invitation.c.id,
+                friend_invitation.c.inviter_application_id,
+                friend_invitation.c.invitee_application_id,
+                friend_invitation.c.inviter_name_snapshot,
+                friend_invitation.c.inviter_email_snapshot,
+                friend_invitation.c.invitee_email_snapshot,
+                friend_invitation.c.created_at,
+                friend_invitation.c.legacy_dropped_at,
+                friend_invitation.c.legacy_dropped_by_user_account_id,
                 inviter_submission.c.first_name.label("inviter_first_name"),
                 inviter_submission.c.last_name.label("inviter_last_name"),
                 invitee_submission.c.first_name.label("invitee_first_name"),
                 invitee_submission.c.last_name.label("invitee_last_name"),
             )
             .select_from(
-                volunteer_application_friend_invitations.outerjoin(
+                friend_invitation.outerjoin(
                     inviter_submission,
                     inviter_submission.c.invite_id
-                    == volunteer_application_friend_invitations.c.inviter_application_id,
+                    == friend_invitation.c.inviter_application_id,
                 ).outerjoin(
                     invitee_submission,
                     invitee_submission.c.invite_id
-                    == volunteer_application_friend_invitations.c.invitee_application_id,
+                    == friend_invitation.c.invitee_application_id,
                 )
             )
             .where(
-                volunteer_application_friend_invitations.c.inviter_application_id
-                == inviter_application_id
+                or_(
+                    friend_invitation.c.inviter_application_id.in_(application_ids),
+                    friend_invitation.c.invitee_application_id.in_(application_ids),
+                )
             )
-            .order_by(volunteer_application_friend_invitations.c.id.asc())
+            .order_by(friend_invitation.c.id.asc())
         )
         rows = (await self.session.execute(stmt)).mappings().all()
-        return [_friend_relationship_from_row(row) for row in rows]
+        for row in rows:
+            relationship = _friend_relationship_from_row(row)
+            if relationship.invitee_application_id in relationships_by_application_id:
+                _, friend_invitees = relationships_by_application_id[
+                    relationship.invitee_application_id
+                ]
+                relationships_by_application_id[relationship.invitee_application_id] = (
+                    relationship,
+                    friend_invitees,
+                )
+            if relationship.inviter_application_id in relationships_by_application_id:
+                invited_by, friend_invitees = relationships_by_application_id[
+                    relationship.inviter_application_id
+                ]
+                relationships_by_application_id[relationship.inviter_application_id] = (
+                    invited_by,
+                    [*friend_invitees, relationship],
+                )
+        return relationships_by_application_id
 
     async def list_group_admin_email_recipients(self, group_id: int) -> list[str]:
         stmt = (

@@ -8,7 +8,7 @@ side in the repository.
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, or_, select
 
 from app.cache import TTLCache
 from app.db.repository import SqlAlchemyRepository
@@ -40,7 +40,12 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
             max_entries=1,
         )
 
-    async def list_volunteer_applications(self) -> list[VolunteerApplicationListItem]:
+    async def list_volunteer_applications(
+        self,
+        query: str | None = None,
+        application_status: str | None = None,
+        group_id: int | None = None,
+    ) -> list[VolunteerApplicationListItem]:
         accepted_group = groups.alias("accepted_group")
         first_choice_group = groups.alias("first_choice_group")
         second_choice_group = groups.alias("second_choice_group")
@@ -100,17 +105,51 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                     second_choice_group.c.id == volunteer_application_invites.c.second_choice_group_id,
                 )
             )
-            .order_by(volunteer_application_invites.c.created_at.desc(), volunteer_application_invites.c.id.desc())
+            .order_by(
+                volunteer_application_invites.c.created_at.desc(),
+                volunteer_application_invites.c.id.desc(),
+            )
         )
+        allowed_statuses = {"new", "contacted", "trial", "volunteer", "not_volunteer"}
+        if application_status == "active" or (
+            application_status is not None
+            and application_status not in allowed_statuses
+            and application_status != ""
+        ):
+            stmt = stmt.where(
+                volunteer_application_invites.c.status.notin_(
+                    ("volunteer", "not_volunteer")
+                )
+            )
+        elif application_status in allowed_statuses:
+            stmt = stmt.where(volunteer_application_invites.c.status == application_status)
+        if group_id is not None:
+            stmt = stmt.where(
+                or_(
+                    volunteer_application_invites.c.initial_group_id == group_id,
+                    volunteer_application_invites.c.first_choice_group_id == group_id,
+                    volunteer_application_invites.c.second_choice_group_id == group_id,
+                )
+            )
+        normalized_query = (query or "").strip().casefold()
+        if normalized_query:
+            search_text = literal("")
+            for column in (
+                volunteer_application_submissions.c.first_name,
+                volunteer_application_submissions.c.last_name,
+                volunteer_application_invites.c.email,
+                volunteer_application_submissions.c.phone,
+                volunteer_application_submissions.c.studiested,
+            ):
+                search_text = search_text + func.coalesce(column, "") + literal(" ")
+            stmt = stmt.where(
+                func.lower(search_text).contains(normalized_query, autoescape=True)
+            )
         session = self.session
         rows = (await session.execute(stmt)).mappings().all()
-        friend_relationships = {
-            row["id"]: (
-                await self.repository.get_friend_inviter(row["id"]),
-                await self.repository.list_friend_invitees(row["id"]),
-            )
-            for row in rows
-        }
+        friend_relationships = await self.repository.list_friend_relationships(
+            [row["id"] for row in rows]
+        )
         return [
             VolunteerApplicationListItem(
                 registration_id=row["id"],
