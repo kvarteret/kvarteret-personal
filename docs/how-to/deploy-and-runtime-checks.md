@@ -45,8 +45,14 @@ Do not paste secrets into terminal history. For authenticated checks, use short-
 
 Use `DATABASE_USE_NULL_POOL=true` in serverless production to avoid exhausting the Supabase session pooler.
 
-Set `APP_SECRET_KEY` to a non-default value in production. The app refuses production startup when `APP_ENV=production` and the secret is still `change-me`.
+Set `APP_ENV=production` explicitly. The app refuses to start when `APP_ENV` is
+missing or is not one of `development`, `test`, or `production`.
 
-Set `APP_PUBLIC_BASE_URL=https://personal.kvarteret.no` for production email links and OAuth callbacks.
+Set `APP_SECRET_KEY` to a random value of at least 32 characters. The app refuses
+production startup when the secret is still `change-me` or is too short.
+
+Set `APP_PUBLIC_BASE_URL=https://personal.kvarteret.no` for production email links
+and OAuth callbacks. Production startup requires an HTTPS origin without embedded
+credentials, a path, query, or fragment.
 
 Keep `.vercelignore` excluding local-only archives such as `data/`.

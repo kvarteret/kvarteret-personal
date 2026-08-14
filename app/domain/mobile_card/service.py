@@ -62,29 +62,6 @@ class TrialApplicantProviderProtocol(Protocol):
 
     async def get_active_trial_applicant(self, application_id: int) -> Any | None: ...
 
-_APRIL_FOOLS_IMAGE_BY_GROUP_ID = {
-    2: "hovedstyret.avif",
-    78: "vaktetaten.jpg",
-    83: "asf-aktive-studenter--hits-for-kids.jpg",
-    146: "kraftetaten.webp",
-    195: "immaturus.avif",
-    253: "skjenkeetaten.webp",
-    254: "e-tjenesten.jpeg",
-    260: "pingvinordenen.jpeg",
-    264: "samfunnet-i-bergen.jpeg",
-    265: "bergen-realistforening.jpg",
-    266: "bergen-filmklubb.png",
-    267: "immaturus.avif",
-    268: "asf-aktive-studenter--hits-for-kids.jpg",
-    270: "pr.jpg",
-    271: "pr.jpg",
-    272: "arme-riddere.jpg",
-    277: "blak.jpg",
-    278: "sirenene.jpg",
-    284: "hf.jpg",
-}
-_APRIL_FOOLS_DEFAULT_IMAGE = "default.jpg"
-
 _LEGACY_PENGUIN_WORD_PREFIXES = [
     "bug",
     "mordi",
@@ -385,7 +362,7 @@ class MobileCardService:
             self.april_state_service is not None
             and await self.april_state_service.is_enabled()
         ):
-            photo_url = self._build_april_photo_url(snapshot)
+            photo_url = None
         return MobileCardResponse(
             person_id=snapshot.volunteer_id,
             first_name=snapshot.first_name,
@@ -426,20 +403,6 @@ class MobileCardService:
             ),
             word_of_the_day=_word_of_the_day(),
         )
-
-    def _build_april_photo_url(self, snapshot: MobileCardSnapshot) -> str:
-        filename = _APRIL_FOOLS_DEFAULT_IMAGE
-        for role in snapshot.active_roles:
-            mapped_filename = _APRIL_FOOLS_IMAGE_BY_GROUP_ID.get(role.group_id)
-            if mapped_filename is not None:
-                filename = mapped_filename
-                break
-        prefix = (
-            self.settings.app_public_base_url.rstrip("/")
-            if self.settings.app_public_base_url
-            else ""
-        )
-        return f"{prefix}/static/images/april/{filename}"
 
     def _is_review_request(self, email: str, access_code: str | None) -> bool:
         if not self.settings.review_bypass_enabled:

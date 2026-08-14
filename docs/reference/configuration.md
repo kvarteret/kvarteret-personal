@@ -8,9 +8,9 @@ Do not commit real secrets. The checked-in `.env.example` should contain names a
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `APP_ENV` | `development` | Runtime environment name. Production secret validation applies when this is `production`. |
-| `APP_SECRET_KEY` | `change-me` | Signs web sessions, media tokens, mobile-card tokens, CSRF tokens, and Spotify OAuth state. Must be non-default in production. |
-| `APP_PUBLIC_BASE_URL` | unset | Public base URL used in email links, media URLs, and OAuth redirects. |
+| `APP_ENV` | required | Runtime environment: `development`, `test`, or `production`. Startup fails when it is omitted or invalid. |
+| `APP_SECRET_KEY` | `change-me` | Signs web sessions, media tokens, mobile-card tokens, CSRF tokens, and Spotify OAuth state. In production it must be non-default and at least 32 characters. |
+| `APP_PUBLIC_BASE_URL` | unset | Public base URL used in email links, media URLs, and OAuth redirects. Production requires an HTTPS origin without credentials, a path, query, or fragment. |
 | `LOG_LEVEL` | `INFO` | Application log level. |
 | `DEV_ADMIN_EMAIL` | unset | Development-harness admin email. Refused unless `APP_ENV=development`. |
 | `DEV_ADMIN_PASSWORD` | unset | Development-harness admin password. Refused unless `APP_ENV=development`. |

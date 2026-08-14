@@ -1,3 +1,6 @@
+from typing import Literal
+from urllib.parse import urlsplit
+
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,7 +12,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_env: str = Field(default="development")
+    app_env: Literal["development", "test", "production"] | None = Field(
+        default=None
+    )
     # Development-harness credentials; refused in production.
     dev_admin_email: str | None = Field(default=None)
     dev_admin_password: str | None = Field(default=None)
@@ -164,14 +169,39 @@ class Settings(BaseSettings):
 
 
 def validate_production_secrets(settings: Settings) -> Settings:
-    if settings.app_env == "production" and settings.app_secret_key == "change-me":
-        msg = "APP_SECRET_KEY must be set to a non-default value in production."
+    if settings.app_env is None:
+        msg = "APP_ENV must be explicitly set to development, test, or production."
         raise ValueError(msg)
     if settings.app_env != "development" and (
         settings.dev_admin_email or settings.dev_admin_password
     ):
         msg = "DEV_ADMIN_EMAIL/DEV_ADMIN_PASSWORD are development-only settings."
         raise ValueError(msg)
+    if settings.app_env == "production":
+        if settings.app_secret_key == "change-me" or len(settings.app_secret_key) < 32:
+            msg = (
+                "APP_SECRET_KEY must be a non-default value of at least 32 "
+                "characters in production."
+            )
+            raise ValueError(msg)
+        if not settings.app_public_base_url:
+            msg = "APP_PUBLIC_BASE_URL is required in production."
+            raise ValueError(msg)
+        public_url = urlsplit(settings.app_public_base_url)
+        if (
+            public_url.scheme != "https"
+            or not public_url.netloc
+            or public_url.username is not None
+            or public_url.password is not None
+            or public_url.path not in {"", "/"}
+            or public_url.query
+            or public_url.fragment
+        ):
+            msg = (
+                "APP_PUBLIC_BASE_URL must be an HTTPS origin without credentials, "
+                "a path, query, or fragment in production."
+            )
+            raise ValueError(msg)
     if settings.posthog_observability_enabled and not settings.posthog_project_token:
         msg = "POSTHOG_PROJECT_TOKEN is required when PostHog observability is enabled."
         raise ValueError(msg)

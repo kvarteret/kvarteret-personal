@@ -15,7 +15,7 @@ for (const entry of await readdir(sourceDir, { withFileTypes: true })) {
 
   const sourcePath = path.join(sourceDir, entry.name)
   const template = await readFile(sourcePath, "utf8")
-  const { html, errors } = mjml2html(template, {
+  const { html, errors } = await mjml2html(template, {
     filePath: sourcePath,
     minify: false,
     validationLevel: "strict",

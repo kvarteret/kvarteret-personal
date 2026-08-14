@@ -364,7 +364,7 @@ class DuplicateApprovalVolunteerApplicationsService(FakeVolunteerApplicationsSer
         base_url: str | None = None,
         actor_user_account_id: int | None = None,
     ) -> int:
-        raise VolunteerAlreadyExistsError(10017, "sebbesgh@gmail.com")
+        raise VolunteerAlreadyExistsError(10017, "duplicate@example.test")
 
 
 class DuplicateInviteVolunteerApplicationsService(FakeVolunteerApplicationsService):

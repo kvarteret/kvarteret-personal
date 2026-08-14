@@ -1578,7 +1578,7 @@ async def test_mobile_card_service_keeps_real_photo_when_april_toggle_is_disable
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_enabled() -> None:
+async def test_mobile_card_service_hides_photo_when_april_toggle_is_enabled() -> None:
     repository = FakeMobileCardRepository(card_snapshot=_build_mobile_card_snapshot())
     service = MobileCardService(
         Settings(app_secret_key="test-secret"),
@@ -1591,11 +1591,11 @@ async def test_mobile_card_service_returns_mapped_april_photo_when_toggle_is_ena
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
 
-    assert result.card.photo_url == "/static/images/april/skjenkeetaten.webp"
+    assert result.card.photo_url is None
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> None:
+async def test_mobile_card_service_hides_photo_without_media_service_in_april_mode() -> None:
     repository = FakeMobileCardRepository(
         card_snapshot=MobileCardSnapshot(
             volunteer_id=12,
@@ -1635,11 +1635,11 @@ async def test_mobile_card_service_uses_first_mapped_group_for_april_photo() -> 
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
 
-    assert result.card.photo_url == "/static/images/april/pr.jpg"
+    assert result.card.photo_url is None
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups() -> None:
+async def test_mobile_card_service_hides_photo_for_unmapped_groups_in_april_mode() -> None:
     repository = FakeMobileCardRepository(
         card_snapshot=MobileCardSnapshot(
             volunteer_id=12,
@@ -1671,7 +1671,7 @@ async def test_mobile_card_service_uses_default_april_photo_for_unmapped_groups(
 
     result = await service.get_current_card(service.sessions.serializer.dumps({"person_id": 12}))
 
-    assert result.card.photo_url == "/static/images/april/default.jpg"
+    assert result.card.photo_url is None
 
 
 @pytest.mark.asyncio
