@@ -3,14 +3,17 @@
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
     Index,
     JSON,
+    String,
     Table,
     Text,
     UniqueConstraint,
+    Uuid,
 )
 
 from app.db.metadata import public_metadata
@@ -114,4 +117,33 @@ domain_events = Table(
     Column("payload", JSON, nullable=False, server_default="{}"),
     Column("occurred_at", DateTime(timezone=True), nullable=False),
     Column("trace_id", Text),
+)
+
+
+volunteer_prospect_idempotency_keys = Table(
+    "volunteer_prospect_idempotency_keys",
+    public_metadata,
+    Column("idempotency_key", Uuid(as_uuid=True), primary_key=True),
+    Column("request_hash", String(64), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+
+volunteer_prospect_submissions = Table(
+    "volunteer_prospect_submissions",
+    public_metadata,
+    Column("request_hash", String(64), primary_key=True),
+    Column("status", Text, nullable=False),
+    Column(
+        "registration_id",
+        BigInteger,
+        ForeignKey("public.volunteer_application_invites.id", ondelete="CASCADE"),
+        unique=True,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint(
+        "status in ('processing', 'completed')",
+        name="ck_volunteer_prospect_submissions_status",
+    ),
 )

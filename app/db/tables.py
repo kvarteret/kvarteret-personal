@@ -49,6 +49,8 @@ from app.domain.volunteer_applications.tables import (
     volunteer_application_friend_invitations,
     volunteer_application_invites,
     volunteer_application_submissions,
+    volunteer_prospect_idempotency_keys,
+    volunteer_prospect_submissions,
 )
 from app.domain.volunteers.tables import (
     volunteer_cards,
@@ -89,6 +91,8 @@ __all__ = [
     "volunteer_application_friend_invitations",
     "volunteer_application_invites",
     "volunteer_application_submissions",
+    "volunteer_prospect_idempotency_keys",
+    "volunteer_prospect_submissions",
     "volunteer_cards",
     "volunteer_next_of_kin",
     "volunteer_photos",

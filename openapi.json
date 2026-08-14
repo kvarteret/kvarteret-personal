@@ -1526,83 +1526,6 @@
         "title": "NowPlayingStateResponse",
         "type": "object"
       },
-      "PublicVolunteerProspectRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "background_details": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Background Details"
-          },
-          "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
-          },
-          "first_choice_group_slug": {
-            "maxLength": 100,
-            "minLength": 1,
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "title": "First Choice Group Slug",
-            "type": "string"
-          },
-          "friend_emails": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Friend Emails"
-          },
-          "full_name": {
-            "title": "Full Name",
-            "type": "string"
-          },
-          "phone": {
-            "title": "Phone",
-            "type": "string"
-          },
-          "second_choice_group_slug": {
-            "anyOf": [
-              {
-                "maxLength": 100,
-                "minLength": 1,
-                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Second Choice Group Slug"
-          },
-          "study_institution": {
-            "title": "Study Institution",
-            "type": "string"
-          }
-        },
-        "required": [
-          "full_name",
-          "email",
-          "phone",
-          "study_institution",
-          "first_choice_group_slug"
-        ],
-        "title": "PublicVolunteerProspectRequest",
-        "type": "object"
-      },
       "PublicVolunteerProspectResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2325,13 +2248,118 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "description": "Canonical lowercase UUID. Required for v2 signatures; identical retries return the original registration.",
+            "in": "header",
+            "name": "X-Kvarteret-Idempotency-Key",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Opaque v1 HMAC of the caller IP. Required for v2 signatures; the raw IP must not be forwarded.",
+            "in": "header",
+            "name": "X-Kvarteret-Client-Key",
+            "required": false,
+            "schema": {
+              "pattern": "^v1=[0-9a-f]{64}$",
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PublicVolunteerProspectRequest"
+                "additionalProperties": false,
+                "properties": {
+                  "background_details": {
+                    "anyOf": [
+                      {
+                        "maxLength": 2000,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Background Details"
+                  },
+                  "email": {
+                    "format": "email",
+                    "maxLength": 254,
+                    "title": "Email",
+                    "type": "string"
+                  },
+                  "first_choice_group_slug": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                    "title": "First Choice Group Slug",
+                    "type": "string"
+                  },
+                  "friend_emails": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "format": "email",
+                          "maxLength": 254,
+                          "type": "string"
+                        },
+                        "maxItems": 2,
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Friend Emails"
+                  },
+                  "full_name": {
+                    "maxLength": 201,
+                    "minLength": 1,
+                    "title": "Full Name",
+                    "type": "string"
+                  },
+                  "phone": {
+                    "maxLength": 16,
+                    "minLength": 1,
+                    "title": "Phone",
+                    "type": "string"
+                  },
+                  "second_choice_group_slug": {
+                    "anyOf": [
+                      {
+                        "maxLength": 100,
+                        "minLength": 1,
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Second Choice Group Slug"
+                  },
+                  "study_institution": {
+                    "maxLength": 160,
+                    "minLength": 1,
+                    "title": "Study Institution",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "full_name",
+                  "email",
+                  "phone",
+                  "study_institution",
+                  "first_choice_group_slug"
+                ],
+                "title": "PublicVolunteerProspectRequest",
+                "type": "object"
               }
             }
           },
@@ -2351,6 +2379,9 @@
           "401": {
             "description": "Missing, invalid, stale, or replayed HMAC authentication."
           },
+          "413": {
+            "description": "The request body exceeds the configured byte limit."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2359,7 +2390,10 @@
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Malformed JSON or a request field failed validation."
+          },
+          "429": {
+            "description": "A route-wide, client, or normalized-email limit was exceeded."
           },
           "503": {
             "description": "HMAC authentication or replay protection is unavailable."

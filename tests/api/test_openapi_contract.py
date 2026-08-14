@@ -32,6 +32,24 @@ def test_openapi_contains_stable_operation_ids() -> None:
     }.issubset(operations)
 
 
+def test_volunteer_prospect_contract_documents_security_controls() -> None:
+    operation = create_app().openapi()["paths"][
+        "/api/v1/volunteer-prospects"
+    ]["post"]
+    request_schema = operation["requestBody"]["content"]["application/json"][
+        "schema"
+    ]
+    parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
+
+    assert request_schema["properties"]["full_name"]["maxLength"] == 201
+    assert request_schema["properties"]["friend_emails"]["anyOf"][0][
+        "maxItems"
+    ] == 2
+    assert parameters["X-Kvarteret-Idempotency-Key"]["schema"]["format"] == "uuid"
+    assert parameters["X-Kvarteret-Client-Key"]["schema"]["pattern"]
+    assert {"413", "422", "429"}.issubset(operation["responses"])
+
+
 def test_exported_openapi_schema_is_current() -> None:
     exported_path = ROOT / "openapi.json"
     assert exported_path.exists()

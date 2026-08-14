@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from math import ceil
 from typing import Protocol
+from uuid import UUID
 
 from app.domain.volunteer_applications.state_machine import (
     ApplicationState,
@@ -25,6 +26,10 @@ class VolunteerApplicationNotFoundError(VolunteerApplicationsError):
 
 
 class VolunteerApplicationConflictError(VolunteerApplicationsError):
+    pass
+
+
+class VolunteerProspectIdempotencyConflictError(VolunteerApplicationConflictError):
     pass
 
 
@@ -82,6 +87,12 @@ class VolunteerApplicationFriendInvite:
 class PublicProspectRegistrationResult:
     detail: "VolunteerApplicationDetail"
     friend_invites: list[VolunteerApplicationFriendInvite]
+
+
+@dataclass(frozen=True, slots=True)
+class PublicProspectRequestClaim:
+    created: bool
+    registration_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,6 +311,8 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         registration: PublicProspectRegistrationInput,
         *,
         base_url: str | None = None,
+        idempotency_key: UUID | None = None,
+        request_hash: str | None = None,
     ) -> VolunteerApplicationDetail: ...
     async def create_volunteer_application_invitation(
         self,
@@ -414,6 +427,20 @@ def trial_days_remaining(trial_ends_at: datetime | None, *, now: datetime | None
 
 
 class VolunteerApplicationsRepositoryProtocol(Protocol):
+    async def claim_public_prospect_request(
+        self,
+        *,
+        idempotency_key: UUID,
+        request_hash: str,
+        now: datetime,
+    ) -> PublicProspectRequestClaim: ...
+    async def complete_public_prospect_request(
+        self,
+        *,
+        request_hash: str,
+        registration_id: int,
+        now: datetime,
+    ) -> None: ...
     async def create_public_prospect_registration(
         self,
         *,

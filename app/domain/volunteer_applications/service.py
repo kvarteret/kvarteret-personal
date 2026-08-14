@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import re
 from asyncio import to_thread
+from datetime import UTC, datetime
 from secrets import token_hex, token_urlsafe
+from uuid import UUID
 
 from app.config import Settings
 from app.errors import NotConfiguredError
@@ -25,6 +27,7 @@ from app.domain.volunteer_applications.state_machine import (
 from app.domain.volunteer_applications.models import (
     ActiveVolunteerRegistrationExistsError,
     PublicProspectRegistrationInput,
+    PublicProspectRequestClaim,
     PublicProspectRegistrationResult,
     VolunteerAlreadyExistsError,
     VolunteerApplicationConflictError,
@@ -104,8 +107,39 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         registration: PublicProspectRegistrationInput,
         *,
         base_url: str | None = None,
+        idempotency_key: UUID | None = None,
+        request_hash: str | None = None,
     ) -> VolunteerApplicationDetail:
-        return await self.workflow.register_public_prospect(registration, base_url=base_url)
+        return await self.workflow.register_public_prospect(
+            registration,
+            base_url=base_url,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+        )
+
+    async def claim_public_prospect_request(
+        self,
+        *,
+        idempotency_key: UUID,
+        request_hash: str,
+    ) -> PublicProspectRequestClaim:
+        return await self.repository.claim_public_prospect_request(
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            now=datetime.now(UTC),
+        )
+
+    async def complete_public_prospect_request(
+        self,
+        *,
+        request_hash: str,
+        registration_id: int,
+    ) -> None:
+        await self.repository.complete_public_prospect_request(
+            request_hash=request_hash,
+            registration_id=registration_id,
+            now=datetime.now(UTC),
+        )
 
     async def create_public_prospect_registration_record(
         self,

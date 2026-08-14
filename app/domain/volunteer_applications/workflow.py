@@ -22,10 +22,11 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
+from uuid import UUID
 
 from opentelemetry import trace
 
-from app.db.session import commit_request_session
+from app.db.session import commit_request_session, rollback_request_session
 from app.email_delivery import (
     APPLICANT_APPLICATION_RECEIVED,
     APPLICANT_FRIEND_INVITATION,
@@ -54,6 +55,18 @@ if TYPE_CHECKING:
 
 
 class VolunteerApplicationWorkflowOperations(Protocol):
+    async def claim_public_prospect_request(
+        self,
+        *,
+        idempotency_key: UUID,
+        request_hash: str,
+    ): ...
+    async def complete_public_prospect_request(
+        self,
+        *,
+        request_hash: str,
+        registration_id: int,
+    ) -> None: ...
     async def create_public_prospect_registration_record(
         self,
         registration: "PublicProspectRegistrationInput",
@@ -205,53 +218,88 @@ class VolunteerApplicationWorkflow:
         registration: "PublicProspectRegistrationInput",
         *,
         base_url: str | None,
+        idempotency_key: UUID | None = None,
+        request_hash: str | None = None,
     ) -> "VolunteerApplicationDetail":
-        result = await self.operations.create_public_prospect_registration_record(
-            registration, base_url=base_url
-        )
-        registration_event_id = await self.operations.append_domain_event(
-            DomainEventRecord(
-                event_type="prospect_registered",
-                actor_user_account_id=None,
-                subject_type="application",
-                subject_id=result.detail.registration_id,
-                payload={
-                    "email": result.detail.email,
-                    "friend_invites": [
-                        invite.registration_id for invite in result.friend_invites
-                    ],
-                },
-            ),
-            subject_id=result.detail.registration_id,
-        )
-        await self._enqueue_volunteer_email(
-            template_key=APPLICANT_APPLICATION_RECEIVED,
-            invite=result.detail,
-            source_domain_event_id=registration_event_id,
-        )
-        for invite in result.friend_invites:
-            event_id = await self.operations.append_domain_event(
+        if (idempotency_key is None) != (request_hash is None):
+            raise ValueError(
+                "Volunteer prospect idempotency key and request hash must be provided together."
+            )
+        try:
+            if idempotency_key is not None and request_hash is not None:
+                claim = await self.operations.claim_public_prospect_request(
+                    idempotency_key=idempotency_key,
+                    request_hash=request_hash,
+                )
+                if not claim.created:
+                    if claim.registration_id is None:
+                        raise RuntimeError(
+                            "Completed volunteer prospect claim has no registration."
+                        )
+                    detail = await self.operations.get_volunteer_application_detail(
+                        claim.registration_id
+                    )
+                    if detail is None:
+                        raise RuntimeError(
+                            "Idempotent volunteer prospect result no longer exists."
+                        )
+                    await commit_request_session()
+                    return detail
+
+            result = await self.operations.create_public_prospect_registration_record(
+                registration, base_url=base_url
+            )
+            registration_event_id = await self.operations.append_domain_event(
                 DomainEventRecord(
-                    event_type="application_invited",
+                    event_type="prospect_registered",
                     actor_user_account_id=None,
                     subject_type="application",
-                    subject_id=invite.registration_id,
+                    subject_id=result.detail.registration_id,
                     payload={
-                        "email": invite.email,
-                        "invited_by_registration_id": result.detail.registration_id,
-                        "inviter_name": invite.inviter_name,
-                        "inviter_email": result.detail.email,
-                        "invitee_email": invite.email,
+                        "email": result.detail.email,
+                        "friend_invites": [
+                            invite.registration_id for invite in result.friend_invites
+                        ],
                     },
                 ),
-                subject_id=invite.registration_id,
+                subject_id=result.detail.registration_id,
             )
             await self._enqueue_volunteer_email(
-                template_key=APPLICANT_FRIEND_INVITATION,
-                invite=invite,
-                source_domain_event_id=event_id,
+                template_key=APPLICANT_APPLICATION_RECEIVED,
+                invite=result.detail,
+                source_domain_event_id=registration_event_id,
             )
-        await commit_request_session()
+            for invite in result.friend_invites:
+                event_id = await self.operations.append_domain_event(
+                    DomainEventRecord(
+                        event_type="application_invited",
+                        actor_user_account_id=None,
+                        subject_type="application",
+                        subject_id=invite.registration_id,
+                        payload={
+                            "email": invite.email,
+                            "invited_by_registration_id": result.detail.registration_id,
+                            "inviter_name": invite.inviter_name,
+                            "inviter_email": result.detail.email,
+                            "invitee_email": invite.email,
+                        },
+                    ),
+                    subject_id=invite.registration_id,
+                )
+                await self._enqueue_volunteer_email(
+                    template_key=APPLICANT_FRIEND_INVITATION,
+                    invite=invite,
+                    source_domain_event_id=event_id,
+                )
+            if request_hash is not None:
+                await self.operations.complete_public_prospect_request(
+                    request_hash=request_hash,
+                    registration_id=result.detail.registration_id,
+                )
+            await commit_request_session()
+        except Exception:
+            await rollback_request_session()
+            raise
         await self.side_effects.after_public_prospect_registered(
             result, base_url=base_url
         )

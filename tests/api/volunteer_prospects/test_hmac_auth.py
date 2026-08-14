@@ -25,6 +25,10 @@ HMAC_SECRET = "test-shared-secret-0123456789abcdef"
 PREVIOUS_HMAC_SECRET = "previous-shared-secret-0123456789abc"
 FIXED_TIMESTAMP = "1760000000"
 FIXED_NONCE = "123e4567-e89b-42d3-a456-426614174000"
+FIXED_IDEMPOTENCY_KEY = "123e4567-e89b-42d3-a456-426614174001"
+FIXED_CLIENT_KEY = (
+    "v1=9a0dcfcc46f5fc85d1151d64c99635e5d32febbe873c1d9467cf618652eb84e5"
+)
 FIXED_BODY = (
     b'{"full_name":"Kari Nordmann","email":"kari@example.com"}'
 )
@@ -44,9 +48,20 @@ VALID_PAYLOAD = {
 class FakeVolunteerApplicationsService:
     def __init__(self) -> None:
         self.calls = 0
+        self.idempotency_keys = []
+        self.request_hashes = []
 
-    async def create_public_prospect_registration(self, registration, *, base_url):
+    async def create_public_prospect_registration(
+        self,
+        registration,
+        *,
+        base_url,
+        idempotency_key=None,
+        request_hash=None,
+    ):
         self.calls += 1
+        self.idempotency_keys.append(idempotency_key)
+        self.request_hashes.append(request_hash)
         return SimpleNamespace(registration_id=42)
 
 
@@ -54,6 +69,7 @@ def _build_app(
     *,
     secret: str | None = HMAC_SECRET,
     previous_secret: str | None = None,
+    **setting_overrides,
 ) -> tuple[FastAPI, FakeVolunteerApplicationsService]:
     app = FastAPI()
     app.include_router(router, prefix=VOLUNTEER_PROSPECT_PATH)
@@ -63,6 +79,7 @@ def _build_app(
         app_env="test",
         volunteer_prospect_hmac_secret=secret,
         volunteer_prospect_hmac_previous_secret=previous_secret,
+        **setting_overrides,
     )
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
     app.dependency_overrides[get_volunteer_applications_service] = lambda: service
@@ -79,10 +96,14 @@ def _signed_headers(
     secret: str = HMAC_SECRET,
     timestamp: str | None = None,
     nonce: str | None = None,
+    idempotency_key: str | None = None,
+    client_key: str = FIXED_CLIENT_KEY,
+    version: str = "v2",
 ) -> dict[str, str]:
     resolved_timestamp = timestamp or str(int(time.time()))
     resolved_nonce = nonce or str(uuid4())
-    return {
+    resolved_idempotency_key = idempotency_key or str(uuid4())
+    headers = {
         "Content-Type": "application/json",
         "X-Kvarteret-Timestamp": resolved_timestamp,
         "X-Kvarteret-Nonce": resolved_nonce,
@@ -93,8 +114,15 @@ def _signed_headers(
             method="POST",
             path=VOLUNTEER_PROSPECT_PATH,
             body=body,
+            version=version,
+            idempotency_key=(resolved_idempotency_key if version == "v2" else None),
+            client_key=(client_key if version == "v2" else None),
         ),
     }
+    if version == "v2":
+        headers["X-Kvarteret-Idempotency-Key"] = resolved_idempotency_key
+        headers["X-Kvarteret-Client-Key"] = client_key
+    return headers
 
 
 def test_hmac_signature_matches_shared_cross_repository_vector() -> None:
@@ -111,6 +139,20 @@ def test_hmac_signature_matches_shared_cross_repository_vector() -> None:
     )
 
 
+def test_v2_hmac_signature_matches_shared_cross_repository_vector() -> None:
+    assert build_volunteer_prospect_signature(
+        HMAC_SECRET,
+        timestamp=FIXED_TIMESTAMP,
+        nonce=FIXED_NONCE,
+        method="POST",
+        path=VOLUNTEER_PROSPECT_PATH,
+        body=FIXED_BODY,
+        version="v2",
+        idempotency_key=FIXED_IDEMPOTENCY_KEY,
+        client_key=FIXED_CLIENT_KEY,
+    ) == "v2=4494eaa27eeaa0095320f8293384f7dbd3c814d81b17c9e6c83cd0539615837a"
+
+
 def test_signed_prospect_request_is_accepted() -> None:
     app, service = _build_app()
     body = _encoded_payload()
@@ -123,6 +165,23 @@ def test_signed_prospect_request_is_accepted() -> None:
 
     assert response.status_code == 201
     assert response.json() == {"registrationId": 42}
+    assert service.calls == 1
+    assert len(service.idempotency_keys) == 1
+    assert service.idempotency_keys[0] is not None
+    assert len(service.request_hashes[0]) == 64
+
+
+def test_legacy_v1_signed_prospect_request_remains_accepted_for_rollout() -> None:
+    app, service = _build_app()
+    body = _encoded_payload()
+
+    response = TestClient(app).post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body, version="v1"),
+    )
+
+    assert response.status_code == 201
     assert service.calls == 1
 
 
@@ -140,7 +199,7 @@ def test_unsigned_prospect_request_is_rejected() -> None:
     assert service.calls == 0
 
 
-def test_unsigned_malformed_body_never_reaches_prospect_service() -> None:
+def test_unsigned_malformed_body_is_authenticated_before_json_parsing() -> None:
     app, service = _build_app()
 
     response = TestClient(app).post(
@@ -149,7 +208,7 @@ def test_unsigned_malformed_body_never_reaches_prospect_service() -> None:
         headers={"Content-Type": "application/json"},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 401
     assert service.calls == 0
 
 
@@ -165,6 +224,80 @@ def test_signature_does_not_authorize_an_altered_body() -> None:
     )
 
     assert response.status_code == 401
+    assert service.calls == 0
+
+
+def test_signature_does_not_authorize_an_altered_idempotency_key() -> None:
+    app, service = _build_app()
+    body = _encoded_payload()
+    headers = _signed_headers(body, idempotency_key=FIXED_IDEMPOTENCY_KEY)
+    headers["X-Kvarteret-Idempotency-Key"] = str(uuid4())
+
+    response = TestClient(app).post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=headers,
+    )
+
+    assert response.status_code == 401
+    assert service.calls == 0
+
+
+def test_signature_does_not_authorize_an_altered_client_key() -> None:
+    app, service = _build_app()
+    body = _encoded_payload()
+    headers = _signed_headers(body)
+    headers["X-Kvarteret-Client-Key"] = "v1=" + "cd" * 32
+
+    response = TestClient(app).post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=headers,
+    )
+
+    assert response.status_code == 401
+    assert service.calls == 0
+
+
+def test_signed_oversized_body_is_rejected_before_json_parsing() -> None:
+    app, service = _build_app(volunteer_prospect_max_body_bytes=32)
+    body = _encoded_payload()
+
+    response = TestClient(app).post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body),
+    )
+
+    assert response.status_code == 413
+    assert service.calls == 0
+
+
+def test_signed_malformed_json_is_rejected_after_authentication() -> None:
+    app, service = _build_app()
+    body = b"not-json"
+
+    response = TestClient(app).post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body),
+    )
+
+    assert response.status_code == 422
+    assert service.calls == 0
+
+
+def test_oversized_field_is_rejected() -> None:
+    app, service = _build_app()
+    body = _encoded_payload({**VALID_PAYLOAD, "study_institution": "x" * 161})
+
+    response = TestClient(app).post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body),
+    )
+
+    assert response.status_code == 422
     assert service.calls == 0
 
 
@@ -232,3 +365,77 @@ def test_missing_hmac_configuration_fails_closed() -> None:
     assert response.status_code == 503
     assert response.json() == {"detail": "Service unavailable."}
     assert service.calls == 0
+
+
+def test_route_wide_rate_limit_survives_new_nonces() -> None:
+    app, service = _build_app(volunteer_prospect_route_limit=1)
+    client = TestClient(app)
+    body = _encoded_payload()
+
+    first = client.post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body),
+    )
+    second = client.post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body),
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 429
+    assert second.headers["Retry-After"] == "60"
+    assert service.calls == 1
+
+
+def test_client_rate_limit_is_keyed_by_signed_pseudonymous_client() -> None:
+    app, service = _build_app(
+        volunteer_prospect_route_limit=10,
+        volunteer_prospect_client_limit=1,
+    )
+    client = TestClient(app)
+    body = _encoded_payload()
+
+    first = client.post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body),
+    )
+    second = client.post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=body,
+        headers=_signed_headers(body),
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 429
+    assert second.headers["Retry-After"] == "600"
+    assert service.calls == 1
+
+
+def test_email_rate_limit_uses_normalized_address() -> None:
+    app, service = _build_app(
+        volunteer_prospect_route_limit=10,
+        volunteer_prospect_client_limit=10,
+        volunteer_prospect_email_limit=1,
+    )
+    client = TestClient(app)
+    first_body = _encoded_payload()
+    second_body = _encoded_payload({**VALID_PAYLOAD, "email": "KARI@example.com"})
+
+    first = client.post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=first_body,
+        headers=_signed_headers(first_body),
+    )
+    second = client.post(
+        VOLUNTEER_PROSPECT_PATH,
+        content=second_body,
+        headers=_signed_headers(second_body, client_key="v1=" + "cd" * 32),
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 429
+    assert second.headers["Retry-After"] == "3600"
+    assert service.calls == 1
