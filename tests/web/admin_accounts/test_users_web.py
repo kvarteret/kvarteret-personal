@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 
 from app.auth.models import WebSession
 from app.auth.roles import UserRole
-from app.dependencies import get_admin_accounts_service, get_session_store, get_supabase_auth_gateway
+from app.dependencies import (
+    get_admin_accounts_service,
+    get_session_store,
+    get_supabase_auth_gateway,
+)
 from app.main import create_app
 from app.domain.admin_accounts.service import AdminAccountDetail, AdminAccountListItem
 from tests.support.helpers import make_authenticated_user, override_authenticated_user
@@ -45,7 +49,9 @@ class FakeAdminAccountsService:
             ),
         }
 
-    async def list_admin_accounts(self, query: str | None = None, limit: int = 100) -> list[AdminAccountListItem]:
+    async def list_admin_accounts(
+        self, query: str | None = None, limit: int = 100
+    ) -> list[AdminAccountListItem]:
         return [
             AdminAccountListItem(
                 user_account_id=7,
@@ -60,10 +66,20 @@ class FakeAdminAccountsService:
             )
         ]
 
-    async def get_admin_account_detail(self, user_account_id: int) -> AdminAccountDetail | None:
+    async def get_admin_account_detail(
+        self, user_account_id: int
+    ) -> AdminAccountDetail | None:
         return self._details.get(user_account_id)
 
-    async def update_admin_account(self, *, user_account_id: int, username: str, email: str, display_name: str | None, role: UserRole):
+    async def update_admin_account(
+        self,
+        *,
+        user_account_id: int,
+        username: str,
+        email: str,
+        display_name: str | None,
+        role: UserRole,
+    ):
         return await self.get_admin_account_detail(user_account_id)
 
     async def create_admin_account(
@@ -117,6 +133,7 @@ class FailingOnboardingEmailAdminAccountsService(FakeAdminAccountsService):
     async def send_onboarding_email(self, **kwargs) -> None:
         raise RuntimeError("smtp send failed")
 
+
 class FakeSupabaseAuthGateway:
     def __init__(self) -> None:
         self.created_user = None
@@ -130,14 +147,28 @@ class FakeSupabaseAuthGateway:
     async def sign_in_with_password(self, email: str, password: str):
         if password != "CorrectPassword123":
             return None
-        return self.updated_password[0] if self.updated_password else self.created_user[0] if self.created_user else None
+        return (
+            self.updated_password[0]
+            if self.updated_password
+            else self.created_user[0]
+            if self.created_user
+            else None
+        )
 
-    async def create_user(self, *, email: str, password: str, metadata: dict | None = None):
+    async def create_user(
+        self, *, email: str, password: str, metadata: dict | None = None
+    ):
         auth_user_id = uuid4()
         self.created_user = (auth_user_id, email, password, metadata)
         return auth_user_id
 
-    async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None):
+    async def invite_user(
+        self,
+        *,
+        email: str,
+        metadata: dict | None = None,
+        redirect_to: str | None = None,
+    ):
         auth_user_id = uuid4()
         self.invited_user = (auth_user_id, email, metadata, redirect_to)
         return auth_user_id
@@ -152,14 +183,15 @@ class FakeSupabaseAuthGateway:
     ):
         self.generated_link = (link_type, email, redirect_to, metadata)
         return (
-            "http://testserver/set-password"
-            "#token_hash=hashed-setup-token&type=recovery"
+            "http://testserver/set-password#token_hash=hashed-setup-token&type=recovery"
         )
 
     async def update_user_password(self, auth_user_id, password: str) -> None:
         self.updated_password = (auth_user_id, password)
 
-    async def update_password_with_access_token(self, access_token: str, password: str) -> None:
+    async def update_password_with_access_token(
+        self, access_token: str, password: str
+    ) -> None:
         self.updated_password_with_access_token = (access_token, password)
 
     async def update_password_with_token_hash(
@@ -176,10 +208,18 @@ class FakeSupabaseAuthGateway:
 
 
 class FailingSupabaseAuthGateway(FakeSupabaseAuthGateway):
-    async def create_user(self, *, email: str, password: str, metadata: dict | None = None):
+    async def create_user(
+        self, *, email: str, password: str, metadata: dict | None = None
+    ):
         raise RuntimeError("upstream create failed with sensitive details")
 
-    async def invite_user(self, *, email: str, metadata: dict | None = None, redirect_to: str | None = None):
+    async def invite_user(
+        self,
+        *,
+        email: str,
+        metadata: dict | None = None,
+        redirect_to: str | None = None,
+    ):
         raise RuntimeError("upstream invite failed with sensitive details")
 
     async def delete_user(self, auth_user_id) -> None:
@@ -225,8 +265,12 @@ class FakeSessionStore:
 def _make_client(role: UserRole = UserRole.ADMIN) -> TestClient:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user(role))
-    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
-    app.dependency_overrides[get_supabase_auth_gateway] = lambda: FakeSupabaseAuthGateway()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        FakeAdminAccountsService()
+    )
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: (
+        FakeSupabaseAuthGateway()
+    )
     return TestClient(app)
 
 
@@ -276,7 +320,9 @@ def test_admin_account_create_redirects_and_calls_services() -> None:
     override_authenticated_user(app, make_authenticated_user())
     admin_accounts_service = FakeAdminAccountsService()
     supabase_auth_gateway = FakeSupabaseAuthGateway()
-    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        admin_accounts_service
+    )
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
     client = TestClient(app)
 
@@ -318,8 +364,7 @@ def test_admin_account_create_redirects_and_calls_services() -> None:
     sent_email = admin_accounts_service.sent_onboarding_emails[0]
     assert sent_email["recipient_email"] == "new.admin@example.test"
     assert sent_email["setup_url"] == (
-        "http://testserver/set-password"
-        "#token_hash=hashed-setup-token&type=recovery"
+        "http://testserver/set-password#token_hash=hashed-setup-token&type=recovery"
     )
     assert sent_email["username"] == "new.admin"
     assert sent_email["display_name"] == "New Admin"
@@ -331,7 +376,9 @@ def test_admin_account_create_cleans_up_when_email_send_fails() -> None:
     override_authenticated_user(app, make_authenticated_user())
     admin_accounts_service = FailingOnboardingEmailAdminAccountsService()
     supabase_auth_gateway = FakeSupabaseAuthGateway()
-    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        admin_accounts_service
+    )
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
     client = TestClient(app)
 
@@ -359,9 +406,16 @@ def test_my_account_password_change_updates_password() -> None:
     app = create_app()
     current_user = make_authenticated_user()
     override_authenticated_user(app, current_user)
-    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        FakeAdminAccountsService()
+    )
     supabase_auth_gateway = FakeSupabaseAuthGateway()
-    supabase_auth_gateway.created_user = (current_user.auth_user_id, current_user.email, "", None)
+    supabase_auth_gateway.created_user = (
+        current_user.auth_user_id,
+        current_user.email,
+        "",
+        None,
+    )
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
     client = TestClient(app)
 
@@ -376,15 +430,23 @@ def test_my_account_password_change_updates_password() -> None:
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/my-account?password_message=Passordet+ble+oppdatert."
-    assert supabase_auth_gateway.updated_password == (current_user.auth_user_id, "UpdatedPassword123")
+    assert (
+        response.headers["location"]
+        == "/my-account?password_message=Passordet+ble+oppdatert."
+    )
+    assert supabase_auth_gateway.updated_password == (
+        current_user.auth_user_id,
+        "UpdatedPassword123",
+    )
 
 
 def test_admin_can_start_impersonation_from_admin_account() -> None:
     app = create_app()
     current_user = make_authenticated_user()
     override_authenticated_user(app, current_user)
-    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        FakeAdminAccountsService()
+    )
     session_store = FakeSessionStore()
     app.dependency_overrides[get_session_store] = lambda: session_store
     client = TestClient(app)
@@ -395,7 +457,10 @@ def test_admin_can_start_impersonation_from_admin_account() -> None:
     assert response.headers["location"] == "/"
     assert "kvarteret_session" in response.headers["set-cookie"]
     assert session_store.created_sessions[0]["user_account_id"] == 7
-    assert session_store.created_sessions[0]["impersonator_user_account_id"] == current_user.user_account_id
+    assert (
+        session_store.created_sessions[0]["impersonator_user_account_id"]
+        == current_user.user_account_id
+    )
 
 
 def test_admin_can_delete_other_admin_account() -> None:
@@ -403,7 +468,9 @@ def test_admin_can_delete_other_admin_account() -> None:
     override_authenticated_user(app, make_authenticated_user())
     admin_accounts_service = FakeAdminAccountsService()
     supabase_auth_gateway = FakeSupabaseAuthGateway()
-    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        admin_accounts_service
+    )
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
     client = TestClient(app)
 
@@ -421,14 +488,19 @@ def test_admin_cannot_delete_own_account() -> None:
     override_authenticated_user(app, make_authenticated_user())
     admin_accounts_service = FakeAdminAccountsService()
     supabase_auth_gateway = FakeSupabaseAuthGateway()
-    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        admin_accounts_service
+    )
     app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
     client = TestClient(app)
 
     response = client.post("/admin-accounts/5?_method=DELETE", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/admin-accounts/5?error=Du+kan+ikke+slette+din+egen+admin-konto."
+    assert (
+        response.headers["location"]
+        == "/admin-accounts/5?error=Du+kan+ikke+slette+din+egen+admin-konto."
+    )
     assert supabase_auth_gateway.deleted_user is None
     assert admin_accounts_service.deleted_account is None
 
@@ -436,8 +508,12 @@ def test_admin_cannot_delete_own_account() -> None:
 def test_admin_account_create_uses_safe_error_message_on_provider_failure() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
-    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
-    app.dependency_overrides[get_supabase_auth_gateway] = lambda: FailingSupabaseAuthGateway()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        FakeAdminAccountsService()
+    )
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: (
+        FailingSupabaseAuthGateway()
+    )
     client = TestClient(app)
 
     response = client.post(
@@ -475,9 +551,14 @@ def test_set_password_redirects_to_login_after_success() -> None:
     )
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/login?message=Passordet+er+satt.+Du+kan+logge+inn+na."
-    assert supabase_auth_gateway.updated_password_with_access_token == ("access-token-123", "UpdatedPassword123")
-
+    assert (
+        response.headers["location"]
+        == "/login?message=Passordet+er+satt.+Du+kan+logge+inn+na."
+    )
+    assert supabase_auth_gateway.updated_password_with_access_token == (
+        "access-token-123",
+        "UpdatedPassword123",
+    )
 
 
 def test_set_password_verifies_recovery_token_hash_on_submit() -> None:
@@ -520,8 +601,12 @@ def test_set_password_missing_token_returns_form_error_instead_of_422() -> None:
 def test_admin_account_delete_uses_safe_error_message_on_provider_failure() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
-    app.dependency_overrides[get_admin_accounts_service] = lambda: FakeAdminAccountsService()
-    app.dependency_overrides[get_supabase_auth_gateway] = lambda: FailingSupabaseAuthGateway()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        FakeAdminAccountsService()
+    )
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: (
+        FailingSupabaseAuthGateway()
+    )
     client = TestClient(app)
 
     response = client.post("/admin-accounts/7?_method=DELETE", follow_redirects=False)

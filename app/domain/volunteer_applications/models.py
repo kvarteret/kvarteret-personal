@@ -311,6 +311,9 @@ class VolunteerApplicationsServiceProtocol(Protocol):
     ) -> VolunteerApplicationInvite: ...
     async def list_volunteer_applications(
         self,
+        query: str | None = None,
+        application_status: str | None = None,
+        group_id: int | None = None,
     ) -> list[VolunteerApplicationListItem]: ...
     async def list_recent_volunteer_registrations_page(
         self,
@@ -474,6 +477,15 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def list_friend_invitees(
         self, inviter_application_id: int
     ) -> list[VolunteerApplicationFriendRelationship]: ...
+    async def list_friend_relationships(
+        self, application_ids: list[int]
+    ) -> dict[
+        int,
+        tuple[
+            VolunteerApplicationFriendRelationship | None,
+            list[VolunteerApplicationFriendRelationship],
+        ],
+    ]: ...
     async def role_matches_group(self, *, role_id: int, group_id: int) -> bool: ...
     async def mark_promoted(self, *, registration_id: int, volunteer_id: int, accepted_group_id: int) -> None: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...

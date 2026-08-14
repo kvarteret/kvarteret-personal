@@ -232,12 +232,8 @@ def build_application_container(
             invalidate_volunteer_cache=volunteers_service.invalidate_volunteer_cache,
         ),
         groups_service=GroupsService(),
-        courses_service=CoursesService(
-            repository=CoursesRepository()
-        ),
-        volunteer_search_service=VolunteerSearchService(
-            VolunteerSearchRepository()
-        ),
+        courses_service=CoursesService(repository=CoursesRepository()),
+        volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository()),
         admin_accounts_service=AdminAccountsService(
             repository=AdminAccountsRepository(),
             cache_ttl_seconds=resolved_settings.admin_accounts_cache_ttl_seconds,

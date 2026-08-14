@@ -41,13 +41,11 @@ async def volunteer_applications_index(
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
     volunteer_applications = (
-        await volunteer_applications_service.list_volunteer_applications()
-    )
-    volunteer_applications = _filter_volunteer_applications(
-        volunteer_applications,
-        query=q,
-        application_status=application_status,
-        group_id=group_id,
+        await volunteer_applications_service.list_volunteer_applications(
+            query=q,
+            application_status=application_status,
+            group_id=group_id,
+        )
     )
     recent_registrations_page = (
         await volunteer_applications_service.list_recent_volunteer_registrations_page(
@@ -155,62 +153,6 @@ async def volunteer_recent_registrations(
             "next_cursor": recent_registrations_page.next_cursor,
         },
     )
-
-
-def _filter_volunteer_applications(
-    applications,
-    *,
-    query: str | None,
-    application_status: str | None,
-    group_id: int | None,
-):
-    normalized_query = (query or "").strip().casefold()
-    allowed_statuses = {"new", "contacted", "trial", "volunteer", "not_volunteer"}
-    if application_status == "active":
-        status_filter = None
-        excluded_statuses = {"volunteer", "not_volunteer"}
-    elif application_status in allowed_statuses:
-        status_filter = {application_status}
-        excluded_statuses = set()
-    elif application_status == "":
-        status_filter = None
-        excluded_statuses = set()
-    else:
-        status_filter = None
-        excluded_statuses = {"volunteer", "not_volunteer"}
-    return [
-        application
-        for application in applications
-        if (
-            (status_filter is None or application.status in status_filter)
-            and application.status not in excluded_statuses
-        )
-        and (
-            group_id is None
-            or group_id
-            in {
-                application.initial_group_id,
-                application.first_choice_group_id,
-                application.second_choice_group_id,
-            }
-        )
-        and (
-            not normalized_query
-            or normalized_query
-            in " ".join(
-                filter(
-                    None,
-                    [
-                        application.first_name,
-                        application.last_name,
-                        application.email,
-                        application.phone,
-                        application.study_institution,
-                    ],
-                )
-            ).casefold()
-        )
-    ]
 
 
 @router.get("/apply/{token}")
