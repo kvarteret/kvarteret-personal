@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 
+from app.domain.volunteer_applications.models import PublicProspectRequestClaim
 from app.domain.volunteer_applications.workflow import VolunteerApplicationWorkflow
 from app.email_delivery import (
     APPLICANT_APPLICATION_RECEIVED,
@@ -20,6 +23,24 @@ class FakeWorkflowOperations:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
         self.detail_status = "trial"
+        self.public_prospect_claim = PublicProspectRequestClaim(created=True)
+
+    async def claim_public_prospect_request(
+        self,
+        *,
+        idempotency_key: UUID,
+        request_hash: str,
+    ) -> PublicProspectRequestClaim:
+        self.calls.append(("claim", (idempotency_key, request_hash)))
+        return self.public_prospect_claim
+
+    async def complete_public_prospect_request(
+        self,
+        *,
+        request_hash: str,
+        registration_id: int,
+    ) -> None:
+        self.calls.append(("complete", (request_hash, registration_id)))
 
     async def create_public_prospect_registration_record(
         self, registration, *, base_url: str | None
@@ -159,6 +180,70 @@ class FakeWorkflowSideEffects:
 
     async def after_invitation_resent(self, detail, *, base_url: str | None):
         self.calls.append(("after_resend", detail.registration_id))
+
+
+@pytest.mark.asyncio
+async def test_public_prospect_idempotency_completes_with_registration() -> None:
+    operations = FakeWorkflowOperations()
+    side_effects = FakeWorkflowSideEffects()
+    email_outbox = FakeEmailOutbox()
+    workflow = VolunteerApplicationWorkflow(
+        operations=operations,
+        side_effects=side_effects,
+        email_outbox=email_outbox,
+    )
+    idempotency_key = UUID("123e4567-e89b-42d3-a456-426614174001")
+
+    detail = await workflow.register_public_prospect(
+        object(),
+        base_url="https://personal.example.test",
+        idempotency_key=idempotency_key,
+        request_hash="a" * 64,
+    )
+
+    assert detail.registration_id == 7
+    assert operations.calls == [
+        ("claim", (idempotency_key, "a" * 64)),
+        ("register", "https://personal.example.test"),
+        ("complete", ("a" * 64, 7)),
+    ]
+    assert side_effects.calls == [
+        ("after_register", "https://personal.example.test")
+    ]
+    assert len(email_outbox.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_public_prospect_idempotent_retry_returns_without_side_effects() -> None:
+    operations = FakeWorkflowOperations()
+    operations.public_prospect_claim = PublicProspectRequestClaim(
+        created=False,
+        registration_id=7,
+    )
+    side_effects = FakeWorkflowSideEffects()
+    email_outbox = FakeEmailOutbox()
+    workflow = VolunteerApplicationWorkflow(
+        operations=operations,
+        side_effects=side_effects,
+        email_outbox=email_outbox,
+    )
+    idempotency_key = UUID("123e4567-e89b-42d3-a456-426614174001")
+
+    detail = await workflow.register_public_prospect(
+        object(),
+        base_url="https://personal.example.test",
+        idempotency_key=idempotency_key,
+        request_hash="a" * 64,
+    )
+
+    assert detail.registration_id == 7
+    assert operations.calls == [
+        ("claim", (idempotency_key, "a" * 64)),
+        ("get", 7),
+    ]
+    assert side_effects.calls == []
+    assert email_outbox.requests == []
+    assert email_outbox.dispatch_count == 0
 
 
 @pytest.mark.asyncio

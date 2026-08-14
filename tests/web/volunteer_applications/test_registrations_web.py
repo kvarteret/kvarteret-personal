@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from uuid import uuid4
 
+from fastapi import Request
 from fastapi.testclient import TestClient
 
+from app.api.request_auth import (
+    VerifiedVolunteerProspectRequest,
+    require_signed_volunteer_prospect,
+)
 from app.auth.roles import UserRole
 from app.dependencies import (
     get_email_outbox_service,
+    get_rate_limiter,
     get_volunteer_applications_service,
     get_volunteers_service,
 )
+from app.db.rate_limit import InMemoryRateLimiter
 from app.main import create_app
 from app.web.routes.volunteer_applications.pages import _build_promotion_group_options
 from app.domain.volunteer_applications.models import (
@@ -23,6 +31,17 @@ from app.domain.volunteer_applications.models import (
 )
 from app.domain.volunteers.models import AssignmentRoleOption, GroupOption
 from tests.support.helpers import make_authenticated_user, override_authenticated_user
+
+
+async def _verified_test_prospect_request(
+    request: Request,
+) -> VerifiedVolunteerProspectRequest:
+    return VerifiedVolunteerProspectRequest(
+        body=await request.body(),
+        idempotency_key=uuid4(),
+        client_key="v1=" + "0" * 64,
+        signature_version="v2",
+    )
 
 
 class FakeVolunteerApplicationsService:
@@ -132,6 +151,8 @@ class FakeVolunteerApplicationsService:
         registration: PublicProspectRegistrationInput,
         *,
         base_url: str | None = None,
+        idempotency_key=None,
+        request_hash: str | None = None,
     ) -> VolunteerApplicationDetail:
         self.public_prospect_calls.append(
             {
@@ -364,7 +385,7 @@ class DuplicateApprovalVolunteerApplicationsService(FakeVolunteerApplicationsSer
         base_url: str | None = None,
         actor_user_account_id: int | None = None,
     ) -> int:
-        raise VolunteerAlreadyExistsError(10017, "sebbesgh@gmail.com")
+        raise VolunteerAlreadyExistsError(10017, "duplicate@example.test")
 
 
 class DuplicateInviteVolunteerApplicationsService(FakeVolunteerApplicationsService):
@@ -1149,6 +1170,10 @@ def test_group_admin_can_manage_any_registration() -> None:
 def test_public_prospect_api_accepts_any_valid_group_slug() -> None:
     app = create_app()
     volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[
+        require_signed_volunteer_prospect
+    ] = _verified_test_prospect_request
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
     app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
     client = TestClient(app)
 
@@ -1184,6 +1209,10 @@ def test_public_prospect_api_accepts_any_valid_group_slug() -> None:
 def test_public_prospect_api_rejects_invalid_group_slug_syntax() -> None:
     app = create_app()
     volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[
+        require_signed_volunteer_prospect
+    ] = _verified_test_prospect_request
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
     app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
     client = TestClient(app)
 
@@ -1205,6 +1234,10 @@ def test_public_prospect_api_rejects_invalid_group_slug_syntax() -> None:
 def test_public_prospect_api_forwards_friend_emails() -> None:
     app = create_app()
     volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[
+        require_signed_volunteer_prospect
+    ] = _verified_test_prospect_request
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
     app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
     client = TestClient(app)
 

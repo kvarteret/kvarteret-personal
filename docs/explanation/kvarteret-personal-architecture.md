@@ -163,7 +163,7 @@ No file in `app/domain` exceeds the ~800-line cap.
 The public JSON API routes are composed in `app/api/router.py`:
 
 - `/api/v1/mobile-card/*` — email access codes (stored as single-use HMAC-SHA256 hashes), signed sessions, the current card profile, session renewal via `X-Mobile-Card-Session-Token`, and logout diagnostics.
-- `/api/v1/volunteer-prospects` — public recruitment intake from `samfunnetibergen`, including group signup with up to two friend invitations.
+- `/api/v1/volunteer-prospects` — HMAC-authenticated server-to-server recruitment intake from `samfunnetibergen`, including group signup with up to two friend invitations.
 - `/api/now-playing` — the shared Spotify now-playing state.
 
 The legacy `/api/DigitalInternkort/*` surface and the events API were removed in the 2026-06 restructure; they are intentionally absent from `openapi.json`.

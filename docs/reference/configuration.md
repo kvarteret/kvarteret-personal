@@ -8,9 +8,18 @@ Do not commit real secrets. The checked-in `.env.example` should contain names a
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `APP_ENV` | `development` | Runtime environment name. Production secret validation applies when this is `production`. |
-| `APP_SECRET_KEY` | `change-me` | Signs web sessions, media tokens, mobile-card tokens, CSRF tokens, and Spotify OAuth state. Must be non-default in production. |
-| `APP_PUBLIC_BASE_URL` | unset | Public base URL used in email links, media URLs, and OAuth redirects. |
+| `APP_ENV` | required | Runtime environment: `development`, `test`, or `production`. Startup fails when it is omitted or invalid. |
+| `APP_SECRET_KEY` | `change-me` | Signs web sessions, media tokens, mobile-card tokens, CSRF tokens, and Spotify OAuth state. In production it must be non-default and at least 32 characters. |
+| `APP_PUBLIC_BASE_URL` | unset | Public base URL used in email links, media URLs, and OAuth redirects. Production requires an HTTPS origin without credentials, a path, query, or fragment. |
+| `VOLUNTEER_PROSPECT_HMAC_SECRET` | unset | Active shared secret used to authenticate prospect requests from `samfunnetibergen`. Production requires at least 32 characters. |
+| `VOLUNTEER_PROSPECT_HMAC_PREVIOUS_SECRET` | unset | Optional previous prospect-signing secret accepted temporarily during zero-downtime rotation. When set in production it requires at least 32 characters. |
+| `VOLUNTEER_PROSPECT_MAX_BODY_BYTES` | `16384` | Maximum exact request-body size accepted by the volunteer-prospect endpoint. Larger bodies return `413` before JSON parsing. Keep this synchronized with the website proxy. |
+| `VOLUNTEER_PROSPECT_ROUTE_LIMIT` | `120` | Route-wide volunteer-prospect requests allowed per window. |
+| `VOLUNTEER_PROSPECT_ROUTE_WINDOW_SECONDS` | `60` | Route-wide volunteer-prospect fixed-window duration. |
+| `VOLUNTEER_PROSPECT_CLIENT_LIMIT` | `10` | Volunteer-prospect requests allowed for one opaque client key per window. |
+| `VOLUNTEER_PROSPECT_CLIENT_WINDOW_SECONDS` | `600` | Per-client volunteer-prospect fixed-window duration. |
+| `VOLUNTEER_PROSPECT_EMAIL_LIMIT` | `3` | Volunteer-prospect requests allowed for one normalized email per window. |
+| `VOLUNTEER_PROSPECT_EMAIL_WINDOW_SECONDS` | `3600` | Per-email volunteer-prospect fixed-window duration. |
 | `LOG_LEVEL` | `INFO` | Application log level. |
 | `DEV_ADMIN_EMAIL` | unset | Development-harness admin email. Refused unless `APP_ENV=development`. |
 | `DEV_ADMIN_PASSWORD` | unset | Development-harness admin password. Refused unless `APP_ENV=development`. |
