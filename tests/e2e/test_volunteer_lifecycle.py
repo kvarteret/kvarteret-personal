@@ -15,6 +15,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 
+from app.api.request_auth import require_signed_volunteer_prospect
 from app.auth.roles import UserRole
 from app.config import Settings
 from app.dependencies import (
@@ -75,6 +76,7 @@ def app(clean_database, email_outbox, storage):
     )
     container = build_application_container(settings)
     application = create_app(container)
+    application.dependency_overrides[require_signed_volunteer_prospect] = lambda: None
     admin = make_authenticated_user(UserRole.ADMIN)
     application.dependency_overrides[get_current_user] = lambda: admin
     application.dependency_overrides[require_authenticated_user] = lambda: admin

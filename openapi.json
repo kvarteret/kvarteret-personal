@@ -1676,6 +1676,14 @@
         "title": "VolunteerStatsResponse",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "VolunteerProspectHmac": {
+        "description": "HMAC-SHA256 signature over the versioned request canonical form. Only the samfunnetibergen server holds the signing secret.",
+        "in": "header",
+        "name": "X-Kvarteret-Signature",
+        "type": "apiKey"
+      }
     }
   },
   "info": {
@@ -2298,6 +2306,27 @@
     "/api/v1/volunteer-prospects": {
       "post": {
         "operationId": "createPublicVolunteerProspect",
+        "parameters": [
+          {
+            "description": "Unix timestamp in seconds used by the HMAC signature.",
+            "in": "header",
+            "name": "X-Kvarteret-Timestamp",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Lowercase UUID consumed once to prevent request replay.",
+            "in": "header",
+            "name": "X-Kvarteret-Nonce",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2319,6 +2348,9 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "description": "Missing, invalid, stale, or replayed HMAC authentication."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2328,8 +2360,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "HMAC authentication or replay protection is unavailable."
           }
         },
+        "security": [
+          {
+            "VolunteerProspectHmac": []
+          }
+        ],
         "summary": "Create Public Volunteer Prospect",
         "tags": [
           "volunteer-prospects"

@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 
+from app.api.request_auth import require_signed_volunteer_prospect
 from app.auth.roles import UserRole
 from app.dependencies import (
     get_email_outbox_service,
@@ -1149,6 +1150,7 @@ def test_group_admin_can_manage_any_registration() -> None:
 def test_public_prospect_api_accepts_any_valid_group_slug() -> None:
     app = create_app()
     volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[require_signed_volunteer_prospect] = lambda: None
     app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
     client = TestClient(app)
 
@@ -1184,6 +1186,7 @@ def test_public_prospect_api_accepts_any_valid_group_slug() -> None:
 def test_public_prospect_api_rejects_invalid_group_slug_syntax() -> None:
     app = create_app()
     volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[require_signed_volunteer_prospect] = lambda: None
     app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
     client = TestClient(app)
 
@@ -1205,6 +1208,7 @@ def test_public_prospect_api_rejects_invalid_group_slug_syntax() -> None:
 def test_public_prospect_api_forwards_friend_emails() -> None:
     app = create_app()
     volunteer_applications_service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[require_signed_volunteer_prospect] = lambda: None
     app.dependency_overrides[get_volunteer_applications_service] = lambda: volunteer_applications_service
     client = TestClient(app)
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.api.request_auth import require_signed_volunteer_prospect
 from app.dependencies import get_volunteer_applications_service
 from app.domain.volunteer_applications.service import (
     ActiveVolunteerRegistrationExistsError,
@@ -56,10 +57,37 @@ class PublicVolunteerProspectResponse(BaseModel):
     status_code=status.HTTP_201_CREATED,
     response_model=PublicVolunteerProspectResponse,
     operation_id="createPublicVolunteerProspect",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "description": "Missing, invalid, stale, or replayed HMAC authentication."
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": "HMAC authentication or replay protection is unavailable."
+        },
+    },
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "X-Kvarteret-Timestamp",
+                "in": "header",
+                "required": True,
+                "description": "Unix timestamp in seconds used by the HMAC signature.",
+                "schema": {"type": "string"},
+            },
+            {
+                "name": "X-Kvarteret-Nonce",
+                "in": "header",
+                "required": True,
+                "description": "Lowercase UUID consumed once to prevent request replay.",
+                "schema": {"type": "string", "format": "uuid"},
+            },
+        ]
+    },
 )
 async def create_public_volunteer_prospect(
     payload: PublicVolunteerProspectRequest,
     request: Request,
+    _signed_request: None = Depends(require_signed_volunteer_prospect),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:

@@ -84,11 +84,53 @@ def test_validate_production_secrets_rejects_insecure_public_base_url() -> None:
         raise AssertionError("Expected production public URL validation to fail.")
 
 
+def test_validate_production_secrets_requires_prospect_hmac_secret() -> None:
+    settings = Settings(
+        app_env="production",
+        app_secret_key="a-production-secret-with-32-characters",
+        app_public_base_url="https://personal.example.test",
+        volunteer_prospect_hmac_secret=None,
+        email_dispatch_enabled=False,
+    )
+
+    try:
+        validate_production_secrets(settings)
+    except ValueError as exc:
+        assert str(exc) == (
+            "VOLUNTEER_PROSPECT_HMAC_SECRET must be at least 32 characters "
+            "in production."
+        )
+    else:
+        raise AssertionError("Expected prospect HMAC secret validation to fail.")
+
+
+def test_validate_production_secrets_rejects_short_previous_hmac_secret() -> None:
+    settings = Settings(
+        app_env="production",
+        app_secret_key="a-production-secret-with-32-characters",
+        app_public_base_url="https://personal.example.test",
+        volunteer_prospect_hmac_secret="a-prospect-hmac-secret-with-32-characters",
+        volunteer_prospect_hmac_previous_secret="too-short",
+        email_dispatch_enabled=False,
+    )
+
+    try:
+        validate_production_secrets(settings)
+    except ValueError as exc:
+        assert str(exc) == (
+            "VOLUNTEER_PROSPECT_HMAC_PREVIOUS_SECRET must be at least 32 "
+            "characters when configured."
+        )
+    else:
+        raise AssertionError("Expected previous HMAC secret validation to fail.")
+
+
 def test_validate_production_secrets_accepts_complete_production_settings() -> None:
     settings = Settings(
         app_env="production",
         app_secret_key="a-production-secret-with-32-characters",
         app_public_base_url="https://personal.example.test",
+        volunteer_prospect_hmac_secret="a-prospect-hmac-secret-with-32-characters",
         email_dispatch_enabled=False,
     )
 

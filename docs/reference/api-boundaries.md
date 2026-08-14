@@ -78,8 +78,9 @@ Current public arrangement pages and feeds read from Sanity, not from
 `app/[locale]/arrangementer/page.tsx`, `app/api/events/feed/route.ts`, and
 `app/api/ical/route.ts`.
 
-`samfunnetibergen/src/app/api/volunteer-prospects/route.ts` validates the
-public recruitment form, then posts to `POST /api/v1/volunteer-prospects`.
+`samfunnetibergen/apps/web/src/app/api/volunteer-prospects/route.ts` validates the
+public recruitment form, then posts server-to-server to
+`POST /api/v1/volunteer-prospects`.
 Sanity choice slugs are forwarded unchanged. Most choices resolve directly
 through Personal's stable, unique `groups.slug` column. Public bar-area choices
 such as Halvtimen and Grøndahls instead resolve to a suggested role in the
@@ -96,6 +97,38 @@ because it maps public Sanity choices to Personal roles. An established group
 slug is immutable even if the group's display name is later changed.
 
 The request body accepts `friend_emails` (up to two). When present, the backend creates one ordinary application for the submitter and one ordinary application per friend, linked by invitation relationship records. Each friend gets a personal `/apply/{token}` link delivered by email; applications are reviewed and approved independently. Field-level validation errors for friend emails come back under `fieldErrors.friendEmails`.
+
+### Volunteer-prospect request authentication
+
+Personal accepts prospect creation only from a caller that holds the shared
+`VOLUNTEER_PROSPECT_HMAC_SECRET`. The website signs the exact serialized JSON
+body in
+`samfunnetibergen/apps/web/src/lib/integrations/kvarteret-personal/volunteer-prospect-signing.ts`.
+Personal verifies it in `app/api/request_auth.py` before the application service
+runs. The secret is server-only and must never use a browser-visible
+`NEXT_PUBLIC_*` variable.
+
+Each request carries:
+
+    X-Kvarteret-Timestamp: <Unix seconds>
+    X-Kvarteret-Nonce: <lowercase UUID>
+    X-Kvarteret-Signature: v1=<64 lowercase HMAC-SHA256 hex characters>
+
+The signed message contains the protocol version, timestamp, nonce, HTTP method,
+route path, and SHA-256 digest of the exact body bytes. Personal permits at most
+five minutes of clock skew and consumes each verified nonce once through the
+Postgres-backed rate limiter. Missing, stale, altered, malformed, and replayed
+requests fail before prospect creation. HMAC authenticates the server holding
+the secret; it does not prove that a human submitted the website form.
+
+For the initial cutover, provision the same secret in both Vercel projects,
+deploy `samfunnetibergen` signing first, and then deploy Personal enforcement;
+the old Personal route safely ignores the added headers. To rotate without
+downtime later, put the new value in Personal's
+`VOLUNTEER_PROSPECT_HMAC_SECRET` and the old value in
+`VOLUNTEER_PROSPECT_HMAC_PREVIOUS_SECRET`; deploy Personal, switch the website
+to the new value, verify submissions, and finally remove the previous value.
+There is deliberately no unsigned compatibility mode.
 
 ## `frontend-eventside`
 
