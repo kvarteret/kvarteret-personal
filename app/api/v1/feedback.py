@@ -10,7 +10,7 @@ from app.domain.feedback.service import (
     FeedbackService,
     FeedbackValidationError,
 )
-from app.observability import client_ip_from_request
+from app.observability import client_ip_from_request, with_named_span
 
 router = APIRouter()
 
@@ -41,17 +41,18 @@ async def submit_feedback(
     feedback_type = body.feedback_type if body.feedback_type in _ALLOWED_TYPES else None
 
     try:
-        await feedback_service.submit_feedback(
-            name=None,
-            email=body.contact_email if body.contact_allowed else None,
-            message=body.message,
-            page=body.page,
-            platform=body.platform,
-            user_id=None,
-            source=source,
-            feedback_type=feedback_type,
-            source_key=client_ip_from_request(request),
-        )
+        with with_named_span("feedback.submit"):
+            await feedback_service.submit_feedback(
+                name=None,
+                email=body.contact_email if body.contact_allowed else None,
+                message=body.message,
+                page=body.page,
+                platform=body.platform,
+                user_id=None,
+                source=source,
+                feedback_type=feedback_type,
+                source_key=client_ip_from_request(request),
+            )
     except FeedbackRateLimitedError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
