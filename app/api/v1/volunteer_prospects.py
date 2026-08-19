@@ -31,7 +31,7 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
-from app.observability import current_trace_id, emit_event
+from app.observability import current_trace_id, emit_event, with_named_span
 from app.shared.phone_numbers import normalize_phone_number
 
 router = APIRouter()
@@ -195,21 +195,22 @@ async def create_public_volunteer_prospect(
         secret=settings.app_secret_key,
     )
     try:
-        detail = await volunteer_applications_service.create_public_prospect_registration(
-            PublicProspectRegistrationInput(
-                full_name=payload.full_name,
-                email=normalized_email,
-                phone=payload.phone,
-                study_institution=payload.study_institution,
-                background_details=payload.background_details,
-                first_choice_group_slug=payload.first_choice_group_slug,
-                second_choice_group_slug=payload.second_choice_group_slug,
-                friend_emails=[str(email) for email in payload.friend_emails or []],
-            ),
-            base_url=str(request.base_url).rstrip("/"),
-            idempotency_key=signed_request.idempotency_key,
-            request_hash=request_hash,
-        )
+        with with_named_span("volunteer.prospect.register"):
+            detail = await volunteer_applications_service.create_public_prospect_registration(
+                PublicProspectRegistrationInput(
+                    full_name=payload.full_name,
+                    email=normalized_email,
+                    phone=payload.phone,
+                    study_institution=payload.study_institution,
+                    background_details=payload.background_details,
+                    first_choice_group_slug=payload.first_choice_group_slug,
+                    second_choice_group_slug=payload.second_choice_group_slug,
+                    friend_emails=[str(email) for email in payload.friend_emails or []],
+                ),
+                base_url=str(request.base_url).rstrip("/"),
+                idempotency_key=signed_request.idempotency_key,
+                request_hash=request_hash,
+            )
     except VolunteerApplicationFieldValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
