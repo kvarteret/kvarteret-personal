@@ -1,6 +1,6 @@
 # Preserve public application choices while routing the primary placement
 
-This ExecPlan is a living document and must be maintained in accordance with the repository-level ExecPlan guidance in the sibling `samfunnetibergen/.agents/PLANS.md` file.
+This ExecPlan is a living document and must be maintained in accordance with the repository-level `PLANS.md` guidance.
 
 ## Purpose / Big Picture
 
@@ -54,7 +54,7 @@ Change the promotion option builder so only the initial/first operational placem
 
 ## Concrete Steps
 
-Work from `/private/tmp/codex-personal-hotfix-20260810` on branch `codex/fix-public-prospect-groups-20260810`. Apply the migration and source edits with `apply_patch`. Run focused tests with `uv run pytest` and then the repository test command if time permits. Run Alembic against a disposable test database through the existing end-to-end harness when available.
+Work from the repository root. Before editing, run `git status --short` and preserve unrelated changes. Apply the migration and source edits, run the focused tests with `uv run pytest`, and then run the repository test command. Run Alembic against a disposable test database through the existing end-to-end harness when available.
 
 ## Validation and Acceptance
 
@@ -75,3 +75,5 @@ No HTTP request or response model changes are required. `VolunteerApplicationsRe
 Revision note (2026-08-10): Initial plan created after confirming the many-to-one subgroup routing and the user's requirement that the secondary choice remain metadata only.
 
 Revision note (2026-08-10): Marked implementation and verification complete, documented the historical-data limitation and PostgreSQL-only migration-suite constraint, and recorded the final test evidence.
+
+Revision note (2026-08-14): Replaced the obsolete temporary-worktree instruction with repository-root guidance and pointed the plan at this repository's `PLANS.md`.

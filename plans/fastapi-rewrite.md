@@ -158,11 +158,11 @@ The first implemented slice in this repository is the foundation: planning files
 - Observation: Extending the read-cache TTL to five minutes materially improves normal operator navigation because the warmed route stays fast across repeated opens instead of expiring after a few seconds.
   Evidence: after extending both the session and person-detail caches to `300` seconds, repeated `/people/10016` requests stayed around `1-5 ms` in-process instead of falling back to the remote query path on short revisits.
 
-- Observation: The people-directory bug where `martin kleiven` returned no match while `kleiven` did was caused by the PostgREST list filter only checking the full query string against `fornavn` and `etternavn` separately.
-  Evidence: a direct SQL full-name query matched `Martin Kleiven`, while the live `PeopleService.list_people_page()` PostgREST path returned `[]` until the filter was changed to build `and=(or(...martin...),or(...kleiven...))`.
+- Observation: A people-directory bug where a known two-part full name returned no match while the surname alone did was caused by the PostgREST list filter checking the entire query against `fornavn` and `etternavn` separately.
+  Evidence: a direct SQL full-name query matched the known record, while the live `PeopleService.list_people_page()` PostgREST path returned `[]` until the filter required each token to match at least one searchable name field.
 
 - Observation: Ranked fuzzy search works well for name typos and multi-word inputs, but the live query latency from localhost is still bounded by the remote Supabase round trip.
-  Evidence: after moving search onto `pg_trgm`, queries like `martn kleiven` and `martin kleven` both returned `Martin Kleiven`, while warm localhost timings for the remote ranked query remained around `500 ms`.
+  Evidence: after moving search onto `pg_trgm`, deliberately misspelled versions of a known two-part name returned the expected record, while warm localhost timings for the remote ranked query remained around `500 ms`.
 
 ## Decision Log
 
@@ -231,7 +231,7 @@ The first implemented slice in this repository is the foundation: planning files
   Date/Author: 2026-03-13 / Codex
 
 - Decision: PostgREST-backed people search should tokenize multi-word queries and require every token to match at least one searchable field.
-  Rationale: This preserves the low-boilerplate PostgREST list path while restoring expected full-name search behavior such as `martin kleiven` and names with multiple surname parts.
+  Rationale: This preserves the low-boilerplate PostgREST list path while restoring expected behavior for full names and names with multiple surname parts.
   Date/Author: 2026-03-13 / Codex
 
 - Decision: Ranked fuzzy people search should run directly on Supabase Postgres with `pg_trgm`, while the plain unfiltered people directory should stay on PostgREST.
@@ -282,7 +282,7 @@ The legacy image archive has now also been imported into the private Supabase `p
 
 ## Context and Orientation
 
-The working directory is `/Users/kluvin/dev/kvarteret/kvarteret-personal`. The legacy frontend is in `../personaldatabase_frontend`, the legacy ASP.NET backend is in `../Personaldatabase_Backend`, and the React Native mobile app is in `../kvarteret-internbevis-rn`.
+Work from the `kvarteret-personal` repository root. In the historical workspace layout, the legacy frontend was in `../personaldatabase_frontend`, the legacy ASP.NET backend was in `../Personaldatabase_Backend`, and the React Native mobile app was in `../kvarteret-internbevis-rn`.
 
 The new codebase lives under `/app`. `/app/main.py` will define the FastAPI application factory. `/app/config.py` will load settings from the environment. `/app/auth/` will hold session-cookie code, role loading, Supabase Auth integration, and legacy ASP.NET password verification. `/app/api/` will hold JSON routes. `/app/web/` will hold HTML routes. `/app/templates/` and `/app/static/` will hold the user interface.
 
@@ -300,7 +300,7 @@ Every new API route must use explicit request and response models. Every new mut
 
 ## Concrete Steps
 
-All commands below are run from `/Users/kluvin/dev/kvarteret/kvarteret-personal` unless stated otherwise.
+All commands below are run from the repository root unless stated otherwise.
 
 Create the repository scaffolding:
 
@@ -467,3 +467,5 @@ Revision note: This revision records the repaired session-pooler database URL, t
 Revision note: This revision records the additive registration/mobile migration applied to Supabase, the private Storage buckets, the real photo/document write paths, the registration invite/submit/approve flow, the real mobile-card OTP/session flow with the legacy adapter still in place, the semester-transfer workflow, the repaired live-auth cleanup script, and the expanded 47-test suite.
 
 Revision note: This revision also adds `architecture.md` so a new contributor can orient themselves in the implemented system without reconstructing the current runtime shape from code alone.
+
+Revision note (2026-08-14): Kept this completed rewrite plan as historical evidence while replacing contributor-specific paths and production-derived name examples with portable, non-identifying descriptions.

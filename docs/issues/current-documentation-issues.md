@@ -50,11 +50,11 @@ Update 2026-06-12: the profile README's flow diagrams were refreshed after the
 legacy restructure — the two event flows (publishing and reading through the
 retired events API) were removed, the mobile-card login flow now reflects
 hashed single-use codes and Postgres-backed rate limiting, the volunteer
-registration flow includes group signup with friend invitations, and an
+registration flow now describes independent friend invitations, and an
 application-lifecycle state diagram was added. Committed in
 `.github-private`.
 
-The requested organization README lives in `/Users/kluvin/dev/kvarteret/.github-private/profile/README.md`, not in `kvarteret-personal`.
+The requested organization README lives in a separate private profile repository, not in `kvarteret-personal`.
 
 Impact: documentation changes span two repositories and must be reviewed/committed separately.
 

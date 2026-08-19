@@ -2,7 +2,7 @@
 
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-This document must be maintained in accordance with `PLANS.md` in the repository root. It describes coordinated changes in this repository and in the sibling website checkout at `/Users/kluvin/dev/kvarteret/samfunnetibergen-reliable-form-submissions`. The plan is intentionally limited to durable email delivery and safe observability. It does not build a generic operations platform or implement the future “accept every open application” feature.
+This document must be maintained in accordance with `PLANS.md` in the repository root. It describes coordinated changes in this repository and in the adjacent `samfunnetibergen-reliable-form-submissions` website checkout. The plan is intentionally limited to durable email delivery and safe observability. It does not build a generic operations platform or implement the future “accept every open application” feature.
 
 ## Purpose / Big Picture
 
@@ -266,7 +266,7 @@ Work on a dedicated `codex/` branch in each repository. Before every milestone, 
 
 From Personal, install dependencies and establish the baseline:
 
-    cd /Users/kluvin/dev/kvarteret/kvarteret-personal
+    cd "$(git rev-parse --show-toplevel)"
     uv sync --all-groups
     uv run alembic heads
     uv run pytest
@@ -294,7 +294,7 @@ After each Personal milestone, run focused tests for the touched services and th
 
 From the website worktree, install dependencies and establish its baseline:
 
-    cd /Users/kluvin/dev/kvarteret/samfunnetibergen-reliable-form-submissions
+    cd ../samfunnetibergen-reliable-form-submissions
     npm install
     npm test
     npm run lint
@@ -430,3 +430,5 @@ Revision note (2026-08-11): Refactored the oversized delivery coordinator into e
 Revision note (2026-08-11): Removed the final volunteer direct-send fallback, made outbox wiring mandatory at both service and workflow boundaries, removed obsolete import-layer exceptions, and replaced rendered-email domain assertions with enqueue assertions.
 
 Revision note (2026-08-11): Recorded final refactor verification: `304 passed, 11 skipped`, with the skipped set requiring `E2E_DATABASE_URL`; affected volunteer web/OpenAPI checks, Ruff, import contracts, frozen lock synchronization, and diff checks all pass.
+
+Revision note (2026-08-14): Replaced contributor-specific absolute checkout paths with repository-root and adjacent-checkout instructions; no implementation scope or validation evidence changed.

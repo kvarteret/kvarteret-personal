@@ -78,7 +78,7 @@ Existing data must survive the change. Every old application-group membership is
   Date/Author: 2026-08-12 / Codex and product discussion
 
 - Decision: keep the public `friend_emails` request field and its current maximum of two.
-  Rationale: `/Users/kluvin/dev/kvarteret/samfunnetibergen/apps/web/src/app/api/volunteer-prospects/route.ts` already forwards this field to `POST /api/v1/volunteer-prospects`. Keeping the contract avoids an unnecessary coordinated frontend deployment while changing the backend meaning from “make a group” to “make independent friend invitations.”
+  Rationale: The adjacent website's `apps/web/src/app/api/volunteer-prospects/route.ts` already forwards this field to `POST /api/v1/volunteer-prospects`. Keeping the contract avoids an unnecessary coordinated frontend deployment while changing the backend meaning from “make a group” to “make independent friend invitations.”
   Date/Author: 2026-08-12 / Codex
 
 - Decision: preserve each existing friend application’s current committee choices during migration and initially copy the inviter’s choices for new friend invitations, as today.
@@ -107,7 +107,7 @@ The implementation now treats friend invitations as pairwise informational relat
 
 Public intake is owned by `app/api/v1/volunteer_prospects.py`. Its `PublicVolunteerProspectRequest` accepts the applicant, two committee-choice slugs, and optional `friend_emails`. `app/domain/volunteer_applications/service.py:create_public_prospect_registration_record` validates that neither the applicant nor friends already have active records and resolves public choice slugs. `app/domain/volunteer_applications/repository.py:create_public_prospect_registration` inserts the main application and submission, an application row for every friend, one group row, and group-member rows with inviter/invitee roles.
 
-The sibling website `/Users/kluvin/dev/kvarteret/samfunnetibergen` owns the public React form. Its `apps/web/src/features/grupper/components/GroupVolunteerForm.tsx` collects at most two friend addresses. Its `apps/web/src/app/api/volunteer-prospects/route.ts` maps `friendEmails` to the API field `friend_emails`. The request and response shapes remain unchanged in this plan, so the sibling code needs regression testing but no functional edit.
+The adjacent `samfunnetibergen` website checkout owns the public React form. Its `apps/web/src/features/grupper/components/GroupVolunteerForm.tsx` collects at most two friend addresses. Its `apps/web/src/app/api/volunteer-prospects/route.ts` maps `friendEmails` to the API field `friend_emails`. The request and response shapes remain unchanged in this plan, so the sibling code needs regression testing but no functional edit.
 
 The group schema is declared in `app/domain/volunteer_applications/tables.py` as `volunteer_application_groups` and `volunteer_application_group_members`. The latter stores a nullable application foreign key, a non-null email snapshot, inviter/invitee role, active/dropped status, creation time, and drop audit fields. The current Alembic head at plan creation is `20260811_1205`; new migrations must use the actual head at implementation time rather than hard-coding that value.
 
@@ -189,7 +189,7 @@ Update `docs/reference/api-boundaries.md` to say that `friend_emails` creates in
 
 ## Concrete Steps
 
-Work from `/Users/kluvin/dev/kvarteret/kvarteret-personal`. Before each milestone, preserve unrelated user changes:
+Work from the repository root. Before each milestone, preserve unrelated user changes:
 
     git status --short
 
@@ -252,7 +252,7 @@ Run the migrated Postgres E2E suite as documented in `docs/how-to/run-tests.md`:
     DATABASE_URL=$E2E_URL uv run alembic upgrade head
     E2E_DATABASE_URL=$E2E_URL DATABASE_URL=$E2E_URL uv run pytest tests/e2e -q
 
-In `/Users/kluvin/dev/kvarteret/samfunnetibergen`, run the focused proxy and form-schema tests:
+In the adjacent `../samfunnetibergen` checkout, run the focused proxy and form-schema tests:
 
     npm --workspace @samfunnet/web run test -- \
       src/app/api/volunteer-prospects/route.test.ts \
@@ -330,3 +330,5 @@ The implementation may inline creation into `create_public_prospect_registration
 `EmailMessagePreparer` must resolve `APPLICANT_FRIEND_INVITATION` by invitee application ID through the new relationship. `ApplicantEmailTemplateRendererProtocol.render_friend_invitation_email` must accept only the values used by the revised template. The public API continues accepting `friend_emails: list[str] | None` and returning `registrationId`; its OpenAPI operation ID remains `createPublicVolunteerProspect`.
 
 Revision note (2026-08-12): Created this ExecPlan from the product discussion and verified current source. Implementation completed with pairwise persisted relationships, domain-event audit, independent lifecycles, informational admin notes, guarded expand/contract migrations, updated generated assets, green SQLite/Postgres validation, and a successful production upgrade through `20260812_1400`. Production schema drift and retired-table checks are clean; the target had no friend-invitation outbox rows or preparation errors at verification time.
+
+Revision note (2026-08-14): Replaced contributor-specific absolute checkout paths with repository-relative sibling references. The reserved `.test` addresses remain intentionally synthetic documentation fixtures.
