@@ -132,7 +132,8 @@ class VolunteerApplicationSideEffectsProtocol(Protocol):
         self, invite: "VolunteerApplicationInvite", *, base_url: str | None
     ) -> None: ...
     async def after_submitted(
-        self, detail: "VolunteerApplicationDetail",
+        self,
+        detail: "VolunteerApplicationDetail",
     ) -> None: ...
     async def after_trial_started(
         self,
@@ -148,7 +149,8 @@ class VolunteerApplicationSideEffectsProtocol(Protocol):
         base_url: str | None,
     ) -> None: ...
     async def after_deleted(
-        self, detail: "VolunteerApplicationDetail",
+        self,
+        detail: "VolunteerApplicationDetail",
     ) -> None: ...
     async def after_invitation_resent(
         self, detail: "VolunteerApplicationInvite", *, base_url: str | None
@@ -188,48 +190,31 @@ class VolunteerApplicationWorkflow:
         actor_user_account_id: int | None = None,
     ) -> "VolunteerApplicationInvite":
         with with_named_span("volunteer.application.invite"):
-            return await self._invite_impl(
+            invite = await self.operations.create_invitation_record(
                 email,
-                base_url=base_url,
                 initial_group_id=initial_group_id,
                 initial_role_id=initial_role_id,
-                actor_user_account_id=actor_user_account_id,
             )
-
-    async def _invite_impl(
-        self,
-        email: str,
-        *,
-        base_url: str | None,
-        initial_group_id: int | None,
-        initial_role_id: int | None,
-        actor_user_account_id: int | None = None,
-    ) -> "VolunteerApplicationInvite":
-        invite = await self.operations.create_invitation_record(
-            email,
-            initial_group_id=initial_group_id,
-            initial_role_id=initial_role_id,
-        )
-        # Creation is not a transition; the audit row is appended directly.
-        event_id = await self.operations.append_domain_event(
-            DomainEventRecord(
-                event_type="application_invited",
-                actor_user_account_id=actor_user_account_id,
-                subject_type="application",
+            # Creation is not a transition; the audit row is appended directly.
+            event_id = await self.operations.append_domain_event(
+                DomainEventRecord(
+                    event_type="application_invited",
+                    actor_user_account_id=actor_user_account_id,
+                    subject_type="application",
+                    subject_id=invite.registration_id,
+                    payload={"email": invite.email},
+                ),
                 subject_id=invite.registration_id,
-                payload={"email": invite.email},
-            ),
-            subject_id=invite.registration_id,
-        )
-        await self._enqueue_volunteer_email(
-            template_key=APPLICANT_INVITATION,
-            invite=invite,
-            source_domain_event_id=event_id,
-        )
-        await commit_request_session()
-        await self.side_effects.after_invited(invite, base_url=base_url)
-        await self._dispatch_best_effort()
-        return invite
+            )
+            await self._enqueue_volunteer_email(
+                template_key=APPLICANT_INVITATION,
+                invite=invite,
+                source_domain_event_id=event_id,
+            )
+            await commit_request_session()
+            await self.side_effects.after_invited(invite, base_url=base_url)
+            await self._dispatch_best_effort()
+            return invite
 
     async def register_public_prospect(
         self,
@@ -336,7 +321,14 @@ class VolunteerApplicationWorkflow:
         photo_content_type: str | None,
     ) -> "VolunteerApplicationDetail":
         with with_named_span("volunteer.application.submit"):
-            return await self._submit_impl(
+            existing = await self.operations.get_volunteer_application_by_token(token)
+            result = None
+            if existing is not None:
+                result = application_transition(
+                    ApplicationState(existing.status),
+                    ApplicationAction.SUBMIT_PROFILE,
+                )
+            detail = await self.operations.submit_application_record(
                 token,
                 submission,
                 base_url=base_url,
@@ -344,41 +336,15 @@ class VolunteerApplicationWorkflow:
                 photo_content=photo_content,
                 photo_content_type=photo_content_type,
             )
-
-    async def _submit_impl(
-        self,
-        token: str,
-        submission: "VolunteerApplicationSubmissionInput",
-        *,
-        base_url: str | None,
-        photo_filename: str | None,
-        photo_content: bytes | None,
-        photo_content_type: str | None,
-    ) -> "VolunteerApplicationDetail":
-        existing = await self.operations.get_volunteer_application_by_token(token)
-        result = None
-        if existing is not None:
-            result = application_transition(
-                ApplicationState(existing.status),
-                ApplicationAction.SUBMIT_PROFILE,
-            )
-        detail = await self.operations.submit_application_record(
-            token,
-            submission,
-            base_url=base_url,
-            photo_filename=photo_filename,
-            photo_content=photo_content,
-            photo_content_type=photo_content_type,
-        )
-        if result is not None and result.event is not None:
-            await self.operations.append_domain_event(
-                replace(result.event, subject_id=detail.registration_id),
-                subject_id=detail.registration_id,
-            )
-        await commit_request_session()
-        await self.side_effects.after_submitted(detail)
-        self._record_lifecycle(detail, status="application_submitted")
-        return detail
+            if result is not None and result.event is not None:
+                await self.operations.append_domain_event(
+                    replace(result.event, subject_id=detail.registration_id),
+                    subject_id=detail.registration_id,
+                )
+            await commit_request_session()
+            await self.side_effects.after_submitted(detail)
+            self._record_lifecycle(detail, status="application_submitted")
+            return detail
 
     async def contact(
         self,
@@ -462,9 +428,7 @@ class VolunteerApplicationWorkflow:
             result = application_transition(
                 ApplicationState(existing.status),
                 action,
-                context=TransitionContext(
-                    actor_user_account_id=actor_user_account_id
-                ),
+                context=TransitionContext(actor_user_account_id=actor_user_account_id),
             )
         new_state = result.new_state if result is not None else ApplicationState.NEW
         assert isinstance(new_state, ApplicationState)
@@ -511,46 +475,23 @@ class VolunteerApplicationWorkflow:
         actor_user_account_id: int | None = None,
     ) -> int:
         with with_named_span("volunteer.application.approve"):
-            return await self._approve_impl(
+            detail, volunteer_id, _ = await self._approve_one(
                 registration_id,
                 accepted_group_id=accepted_group_id,
                 accepted_role_id=accepted_role_id,
                 assignment_year=assignment_year,
                 assignment_term=assignment_term,
                 contract_signed=contract_signed,
-                base_url=base_url,
                 actor_user_account_id=actor_user_account_id,
             )
-
-    async def _approve_impl(
-        self,
-        registration_id: int,
-        *,
-        accepted_group_id: int | None,
-        accepted_role_id: int | None = None,
-        assignment_year: int | None = None,
-        assignment_term: int | None = None,
-        contract_signed: bool = True,
-        base_url: str | None,
-        actor_user_account_id: int | None = None,
-    ) -> int:
-        detail, volunteer_id, _ = await self._approve_one(
-            registration_id,
-            accepted_group_id=accepted_group_id,
-            accepted_role_id=accepted_role_id,
-            assignment_year=assignment_year,
-            assignment_term=assignment_term,
-            contract_signed=contract_signed,
-            actor_user_account_id=actor_user_account_id,
-        )
-        await commit_request_session()
-        await self.side_effects.after_approved(
-            detail, volunteer_id=volunteer_id, base_url=base_url
-        )
-        self._record_lifecycle(
-            detail, status="application_approved", volunteer_id=volunteer_id
-        )
-        return volunteer_id
+            await commit_request_session()
+            await self.side_effects.after_approved(
+                detail, volunteer_id=volunteer_id, base_url=base_url
+            )
+            self._record_lifecycle(
+                detail, status="application_approved", volunteer_id=volunteer_id
+            )
+            return volunteer_id
 
     async def _approve_one(
         self,
@@ -607,44 +548,34 @@ class VolunteerApplicationWorkflow:
         actor_user_account_id: int | None = None,
     ) -> None:
         with with_named_span("volunteer.application.delete"):
-            await self._delete_impl(
-                registration_id, actor_user_account_id=actor_user_account_id
+            existing = await self.operations.get_volunteer_application_detail(
+                registration_id
             )
-
-    async def _delete_impl(
-        self,
-        registration_id: int,
-        *,
-        actor_user_account_id: int | None = None,
-    ) -> None:
-        existing = await self.operations.get_volunteer_application_detail(
-            registration_id
-        )
-        result = None
-        if existing is not None:
-            result = application_transition(
-                ApplicationState(existing.status),
-                ApplicationAction.DELETE,
-                context=TransitionContext(
-                    actor_user_account_id=actor_user_account_id
-                ),
-            )
-        detail = await self.operations.delete_application_record(registration_id)
-        if result is not None and result.event is not None:
-            await self.operations.append_domain_event(
-                replace(
-                    result.event,
+            result = None
+            if existing is not None:
+                result = application_transition(
+                    ApplicationState(existing.status),
+                    ApplicationAction.DELETE,
+                    context=TransitionContext(
+                        actor_user_account_id=actor_user_account_id
+                    ),
+                )
+            detail = await self.operations.delete_application_record(registration_id)
+            if result is not None and result.event is not None:
+                await self.operations.append_domain_event(
+                    replace(
+                        result.event,
+                        subject_id=registration_id,
+                        payload={
+                            **result.event.payload,
+                            "email": detail.email,
+                        },
+                    ),
                     subject_id=registration_id,
-                    payload={
-                        **result.event.payload,
-                        "email": detail.email,
-                    },
-                ),
-                subject_id=registration_id,
-            )
-        await commit_request_session()
-        await self.side_effects.after_deleted(detail)
-        self._record_lifecycle(detail, status="application_deleted")
+                )
+            await commit_request_session()
+            await self.side_effects.after_deleted(detail)
+            self._record_lifecycle(detail, status="application_deleted")
 
     async def resend_invitation(
         self,
@@ -654,47 +585,34 @@ class VolunteerApplicationWorkflow:
         actor_user_account_id: int | None = None,
     ) -> "VolunteerApplicationInvite":
         with with_named_span("volunteer.application.resend_invitation"):
-            return await self._resend_invitation_impl(
-                registration_id,
-                base_url=base_url,
-                actor_user_account_id=actor_user_account_id,
+            existing = await self.operations.get_volunteer_application_detail(
+                registration_id
             )
-
-    async def _resend_invitation_impl(
-        self,
-        registration_id: int,
-        *,
-        base_url: str | None,
-        actor_user_account_id: int | None = None,
-    ) -> "VolunteerApplicationInvite":
-        existing = await self.operations.get_volunteer_application_detail(
-            registration_id
-        )
-        result = None
-        if existing is not None:
-            result = application_transition(
-                ApplicationState(existing.status),
-                ApplicationAction.RESEND_INVITATION,
-                context=TransitionContext(
-                    actor_user_account_id=actor_user_account_id
-                ),
-            )
-        detail = await self.operations.resend_invitation_record(registration_id)
-        if result is not None and result.event is not None:
-            event_id = await self.operations.append_domain_event(
-                replace(result.event, subject_id=registration_id),
-                subject_id=registration_id,
-            )
-            await self._enqueue_volunteer_email(
-                template_key=APPLICANT_INVITATION,
-                invite=detail,
-                source_domain_event_id=event_id,
-            )
-        await commit_request_session()
-        await self.side_effects.after_invitation_resent(detail, base_url=base_url)
-        self._record_lifecycle(detail, status="invitation_resent")
-        await self._dispatch_best_effort()
-        return detail
+            result = None
+            if existing is not None:
+                result = application_transition(
+                    ApplicationState(existing.status),
+                    ApplicationAction.RESEND_INVITATION,
+                    context=TransitionContext(
+                        actor_user_account_id=actor_user_account_id
+                    ),
+                )
+            detail = await self.operations.resend_invitation_record(registration_id)
+            if result is not None and result.event is not None:
+                event_id = await self.operations.append_domain_event(
+                    replace(result.event, subject_id=registration_id),
+                    subject_id=registration_id,
+                )
+                await self._enqueue_volunteer_email(
+                    template_key=APPLICANT_INVITATION,
+                    invite=detail,
+                    source_domain_event_id=event_id,
+                )
+            await commit_request_session()
+            await self.side_effects.after_invitation_resent(detail, base_url=base_url)
+            self._record_lifecycle(detail, status="invitation_resent")
+            await self._dispatch_best_effort()
+            return detail
 
     async def _enqueue_volunteer_email(
         self,
