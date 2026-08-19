@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var ENDPOINT = "/api/v1/telemetry/client-errors";
+  var ENDPOINT = "/api/v1/telemetry/client-errors/";
   var REPORTING_SCRIPT = "client-error-reporting.js";
 
   function report(errorType, errorText, errorSource) {
