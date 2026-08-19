@@ -959,6 +959,31 @@
         "title": "Body_volunteer_upload_photo_volunteers__volunteer_id__photo_post",
         "type": "object"
       },
+      "ClientErrorReport": {
+        "additionalProperties": false,
+        "properties": {
+          "error_source": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Error Source",
+            "type": "string"
+          },
+          "error_text": {
+            "default": "",
+            "maxLength": 1200,
+            "title": "Error Text",
+            "type": "string"
+          },
+          "error_type": {
+            "default": "Error",
+            "maxLength": 120,
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "title": "ClientErrorReport",
+        "type": "object"
+      },
       "FeedbackRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2223,6 +2248,45 @@
         "summary": "Get Volunteer Stats",
         "tags": [
           "stats"
+        ]
+      }
+    },
+    "/api/v1/telemetry/client-errors/": {
+      "post": {
+        "operationId": "report_client_error_api_v1_telemetry_client_errors__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Client Error",
+        "tags": [
+          "telemetry"
         ]
       }
     },

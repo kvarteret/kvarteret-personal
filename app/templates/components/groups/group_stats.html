@@ -29,6 +29,7 @@
 
     <script>
       (function () {
+        function renderCharts() {
         const membershipElement = document.getElementById("group-membership-chart");
         const retentionElement = document.getElementById("group-retention-chart");
         const semesters = [{% for s in stats %}"{{ s.semester_label }}"{% if not loop.last %},{% endif %}{% endfor %}];
@@ -142,6 +143,18 @@
         }
 
         window.addEventListener("resize", () => membershipChart.resize(), { passive: true });
+        }
+
+        // This panel is swapped in lazily via htmx, so echarts is loaded on
+        // demand rather than on every page: the panel is the only consumer.
+        if (window.echarts) {
+          renderCharts();
+        } else {
+          const echartsScript = document.createElement("script");
+          echartsScript.src = "https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js";
+          echartsScript.onload = renderCharts;
+          document.head.appendChild(echartsScript);
+        }
       })();
     </script>
   {% endif %}

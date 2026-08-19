@@ -85,6 +85,9 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
         {"operation", "limit", "semester_code", "query_present"}
     ),
     "email.delivery": frozenset({"lease_owner"}),
+    "web.client_error": frozenset(
+        {"error_type", "error_text", "error_source"}
+    ),
 }
 
 _FORBIDDEN_KEY_PARTS = (
