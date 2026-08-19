@@ -402,7 +402,10 @@ def test_groups_and_courses_pages_render() -> None:
     assert '/courses/4/completions/11?_method=DELETE' in course_detail_response.text
     assert 'href="/groups/7"' in course_detail_response.text
     assert 'href="/volunteers/12"' in course_detail_response.text
-    assert "cdn.jsdelivr.net/npm/alpinejs" in course_detail_response.text
+    assert "cdn.jsdelivr.net/npm/@alpinejs/csp" in course_detail_response.text
+    assert "cdn.jsdelivr.net/npm/alpinejs@3.x.x" not in course_detail_response.text
+    assert "js/volunteer-picker.js" in course_detail_response.text
+    assert "js/client-error-reporting.js" in course_detail_response.text
     assert "Legg til</button>" in course_detail_response.text
 
 

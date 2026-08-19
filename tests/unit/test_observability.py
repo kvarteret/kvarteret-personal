@@ -43,6 +43,27 @@ def test_allowlist_and_redaction_drop_sentinel_pii() -> None:
     assert "token=secret" not in serialized
 
 
+def test_client_error_allowlist_keeps_only_declared_fields_and_redacts() -> None:
+    fields = sanitize_fields(
+        "web.client_error",
+        {
+            "error_type": "uncaught",
+            "error_text": "boom for sentinel@example.com?token=secret",
+            "error_source": "/courses/4?token=secret",
+            "user_agent": "secret-agent",
+            "arbitrary": "drop me",
+        },
+    )
+
+    serialized = json.dumps(fields)
+    assert fields["error_type"] == "uncaught"
+    assert "user_agent" not in fields
+    assert "arbitrary" not in fields
+    assert "sentinel@example.com" not in serialized
+    assert "token=secret" not in serialized
+    assert "error_source" in fields
+
+
 def test_json_formatter_does_not_export_exception_text() -> None:
     try:
         raise ValueError("sentinel@example.com Bearer top-secret")

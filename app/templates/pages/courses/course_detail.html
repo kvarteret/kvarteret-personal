@@ -2,7 +2,6 @@
 {% from "components/shared/ui_macros.html" import blocker_notice, form_field, history_back_button, page_header, volunteer_picker_card %}
 
 {% block page_content %}
-  <script src="{{ url_for('static', path='js/volunteer-picker.js') }}"></script>
   <section class="grid gap-7">
     {% call page_header("Kursdetaljer", course.name, course.description or "Ingen beskrivelse") %}
       {{ history_back_button('/courses', 'Tilbake til kurs') }}
