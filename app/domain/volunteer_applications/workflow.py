@@ -42,7 +42,7 @@ from app.domain.volunteer_applications.state_machine import (
     TransitionContext,
     application_transition,
 )
-from app.observability import current_trace_id, emit_event
+from app.observability import current_trace_id, emit_event, with_named_span
 
 if TYPE_CHECKING:
     from app.domain.volunteer_applications.service import (
@@ -187,6 +187,24 @@ class VolunteerApplicationWorkflow:
         initial_role_id: int | None,
         actor_user_account_id: int | None = None,
     ) -> "VolunteerApplicationInvite":
+        with with_named_span("volunteer.application.invite"):
+            return await self._invite_impl(
+                email,
+                base_url=base_url,
+                initial_group_id=initial_group_id,
+                initial_role_id=initial_role_id,
+                actor_user_account_id=actor_user_account_id,
+            )
+
+    async def _invite_impl(
+        self,
+        email: str,
+        *,
+        base_url: str | None,
+        initial_group_id: int | None,
+        initial_role_id: int | None,
+        actor_user_account_id: int | None = None,
+    ) -> "VolunteerApplicationInvite":
         invite = await self.operations.create_invitation_record(
             email,
             initial_group_id=initial_group_id,
@@ -308,6 +326,26 @@ class VolunteerApplicationWorkflow:
         return result.detail
 
     async def submit(
+        self,
+        token: str,
+        submission: "VolunteerApplicationSubmissionInput",
+        *,
+        base_url: str | None,
+        photo_filename: str | None,
+        photo_content: bytes | None,
+        photo_content_type: str | None,
+    ) -> "VolunteerApplicationDetail":
+        with with_named_span("volunteer.application.submit"):
+            return await self._submit_impl(
+                token,
+                submission,
+                base_url=base_url,
+                photo_filename=photo_filename,
+                photo_content=photo_content,
+                photo_content_type=photo_content_type,
+            )
+
+    async def _submit_impl(
         self,
         token: str,
         submission: "VolunteerApplicationSubmissionInput",
@@ -472,6 +510,30 @@ class VolunteerApplicationWorkflow:
         base_url: str | None,
         actor_user_account_id: int | None = None,
     ) -> int:
+        with with_named_span("volunteer.application.approve"):
+            return await self._approve_impl(
+                registration_id,
+                accepted_group_id=accepted_group_id,
+                accepted_role_id=accepted_role_id,
+                assignment_year=assignment_year,
+                assignment_term=assignment_term,
+                contract_signed=contract_signed,
+                base_url=base_url,
+                actor_user_account_id=actor_user_account_id,
+            )
+
+    async def _approve_impl(
+        self,
+        registration_id: int,
+        *,
+        accepted_group_id: int | None,
+        accepted_role_id: int | None = None,
+        assignment_year: int | None = None,
+        assignment_term: int | None = None,
+        contract_signed: bool = True,
+        base_url: str | None,
+        actor_user_account_id: int | None = None,
+    ) -> int:
         detail, volunteer_id, _ = await self._approve_one(
             registration_id,
             accepted_group_id=accepted_group_id,
@@ -544,6 +606,17 @@ class VolunteerApplicationWorkflow:
         *,
         actor_user_account_id: int | None = None,
     ) -> None:
+        with with_named_span("volunteer.application.delete"):
+            await self._delete_impl(
+                registration_id, actor_user_account_id=actor_user_account_id
+            )
+
+    async def _delete_impl(
+        self,
+        registration_id: int,
+        *,
+        actor_user_account_id: int | None = None,
+    ) -> None:
         existing = await self.operations.get_volunteer_application_detail(
             registration_id
         )
@@ -574,6 +647,20 @@ class VolunteerApplicationWorkflow:
         self._record_lifecycle(detail, status="application_deleted")
 
     async def resend_invitation(
+        self,
+        registration_id: int,
+        *,
+        base_url: str | None,
+        actor_user_account_id: int | None = None,
+    ) -> "VolunteerApplicationInvite":
+        with with_named_span("volunteer.application.resend_invitation"):
+            return await self._resend_invitation_impl(
+                registration_id,
+                base_url=base_url,
+                actor_user_account_id=actor_user_account_id,
+            )
+
+    async def _resend_invitation_impl(
         self,
         registration_id: int,
         *,

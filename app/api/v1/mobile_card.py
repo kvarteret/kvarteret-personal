@@ -16,7 +16,7 @@ from app.domain.mobile_card.service import (
     MobileCardResponse,
     MobileCardService,
 )
-from app.observability import client_ip_from_request
+from app.observability import client_ip_from_request, with_named_span
 
 logger = logging.getLogger("app.audit")
 
@@ -82,9 +82,10 @@ async def request_access_code(
     service: MobileCardService = Depends(get_mobile_card_service),
 ) -> AcceptedStatusResponse:
     try:
-        await service.request_access_code(
-            str(payload.email), source_key=client_ip_from_request(request)
-        )
+        with with_named_span("mobile_card.access_code.request"):
+            await service.request_access_code(
+                str(payload.email), source_key=client_ip_from_request(request)
+            )
     except (MobileCardPersonNotFoundError, MobileCardDuplicatePersonError):
         return AcceptedStatusResponse(status="accepted")
     except MobileCardRateLimitedError as exc:
@@ -108,12 +109,13 @@ async def create_session(
     service: MobileCardService = Depends(get_mobile_card_service),
 ) -> MobileCardSessionResponse:
     try:
-        session = await service.create_session(
-            str(payload.email),
-            payload.access_code,
-            include_role_history=include_role_history,
-            source_key=client_ip_from_request(request),
-        )
+        with with_named_span("mobile_card.session.create"):
+            session = await service.create_session(
+                str(payload.email),
+                payload.access_code,
+                include_role_history=include_role_history,
+                source_key=client_ip_from_request(request),
+            )
     except MobileCardInvalidAccessCodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -5,6 +5,7 @@ import logging
 import re
 import sys
 from collections.abc import Mapping
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from time import perf_counter
@@ -326,3 +327,26 @@ def log_operation_timing(
             **(details or {}),
         },
     )
+
+
+_tracer = trace.get_tracer("kvarteret-personal")
+
+
+@contextmanager
+def with_named_span(
+    name: str, attributes: Mapping[str, object] | None = None
+):
+    """Run the wrapped block inside a named business-domain span.
+
+    The span records ERROR status when the block raises. When telemetry is
+    disabled the tracer yields a non-recording span and all calls are no-ops,
+    so this helper is safe to use unconditionally.
+    """
+    with _tracer.start_as_current_span(name) as span:
+        for key, value in (attributes or {}).items():
+            span.set_attribute(key, value)
+        try:
+            yield span
+        except BaseException:
+            span.set_status(trace.Status(trace.StatusCode.ERROR))
+            raise
