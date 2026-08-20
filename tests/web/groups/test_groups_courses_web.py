@@ -406,6 +406,7 @@ def test_groups_and_courses_pages_render() -> None:
     assert "cdn.jsdelivr.net/npm/alpinejs@3.x.x" not in course_detail_response.text
     assert "js/volunteer-picker.js" in course_detail_response.text
     assert "js/client-error-reporting.js" in course_detail_response.text
+    assert "js/htmx-error-feedback.js" in course_detail_response.text
     assert "Legg til</button>" in course_detail_response.text
 
 

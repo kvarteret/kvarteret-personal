@@ -596,6 +596,8 @@ def test_set_password_missing_token_returns_form_error_instead_of_422() -> None:
 
     assert response.status_code == 400
     assert "Password setup link is missing or invalid." in response.text
+    assert 'action="/set-password"' in response.text
+    assert 'hx-boost="false"' in response.text
 
 
 def test_admin_account_delete_uses_safe_error_message_on_provider_failure() -> None:
