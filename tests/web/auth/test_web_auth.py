@@ -255,6 +255,8 @@ def test_login_page_links_to_password_reset_form() -> None:
     response = TestClient(create_app()).get("/login")
 
     assert response.status_code == 200
+    assert 'action="/login"' in response.text
+    assert 'hx-boost="false"' in response.text
     assert 'href="/forgot-password"' in response.text
     assert "Glemt passord?" in response.text
 
@@ -265,6 +267,8 @@ def test_password_reset_page_renders() -> None:
     assert response.status_code == 200
     assert "Send tilbakestillingslenke" in response.text
     assert 'type="email"' in response.text
+    assert 'action="/forgot-password"' in response.text
+    assert 'hx-boost="false"' in response.text
 
 
 def test_password_reset_submission_calls_service_and_returns_generic_message() -> None:
