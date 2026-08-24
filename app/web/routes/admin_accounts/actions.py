@@ -280,25 +280,29 @@ async def admin_account_create(
             display_name=display_name,
             role=role_value,
         )
-        setup_url = await supabase_auth_gateway.generate_link(
-            link_type="recovery",
-            email=normalized_email,
-            redirect_to=_build_onboarding_redirect_url(
-                request, settings.app_public_base_url
-            ),
+        should_send_onboarding_email = (
+            await admin_accounts_service.mark_onboarding_email_sent(
+                admin_account.user_account_id
+            )
         )
-        await admin_accounts_service.mark_onboarding_email_sent(
-            admin_account.user_account_id
-        )
+        if should_send_onboarding_email:
+            setup_url = await supabase_auth_gateway.generate_link(
+                link_type="recovery",
+                email=normalized_email,
+                redirect_to=_build_onboarding_redirect_url(
+                    request, settings.app_public_base_url
+                ),
+            )
         await commit_request_session()
         state_committed = True
-        await admin_accounts_service.send_onboarding_email(
-            recipient_email=normalized_email,
-            setup_url=setup_url,
-            display_name=normalized_display_name,
-            username=normalized_username,
-            role_name=role_value.value,
-        )
+        if should_send_onboarding_email:
+            await admin_accounts_service.send_onboarding_email(
+                recipient_email=normalized_email,
+                setup_url=setup_url,
+                display_name=normalized_display_name,
+                username=normalized_username,
+                role_name=role_value.value,
+            )
     except NotConfiguredError as exc:
         if not state_committed:
             await _cleanup_failed_admin_creation(
@@ -371,6 +375,7 @@ async def admin_account_resend_onboarding(
             status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
         )
     try:
+        await admin_accounts_service.mark_onboarding_email_sent(account_id, force=True)
         setup_url = await supabase_auth_gateway.generate_link(
             link_type="recovery",
             email=admin_account.email,
@@ -378,7 +383,6 @@ async def admin_account_resend_onboarding(
                 request, settings.app_public_base_url
             ),
         )
-        await admin_accounts_service.mark_onboarding_email_sent(account_id)
         await commit_request_session()
         await admin_accounts_service.send_onboarding_email(
             recipient_email=admin_account.email,

@@ -73,7 +73,9 @@ class AdminAccountsServiceProtocol(Protocol):
         username: str,
         role_name: str,
     ) -> None: ...
-    async def mark_onboarding_email_sent(self, user_account_id: int) -> None: ...
+    async def mark_onboarding_email_sent(
+        self, user_account_id: int, *, force: bool = False
+    ) -> bool: ...
     async def mark_onboarding_complete(self, auth_user_id: UUID) -> None: ...
 
 
@@ -292,9 +294,14 @@ class AdminAccountsService:
             html_body=rendered.html_body,
         )
 
-    async def mark_onboarding_email_sent(self, user_account_id: int) -> None:
-        await self.repository.mark_onboarding_email_sent(user_account_id)
+    async def mark_onboarding_email_sent(
+        self, user_account_id: int, *, force: bool = False
+    ) -> bool:
+        sent = await self.repository.mark_onboarding_email_sent(
+            user_account_id, force=force
+        )
         self._detail_cache.pop(user_account_id)
+        return sent
 
     async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
         await self.repository.mark_onboarding_complete(auth_user_id)

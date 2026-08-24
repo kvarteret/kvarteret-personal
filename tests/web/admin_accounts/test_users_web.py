@@ -142,8 +142,10 @@ class FakeAdminAccountsService:
             }
         )
 
-    async def mark_onboarding_email_sent(self, user_account_id: int) -> None:
-        return None
+    async def mark_onboarding_email_sent(
+        self, user_account_id: int, *, force: bool = False
+    ) -> bool:
+        return True
 
     async def mark_onboarding_complete(self, auth_user_id) -> None:
         self.completed_auth_user_ids.append(auth_user_id)

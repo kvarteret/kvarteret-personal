@@ -160,15 +160,19 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         user_account_id = await self.fetch_scalar(stmt)
         return int(user_account_id) if user_account_id is not None else None
 
-    async def mark_onboarding_email_sent(self, user_account_id: int) -> None:
-        await self.execute(
-            update(user_accounts)
-            .where(user_accounts.c.id == user_account_id)
-            .values(
+    async def mark_onboarding_email_sent(
+        self, user_account_id: int, *, force: bool = False
+    ) -> bool:
+        stmt = update(user_accounts).where(user_accounts.c.id == user_account_id)
+        if not force:
+            stmt = stmt.where(user_accounts.c.onboarding_last_sent_at.is_(None))
+        result = await self.session.execute(
+            stmt.values(
                 onboarding_last_sent_at=func.current_timestamp(),
                 updated_at=func.current_timestamp(),
             )
         )
+        return bool(result.rowcount)
 
     async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
         await self.execute(
