@@ -35,6 +35,16 @@ class FakeAuthGateway:
         return "https://personal.example.com/set-password#token_hash=hashed-token&type=recovery"
 
 
+class FakeAdminAccountRepository:
+    def __init__(self, user_account_id: int | None = 1) -> None:
+        self.user_account_id = user_account_id
+        self.lookups: list[str] = []
+
+    async def find_user_account_id_by_email(self, email: str) -> int | None:
+        self.lookups.append(email)
+        return self.user_account_id
+
+
 class FakeEmailRenderer:
     def render_password_reset_email(self, *, setup_url: str) -> PasswordResetEmail:
         return PasswordResetEmail(
@@ -63,10 +73,12 @@ class FakeEmailSender:
 async def test_password_reset_uses_application_email_sender() -> None:
     auth_gateway = FakeAuthGateway()
     email_sender = FakeEmailSender()
+    admin_account_repository = FakeAdminAccountRepository()
     service = PasswordResetService(
         auth_gateway=auth_gateway,
         email_sender=email_sender,
         email_renderer=FakeEmailRenderer(),
+        admin_account_repository=admin_account_repository,
     )
 
     delivered = await service.send_reset_email(
@@ -92,6 +104,27 @@ async def test_password_reset_uses_application_email_sender() -> None:
             ),
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_password_reset_does_not_generate_link_for_non_admin_auth_user() -> None:
+    auth_gateway = FakeAuthGateway()
+    admin_account_repository = FakeAdminAccountRepository(user_account_id=None)
+    service = PasswordResetService(
+        auth_gateway=auth_gateway,
+        email_sender=FakeEmailSender(),
+        email_renderer=FakeEmailRenderer(),
+        admin_account_repository=admin_account_repository,
+    )
+
+    delivered = await service.send_reset_email(
+        email="volunteer@example.com",
+        redirect_to="https://personal.example.com/set-password",
+    )
+
+    assert delivered is False
+    assert auth_gateway.reset_requests == []
+    assert admin_account_repository.lookups == ["volunteer@example.com"]
 
 
 def test_password_reset_email_template_contains_setup_link() -> None:
