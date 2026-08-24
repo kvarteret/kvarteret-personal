@@ -130,9 +130,12 @@ async def test_update_password_verifies_hash_before_using_recovery_session() -> 
 
 
 @pytest.mark.asyncio
-async def test_expired_recovery_token_has_a_distinct_domain_error() -> None:
+@pytest.mark.parametrize("status_code", [400, 403])
+async def test_expired_recovery_token_has_a_distinct_domain_error(
+    status_code: int,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, json={"msg": "Token has expired"})
+        return httpx.Response(status_code, json={"msg": "Token has expired"})
 
     gateway = SupabaseAuthGateway(
         Settings(

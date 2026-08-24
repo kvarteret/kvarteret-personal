@@ -227,7 +227,7 @@ class SupabaseAuthGateway:
                 json={"token_hash": token_hash, "type": verification_type},
             )
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code in {400, 401, 404}:
+            if exc.response.status_code in {400, 401, 403, 404}:
                 raise RecoveryTokenError(
                     "The recovery link is expired, invalid, or already used."
                 ) from exc
