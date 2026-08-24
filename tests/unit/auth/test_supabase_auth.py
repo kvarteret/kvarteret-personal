@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from app.auth.supabase_auth import SupabaseAuthGateway
+from app.auth.supabase_auth import RecoveryTokenError, SupabaseAuthGateway
 from app.config import Settings
 
 
@@ -127,3 +127,28 @@ async def test_update_password_verifies_hash_before_using_recovery_session() -> 
         ("PUT", "/auth/v1/user", {"password": "UpdatedPassword123"}),
     ]
     assert str(auth_user_id) == "7cc2c6a2-2a22-44ba-995e-f8eb8a9d4b6b"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 403])
+async def test_expired_recovery_token_has_a_distinct_domain_error(
+    status_code: int,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json={"msg": "Token has expired"})
+
+    gateway = SupabaseAuthGateway(
+        Settings(
+            supabase_url="https://project.supabase.co",
+            supabase_secret_key="service-role-key",
+        ),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    try:
+        with pytest.raises(RecoveryTokenError):
+            await gateway.update_password_with_token_hash(
+                "expired-token", "recovery", "UpdatedPassword123"
+            )
+    finally:
+        await gateway.aclose()

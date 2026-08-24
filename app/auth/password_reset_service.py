@@ -33,6 +33,10 @@ class PasswordResetAuthGatewayProtocol(Protocol):
     ) -> str: ...
 
 
+class PasswordResetAdminAccountRepositoryProtocol(Protocol):
+    async def find_user_account_id_by_email(self, email: str) -> int | None: ...
+
+
 class PasswordResetService:
     def __init__(
         self,
@@ -40,14 +44,27 @@ class PasswordResetService:
         auth_gateway: PasswordResetAuthGatewayProtocol,
         email_sender: EmailSenderProtocol,
         email_renderer: PasswordResetEmailTemplateRendererProtocol,
+        admin_account_repository: PasswordResetAdminAccountRepositoryProtocol,
     ) -> None:
         self.auth_gateway = auth_gateway
         self.email_sender = email_sender
         self.email_renderer = email_renderer
+        self.admin_account_repository = admin_account_repository
 
     async def send_reset_email(self, *, email: str, redirect_to: str) -> bool:
         request = PasswordResetRequest(email=email)
         normalized_email = str(request.email).lower()
+        # GoTrue identities are shared by multiple surfaces. Only an email
+        # linked to a local admin account may receive a Kvarteret reset link.
+        # The web route deliberately ignores this return value so unknown and
+        # known addresses retain the same public response.
+        if (
+            await self.admin_account_repository.find_user_account_id_by_email(
+                normalized_email
+            )
+            is None
+        ):
+            return False
         setup_url = await self.auth_gateway.generate_link(
             link_type="recovery",
             email=normalized_email,
