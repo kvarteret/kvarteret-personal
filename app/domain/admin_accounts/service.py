@@ -5,6 +5,7 @@ from time import perf_counter
 from typing import Protocol
 from uuid import UUID
 
+from email_validator import EmailNotValidError, validate_email
 
 from app.auth.roles import UserRole
 from app.cache import TTLCache
@@ -146,10 +147,27 @@ class AdminAccountsService:
         display_name: str | None,
         role: UserRole,
     ) -> AdminAccountDetail | None:
+        normalized_email = _normalize_email(email)
+        normalized_username = _normalize_username(username)
+        existing = await self.get_admin_account_detail(user_account_id)
+        if existing is None:
+            return None
+        if normalized_email != _normalize_email(existing.email):
+            raise ValueError(
+                "E-postadressen kan ikke endres etter at admin-kontoen er opprettet."
+            )
+        if await self.repository.check_username_or_email_exists(
+            username=normalized_username,
+            email=normalized_email,
+            exclude_user_account_id=user_account_id,
+        ):
+            raise ValueError(
+                "Det finnes allerede en admin-konto med dette brukernavnet eller denne e-posten."
+            )
         await self.repository.update_admin_account(
             user_account_id=user_account_id,
-            username=username.strip(),
-            email=email.strip(),
+            username=normalized_username,
+            email=normalized_email,
             display_name=_normalize_optional_text(display_name),
             role=role,
         )
@@ -166,16 +184,34 @@ class AdminAccountsService:
         display_name: str | None,
         role: UserRole,
     ) -> AdminAccountDetail:
-        normalized_username = username.strip()
-        normalized_email = email.strip()
+        normalized_username = _normalize_username(username)
+        normalized_email = _normalize_email(email)
         normalized_display_name = _normalize_optional_text(display_name)
         if not normalized_username:
             raise ValueError("Username is required.")
         if not normalized_email:
             raise ValueError("Email is required.")
-        if await self.repository.check_username_or_email_exists(
-            username=normalized_username, email=normalized_email
-        ):
+        existing_email_account_id = (
+            await self.repository.find_user_account_id_by_email(normalized_email)
+        )
+        if existing_email_account_id is not None:
+            existing = await self.get_admin_account_detail(existing_email_account_id)
+            if (
+                existing is not None
+                and existing.auth_user_id == auth_user_id
+                and existing.username.strip().lower() == normalized_username.lower()
+            ):
+                return existing
+            raise ValueError(
+                "Det finnes allerede en admin-konto med dette brukernavnet eller denne e-posten."
+            )
+        existing_username_account_id = (
+            await self.repository.find_user_account_id_by_username(normalized_username)
+        )
+        if existing_username_account_id is not None:
+            existing = await self.get_admin_account_detail(existing_username_account_id)
+            if existing is not None and existing.auth_user_id == auth_user_id:
+                return existing
             raise ValueError(
                 "Det finnes allerede en admin-konto med dette brukernavnet eller denne e-posten."
             )
@@ -186,6 +222,24 @@ class AdminAccountsService:
             display_name=normalized_display_name,
             role=role,
         )
+        if user_account_id is None:
+            # A unique index is the authoritative race guard. Re-read after a
+            # savepoint rollback and make a retry of the same request a no-op.
+            existing_email_account_id = (
+                await self.repository.find_user_account_id_by_email(normalized_email)
+            )
+            if existing_email_account_id is None:
+                raise ValueError("Admin-kontoen kunne ikke opprettes.")
+            existing = await self.get_admin_account_detail(existing_email_account_id)
+            if (
+                existing is None
+                or existing.auth_user_id != auth_user_id
+                or existing.username.strip().lower() != normalized_username.lower()
+            ):
+                raise ValueError(
+                    "Det finnes allerede en admin-konto med dette brukernavnet eller denne e-posten."
+                )
+            return existing
         self._detail_cache.pop(user_account_id)
         self._list_cache.clear()
         admin_account = await self.get_admin_account_detail(user_account_id)
@@ -238,3 +292,20 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _normalize_username(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("Username is required.")
+    return normalized
+
+
+def _normalize_email(value: str) -> str:
+    try:
+        normalized = validate_email(
+            value.strip(), check_deliverability=False
+        ).normalized
+    except EmailNotValidError as exc:
+        raise ValueError("Skriv inn en gyldig e-postadresse.") from exc
+    return normalized.lower()

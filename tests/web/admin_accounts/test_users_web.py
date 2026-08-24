@@ -143,6 +143,7 @@ class FakeSupabaseAuthGateway:
         self.updated_password = None
         self.updated_password_with_access_token = None
         self.updated_password_with_token_hash = None
+        self.existing_user_id = None
 
     async def sign_in_with_password(self, email: str, password: str):
         if password != "CorrectPassword123":
@@ -154,6 +155,9 @@ class FakeSupabaseAuthGateway:
             if self.created_user
             else None
         )
+
+    async def find_user_id_by_email(self, email: str):
+        return self.existing_user_id
 
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
@@ -369,6 +373,36 @@ def test_admin_account_create_redirects_and_calls_services() -> None:
     assert sent_email["username"] == "new.admin"
     assert sent_email["display_name"] == "New Admin"
     assert sent_email["role_name"] == "Admin"
+
+
+def test_admin_account_create_links_existing_auth_user_without_deleting_it() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    admin_accounts_service = FakeAdminAccountsService()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    supabase_auth_gateway.existing_user_id = uuid4()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        admin_accounts_service
+    )
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin-accounts",
+        data={
+            "username": "existing.admin",
+            "email": "EXISTING@example.test",
+            "display_name": "Existing Admin",
+            "role": "Admin",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin-accounts/11"
+    assert supabase_auth_gateway.created_user is None
+    assert supabase_auth_gateway.deleted_user is None
+    assert admin_accounts_service.created_account[0] == supabase_auth_gateway.existing_user_id
 
 
 def test_admin_account_create_cleans_up_when_email_send_fails() -> None:
