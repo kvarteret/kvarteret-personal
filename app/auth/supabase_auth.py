@@ -15,6 +15,7 @@ _API_VERSION = "2024-01-01"
 
 class SupabaseAuthGatewayProtocol(Protocol):
     async def sign_in_with_password(self, email: str, password: str) -> UUID | None: ...
+    async def find_user_id_by_email(self, email: str) -> UUID | None: ...
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
     ) -> UUID: ...
@@ -76,6 +77,45 @@ class SupabaseAuthGateway:
         except httpx.HTTPError:
             return None
         return _extract_user_id(response.json())
+
+    async def find_user_id_by_email(self, email: str) -> UUID | None:
+        """Find an existing Auth identity without creating or modifying it.
+
+        GoTrue exposes list-users rather than a service-role email lookup. Walk
+        the documented pages so an existing identity cannot be missed once a
+        project has more users than the page size.
+        """
+        normalized_email = email.strip().lower()
+        page = 1
+        per_page = 1000
+        while True:
+            response = await self._request(
+                "GET",
+                "admin/users",
+                params={"page": page, "per_page": per_page},
+            )
+            payload = response.json()
+            users = payload.get("users", []) if isinstance(payload, dict) else []
+            if not isinstance(users, list):
+                raise NotConfiguredError(
+                    "Supabase returned an invalid user list during auth reconciliation."
+                )
+            for user in users:
+                if not isinstance(user, dict):
+                    continue
+                candidate_email = user.get("email")
+                if (
+                    isinstance(candidate_email, str)
+                    and candidate_email.strip().lower() == normalized_email
+                    and user.get("id")
+                ):
+                    return UUID(str(user["id"]))
+            # Some GoTrue versions cap ``per_page`` below the requested value.
+            # Continue until an empty page so a capped response cannot hide a
+            # matching identity on a later page.
+            if not users:
+                return None
+            page += 1
 
     async def create_user(
         self, *, email: str, password: str, metadata: dict | None = None
