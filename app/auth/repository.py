@@ -78,17 +78,21 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
         return _map_user_account(row) if row else None
 
     async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
-        await self.execute(
-            update(user_accounts)
-            .where(user_accounts.c.auth_user_id == auth_user_id)
-            .values(
-                onboarding_status="active",
-                activated_at=func.coalesce(
-                    user_accounts.c.activated_at, func.current_timestamp()
-                ),
-                updated_at=func.current_timestamp(),
+        # Login treats activation bookkeeping as best effort. Isolate a
+        # transient write failure in a savepoint so the request can still
+        # create its session using the outer transaction.
+        async with self.session.begin_nested():
+            await self.execute(
+                update(user_accounts)
+                .where(user_accounts.c.auth_user_id == auth_user_id)
+                .values(
+                    onboarding_status="active",
+                    activated_at=func.coalesce(
+                        user_accounts.c.activated_at, func.current_timestamp()
+                    ),
+                    updated_at=func.current_timestamp(),
+                )
             )
-        )
 
     async def create_direct_user_account(
         self,

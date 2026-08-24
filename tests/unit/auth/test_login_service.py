@@ -15,6 +15,7 @@ class FakeRepository:
         self.user_account: UserAccount | None = None
         self.user_account_identifiers: list[str] = []
         self.completed_auth_user_ids: list[UUID] = []
+        self.fail_onboarding_completion = False
 
     async def get_user_account_by_identifier(
         self, identifier: str
@@ -28,6 +29,8 @@ class FakeRepository:
         return None
 
     async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
+        if self.fail_onboarding_completion:
+            raise RuntimeError("status write failed")
         self.completed_auth_user_ids.append(auth_user_id)
 
     async def create_direct_user_account(
@@ -162,6 +165,33 @@ async def test_login_with_existing_account_uses_supabase_password_login() -> Non
     assert result.session.user_account_id == 9
     assert repository.user_account_identifiers == ["admin"]
     assert repository.completed_auth_user_ids == [repository.user_account.auth_user_id]
+
+
+@pytest.mark.asyncio
+async def test_login_still_creates_session_when_activation_status_write_fails() -> None:
+    repository = FakeRepository()
+    repository.user_account = UserAccount(
+        id=9,
+        auth_user_id=uuid4(),
+        username="admin",
+        email="admin@example.test",
+        display_name="Admin User",
+        role=UserRole.ADMIN,
+        last_login=None,
+    )
+    repository.fail_onboarding_completion = True
+    supabase_auth = FakeSupabaseAuth()
+    supabase_auth.sign_in_result = repository.user_account.auth_user_id
+    service = LoginService(repository, supabase_auth, FakeSessionStore())
+
+    result = await service.login(
+        identifier="admin",
+        password="correct",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    assert result.session.session_id == "session-123"
 
 
 @pytest.mark.asyncio
