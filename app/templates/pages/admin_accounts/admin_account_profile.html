@@ -14,8 +14,8 @@
           {% call form_field("Brukernavn") %}
             <input class="app-input" name="username" type="text" value="{{ admin_account.username }}" {% if not can_edit_profile %}disabled{% endif %}>
           {% endcall %}
-          {% call form_field("E-post") %}
-            <input class="app-input" name="email" type="email" value="{{ admin_account.email }}" {% if not can_edit_profile %}disabled{% endif %}>
+          {% call form_field("E-post (kan ikke endres)") %}
+            <input aria-readonly="true" class="app-input bg-stone-100" name="email" readonly type="email" value="{{ admin_account.email }}">
           {% endcall %}
           {% call form_field("Navn") %}
             <input class="app-input" name="display_name" type="text" value="{{ admin_account.display_name or '' }}" {% if not can_edit_profile %}disabled{% endif %}>
@@ -85,9 +85,9 @@
       </form>
 
       {% if section == "admin-accounts" and current_user.role == "Admin" and current_user.user_account_id != admin_account.user_account_id %}
-        <form action="/admin-accounts/{{ admin_account.user_account_id }}?_method=DELETE" class="mt-6 border-t border-stone-300 pt-6" method="post" onsubmit="return window.confirm('Slette denne admin-kontoen?');">
+        <form action="/admin-accounts/{{ admin_account.user_account_id }}?_method=DELETE" class="mt-6 border-t border-stone-300 pt-6" method="post" onsubmit="return window.confirm('Fjerne lokal admin-tilgang? Auth-brukeren beholdes.');">
           <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit">
-            Slett admin-konto
+            Fjern admin-tilgang
           </button>
         </form>
       {% endif %}

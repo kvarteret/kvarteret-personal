@@ -134,6 +134,11 @@ class FailingOnboardingEmailAdminAccountsService(FakeAdminAccountsService):
         raise RuntimeError("smtp send failed")
 
 
+class FailingDeleteAdminAccountsService(FakeAdminAccountsService):
+    async def delete_admin_account(self, **kwargs) -> None:
+        raise RuntimeError("database delete failed")
+
+
 class FakeSupabaseAuthGateway:
     def __init__(self) -> None:
         self.created_user = None
@@ -296,7 +301,7 @@ def test_admin_account_pages_render_for_admins() -> None:
     assert detail_response.status_code == 200
     assert "Lagre endringer" in detail_response.text
     assert "Logg inn som denne brukeren" in detail_response.text
-    assert "Slett admin-konto" in detail_response.text
+    assert "Fjern admin-tilgang" in detail_response.text
     assert "2 gruppeadministrator-tilganger" in detail_response.text
     assert profile_response.status_code == 200
     assert "Min konto" in profile_response.text
@@ -513,7 +518,7 @@ def test_admin_can_delete_other_admin_account() -> None:
 
     assert response.status_code == 303
     assert response.headers["location"] == "/admin-accounts"
-    assert supabase_auth_gateway.deleted_user == target.auth_user_id
+    assert supabase_auth_gateway.deleted_user is None
     assert admin_accounts_service.deleted_account == (7, target.auth_user_id)
 
 
@@ -634,14 +639,11 @@ def test_set_password_missing_token_returns_form_error_instead_of_422() -> None:
     assert 'hx-boost="false"' in response.text
 
 
-def test_admin_account_delete_uses_safe_error_message_on_provider_failure() -> None:
+def test_admin_account_delete_uses_safe_error_message_on_local_failure() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_admin_accounts_service] = lambda: (
-        FakeAdminAccountsService()
-    )
-    app.dependency_overrides[get_supabase_auth_gateway] = lambda: (
-        FailingSupabaseAuthGateway()
+        FailingDeleteAdminAccountsService()
     )
     client = TestClient(app)
 

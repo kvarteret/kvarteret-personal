@@ -473,7 +473,6 @@ async def admin_account_delete(
     account_id: int,
     current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
-    supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
     if current_user.user_account_id == account_id:
         return _redirect_with_error(
@@ -487,7 +486,6 @@ async def admin_account_delete(
         )
 
     try:
-        await supabase_auth_gateway.delete_user(admin_account.auth_user_id)
         await admin_accounts_service.delete_admin_account(
             user_account_id=admin_account.user_account_id,
             auth_user_id=admin_account.auth_user_id,
