@@ -19,6 +19,9 @@ user_accounts = Table(
     Column("role", String(64), nullable=False),
     Column("last_login", DateTime(timezone=True)),
     Column("migrated_at", DateTime(timezone=True)),
+    Column("onboarding_status", String(32), nullable=False),
+    Column("onboarding_last_sent_at", DateTime(timezone=True)),
+    Column("activated_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )

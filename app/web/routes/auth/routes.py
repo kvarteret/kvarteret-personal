@@ -21,6 +21,7 @@ from app.dependencies import (
     get_current_user,
     get_login_service,
     get_mobile_card_april_state_service,
+    get_admin_accounts_service,
     get_password_reset_service,
     get_rate_limiter,
     get_session_cookie_signer,
@@ -352,6 +353,7 @@ async def set_password_submit(
     password: str = Form(...),
     confirm_password: str = Form(...),
     supabase_auth_gateway=Depends(get_supabase_auth_gateway),
+    admin_accounts_service=Depends(get_admin_accounts_service),
 ):
     error_message = None
     normalized_access_token = access_token.strip()
@@ -368,15 +370,17 @@ async def set_password_submit(
     else:
         try:
             if normalized_token_hash:
-                await supabase_auth_gateway.update_password_with_token_hash(
+                auth_user_id = await supabase_auth_gateway.update_password_with_token_hash(
                     normalized_token_hash,
                     normalized_verification_type,
                     password,
                 )
             else:
-                await supabase_auth_gateway.update_password_with_access_token(
+                auth_user_id = await supabase_auth_gateway.update_password_with_access_token(
                     normalized_access_token, password
                 )
+            if auth_user_id is not None:
+                await admin_accounts_service.mark_onboarding_complete(auth_user_id)
         except Exception:
             logger.exception("Failed to set password from onboarding link.")
             error_message = "Kunne ikke sette passordet akkurat nå."

@@ -9,7 +9,7 @@
 
     <section class="app-panel">
       {{ flash_notice(error_message, 'error') }}
-      <p class="mb-5 text-sm text-stone-500">Det sendes en oppsettslenke på e-post slik at den nye brukeren kan aktivere kontoen og sette sitt eget passord.</p>
+      <p class="mb-5 text-sm text-stone-500">Det sendes en oppsettslenke på e-post. Brukeren setter sitt eget passord med lenken.</p>
       <form action="/admin-accounts" class="grid gap-6" method="post">
         <div class="grid gap-5 md:grid-cols-2">
           {% call form_field("Brukernavn") %}

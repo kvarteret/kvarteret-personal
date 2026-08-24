@@ -87,7 +87,7 @@ class DevAuthGateway:
 
     async def update_password_with_access_token(
         self, access_token: str, password: str
-    ) -> None:
+    ) -> UUID | None:
         return None
 
     async def update_password_with_token_hash(

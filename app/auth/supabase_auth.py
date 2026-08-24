@@ -37,10 +37,10 @@ class SupabaseAuthGatewayProtocol(Protocol):
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None: ...
     async def update_password_with_access_token(
         self, access_token: str, password: str
-    ) -> None: ...
+    ) -> UUID | None: ...
     async def update_password_with_token_hash(
         self, token_hash: str, verification_type: str, password: str
-    ) -> None: ...
+    ) -> UUID | None: ...
     async def delete_user(self, auth_user_id: UUID) -> None: ...
     async def aclose(self) -> None: ...
 
@@ -202,17 +202,18 @@ class SupabaseAuthGateway:
 
     async def update_password_with_access_token(
         self, access_token: str, password: str
-    ) -> None:
-        await self._request(
+    ) -> UUID | None:
+        response = await self._request(
             "PUT",
             "user",
             json={"password": password},
             headers={"Authorization": f"Bearer {access_token}"},
         )
+        return _extract_user_id(response.json())
 
     async def update_password_with_token_hash(
         self, token_hash: str, verification_type: str, password: str
-    ) -> None:
+    ) -> UUID | None:
         if verification_type != "recovery":
             raise ValueError("Unsupported password setup verification type.")
         response = await self._request(
@@ -223,7 +224,7 @@ class SupabaseAuthGateway:
         access_token = response.json().get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise NotConfiguredError("Supabase did not return a recovery session.")
-        await self.update_password_with_access_token(access_token, password)
+        return await self.update_password_with_access_token(access_token, password)
 
     async def delete_user(self, auth_user_id: UUID) -> None:
         await self._request(
