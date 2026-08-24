@@ -110,7 +110,10 @@ class SupabaseAuthGateway:
                     and user.get("id")
                 ):
                     return UUID(str(user["id"]))
-            if len(users) < per_page:
+            # Some GoTrue versions cap ``per_page`` below the requested value.
+            # Continue until an empty page so a capped response cannot hide a
+            # matching identity on a later page.
+            if not users:
                 return None
             page += 1
 

@@ -60,10 +60,12 @@ async def test_find_user_id_by_email_walks_admin_user_pages() -> None:
                 }
                 for index in range(1000)
             ]
-        else:
+        elif page == "2":
             users = [
                 {"id": "7cc2c6a2-2a22-44ba-995e-f8eb8a9d4b6b", "email": "ADMIN@example.com"}
             ]
+        else:
+            users = []
         return httpx.Response(200, json={"users": users})
 
     gateway = SupabaseAuthGateway(
