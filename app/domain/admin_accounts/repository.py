@@ -93,6 +93,9 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.last_login,
                 user_accounts.c.created_at,
                 user_accounts.c.migrated_at,
+                user_accounts.c.onboarding_status,
+                user_accounts.c.onboarding_last_sent_at,
+                user_accounts.c.activated_at,
             )
             .where(user_accounts.c.id == user_account_id)
             .limit(1)
@@ -112,6 +115,9 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             created_at=require_datetime(row["created_at"]),
             migrated_at=coerce_datetime(row.get("migrated_at")),
             group_admin_group_ids=memberships.get(row["auth_user_id"], []),
+            onboarding_status=row.get("onboarding_status") or "active",
+            onboarding_last_sent_at=coerce_datetime(row.get("onboarding_last_sent_at")),
+            activated_at=coerce_datetime(row.get("activated_at")),
         )
 
     async def find_user_account_id_by_auth_user_id(
@@ -154,6 +160,29 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         user_account_id = await self.fetch_scalar(stmt)
         return int(user_account_id) if user_account_id is not None else None
 
+    async def mark_onboarding_email_sent(self, user_account_id: int) -> None:
+        await self.execute(
+            update(user_accounts)
+            .where(user_accounts.c.id == user_account_id)
+            .values(
+                onboarding_last_sent_at=func.current_timestamp(),
+                updated_at=func.current_timestamp(),
+            )
+        )
+
+    async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
+        await self.execute(
+            update(user_accounts)
+            .where(user_accounts.c.auth_user_id == auth_user_id)
+            .values(
+                onboarding_status="active",
+                activated_at=func.coalesce(
+                    user_accounts.c.activated_at, func.current_timestamp()
+                ),
+                updated_at=func.current_timestamp(),
+            )
+        )
+
     async def find_user_account_id_by_username(self, username: str) -> int | None:
         stmt = (
             select(user_accounts.c.id)
@@ -182,6 +211,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                         email=email,
                         display_name=display_name,
                         role=role.value,
+                        onboarding_status="pending",
                         created_at=func.current_timestamp(),
                         updated_at=func.current_timestamp(),
                     )

@@ -40,6 +40,9 @@ class AdminAccountsServiceProtocol(Protocol):
     async def get_admin_account_detail_for_auth_user(
         self, auth_user_id: UUID
     ) -> AdminAccountDetail | None: ...
+    async def get_admin_account_detail_for_email(
+        self, email: str
+    ) -> AdminAccountDetail | None: ...
     async def create_admin_account(
         self,
         *,
@@ -70,6 +73,8 @@ class AdminAccountsServiceProtocol(Protocol):
         username: str,
         role_name: str,
     ) -> None: ...
+    async def mark_onboarding_email_sent(self, user_account_id: int) -> None: ...
+    async def mark_onboarding_complete(self, auth_user_id: UUID) -> None: ...
 
 
 class AdminAccountsService:
@@ -134,6 +139,14 @@ class AdminAccountsService:
         user_account_id = (
             await self.repository.find_user_account_id_by_auth_user_id(auth_user_id)
         )
+        if user_account_id is None:
+            return None
+        return await self.get_admin_account_detail(user_account_id)
+
+    async def get_admin_account_detail_for_email(
+        self, email: str
+    ) -> AdminAccountDetail | None:
+        user_account_id = await self.repository.find_user_account_id_by_email(email)
         if user_account_id is None:
             return None
         return await self.get_admin_account_detail(user_account_id)
@@ -278,6 +291,18 @@ class AdminAccountsService:
             subject=rendered.subject,
             html_body=rendered.html_body,
         )
+
+    async def mark_onboarding_email_sent(self, user_account_id: int) -> None:
+        await self.repository.mark_onboarding_email_sent(user_account_id)
+        self._detail_cache.pop(user_account_id)
+
+    async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
+        await self.repository.mark_onboarding_complete(auth_user_id)
+        user_account_id = await self.repository.find_user_account_id_by_auth_user_id(
+            auth_user_id
+        )
+        if user_account_id is not None:
+            self._detail_cache.pop(user_account_id)
 
 
 def _normalize_query(query: str | None) -> str | None:
