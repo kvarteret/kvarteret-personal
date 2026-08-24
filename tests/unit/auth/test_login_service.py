@@ -14,6 +14,7 @@ class FakeRepository:
     def __init__(self) -> None:
         self.user_account: UserAccount | None = None
         self.user_account_identifiers: list[str] = []
+        self.completed_auth_user_ids: list[UUID] = []
 
     async def get_user_account_by_identifier(
         self, identifier: str
@@ -25,6 +26,9 @@ class FakeRepository:
         }:
             return self.user_account
         return None
+
+    async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
+        self.completed_auth_user_ids.append(auth_user_id)
 
     async def create_direct_user_account(
         self,
@@ -157,6 +161,7 @@ async def test_login_with_existing_account_uses_supabase_password_login() -> Non
     assert result.user.username == "admin"
     assert result.session.user_account_id == 9
     assert repository.user_account_identifiers == ["admin"]
+    assert repository.completed_auth_user_ids == [repository.user_account.auth_user_id]
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import delete, func, insert, or_, select, update
@@ -160,12 +161,17 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         user_account_id = await self.fetch_scalar(stmt)
         return int(user_account_id) if user_account_id is not None else None
 
-    async def mark_onboarding_email_sent(
-        self, user_account_id: int, *, force: bool = False
+    async def claim_onboarding_email(
+        self, user_account_id: int, *, cooldown_seconds: int = 60
     ) -> bool:
-        stmt = update(user_accounts).where(user_accounts.c.id == user_account_id)
-        if not force:
-            stmt = stmt.where(user_accounts.c.onboarding_last_sent_at.is_(None))
+        cutoff = datetime.now(UTC) - timedelta(seconds=max(0, cooldown_seconds))
+        stmt = update(user_accounts).where(
+            user_accounts.c.id == user_account_id,
+            or_(
+                user_accounts.c.onboarding_last_sent_at.is_(None),
+                user_accounts.c.onboarding_last_sent_at <= cutoff,
+            ),
+        )
         result = await self.session.execute(
             stmt.values(
                 onboarding_last_sent_at=func.current_timestamp(),

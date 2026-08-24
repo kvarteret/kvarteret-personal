@@ -281,7 +281,7 @@ async def admin_account_create(
             role=role_value,
         )
         should_send_onboarding_email = (
-            await admin_accounts_service.mark_onboarding_email_sent(
+            await admin_accounts_service.claim_onboarding_email(
                 admin_account.user_account_id
             )
         )
@@ -375,7 +375,11 @@ async def admin_account_resend_onboarding(
             status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
         )
     try:
-        await admin_accounts_service.mark_onboarding_email_sent(account_id, force=True)
+        if not await admin_accounts_service.claim_onboarding_email(account_id):
+            return _redirect_with_error(
+                f"/admin-accounts/{account_id}",
+                "En oppsettslenke ble sendt nylig. Vent litt før du ber om en ny.",
+            )
         setup_url = await supabase_auth_gateway.generate_link(
             link_type="recovery",
             email=admin_account.email,

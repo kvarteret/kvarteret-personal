@@ -376,10 +376,9 @@ async def set_password_submit(
                     password,
                 )
             else:
-                await supabase_auth_gateway.update_password_with_access_token(
+                auth_user_id = await supabase_auth_gateway.update_password_with_access_token(
                     normalized_access_token, password
                 )
-                auth_user_id = None
             if auth_user_id is not None:
                 await admin_accounts_service.mark_onboarding_complete(auth_user_id)
         except Exception:

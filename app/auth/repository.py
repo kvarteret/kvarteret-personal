@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import delete, func, insert, or_, select
+from sqlalchemy import delete, func, insert, or_, select, update
 from app.auth.models import AuthenticatedUser, UserAccount, WebSession
 from app.auth.roles import UserRole
 from app.db.repository import SqlAlchemyRepository
@@ -20,6 +20,7 @@ class AuthRepositoryProtocol(Protocol):
     async def get_user_account_by_identifier(
         self, identifier: str
     ) -> UserAccount | None: ...
+    async def mark_onboarding_complete(self, auth_user_id: UUID) -> None: ...
     async def create_direct_user_account(
         self,
         *,
@@ -75,6 +76,19 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
         )
         row = await self.fetch_first_mapping(stmt)
         return _map_user_account(row) if row else None
+
+    async def mark_onboarding_complete(self, auth_user_id: UUID) -> None:
+        await self.execute(
+            update(user_accounts)
+            .where(user_accounts.c.auth_user_id == auth_user_id)
+            .values(
+                onboarding_status="active",
+                activated_at=func.coalesce(
+                    user_accounts.c.activated_at, func.current_timestamp()
+                ),
+                updated_at=func.current_timestamp(),
+            )
+        )
 
     async def create_direct_user_account(
         self,

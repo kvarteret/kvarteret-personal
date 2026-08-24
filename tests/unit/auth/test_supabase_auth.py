@@ -93,10 +93,15 @@ async def test_update_password_verifies_hash_before_using_recovery_session() -> 
     requests: list[tuple[str, str, dict[str, object]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
+        payload = json.loads(request.content) if request.content else {}
         requests.append((request.method, request.url.path, payload))
         if request.url.path.endswith("/verify"):
             return httpx.Response(200, json={"access_token": "recovery-access-token"})
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"id": "7cc2c6a2-2a22-44ba-995e-f8eb8a9d4b6b"},
+            )
         assert request.headers["authorization"] == "Bearer recovery-access-token"
         return httpx.Response(200, json={})
 
@@ -122,4 +127,5 @@ async def test_update_password_verifies_hash_before_using_recovery_session() -> 
             {"token_hash": "hashed-token", "type": "recovery"},
         ),
         ("PUT", "/auth/v1/user", {"password": "UpdatedPassword123"}),
+        ("GET", "/auth/v1/user", {}),
     ]

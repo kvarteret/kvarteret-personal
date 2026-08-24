@@ -37,7 +37,7 @@ class SupabaseAuthGatewayProtocol(Protocol):
     async def update_user_password(self, auth_user_id: UUID, password: str) -> None: ...
     async def update_password_with_access_token(
         self, access_token: str, password: str
-    ) -> None: ...
+    ) -> UUID | None: ...
     async def update_password_with_token_hash(
         self, token_hash: str, verification_type: str, password: str
     ) -> UUID | None: ...
@@ -202,13 +202,19 @@ class SupabaseAuthGateway:
 
     async def update_password_with_access_token(
         self, access_token: str, password: str
-    ) -> None:
+    ) -> UUID | None:
         await self._request(
             "PUT",
             "user",
             json={"password": password},
             headers={"Authorization": f"Bearer {access_token}"},
         )
+        response = await self._request(
+            "GET",
+            "user",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        return _extract_user_id(response.json())
 
     async def update_password_with_token_hash(
         self, token_hash: str, verification_type: str, password: str
@@ -223,8 +229,7 @@ class SupabaseAuthGateway:
         access_token = response.json().get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise NotConfiguredError("Supabase did not return a recovery session.")
-        await self.update_password_with_access_token(access_token, password)
-        return _extract_user_id(response.json())
+        return await self.update_password_with_access_token(access_token, password)
 
     async def delete_user(self, auth_user_id: UUID) -> None:
         await self._request(
