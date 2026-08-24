@@ -1976,6 +1976,43 @@
         "summary": "Admin Account Impersonate"
       }
     },
+    "/admin-accounts/{account_id}/onboarding": {
+      "post": {
+        "operationId": "admin_account_resend_onboarding_admin_accounts__account_id__onboarding_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Account Resend Onboarding"
+      }
+    },
     "/api/now-playing": {
       "get": {
         "operationId": "getNowPlaying",

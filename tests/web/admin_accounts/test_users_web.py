@@ -22,6 +22,8 @@ class FakeAdminAccountsService:
         self.created_account = None
         self.deleted_account = None
         self.sent_onboarding_emails = []
+        self.completed_auth_user_ids = []
+        self.onboarding_claim_available = True
         self._details = {
             5: AdminAccountDetail(
                 user_account_id=5,
@@ -70,6 +72,19 @@ class FakeAdminAccountsService:
         self, user_account_id: int
     ) -> AdminAccountDetail | None:
         return self._details.get(user_account_id)
+
+    async def get_admin_account_detail_for_email(
+        self, email: str
+    ) -> AdminAccountDetail | None:
+        normalized = email.strip().lower()
+        return next(
+            (
+                detail
+                for detail in self._details.values()
+                if detail.email.strip().lower() == normalized
+            ),
+            None,
+        )
 
     async def update_admin_account(
         self,
@@ -128,6 +143,16 @@ class FakeAdminAccountsService:
             }
         )
 
+    async def claim_onboarding_email(
+        self, user_account_id: int, *, cooldown_seconds: int = 60
+    ) -> bool:
+        claimed = self.onboarding_claim_available
+        self.onboarding_claim_available = False
+        return claimed
+
+    async def mark_onboarding_complete(self, auth_user_id) -> None:
+        self.completed_auth_user_ids.append(auth_user_id)
+
 
 class FailingOnboardingEmailAdminAccountsService(FakeAdminAccountsService):
     async def send_onboarding_email(self, **kwargs) -> None:
@@ -149,6 +174,8 @@ class FakeSupabaseAuthGateway:
         self.updated_password_with_access_token = None
         self.updated_password_with_token_hash = None
         self.existing_user_id = None
+        self.token_hash_user_id = None
+        self.access_token_user_id = None
 
     async def sign_in_with_password(self, email: str, password: str):
         if password != "CorrectPassword123":
@@ -202,6 +229,7 @@ class FakeSupabaseAuthGateway:
         self, access_token: str, password: str
     ) -> None:
         self.updated_password_with_access_token = (access_token, password)
+        return self.access_token_user_id
 
     async def update_password_with_token_hash(
         self, token_hash: str, verification_type: str, password: str
@@ -211,6 +239,7 @@ class FakeSupabaseAuthGateway:
             verification_type,
             password,
         )
+        return self.token_hash_user_id
 
     async def delete_user(self, auth_user_id) -> None:
         self.deleted_user = auth_user_id
@@ -297,9 +326,11 @@ def test_admin_account_pages_render_for_admins() -> None:
     assert "Filtrer på brukernavn, e-post eller visningsnavn" in list_response.text
     assert new_response.status_code == 200
     assert "Opprett admin-konto" in new_response.text
-    assert "sette sitt eget passord" in new_response.text
+    assert "setter sitt eget passord" in new_response.text
     assert detail_response.status_code == 200
     assert "Lagre endringer" in detail_response.text
+    assert 'name="email"' in detail_response.text
+    assert "readonly" in detail_response.text
     assert "Logg inn som denne brukeren" in detail_response.text
     assert "Fjern admin-tilgang" in detail_response.text
     assert "2 gruppeadministrator-tilganger" in detail_response.text
@@ -410,7 +441,7 @@ def test_admin_account_create_links_existing_auth_user_without_deleting_it() -> 
     assert admin_accounts_service.created_account[0] == supabase_auth_gateway.existing_user_id
 
 
-def test_admin_account_create_cleans_up_when_email_send_fails() -> None:
+def test_admin_account_create_keeps_account_when_email_send_fails() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     admin_accounts_service = FailingOnboardingEmailAdminAccountsService()
@@ -437,8 +468,53 @@ def test_admin_account_create_cleans_up_when_email_send_fails() -> None:
         response.headers["location"]
         == "/admin-accounts/new?error=Kunne+ikke+opprette+admin-kontoen+akkurat+n%C3%A5."
     )
-    assert supabase_auth_gateway.deleted_user is not None
-    assert admin_accounts_service.deleted_account is not None
+    # The local account is committed before SMTP. An administrator can use the
+    # resend action instead of leaving an orphaned Auth identity behind.
+    assert supabase_auth_gateway.deleted_user is None
+    assert admin_accounts_service.deleted_account is None
+
+
+def test_admin_can_resend_onboarding_email_for_existing_account() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    admin_accounts_service = FakeAdminAccountsService()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        admin_accounts_service
+    )
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+    client = TestClient(app)
+
+    response = client.post("/admin-accounts/7/onboarding", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin-accounts/7"
+    assert supabase_auth_gateway.generated_link[0] == "recovery"
+    assert admin_accounts_service.sent_onboarding_emails[-1]["recipient_email"] == (
+        "sample.admin@example.test"
+    )
+
+
+def test_admin_resend_has_an_atomic_cooldown_response() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    admin_accounts_service = FakeAdminAccountsService()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    app.dependency_overrides[get_admin_accounts_service] = lambda: (
+        admin_accounts_service
+    )
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+    client = TestClient(app)
+
+    first = client.post("/admin-accounts/7/onboarding", follow_redirects=False)
+    second = client.post("/admin-accounts/7/onboarding", follow_redirects=False)
+
+    assert first.status_code == 303
+    assert second.status_code == 303
+    assert second.headers["location"].startswith(
+        "/admin-accounts/7?error=En+oppsettslenke+ble+sendt+nylig"
+    )
+    assert len(admin_accounts_service.sent_onboarding_emails) == 1
 
 
 def test_my_account_password_change_updates_password() -> None:
@@ -600,6 +676,30 @@ def test_set_password_redirects_to_login_after_success() -> None:
     )
 
 
+def test_access_token_password_setup_marks_admin_onboarding_complete() -> None:
+    app = create_app()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    supabase_auth_gateway.access_token_user_id = uuid4()
+    admin_accounts_service = FakeAdminAccountsService()
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+
+    response = TestClient(app).post(
+        "/set-password",
+        data={
+            "access_token": "access-token-123",
+            "password": "UpdatedPassword123",
+            "confirm_password": "UpdatedPassword123",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert admin_accounts_service.completed_auth_user_ids == [
+        supabase_auth_gateway.access_token_user_id
+    ]
+
+
 def test_set_password_verifies_recovery_token_hash_on_submit() -> None:
     app = create_app()
     supabase_auth_gateway = FakeSupabaseAuthGateway()
@@ -622,6 +722,31 @@ def test_set_password_verifies_recovery_token_hash_on_submit() -> None:
         "recovery",
         "UpdatedPassword123",
     )
+
+
+def test_set_password_marks_admin_onboarding_complete() -> None:
+    app = create_app()
+    supabase_auth_gateway = FakeSupabaseAuthGateway()
+    supabase_auth_gateway.token_hash_user_id = uuid4()
+    admin_accounts_service = FakeAdminAccountsService()
+    app.dependency_overrides[get_supabase_auth_gateway] = lambda: supabase_auth_gateway
+    app.dependency_overrides[get_admin_accounts_service] = lambda: admin_accounts_service
+
+    response = TestClient(app).post(
+        "/set-password",
+        data={
+            "token_hash": "hashed-recovery-token",
+            "verification_type": "recovery",
+            "password": "UpdatedPassword123",
+            "confirm_password": "UpdatedPassword123",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert admin_accounts_service.completed_auth_user_ids == [
+        supabase_auth_gateway.token_hash_user_id
+    ]
 
 
 def test_set_password_missing_token_returns_form_error_instead_of_422() -> None:

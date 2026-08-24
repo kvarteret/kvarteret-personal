@@ -73,6 +73,17 @@ class LoginService:
             )
             raise LoginError("Invalid credentials.")
 
+        mark_onboarding_complete = getattr(
+            self.repository, "mark_onboarding_complete", None
+        )
+        if mark_onboarding_complete is not None:
+            try:
+                await mark_onboarding_complete(auth_user_id)
+            except Exception:
+                # A status-write failure must not turn a valid Auth login into
+                # a failed login. The next successful login can repair it.
+                logger.exception("Failed to mark admin onboarding complete.")
+
         session = await self.session_store.create_session(
             auth_user_id=auth_user_id,
             user_account_id=account.id,

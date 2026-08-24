@@ -56,6 +56,20 @@
             <dd class="mt-1 text-stone-900">{{ admin_account.last_login.strftime('%Y-%m-%d %H:%M') if admin_account.last_login else 'Aldri' }}</dd>
           </div>
           <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Kontostatus</dt>
+            <dd class="mt-1 text-stone-900">
+              {% if admin_account.onboarding_status == 'pending' %}
+                Venter på passordoppsett
+              {% else %}
+                Aktiv
+              {% endif %}
+            </dd>
+          </div>
+          <div class="border-b border-stone-300 pb-3">
+            <dt class="text-sm text-stone-500">Siste oppsettslenke</dt>
+            <dd class="mt-1 text-stone-900">{{ admin_account.onboarding_last_sent_at.strftime('%Y-%m-%d %H:%M') if admin_account.onboarding_last_sent_at else 'Ikke sendt' }}</dd>
+          </div>
+          <div class="border-b border-stone-300 pb-3">
             <dt class="text-sm text-stone-500">Gruppeadmin</dt>
             <dd class="mt-1 text-stone-900">
               {% if admin_account.group_admin_group_ids %}
@@ -70,6 +84,16 @@
         {% if can_edit_profile %}
           <div class="flex flex-wrap gap-3">
             <button class="app-button" type="submit">Lagre endringer</button>
+            {% if section == "admin-accounts" %}
+              <button
+                class="app-button-secondary"
+                formaction="/admin-accounts/{{ admin_account.user_account_id }}/onboarding"
+                formmethod="post"
+                type="submit"
+              >
+                Send oppsettslenke på nytt
+              </button>
+            {% endif %}
             {% if section == "admin-accounts" and current_user.role == "Admin" and current_user.user_account_id != admin_account.user_account_id %}
               <button
                 class="app-button-secondary"

@@ -32,3 +32,6 @@ class AdminAccountDetail:
     created_at: datetime
     migrated_at: datetime | None
     group_admin_group_ids: list[int]
+    onboarding_status: str = "active"
+    onboarding_last_sent_at: datetime | None = None
+    activated_at: datetime | None = None

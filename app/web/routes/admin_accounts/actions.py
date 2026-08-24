@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 
 from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
+from app.db.session import commit_request_session
 from app.dependencies import (
     get_admin_accounts_service,
     get_mobile_card_april_state_service,
@@ -231,12 +232,23 @@ async def admin_account_create(
     auth_user_created = False
     admin_account = None
     setup_url = None
+    state_committed = False
     try:
         normalized_username = username.strip()
         normalized_display_name = (
             display_name.strip() if display_name and display_name.strip() else None
         )
         normalized_email = email.strip().lower()
+        existing_admin_account = (
+            await admin_accounts_service.get_admin_account_detail_for_email(
+                normalized_email
+            )
+        )
+        if existing_admin_account is not None:
+            return _redirect_with_error(
+                _ADMIN_ACCOUNTS_NEW_PATH,
+                "Admin-kontoen finnes allerede. Bruk oppsettslenken på nytt fra kontosiden.",
+            )
         auth_user_id = await supabase_auth_gateway.find_user_id_by_email(
             normalized_email
         )
@@ -268,49 +280,60 @@ async def admin_account_create(
             display_name=display_name,
             role=role_value,
         )
-        setup_url = await supabase_auth_gateway.generate_link(
-            link_type="recovery",
-            email=normalized_email,
-            redirect_to=_build_onboarding_redirect_url(
-                request, settings.app_public_base_url
-            ),
+        should_send_onboarding_email = (
+            await admin_accounts_service.claim_onboarding_email(
+                admin_account.user_account_id
+            )
         )
-        await admin_accounts_service.send_onboarding_email(
-            recipient_email=normalized_email,
-            setup_url=setup_url,
-            display_name=normalized_display_name,
-            username=normalized_username,
-            role_name=role_value.value,
-        )
+        if should_send_onboarding_email:
+            setup_url = await supabase_auth_gateway.generate_link(
+                link_type="recovery",
+                email=normalized_email,
+                redirect_to=_build_onboarding_redirect_url(
+                    request, settings.app_public_base_url
+                ),
+            )
+        await commit_request_session()
+        state_committed = True
+        if should_send_onboarding_email:
+            await admin_accounts_service.send_onboarding_email(
+                recipient_email=normalized_email,
+                setup_url=setup_url,
+                display_name=normalized_display_name,
+                username=normalized_username,
+                role_name=role_value.value,
+            )
     except NotConfiguredError as exc:
-        await _cleanup_failed_admin_creation(
-            admin_accounts_service,
-            supabase_auth_gateway,
-            admin_account=admin_account,
-            auth_user_id=auth_user_id,
-            auth_user_created=auth_user_created,
-            context="admin onboarding configuration failure",
-        )
+        if not state_committed:
+            await _cleanup_failed_admin_creation(
+                admin_accounts_service,
+                supabase_auth_gateway,
+                admin_account=admin_account,
+                auth_user_id=auth_user_id,
+                auth_user_created=auth_user_created,
+                context="admin onboarding configuration failure",
+            )
         return _redirect_with_error(_ADMIN_ACCOUNTS_NEW_PATH, str(exc))
     except ValueError as exc:
-        await _cleanup_failed_admin_creation(
-            admin_accounts_service,
-            supabase_auth_gateway,
-            admin_account=admin_account,
-            auth_user_id=auth_user_id,
-            auth_user_created=auth_user_created,
-            context="admin-account validation failure",
-        )
+        if not state_committed:
+            await _cleanup_failed_admin_creation(
+                admin_accounts_service,
+                supabase_auth_gateway,
+                admin_account=admin_account,
+                auth_user_id=auth_user_id,
+                auth_user_created=auth_user_created,
+                context="admin-account validation failure",
+            )
         return _redirect_with_error(_ADMIN_ACCOUNTS_NEW_PATH, str(exc))
     except Exception:
-        if admin_account is not None:
+        if not state_committed and admin_account is not None:
             await _best_effort_delete_admin_account(
                 admin_accounts_service,
                 user_account_id=admin_account.user_account_id,
                 auth_user_id=admin_account.auth_user_id,
                 context="admin-account creation failure",
             )
-        if auth_user_id is not None and auth_user_created:
+        if not state_committed and auth_user_id is not None and auth_user_created:
             await _best_effort_delete_auth_user(
                 supabase_auth_gateway,
                 auth_user_id,
@@ -335,6 +358,58 @@ async def admin_account_create(
         },
     )
     return redirect_to(f"/admin-accounts/{admin_account.user_account_id}")
+
+
+@router.post("/admin-accounts/{account_id}/onboarding")
+async def admin_account_resend_onboarding(
+    request: Request,
+    account_id: int,
+    current_user=Depends(require_admin_user),
+    admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
+    settings=Depends(get_settings),
+    supabase_auth_gateway=Depends(get_supabase_auth_gateway),
+):
+    admin_account = await admin_accounts_service.get_admin_account_detail(account_id)
+    if admin_account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
+        )
+    try:
+        if not await admin_accounts_service.claim_onboarding_email(account_id):
+            return _redirect_with_error(
+                f"/admin-accounts/{account_id}",
+                "En oppsettslenke ble sendt nylig. Vent litt før du ber om en ny.",
+            )
+        setup_url = await supabase_auth_gateway.generate_link(
+            link_type="recovery",
+            email=admin_account.email,
+            redirect_to=_build_onboarding_redirect_url(
+                request, settings.app_public_base_url
+            ),
+        )
+        await commit_request_session()
+        await admin_accounts_service.send_onboarding_email(
+            recipient_email=admin_account.email,
+            setup_url=setup_url,
+            display_name=admin_account.display_name,
+            username=admin_account.username,
+            role_name=admin_account.role.value,
+        )
+    except Exception:
+        logger.exception("Failed to resend admin onboarding email %s.", account_id)
+        return _redirect_with_error(
+            f"/admin-accounts/{account_id}",
+            "Kunne ikke sende oppsettslenken akkurat nå.",
+        )
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="admin_account.onboarding_resend",
+        subject_type="admin_account",
+        subject_id=account_id,
+        details={"delivery": "smtp_onboarding_email"},
+    )
+    return redirect_to(f"/admin-accounts/{account_id}")
 
 
 @router.patch("/admin-accounts/{account_id}")
