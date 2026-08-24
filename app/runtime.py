@@ -228,6 +228,7 @@ def build_application_container(
             auth_gateway=supabase_auth_gateway,
             email_sender=email_sender,
             email_renderer=password_reset_email_renderer,
+            admin_account_repository=AdminAccountsRepository(),
         ),
         volunteers_service=volunteers_service,
         role_assignments_service=RoleAssignmentsService(

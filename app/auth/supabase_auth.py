@@ -13,6 +13,10 @@ _API_VERSION_HEADER = "X-Supabase-Api-Version"
 _API_VERSION = "2024-01-01"
 
 
+class RecoveryTokenError(ValueError):
+    """The one-time recovery token is invalid, expired, or already consumed."""
+
+
 class SupabaseAuthGatewayProtocol(Protocol):
     async def sign_in_with_password(self, email: str, password: str) -> UUID | None: ...
     async def find_user_id_by_email(self, email: str) -> UUID | None: ...
@@ -216,11 +220,18 @@ class SupabaseAuthGateway:
     ) -> UUID | None:
         if verification_type != "recovery":
             raise ValueError("Unsupported password setup verification type.")
-        response = await self._request(
-            "POST",
-            "verify",
-            json={"token_hash": token_hash, "type": verification_type},
-        )
+        try:
+            response = await self._request(
+                "POST",
+                "verify",
+                json={"token_hash": token_hash, "type": verification_type},
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in {400, 401, 403, 404}:
+                raise RecoveryTokenError(
+                    "The recovery link is expired, invalid, or already used."
+                ) from exc
+            raise
         access_token = response.json().get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise NotConfiguredError("Supabase did not return a recovery session.")

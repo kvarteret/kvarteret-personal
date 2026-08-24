@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginError, LoginService
+from app.auth.supabase_auth import RecoveryTokenError
 from app.auth.password_reset_service import (
     PasswordResetRequest,
     PasswordResetServiceProtocol,
@@ -381,6 +382,12 @@ async def set_password_submit(
                 )
             if auth_user_id is not None:
                 await admin_accounts_service.mark_onboarding_complete(auth_user_id)
+        except RecoveryTokenError:
+            logger.info("Recovery token was invalid, expired, or already used.")
+            error_message = (
+                "Denne lenken er utløpt eller allerede brukt. Be om en ny lenke "
+                "for å sette passordet på nytt."
+            )
         except Exception:
             logger.exception("Failed to set password from onboarding link.")
             error_message = "Kunne ikke sette passordet akkurat nå."
