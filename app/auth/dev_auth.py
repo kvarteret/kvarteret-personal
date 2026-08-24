@@ -51,6 +51,11 @@ class DevAuthGateway:
             return dev_auth_user_id(email)
         return None
 
+    async def find_user_id_by_email(self, email: str) -> UUID | None:
+        if email.strip().lower() == self._email:
+            return dev_auth_user_id(email)
+        return None
+
     # Account-management operations succeed with deterministic ids so the
     # admin-accounts UI remains usable against the local database.
     async def create_user(

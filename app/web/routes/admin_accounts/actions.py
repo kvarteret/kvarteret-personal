@@ -70,6 +70,7 @@ async def _cleanup_failed_admin_creation(
     *,
     admin_account,
     auth_user_id: str | None,
+    auth_user_created: bool,
     context: str,
 ) -> None:
     if admin_account is not None:
@@ -79,7 +80,7 @@ async def _cleanup_failed_admin_creation(
             auth_user_id=admin_account.auth_user_id,
             context=context,
         )
-    if auth_user_id is not None:
+    if auth_user_id is not None and auth_user_created:
         await _best_effort_delete_auth_user(
             supabase_auth_gateway,
             auth_user_id,
@@ -134,6 +135,11 @@ async def my_account_update(
         )
     try:
         role_value = UserRole(role)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_ROLE
+        ) from exc
+    try:
         admin_account = await admin_accounts_service.update_admin_account(
             user_account_id=current_user.user_account_id,
             username=username,
@@ -143,7 +149,7 @@ async def my_account_update(
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_ROLE
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
     if admin_account is None:
         raise HTTPException(
@@ -222,6 +228,7 @@ async def admin_account_create(
         ) from exc
 
     auth_user_id = None
+    auth_user_created = False
     admin_account = None
     setup_url = None
     try:
@@ -229,31 +236,47 @@ async def admin_account_create(
         normalized_display_name = (
             display_name.strip() if display_name and display_name.strip() else None
         )
-        auth_user_id = await supabase_auth_gateway.create_user(
-            email=email.strip(),
-            password=secrets.token_urlsafe(24),
-            metadata={
-                "username": normalized_username,
-                "display_name": normalized_display_name,
-                "role": role_value.value,
-            },
+        normalized_email = email.strip().lower()
+        auth_user_id = await supabase_auth_gateway.find_user_id_by_email(
+            normalized_email
         )
+        if auth_user_id is None:
+            try:
+                auth_user_id = await supabase_auth_gateway.create_user(
+                    email=normalized_email,
+                    password=secrets.token_urlsafe(24),
+                    metadata={
+                        "username": normalized_username,
+                        "display_name": normalized_display_name,
+                        "role": role_value.value,
+                    },
+                )
+                auth_user_created = True
+            except Exception:
+                # Another request may have created the Auth identity between
+                # the lookup and create call. Reconcile before surfacing a
+                # provider error, and never delete that pre-existing identity.
+                auth_user_id = await supabase_auth_gateway.find_user_id_by_email(
+                    normalized_email
+                )
+                if auth_user_id is None:
+                    raise
         admin_account = await admin_accounts_service.create_admin_account(
             auth_user_id=auth_user_id,
             username=username,
-            email=email,
+            email=normalized_email,
             display_name=display_name,
             role=role_value,
         )
         setup_url = await supabase_auth_gateway.generate_link(
             link_type="recovery",
-            email=email.strip(),
+            email=normalized_email,
             redirect_to=_build_onboarding_redirect_url(
                 request, settings.app_public_base_url
             ),
         )
         await admin_accounts_service.send_onboarding_email(
-            recipient_email=email.strip(),
+            recipient_email=normalized_email,
             setup_url=setup_url,
             display_name=normalized_display_name,
             username=normalized_username,
@@ -265,6 +288,7 @@ async def admin_account_create(
             supabase_auth_gateway,
             admin_account=admin_account,
             auth_user_id=auth_user_id,
+            auth_user_created=auth_user_created,
             context="admin onboarding configuration failure",
         )
         return _redirect_with_error(_ADMIN_ACCOUNTS_NEW_PATH, str(exc))
@@ -274,6 +298,7 @@ async def admin_account_create(
             supabase_auth_gateway,
             admin_account=admin_account,
             auth_user_id=auth_user_id,
+            auth_user_created=auth_user_created,
             context="admin-account validation failure",
         )
         return _redirect_with_error(_ADMIN_ACCOUNTS_NEW_PATH, str(exc))
@@ -285,7 +310,7 @@ async def admin_account_create(
                 auth_user_id=admin_account.auth_user_id,
                 context="admin-account creation failure",
             )
-        if auth_user_id is not None:
+        if auth_user_id is not None and auth_user_created:
             await _best_effort_delete_auth_user(
                 supabase_auth_gateway,
                 auth_user_id,
@@ -326,6 +351,11 @@ async def admin_account_update(
 ):
     try:
         role_value = UserRole(role)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_ROLE
+        ) from exc
+    try:
         admin_account = await admin_accounts_service.update_admin_account(
             user_account_id=account_id,
             username=username,
@@ -334,9 +364,7 @@ async def admin_account_update(
             role=role_value,
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_ROLE
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if admin_account is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
@@ -445,7 +473,6 @@ async def admin_account_delete(
     account_id: int,
     current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
-    supabase_auth_gateway=Depends(get_supabase_auth_gateway),
 ):
     if current_user.user_account_id == account_id:
         return _redirect_with_error(
@@ -459,7 +486,6 @@ async def admin_account_delete(
         )
 
     try:
-        await supabase_auth_gateway.delete_user(admin_account.auth_user_id)
         await admin_accounts_service.delete_admin_account(
             user_account_id=admin_account.user_account_id,
             auth_user_id=admin_account.auth_user_id,

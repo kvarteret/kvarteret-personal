@@ -46,6 +46,49 @@ async def test_generate_link_returns_scanner_safe_password_setup_link() -> None:
 
 
 @pytest.mark.asyncio
+async def test_find_user_id_by_email_walks_admin_user_pages() -> None:
+    requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(dict(request.url.params))
+        page = request.url.params.get("page")
+        if page == "1":
+            users = [
+                {
+                    "id": "f2f6f0ac-6f0c-4e4f-b3a2-9bc0713b5d5a",
+                    "email": f"other-{index}@example.com",
+                }
+                for index in range(1000)
+            ]
+        elif page == "2":
+            users = [
+                {"id": "7cc2c6a2-2a22-44ba-995e-f8eb8a9d4b6b", "email": "ADMIN@example.com"}
+            ]
+        else:
+            users = []
+        return httpx.Response(200, json={"users": users})
+
+    gateway = SupabaseAuthGateway(
+        Settings(
+            supabase_url="https://project.supabase.co",
+            supabase_secret_key="service-role-key",
+        ),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    try:
+        auth_user_id = await gateway.find_user_id_by_email(" admin@example.com ")
+    finally:
+        await gateway.aclose()
+
+    assert str(auth_user_id) == "7cc2c6a2-2a22-44ba-995e-f8eb8a9d4b6b"
+    assert requests == [
+        {"page": "1", "per_page": "1000"},
+        {"page": "2", "per_page": "1000"},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_update_password_verifies_hash_before_using_recovery_session() -> None:
     requests: list[tuple[str, str, dict[str, object]]] = []
 

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.roles import UserRole
 from app.db.repository import SqlAlchemyRepository
@@ -125,19 +126,42 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         return int(user_account_id) if user_account_id is not None else None
 
     async def check_username_or_email_exists(
-        self, *, username: str, email: str
+        self,
+        *,
+        username: str,
+        email: str,
+        exclude_user_account_id: int | None = None,
     ) -> bool:
+        conditions = [
+            func.lower(user_accounts.c.username) == username.strip().lower(),
+            func.lower(user_accounts.c.email) == email.strip().lower(),
+        ]
         stmt = (
             select(user_accounts.c.id)
-            .where(
-                or_(
-                    user_accounts.c.username == username,
-                    user_accounts.c.email == email,
-                )
-            )
+            .where(or_(*conditions))
             .limit(1)
         )
+        if exclude_user_account_id is not None:
+            stmt = stmt.where(user_accounts.c.id != exclude_user_account_id)
         return await self.fetch_scalar(stmt) is not None
+
+    async def find_user_account_id_by_email(self, email: str) -> int | None:
+        stmt = (
+            select(user_accounts.c.id)
+            .where(func.lower(user_accounts.c.email) == email.strip().lower())
+            .limit(1)
+        )
+        user_account_id = await self.fetch_scalar(stmt)
+        return int(user_account_id) if user_account_id is not None else None
+
+    async def find_user_account_id_by_username(self, username: str) -> int | None:
+        stmt = (
+            select(user_accounts.c.id)
+            .where(func.lower(user_accounts.c.username) == username.strip().lower())
+            .limit(1)
+        )
+        user_account_id = await self.fetch_scalar(stmt)
+        return int(user_account_id) if user_account_id is not None else None
 
     async def create_admin_account(
         self,
@@ -147,21 +171,27 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         email: str,
         display_name: str | None,
         role: UserRole,
-    ) -> int:
-        row = await self.execute_one_mapping(
-            insert(user_accounts)
-            .values(
-                auth_user_id=auth_user_id,
-                username=username,
-                email=email,
-                display_name=display_name,
-                role=role.value,
-                created_at=func.current_timestamp(),
-                updated_at=func.current_timestamp(),
-            )
-            .returning(user_accounts.c.id)
-        )
-        return row["id"]
+    ) -> int | None:
+        try:
+            async with self.session.begin_nested():
+                row = await self.execute_one_mapping(
+                    insert(user_accounts)
+                    .values(
+                        auth_user_id=auth_user_id,
+                        username=username,
+                        email=email,
+                        display_name=display_name,
+                        role=role.value,
+                        created_at=func.current_timestamp(),
+                        updated_at=func.current_timestamp(),
+                    )
+                    .returning(user_accounts.c.id)
+                )
+                return int(row["id"])
+        except IntegrityError:
+            # A concurrent request may have won the unique identity/email/
+            # username race. The service reconciles the committed row below.
+            return None
 
     async def update_admin_account(
         self,
