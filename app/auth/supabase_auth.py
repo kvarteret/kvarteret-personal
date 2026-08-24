@@ -203,15 +203,10 @@ class SupabaseAuthGateway:
     async def update_password_with_access_token(
         self, access_token: str, password: str
     ) -> UUID | None:
-        await self._request(
+        response = await self._request(
             "PUT",
             "user",
             json={"password": password},
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        response = await self._request(
-            "GET",
-            "user",
             headers={"Authorization": f"Bearer {access_token}"},
         )
         return _extract_user_id(response.json())
