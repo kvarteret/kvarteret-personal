@@ -2361,7 +2361,7 @@
             }
           },
           {
-            "description": "Opaque v1 HMAC of the caller IP. Required for v2 signatures; the raw IP must not be forwarded.",
+            "description": "Opaque v1 HMAC of the browser-scoped client identity. Required for v2 signatures; the raw IP must not be forwarded.",
             "in": "header",
             "name": "X-Kvarteret-Client-Key",
             "required": false,
@@ -2494,7 +2494,7 @@
             "description": "Malformed JSON or a request field failed validation."
           },
           "429": {
-            "description": "A route-wide, client, or normalized-email limit was exceeded."
+            "description": "A route-wide or client limit was exceeded."
           },
           "503": {
             "description": "HMAC authentication or replay protection is unavailable."

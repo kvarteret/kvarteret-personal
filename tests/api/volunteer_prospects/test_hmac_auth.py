@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -19,6 +21,12 @@ from app.dependencies import (
     get_rate_limiter,
     get_settings,
     get_volunteer_applications_service,
+)
+from app.domain.volunteer_applications.models import VolunteerProspectIdempotencyConflictError
+from app.domain.volunteer_applications.service import (
+    ActiveVolunteerRegistrationExistsError,
+    VolunteerAlreadyExistsError,
+    VolunteerApplicationFieldConflictError,
 )
 
 HMAC_SECRET = "test-shared-secret-0123456789abcdef"
@@ -50,6 +58,7 @@ class FakeVolunteerApplicationsService:
         self.calls = 0
         self.idempotency_keys = []
         self.request_hashes = []
+        self.error: Exception | None = None
 
     async def create_public_prospect_registration(
         self,
@@ -62,6 +71,8 @@ class FakeVolunteerApplicationsService:
         self.calls += 1
         self.idempotency_keys.append(idempotency_key)
         self.request_hashes.append(request_hash)
+        if self.error is not None:
+            raise self.error
         return SimpleNamespace(registration_id=42)
 
 
@@ -169,6 +180,64 @@ def test_signed_prospect_request_is_accepted() -> None:
     assert len(service.idempotency_keys) == 1
     assert service.idempotency_keys[0] is not None
     assert len(service.request_hashes[0]) == 64
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_fields"),
+    [
+        (
+            VolunteerAlreadyExistsError(10232, "existing@example.com"),
+            {"conflict_type": "existing_volunteer", "volunteer_id": 10232},
+        ),
+        (
+            ActiveVolunteerRegistrationExistsError(77, "applicant@example.com"),
+            {"conflict_type": "active_application", "registration_id": 77},
+        ),
+        (
+            VolunteerApplicationFieldConflictError(
+                "Friend conflict",
+                {"friendEmails": {"0": "Already a volunteer."}},
+                conflict_type="friend_email_existing_volunteer",
+                volunteer_id=10232,
+            ),
+            {
+                "conflict_type": "friend_email_existing_volunteer",
+                "volunteer_id": 10232,
+            },
+        ),
+        (
+            VolunteerProspectIdempotencyConflictError(
+                "Idempotency key was already used with different request content."
+            ),
+            {"conflict_type": "idempotency_key_content_mismatch"},
+        ),
+    ],
+)
+def test_prospect_conflicts_log_searchable_related_ids(
+    caplog: pytest.LogCaptureFixture,
+    error: Exception,
+    expected_fields: dict[str, object],
+) -> None:
+    app, service = _build_app()
+    service.error = error
+    body = _encoded_payload()
+
+    with caplog.at_level(logging.WARNING, logger="app.api.v1.volunteer_prospects"):
+        response = TestClient(app).post(
+            VOLUNTEER_PROSPECT_PATH,
+            content=body,
+            headers=_signed_headers(body),
+        )
+
+    assert response.status_code == 409
+    record = next(
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "volunteer.prospect.conflict"
+    )
+    assert all(record.event_data[key] == value for key, value in expected_fields.items())
+    assert "existing@example.com" not in caplog.text
+    assert "applicant@example.com" not in caplog.text
 
 
 def test_legacy_v1_signed_prospect_request_remains_accepted_for_rollout() -> None:
@@ -414,11 +483,10 @@ def test_client_rate_limit_is_keyed_by_signed_pseudonymous_client() -> None:
     assert service.calls == 1
 
 
-def test_email_rate_limit_uses_normalized_address() -> None:
+def test_same_email_is_not_rate_limited() -> None:
     app, service = _build_app(
         volunteer_prospect_route_limit=10,
         volunteer_prospect_client_limit=10,
-        volunteer_prospect_email_limit=1,
     )
     client = TestClient(app)
     first_body = _encoded_payload()
@@ -436,6 +504,5 @@ def test_email_rate_limit_uses_normalized_address() -> None:
     )
 
     assert first.status_code == 201
-    assert second.status_code == 429
-    assert second.headers["Retry-After"] == "3600"
-    assert service.calls == 1
+    assert second.status_code == 201
+    assert service.calls == 2

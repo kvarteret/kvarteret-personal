@@ -77,6 +77,25 @@ def test_client_error_allowlist_keeps_only_declared_fields_and_redacts() -> None
     assert "error_source" in fields
 
 
+def test_prospect_conflict_allowlist_keeps_related_ids_only() -> None:
+    fields = sanitize_fields(
+        "volunteer.prospect.conflict",
+        {
+            "conflict_type": "existing_volunteer",
+            "volunteer_id": 10232,
+            "registration_id": 77,
+            "email": "sentinel@example.com",
+            "detail": "sentinel@example.com",
+        },
+    )
+
+    assert fields == {
+        "conflict_type": "existing_volunteer",
+        "volunteer_id": 10232,
+        "registration_id": 77,
+    }
+
+
 def test_json_formatter_does_not_export_exception_text() -> None:
     try:
         raise ValueError("sentinel@example.com Bearer top-secret")

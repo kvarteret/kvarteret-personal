@@ -178,7 +178,7 @@ Supabase Postgres is the primary database; this repository owns the schema throu
 
 - Admin UI: signed session cookies backed by server-side `web_sessions` rows; Supabase Auth verifies admin passwords (consolidation into the app is a tracked follow-up, ADR-002). CSRF double-submit validation guards web mutations.
 - Mobile app: signed bearer tokens issued by `MobileCardService` identify a verified volunteer for a bounded lifetime, with renewal near expiry. Access codes are single-use and stored only as HMAC-SHA256 hashes keyed by the app secret.
-- Rate limiting lives in Postgres (`rate_limits` table), so it actually holds on serverless: per-email/per-source mobile-card limits and the admin login throttle share one mechanism.
+- Rate limiting lives in Postgres (`rate_limits` table), so it actually holds on serverless: route/client volunteer-prospect limits, per-source mobile-card limits, and the admin login throttle share one mechanism.
 - Every response carries security headers (HSTS in production, nosniff, frame denial, referrer policy, and a CSP on HTML).
 
 ## Deployment Shape

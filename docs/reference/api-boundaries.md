@@ -128,13 +128,13 @@ trailing newline:
     /api/v1/volunteer-prospects
     <SHA-256 hex digest of the exact body bytes>
 
-The client key is `v1=` plus the lowercase HMAC-SHA256 hex digest of the
-canonical client IP, keyed with the website-only
-`VOLUNTEER_PROSPECT_CLIENT_KEY_SECRET`. The website derives it from
-Vercel-owned forwarding headers and never forwards, logs, or stores the raw IP.
-The separate client-key secret must not be shared with Personal or exposed to
-the browser. Because the client key is bound into the server-to-server v2
-signature, a browser cannot choose a new key to evade the limit.
+The client key is an opaque `v1=` HMAC-SHA256 pseudonym derived by the website
+from a browser-scoped visitor identifier when available, with a trusted IP and
+user-agent fallback. The website never forwards, logs, or stores the raw
+identity material. The separate client-key secret must not be shared with
+Personal or exposed to the browser. Because the client key is bound into the
+server-to-server v2 signature, a browser cannot choose a new key to evade the
+limit through the Personal API.
 
 Personal permits at most five minutes of clock skew and consumes each verified
 nonce once through the Postgres-backed rate limiter. Missing, stale, altered,
@@ -148,12 +148,11 @@ email 254, phone 16, study institution 160, background details 2,000, each
 choice slug 100, each friend email 254, and two friend emails. The website uses
 matching or narrower limits for first and last names.
 
-Every authenticated request counts against a shared Postgres fixed-window
-route limit. V2 requests also count against the opaque client key, and valid
-JSON requests count against an HMAC-keyed normalized-email limit. Defaults are
-120 requests per route per minute, 10 per client per ten minutes, and 3 per
-email per hour. Exceeding a limit returns `429` with `Retry-After`; a limiter
-storage failure fails closed with `503`.
+Every authenticated request counts against a shared Postgres fixed-window route
+limit. V2 requests also count against the opaque client key. Defaults are 120
+requests per route per minute and 10 per client per ten minutes. Exceeding a
+limit returns `429` with `Retry-After`; a limiter storage failure fails closed
+with `503`.
 
 The idempotency UUID and an application-secret-keyed HMAC of the normalized
 payload are stored transactionally with prospect creation. Reusing a key with
