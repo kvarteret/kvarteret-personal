@@ -27,8 +27,6 @@ class Settings(BaseSettings):
     volunteer_prospect_route_window_seconds: int = Field(default=60, gt=0)
     volunteer_prospect_client_limit: int = Field(default=10, gt=0)
     volunteer_prospect_client_window_seconds: int = Field(default=600, gt=0)
-    volunteer_prospect_email_limit: int = Field(default=3, gt=0)
-    volunteer_prospect_email_window_seconds: int = Field(default=3600, gt=0)
     supabase_url: str | None = Field(default=None)
     supabase_secret_key: str | None = Field(default=None)
     azure_blob_connection_string: str | None = Field(default=None)

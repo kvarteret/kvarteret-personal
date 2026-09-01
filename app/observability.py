@@ -86,6 +86,7 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
         {"operation", "limit", "semester_code", "query_present"}
     ),
     "email.delivery": frozenset({"lease_owner"}),
+    "volunteer.prospect.conflict": frozenset({"conflict_type"}),
     "web.client_error": frozenset(
         {"error_type", "error_text", "error_source"}
     ),

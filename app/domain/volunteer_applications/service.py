@@ -55,7 +55,7 @@ _PUBLIC_PROSPECT_ROLE_ROUTES = {
     "kokkegruppen": ("skjenke-gruppen", "Kokk", "Kokkegruppen"),
     "stjernebarn": ("skjenke-gruppen", "Stjernebarn", "Stjernebarn"),
     "stjernesalen": ("skjenke-gruppen", "Stjernebarn", "Stjernesalen"),
-    "quiz-gruppen": ("kultur", None, "Quiz-gruppen"),
+    "quiz-gruppen": ("quiz", None, "Quiz-gruppen"),
 }
 
 
@@ -705,19 +705,21 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
     async def _assert_friend_emails_available(self, friend_emails: list[str]) -> None:
         for index, friend_email in enumerate(friend_emails):
-            is_already_volunteer = (await self.repository.find_volunteer_id_by_email(friend_email)) is not None
-            if is_already_volunteer:
+            volunteer_id = await self.repository.find_volunteer_id_by_email(friend_email)
+            if volunteer_id is not None:
                 raise VolunteerApplicationFieldConflictError(
                     "Én av vennene er allerede frivillig.",
                     {"friendEmails": {str(index): "Denne e-postadressen tilhører allerede en frivillig."}},
+                    conflict_type="friend_email_existing_volunteer",
+                    volunteer_id=volunteer_id,
                 )
-            has_active_registration = (
-                await self.repository.find_active_registration_id_by_email(friend_email)
-            ) is not None
-            if has_active_registration:
+            registration_id = await self.repository.find_active_registration_id_by_email(friend_email)
+            if registration_id is not None:
                 raise VolunteerApplicationFieldConflictError(
                     "Én av vennene har allerede en is_active søknad.",
                     {"friendEmails": {str(index): "Denne e-postadressen har allerede en is_active søknad."}},
+                    conflict_type="friend_email_active_application",
+                    registration_id=registration_id,
                 )
 
     def _require_photo_processor(self) -> PhotoProcessorProtocol:
