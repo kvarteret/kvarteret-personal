@@ -51,8 +51,19 @@ class VolunteerApplicationFieldValidationError(VolunteerApplicationValidationErr
 
 
 class VolunteerApplicationFieldConflictError(VolunteerApplicationConflictError):
-    def __init__(self, message: str, field_errors: dict[str, object]) -> None:
+    def __init__(
+        self,
+        message: str,
+        field_errors: dict[str, object],
+        *,
+        conflict_type: str | None = None,
+        volunteer_id: int | None = None,
+        registration_id: int | None = None,
+    ) -> None:
         self.field_errors = field_errors
+        self.conflict_type = conflict_type
+        self.volunteer_id = volunteer_id
+        self.registration_id = registration_id
         super().__init__(message)
 
 

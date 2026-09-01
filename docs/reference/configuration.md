@@ -18,8 +18,6 @@ Do not commit real secrets. The checked-in `.env.example` should contain names a
 | `VOLUNTEER_PROSPECT_ROUTE_WINDOW_SECONDS` | `60` | Route-wide volunteer-prospect fixed-window duration. |
 | `VOLUNTEER_PROSPECT_CLIENT_LIMIT` | `10` | Volunteer-prospect requests allowed for one opaque client key per window. |
 | `VOLUNTEER_PROSPECT_CLIENT_WINDOW_SECONDS` | `600` | Per-client volunteer-prospect fixed-window duration. |
-| `VOLUNTEER_PROSPECT_EMAIL_LIMIT` | `3` | Volunteer-prospect requests allowed for one normalized email per window. |
-| `VOLUNTEER_PROSPECT_EMAIL_WINDOW_SECONDS` | `3600` | Per-email volunteer-prospect fixed-window duration. |
 | `LOG_LEVEL` | `INFO` | Application log level. |
 | `DEV_ADMIN_EMAIL` | unset | Development-harness admin email. Refused unless `APP_ENV=development`. |
 | `DEV_ADMIN_PASSWORD` | unset | Development-harness admin password. Refused unless `APP_ENV=development`. |

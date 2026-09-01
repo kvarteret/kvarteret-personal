@@ -15,12 +15,11 @@ from app.api.request_auth import (
     require_signed_volunteer_prospect,
 )
 from app.config import Settings
-from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.dependencies import (
-    get_rate_limiter,
     get_settings,
     get_volunteer_applications_service,
 )
+from app.domain.volunteer_applications.models import VolunteerProspectIdempotencyConflictError
 from app.domain.volunteer_applications.service import (
     ActiveVolunteerRegistrationExistsError,
     PublicProspectRegistrationInput,
@@ -36,6 +35,29 @@ from app.shared.phone_numbers import normalize_phone_number
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _log_public_prospect_conflict(exc: VolunteerApplicationConflictError) -> None:
+    fields: dict[str, object] = {"conflict_type": "application_conflict"}
+    if isinstance(exc, VolunteerAlreadyExistsError):
+        fields.update(
+            conflict_type="existing_volunteer",
+            volunteer_id=exc.volunteer_id,
+        )
+    elif isinstance(exc, ActiveVolunteerRegistrationExistsError):
+        fields.update(
+            conflict_type="active_application",
+            registration_id=exc.registration_id,
+        )
+    elif isinstance(exc, VolunteerApplicationFieldConflictError):
+        fields["conflict_type"] = exc.conflict_type or "field_conflict"
+        if exc.volunteer_id is not None:
+            fields["volunteer_id"] = exc.volunteer_id
+        if exc.registration_id is not None:
+            fields["registration_id"] = exc.registration_id
+    elif isinstance(exc, VolunteerProspectIdempotencyConflictError):
+        fields["conflict_type"] = "idempotency_key_content_mismatch"
+    emit_event(logger, "volunteer.prospect.conflict", level=logging.WARNING, fields=fields)
 
 EmailAddress = Annotated[EmailStr, Field(max_length=254)]
 
@@ -84,7 +106,7 @@ class PublicVolunteerProspectResponse(BaseModel):
             "description": "The request body exceeds the configured byte limit."
         },
         status.HTTP_429_TOO_MANY_REQUESTS: {
-            "description": "A route-wide, client, or normalized-email limit was exceeded."
+            "description": "A route-wide or client limit was exceeded."
         },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "description": "Malformed JSON or a request field failed validation.",
@@ -136,7 +158,7 @@ class PublicVolunteerProspectResponse(BaseModel):
                 "in": "header",
                 "required": False,
                 "description": (
-                    "Opaque v1 HMAC of the caller IP. Required for v2 signatures; "
+                    "Opaque v1 HMAC of the browser-scoped client identity. Required for v2 signatures; "
                     "the raw IP must not be forwarded."
                 ),
                 "schema": {"type": "string", "pattern": "^v1=[0-9a-f]{64}$"},
@@ -150,7 +172,6 @@ async def create_public_volunteer_prospect(
         require_signed_volunteer_prospect
     ),
     settings: Settings = Depends(get_settings),
-    rate_limiter: RateLimiter = Depends(get_rate_limiter),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
     try:
@@ -164,32 +185,6 @@ async def create_public_volunteer_prospect(
         ) from exc
 
     normalized_email = str(payload.email).strip().lower()
-    email_key = hmac.new(
-        settings.app_secret_key.encode(),
-        normalized_email.encode(),
-        hashlib.sha256,
-    ).hexdigest()
-    try:
-        await rate_limiter.hit(
-            f"volunteer-prospect:email:{email_key}",
-            limit=settings.volunteer_prospect_email_limit,
-            window_seconds=settings.volunteer_prospect_email_window_seconds,
-        )
-    except RateLimitExceeded as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many requests.",
-            headers={
-                "Retry-After": str(settings.volunteer_prospect_email_window_seconds)
-            },
-        ) from exc
-    except Exception as exc:
-        logger.exception("Volunteer prospect email rate limiting failed.")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service unavailable.",
-        ) from exc
-
     request_hash = _normalized_payload_hash(
         payload,
         secret=settings.app_secret_key,
@@ -217,16 +212,19 @@ async def create_public_volunteer_prospect(
             detail={"message": str(exc), "fieldErrors": exc.field_errors},
         ) from exc
     except VolunteerApplicationFieldConflictError as exc:
+        _log_public_prospect_conflict(exc)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"message": str(exc), "fieldErrors": exc.field_errors},
         )
-    except VolunteerAlreadyExistsError:
+    except VolunteerAlreadyExistsError as exc:
+        _log_public_prospect_conflict(exc)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="En frivillig med denne e-postadressen finnes allerede.",
         )
-    except ActiveVolunteerRegistrationExistsError:
+    except ActiveVolunteerRegistrationExistsError as exc:
+        _log_public_prospect_conflict(exc)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="En aktiv søknad med denne e-postadressen finnes allerede.",
@@ -234,6 +232,7 @@ async def create_public_volunteer_prospect(
     except VolunteerApplicationValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except VolunteerApplicationConflictError as exc:
+        _log_public_prospect_conflict(exc)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     trace_id = current_trace_id()
     span = trace.get_current_span()

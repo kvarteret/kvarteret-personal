@@ -21,6 +21,7 @@ from app.domain.volunteer_applications.models import (
     PublicProspectGroup,
     PublicProspectRegistrationInput,
     TrialApplicantCardSnapshot,
+    VolunteerApplicationFieldConflictError,
 )
 from app.domain.volunteer_applications.service import (
     VolunteerAlreadyExistsError,
@@ -892,13 +893,13 @@ async def test_public_bar_choices_preserve_labels_and_route_only_primary_choice(
 
 
 @pytest.mark.asyncio
-async def test_public_quiz_choice_routes_to_kultur_and_preserves_quiz_label() -> None:
+async def test_public_quiz_choice_routes_to_quiz_and_preserves_quiz_label() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.public_prospect_groups = {
-        "kultur": PublicProspectGroup(
-            group_id=289,
-            slug="kultur",
-            name="Kultur",
+        "quiz": PublicProspectGroup(
+            group_id=298,
+            slug="quiz",
+            name="Quiz",
         ),
     }
     service = VolunteerApplicationsService(
@@ -921,7 +922,7 @@ async def test_public_quiz_choice_routes_to_kultur_and_preserves_quiz_label() ->
     )
 
     created = repository.created_public_prospects[0]
-    assert created["first_choice_group_id"] == 289
+    assert created["first_choice_group_id"] == 298
     assert created["first_choice_label"] == "Quiz-gruppen"
     assert created["initial_group_id"] is None
     assert created["initial_role_id"] is None
@@ -954,6 +955,70 @@ async def test_public_prospect_rejects_an_unknown_group_slug() -> None:
         )
 
     assert repository.created_public_prospects == []
+
+
+@pytest.mark.asyncio
+async def test_public_prospect_friend_volunteer_conflict_keeps_volunteer_id() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.existing_volunteer_ids_by_email = {"friend@example.test": 10232}
+    repository.public_prospect_groups = {
+        "debatt": PublicProspectGroup(81, "debatt", "Debattkomiteen")
+    }
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+
+    with pytest.raises(VolunteerApplicationFieldConflictError) as exc_info:
+        await service.create_public_prospect_registration_record(
+            PublicProspectRegistrationInput(
+                full_name="Kari Nordmann",
+                email="kari@example.test",
+                phone="41234567",
+                study_institution="UiB",
+                background_details=None,
+                first_choice_group_slug="debatt",
+                second_choice_group_slug=None,
+                friend_emails=["friend@example.test"],
+            )
+        )
+
+    assert exc_info.value.conflict_type == "friend_email_existing_volunteer"
+    assert exc_info.value.volunteer_id == 10232
+
+
+@pytest.mark.asyncio
+async def test_public_prospect_friend_application_conflict_keeps_registration_id() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.active_registration_ids_by_email = {"friend@example.test": 77}
+    repository.public_prospect_groups = {
+        "debatt": PublicProspectGroup(81, "debatt", "Debattkomiteen")
+    }
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+
+    with pytest.raises(VolunteerApplicationFieldConflictError) as exc_info:
+        await service.create_public_prospect_registration_record(
+            PublicProspectRegistrationInput(
+                full_name="Kari Nordmann",
+                email="kari@example.test",
+                phone="41234567",
+                study_institution="UiB",
+                background_details=None,
+                first_choice_group_slug="debatt",
+                second_choice_group_slug=None,
+                friend_emails=["friend@example.test"],
+            )
+        )
+
+    assert exc_info.value.conflict_type == "friend_email_active_application"
+    assert exc_info.value.registration_id == 77
 
 
 @pytest.mark.asyncio
