@@ -255,7 +255,7 @@ class VolunteersQueries(SqlAlchemyRepository):
             )
 
     async def list_role_assignments(
-        self, volunteer_id: int, limit: int = 12
+        self, volunteer_id: int, limit: int | None = None
     ) -> list[RoleAssignmentItem]:
         started_at = perf_counter()
         cached = self._cache_get(volunteer_id, "history")
@@ -509,7 +509,7 @@ class VolunteersQueries(SqlAlchemyRepository):
         self,
         volunteer_id: int,
         *,
-        limit: int = 12,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         stmt = (
             select(
@@ -532,8 +532,9 @@ class VolunteersQueries(SqlAlchemyRepository):
             )
             .where(role_assignments.c.volunteer_id == volunteer_id)
             .order_by(role_assignments.c.semester.desc(), role_assignments.c.id.desc())
-            .limit(limit)
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return await self.fetch_all_mappings(stmt)
 
     async def fetch_volunteer_course_completion_rows(
