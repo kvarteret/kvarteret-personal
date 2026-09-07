@@ -9,11 +9,51 @@
     not_volunteer: { contacted: 'reopen', volunteer: 'restore-volunteer' },
   };
   const instances = new Map();
+  const sortDirections = new WeakMap();
   let saving = false;
   let originalNext = null;
   function feedback(message) {
     const target = document.getElementById('application-board-feedback');
     if (target) { target.hidden = false; target.textContent = message; }
+  }
+  function updateSortButton(button, direction, label) {
+    const oldestFirst = direction === 'asc';
+    button.dataset.sortDirection = direction;
+    button.querySelector('[data-sort-label]').textContent = oldestFirst ? 'Eldste først' : 'Nyeste først';
+    button.querySelector('[data-sort-icon]').textContent = oldestFirst ? '↑' : '↓';
+    button.setAttribute('aria-label', `Sorter ${label}-kolonnen etter ${oldestFirst ? 'nyeste' : 'eldste'} først`);
+  }
+  function sortLane(lane, direction) {
+    const cards = Array.from(lane.querySelectorAll('[data-application-card]'));
+    cards.sort((left, right) => {
+      const leftCreatedAt = Date.parse(left.dataset.createdAt || '') || 0;
+      const rightCreatedAt = Date.parse(right.dataset.createdAt || '') || 0;
+      const byCreatedAt = direction === 'asc'
+        ? leftCreatedAt - rightCreatedAt
+        : rightCreatedAt - leftCreatedAt;
+      return byCreatedAt || (direction === 'asc'
+        ? Number(left.dataset.id) - Number(right.dataset.id)
+        : Number(right.dataset.id) - Number(left.dataset.id));
+    });
+    cards.forEach((card) => lane.append(card));
+    sortDirections.set(lane, direction);
+  }
+  function initializeSorting() {
+    document.querySelectorAll('[data-application-column]').forEach((column) => {
+      const lane = column.querySelector('[data-application-lane]');
+      const button = column.querySelector('[data-application-sort]');
+      if (!lane || !button || button.dataset.sortInitialized) return;
+      button.dataset.sortInitialized = 'true';
+      const label = column.dataset.applicationLabel || column.dataset.applicationState;
+      const defaultDirection = button.dataset.sortDirection || (['new', 'trial'].includes(column.dataset.applicationState) ? 'asc' : 'desc');
+      sortLane(lane, defaultDirection);
+      updateSortButton(button, defaultDirection, label);
+      button.addEventListener('click', () => {
+        const direction = sortDirections.get(lane) === 'asc' ? 'desc' : 'asc';
+        sortLane(lane, direction);
+        updateSortButton(button, direction, label);
+      });
+    });
   }
   function initializeBoard() {
     for (const [element, instance] of instances) {
@@ -21,6 +61,7 @@
     }
     const dialog = document.querySelector('dialog[data-open-promotion]');
     if (dialog && !dialog.open) { dialog.removeAttribute('data-open-promotion'); dialog.showModal(); }
+    initializeSorting();
     if (!window.Sortable) return;
     document.querySelectorAll('[data-application-lane]').forEach((lane) => {
       if (instances.has(lane)) return;

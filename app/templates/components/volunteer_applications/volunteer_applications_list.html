@@ -1,17 +1,23 @@
 {# Keep every workflow state visible, including states with no matching applications. #}
 <section class="min-w-0" id="volunteer-application-list-panel" aria-label="Søknadstavle">
-  <p class="mb-3 text-sm text-stone-500" role="status">{{ volunteer_applications | length }} {{ "søknad" if volunteer_applications | length == 1 else "søknader" }} · Dra kort mellom kolonnene, eller åpne en søknad.</p>
+  <p class="mb-3 text-sm text-stone-500" role="status">{{ volunteer_applications | length }} {{ "søknad" if volunteer_applications | length == 1 else "søknader" }}</p>
   {% if not volunteer_applications %}
     <p class="mb-4 text-sm">Ingen søknader passer filtrene.</p>
   {% endif %}
   <div class="application-board" tabindex="0" role="region" aria-label="Statuskolonner, rull sidelengs for å se alle">
     {% for state, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
       {% set applications = volunteer_applications | selectattr("status", "equalto", state) | list %}
-      <section class="application-column" aria-labelledby="column-{{ state }}" data-application-state="{{ state }}">
-        <h2 id="column-{{ state }}" class="mb-4 flex items-center justify-between gap-2 border-t-4 border-kvarteret-red pt-3 text-lg font-medium">
-          {{ label }} <span class="text-sm text-stone-500">{{ applications | length }}</span>
-        </h2>
-        <div class="application-column-cards" data-application-lane="{{ state }}" role="region" aria-label="Søknader: {{ label }}" tabindex="0">
+      <section class="application-column" aria-labelledby="column-{{ state }}" data-application-column data-application-label="{{ label }}" data-application-state="{{ state }}">
+        <div class="application-column-header">
+          <h2 id="column-{{ state }}" class="border-t-4 border-kvarteret-red pt-3 text-lg font-medium">
+            {{ label }} <span class="text-sm text-stone-500">{{ applications | length }}</span>
+          </h2>
+          <button aria-controls="application-lane-{{ state }}" aria-label="Sorter {{ label }}-kolonnen etter {{ 'nyeste' if state in ['new', 'trial'] else 'eldste' }} først" class="application-sort-button" data-application-sort data-sort-direction="{{ 'asc' if state in ['new', 'trial'] else 'desc' }}" type="button">
+            <span data-sort-label>{{ "Eldste først" if state in ["new", "trial"] else "Nyeste først" }}</span>
+            <span aria-hidden="true" data-sort-icon>{{ "↑" if state in ["new", "trial"] else "↓" }}</span>
+          </button>
+        </div>
+        <div class="application-column-cards" data-application-lane="{{ state }}" id="application-lane-{{ state }}" role="region" aria-label="Søknader: {{ label }}" tabindex="0">
           {% for volunteer_application in applications %}
             {% include "components/volunteer_applications/volunteer_application_card.html" %}
           {% else %}

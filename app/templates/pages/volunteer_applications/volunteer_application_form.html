@@ -31,6 +31,7 @@
       {% endif %}
 
       <form action="/apply/{{ volunteer_application.token }}" class="grid gap-5 md:grid-cols-2" enctype="multipart/form-data" hx-boost="false" method="post">
+        <input name="csrf_token" type="hidden" value="{{ request.state.csrf_token }}">
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">{{ _("First name") }}</span>
           <input class="app-input" name="first_name" type="text" value="{{ form_values.get('first_name', volunteer_application.first_name or '') }}">
