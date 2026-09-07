@@ -9,7 +9,6 @@
       {% if editing_relations %}
         <button
           class="app-button-secondary"
-          hx-disinherit="hx-select hx-target hx-swap"
           hx-get="/volunteers/{{ volunteer.volunteer_id }}/relations/panel"
           hx-swap="outerHTML"
           hx-target="closest section"
@@ -20,7 +19,6 @@
       {% else %}
         <button
           class="app-button-secondary"
-          hx-disinherit="hx-select hx-target hx-swap"
           hx-get="/volunteers/{{ volunteer.volunteer_id }}/relations/panel?edit=true"
           hx-swap="outerHTML"
           hx-target="closest section"
@@ -35,7 +33,6 @@
     <form
       action="/volunteers/{{ volunteer.volunteer_id }}/relations?_method=PATCH"
       class="grid gap-6"
-      hx-disinherit="hx-select hx-target hx-swap"
       hx-patch="/volunteers/{{ volunteer.volunteer_id }}/relations"
       hx-swap="outerHTML"
       hx-target="closest section"

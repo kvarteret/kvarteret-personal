@@ -10,7 +10,6 @@
       <form
         action="/volunteers/{{ volunteer.volunteer_id }}/course-completions"
         class="mt-4 grid gap-4"
-        hx-disinherit="hx-select hx-target hx-swap"
         hx-post="/volunteers/{{ volunteer.volunteer_id }}/course-completions"
         hx-swap="outerHTML"
         hx-target="closest section"
@@ -55,7 +54,6 @@
           <div class="flex md:justify-end">
             <form
               action="/volunteers/{{ volunteer.volunteer_id }}/course-completions/{{ completion.completion_id }}?_method=DELETE"
-              hx-disinherit="hx-select hx-target hx-swap"
               hx-delete="/volunteers/{{ volunteer.volunteer_id }}/course-completions/{{ completion.completion_id }}"
               hx-swap="outerHTML"
               hx-target="closest section"
