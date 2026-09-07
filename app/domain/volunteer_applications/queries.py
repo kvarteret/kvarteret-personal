@@ -45,6 +45,7 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
         query: str | None = None,
         application_status: str | None = None,
         group_id: int | None = None,
+        group_ids: list[int] | None = None,
     ) -> list[VolunteerApplicationListItem]:
         accepted_group = groups.alias("accepted_group")
         first_choice_group = groups.alias("first_choice_group")
@@ -123,12 +124,15 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
             )
         elif application_status in allowed_statuses:
             stmt = stmt.where(volunteer_application_invites.c.status == application_status)
+        selected_group_ids = set(group_ids or [])
         if group_id is not None:
+            selected_group_ids.add(group_id)
+        if selected_group_ids:
             stmt = stmt.where(
                 or_(
-                    volunteer_application_invites.c.initial_group_id == group_id,
-                    volunteer_application_invites.c.first_choice_group_id == group_id,
-                    volunteer_application_invites.c.second_choice_group_id == group_id,
+                    volunteer_application_invites.c.initial_group_id.in_(selected_group_ids),
+                    volunteer_application_invites.c.first_choice_group_id.in_(selected_group_ids),
+                    volunteer_application_invites.c.second_choice_group_id.in_(selected_group_ids),
                 )
             )
         normalized_query = (query or "").strip().casefold()

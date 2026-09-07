@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 
 from app.dependencies import (
     get_settings,
@@ -132,7 +132,7 @@ async def volunteer_application_approve(
     return RedirectResponse(url=f"/volunteers/{volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/volunteer-applications/{application_id}/contact")
+@router.post("/volunteer-applications/{application_id}/contact", responses={204: {"description": "Board status saved"}})
 async def volunteer_application_mark_contacted(
     request: Request,
     application_id: int,
@@ -156,13 +156,10 @@ async def volunteer_application_mark_contacted(
         subject_id=application_id,
         details={"status": detail.status},
     )
-    return RedirectResponse(
-        url=f"/volunteer-applications/{application_id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+    return _application_status_response(request, application_id)
 
 
-@router.post("/volunteer-applications/{application_id}/trial")
+@router.post("/volunteer-applications/{application_id}/trial", responses={204: {"description": "Board status saved"}})
 async def volunteer_application_start_trial(
     request: Request,
     application_id: int,
@@ -189,13 +186,10 @@ async def volunteer_application_start_trial(
         subject_id=application_id,
         details={"trial_ends_at": detail.trial_ends_at.isoformat() if detail.trial_ends_at else None},
     )
-    return RedirectResponse(
-        url=f"/volunteer-applications/{application_id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+    return _application_status_response(request, application_id)
 
 
-@router.post("/volunteer-applications/{application_id}/reject")
+@router.post("/volunteer-applications/{application_id}/reject", responses={204: {"description": "Board status saved"}})
 async def volunteer_application_reject(
     request: Request,
     application_id: int,
@@ -221,13 +215,10 @@ async def volunteer_application_reject(
         subject_id=application_id,
         details={"status": detail.status},
     )
-    return RedirectResponse(
-        url=f"/volunteer-applications/{application_id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+    return _application_status_response(request, application_id)
 
 
-@router.post("/volunteer-applications/{application_id}/reopen")
+@router.post("/volunteer-applications/{application_id}/reopen", responses={204: {"description": "Board status saved"}})
 async def volunteer_application_reopen(
     request: Request,
     application_id: int,
@@ -253,13 +244,10 @@ async def volunteer_application_reopen(
         subject_id=application_id,
         details={"status": detail.status},
     )
-    return RedirectResponse(
-        url=f"/volunteer-applications/{application_id}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+    return _application_status_response(request, application_id)
 
 
-@router.post("/volunteer-applications/{application_id}/restore-volunteer")
+@router.post("/volunteer-applications/{application_id}/restore-volunteer", responses={204: {"description": "Board status saved"}})
 async def volunteer_application_restore_volunteer(
     request: Request,
     application_id: int,
@@ -285,6 +273,12 @@ async def volunteer_application_restore_volunteer(
         subject_id=application_id,
         details={"status": detail.status},
     )
+    return _application_status_response(request, application_id)
+
+
+def _application_status_response(request: Request, application_id: int):
+    if request.headers.get("HX-Target") == "section#volunteer-application-list-panel":
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     return RedirectResponse(
         url=f"/volunteer-applications/{application_id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -295,9 +289,6 @@ async def volunteer_application_restore_volunteer(
 async def volunteer_application_delete(
     request: Request,
     application_id: int,
-    q: str | None = None,
-    application_status: str | None = None,
-    group_id: int | None = None,
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
@@ -317,18 +308,8 @@ async def volunteer_application_delete(
         subject_type="volunteer_application",
         subject_id=application_id,
     )
-    if request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") != "true":
-        volunteer_applications = await volunteer_applications_service.list_volunteer_applications(
-            query=q, application_status=application_status, group_id=group_id or None
-        )
-        return templates.TemplateResponse(
-            request,
-            "components/volunteer_applications/volunteer_applications_list.html",
-            {
-                "current_user": current_user,
-                "volunteer_applications": volunteer_applications,
-            },
-    )
+    if request.headers.get("HX-Request") == "true":
+        return Response(status_code=200, headers={"HX-Redirect": _VOLUNTEER_APPS_PATH})
     return RedirectResponse(url=_VOLUNTEER_APPS_PATH, status_code=status.HTTP_303_SEE_OTHER)
 
 

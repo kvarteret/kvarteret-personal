@@ -338,6 +338,7 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         query: str | None = None,
         application_status: str | None = None,
         group_id: int | None = None,
+        group_ids: list[int] | None = None,
     ) -> list[VolunteerApplicationListItem]: ...
     async def list_recent_volunteer_registrations_page(
         self,

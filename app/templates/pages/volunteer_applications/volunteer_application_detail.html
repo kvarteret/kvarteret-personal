@@ -20,6 +20,20 @@
         </h1>
         <p class="text-base leading-7 text-stone-700">{{ volunteer_application.email }}</p>
       </div>
+      {% if not volunteer_application.pending_volunteer_id %}
+        <div class="flex flex-wrap justify-center gap-3">
+          <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/resend" method="post">
+            <button class="app-button-secondary" type="submit">Send e-post på nytt</button>
+          </form>
+          {% if volunteer_application.status == "new" %}
+            <form action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=DELETE"
+              hx-delete="/volunteer-applications/{{ volunteer_application.registration_id }}"
+              hx-confirm="Avbryte denne invitasjonen?" method="post">
+              <button class="app-button-secondary" type="submit">Avbryt invitasjon</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
       {% if latest_email_delivery %}
         <div class="flex flex-wrap items-center justify-center gap-2 text-sm">
           <span class="font-medium">E-post:</span>
@@ -77,7 +91,7 @@
               </form>
             {% elif volunteer_application.status == "trial" %}
                 <button class="app-button-secondary h-full min-h-20 w-full" type="button" onclick="document.getElementById('promotion-dialog').showModal()" {% if not promotion_group_options %}disabled{% endif %}>Oppgrader til frivillig</button>
-                <dialog aria-labelledby="promotion-dialog-title" class="m-auto w-[min(94vw,52rem)] border-2 border-kvarteret-ink bg-kvarteret-background p-0 text-left text-kvarteret-ink backdrop:bg-stone-950/60" id="promotion-dialog" onclick="if (event.target === this) this.close()">
+                <dialog aria-labelledby="promotion-dialog-title" class="m-auto w-[min(94vw,52rem)] border-2 border-kvarteret-ink bg-kvarteret-background p-0 text-left text-kvarteret-ink backdrop:bg-stone-950/60" id="promotion-dialog" {% if request.query_params.get("promote") == "1" %}data-open-promotion{% endif %} onclick="if (event.target === this) this.close()">
                   <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" class="grid gap-6 p-6 md:p-8" method="post">
                   <div class="flex items-start justify-between gap-4">
                     <h2 class="text-3xl font-medium tracking-tight" id="promotion-dialog-title">Historikk</h2>

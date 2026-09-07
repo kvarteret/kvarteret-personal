@@ -295,3 +295,31 @@
     --kvarteret-red-dark: color(display-p3 0.86 0.28 0.27);
   }
 }
+
+@layer components {
+  .application-board { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; align-items: flex-start; }
+  .application-column { flex: 0 0 18rem; width: 18rem; min-width: 0; border: 1px solid #d6d3d1; background: #f5f5f4; padding: .75rem; }
+  .application-column-cards { display: flex; flex-direction: column; gap: .65rem; height: clamp(18rem, 55vh, 40rem); overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: .15rem; }
+  .application-column-empty { border: 1px dashed #d6d3d1; padding: 1rem; color: #78716c; font-size: .875rem; pointer-events: none; }
+  .application-card { flex-shrink: 0; min-width: 0; width: 100%; max-width: 100%; overflow: hidden; border: 1px solid #d6d3d1; background: white; }
+  .application-card:hover { border-color: var(--color-kvarteret-red); }
+  .application-card-link { display: grid; min-width: 0; gap: .35rem; padding: .85rem; color: inherit; text-decoration: none; overflow-wrap: anywhere; cursor: grab; }
+  .application-card-link:focus-visible { outline: 2px solid var(--color-kvarteret-red); outline-offset: -2px; }
+  .application-card-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 1rem; font-weight: 600; }
+  .application-card-email, .application-card-group { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+  .application-card-email { color: #57534e; }
+  .application-card-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem; color: #78716c; font-size: .75rem; }
+  .application-drag-ghost { opacity: .35; }
+  .application-drop-allowed { outline: 2px dashed var(--color-kvarteret-red); outline-offset: -2px; }
+  .group-combobox { position: relative; display: grid; min-width: 0; gap: .25rem; }
+  .group-combobox-control { display: grid; gap: .35rem; min-width: 0; min-height: 3rem; padding: .5rem; border: 2px solid var(--color-kvarteret-ink); background: #fafaf9; }
+  .group-combobox-control:focus-within { border-color: var(--color-kvarteret-red); }
+  .group-combobox-input { width: 100%; min-width: 0; padding: .2rem; outline: none; background: transparent; }
+  .group-combobox-chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+  .group-combobox-chip { max-width: 100%; padding: .2rem .4rem; border: 1px solid #a8a29e; font-size: .8rem; overflow-wrap: anywhere; cursor: pointer; }
+  .group-combobox-options { position: absolute; z-index: 20; left: 0; right: 0; max-height: 18rem; overflow-y: auto; border: 2px solid var(--color-kvarteret-ink); background: white; box-shadow: 0 8px 16px #0002; }
+  .group-combobox-option { display: block; width: 100%; padding: .6rem; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+  .group-combobox-option[aria-selected="true"] { font-weight: 600; }
+  .group-combobox-option[data-active="true"] { background: #e7e5e4; }
+  .group-combobox [hidden] { display: none; }
+}

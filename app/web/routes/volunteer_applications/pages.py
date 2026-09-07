@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.dependencies import (
     get_email_outbox_service,
@@ -34,6 +34,7 @@ async def volunteer_applications_index(
     q: str | None = None,
     application_status: str | None = None,
     group_id: int | None = None,
+    group_ids: list[int] | None = Query(default=None),
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(
         get_volunteer_applications_service
@@ -45,6 +46,7 @@ async def volunteer_applications_index(
             query=q,
             application_status=application_status,
             group_id=group_id or None,
+            group_ids=group_ids,
         )
     )
     log_admin_activity(
@@ -83,7 +85,7 @@ async def volunteer_applications_index(
             "selected_group_id": None,
             "application_query": q or "",
             "selected_application_status": application_status or "",
-            "selected_application_group_id": group_id,
+            "selected_application_group_ids": list(dict.fromkeys([*(group_ids or []), *([group_id] if group_id else [])])),
         },
         headers={"Vary": "HX-Target"},
     )

@@ -198,18 +198,19 @@ class FakeVolunteerApplicationsService:
         query: str | None = None,
         application_status: str | None = None,
         group_id: int | None = None,
+        group_ids: list[int] | None = None,
     ) -> list[VolunteerApplicationListItem]:
-        if group_id is None:
+        selected_ids = set(group_ids or []) | ({group_id} if group_id else set())
+        if not selected_ids:
             return list(self.volunteer_applications)
         return [
             application
             for application in self.volunteer_applications
-            if group_id
-            in {
+            if selected_ids.intersection({
                 application.initial_group_id,
                 application.first_choice_group_id,
                 application.second_choice_group_id,
-            }
+            })
         ]
 
     async def list_recent_volunteer_registrations_page(
@@ -1308,7 +1309,7 @@ def test_live_application_search_returns_only_board_and_passes_filters() -> None
     )
 
     assert response.status_code == 200
-    assert calls == [{"query": "sample", "application_status": "trial", "group_id": 3}]
+    assert calls == [{"query": "sample", "application_status": "trial", "group_id": 3, "group_ids": None}]
     assert service.recent_registration_calls == []
     assert '<html' not in response.text
     assert response.text.count('data-application-state=') == 5
