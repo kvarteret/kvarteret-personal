@@ -6,12 +6,14 @@
     <meta content="width=device-width, initial-scale=1" name="viewport">
     <title>{{ title }}</title>
     <link href="{{ url_for('static', path='css/output.css') }}" rel="stylesheet">
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    <script src="https://unpkg.com/idiomorph@0.7.4/dist/idiomorph-ext.min.js"></script>
+    <meta name="htmx-config" content='{"noSwap":[204,304,"4xx","5xx"]}'>
+    <script src="https://unpkg.com/htmx.org@4.0.0/dist/htmx.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@4.0.0/dist/ext/hx-alpine-compat.js"></script>
     <script defer src="{{ url_for('static', path='js/vercel-observability.js') }}" type="module"></script>
     <script defer src="{{ url_for('static', path='js/client-error-reporting.js') }}"></script>
     <script defer src="{{ url_for('static', path='js/htmx-error-feedback.js') }}"></script>
     <script defer src="{{ url_for('static', path='js/volunteer-picker.js') }}"></script>
+    <script defer src="{{ url_for('static', path='js/application-group-filter.js') }}"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.x.x/dist/cdn.min.js"></script>
     <script>
       (() => {
@@ -39,25 +41,23 @@
         document.addEventListener("DOMContentLoaded", () => {
           applyCsrfFields(document.body);
         });
-        document.addEventListener("htmx:load", (event) => {
-          const root = event.detail?.elt;
+        document.addEventListener("htmx:after:init", (event) => {
+          const root = event.target;
           applyCsrfFields(root);
-          if (window.Alpine?.initTree && root) {
-            window.Alpine.initTree(root);
-          }
         });
-        document.addEventListener("htmx:configRequest", (event) => {
-          const method = (event.detail?.verb || "").toLowerCase();
+        document.addEventListener("htmx:config:request", (event) => {
+          const request = event.detail?.ctx?.request;
+          const method = (request?.method || "").toLowerCase();
           if (!["post", "put", "patch", "delete"].includes(method)) return;
           const csrfToken = currentCsrfToken();
           if (csrfToken) {
-            event.detail.headers["X-CSRF-Token"] = csrfToken;
+            request.headers["X-CSRF-Token"] = csrfToken;
           }
         });
       })();
     </script>
   </head>
-  <body class="min-h-screen bg-kvarteret-background text-kvarteret-ink" hx-boost="true" hx-ext="morph" hx-swap="morph:innerHTML">
+  <body class="min-h-screen bg-kvarteret-background text-kvarteret-ink" hx-boost:inherited="true" hx-swap:inherited="innerMorph">
     {% set header_logo = url_for('static', path='images/internbevis-header.png') %}
     {% set rendered_content %}
       {% block page_content %}{% endblock %}

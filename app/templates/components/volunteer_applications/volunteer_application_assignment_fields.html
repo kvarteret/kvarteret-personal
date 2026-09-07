@@ -4,7 +4,6 @@
     <select
       class="app-input"
       name="{{ group_field_name or 'group_id' }}"
-      hx-disinherit="hx-select hx-target hx-swap"
       hx-get="/volunteer-applications/assignment-fields{% if application_id %}?application_id={{ application_id }}{% endif %}"
       hx-include="this"
       hx-swap="outerHTML"

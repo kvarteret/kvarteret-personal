@@ -32,7 +32,7 @@ router = APIRouter()
 async def volunteer_applications_index(
     request: Request,
     q: str | None = None,
-    application_status: str | None = "active",
+    application_status: str | None = None,
     group_id: int | None = None,
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(
@@ -44,15 +44,9 @@ async def volunteer_applications_index(
         await volunteer_applications_service.list_volunteer_applications(
             query=q,
             application_status=application_status,
-            group_id=group_id,
+            group_id=group_id or None,
         )
     )
-    recent_registrations_page = (
-        await volunteer_applications_service.list_recent_volunteer_registrations_page(
-            limit=10
-        )
-    )
-    group_options = await volunteers_service.list_assignment_groups()
     log_admin_activity(
         request=request,
         user=current_user,
@@ -60,6 +54,19 @@ async def volunteer_applications_index(
         subject_type="volunteer_application",
         details={"result_count": len(volunteer_applications)},
     )
+    if request.headers.get("HX-Target") == "section#volunteer-application-list-panel":
+        return templates.TemplateResponse(
+            request,
+            "components/volunteer_applications/volunteer_applications_list.html",
+            {"volunteer_applications": volunteer_applications},
+            headers={"Vary": "HX-Target"},
+        )
+    recent_registrations_page = (
+        await volunteer_applications_service.list_recent_volunteer_registrations_page(
+            limit=10
+        )
+    )
+    group_options = await volunteers_service.list_assignment_groups()
     return templates.TemplateResponse(
         request,
         "pages/volunteer_applications/volunteer_applications_index.html",
@@ -75,9 +82,10 @@ async def volunteer_applications_index(
             "role_options": [],
             "selected_group_id": None,
             "application_query": q or "",
-            "selected_application_status": application_status if application_status is not None else "active",
+            "selected_application_status": application_status or "",
             "selected_application_group_id": group_id,
         },
+        headers={"Vary": "HX-Target"},
     )
 
 

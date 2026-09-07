@@ -73,7 +73,6 @@
           <div class="flex md:justify-end">
             <form
               action="/groups/{{ group.group_id }}/history/{{ member.history_id }}?_method=DELETE"
-              hx-disinherit="hx-select hx-target hx-swap"
               hx-delete="/groups/{{ group.group_id }}/history/{{ member.history_id }}"
               hx-swap="none"
               method="post"

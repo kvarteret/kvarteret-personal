@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from uuid import uuid4
 
@@ -509,7 +510,7 @@ def test_volunteer_applications_can_be_filtered_by_group() -> None:
     assert '<option value="8" selected>Ukjent</option>' in choice_group_response.text
     assert non_matching_response.status_code == 200
     assert "registrant@example.com" not in non_matching_response.text
-    assert "Ingen åpne frivilligsøknader." in non_matching_response.text
+    assert "Ingen søknader passer filtrene." in non_matching_response.text
 
 
 def test_volunteer_application_pages_render_in_norwegian_when_browser_prefers_norwegian() -> None:
@@ -666,7 +667,7 @@ def test_promotion_options_exclude_metadata_only_second_choice() -> None:
         created_at=datetime(2026, 3, 13, tzinfo=UTC),
         submitted=True,
         source="public_signup",
-        status="prospect",
+        status="new",
         pending_volunteer_id=8,
         first_name="Sample",
         last_name="Registrant",
@@ -1036,7 +1037,7 @@ def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
     assert response.status_code == 200
     assert volunteer_applications_service.deleted_registration_ids == [7]
     assert "registrant@example.com" not in response.text
-    assert "Ingen åpne frivilligsøknader." in response.text
+    assert "Ingen søknader passer filtrene." in response.text
 
 
 def test_volunteer_application_delete_redirects_from_boosted_detail_page() -> None:
@@ -1070,7 +1071,7 @@ def test_volunteer_application_resend_redirects_and_calls_service() -> None:
             created_at=datetime(2026, 3, 13, tzinfo=UTC),
             submitted=False,
             source="invite",
-            status="invited",
+            status="new",
             pending_volunteer_id=None,
             first_name=None,
             last_name=None,
@@ -1110,7 +1111,7 @@ def test_group_admin_can_manage_any_registration() -> None:
                 created_at=datetime(2026, 3, 14, tzinfo=UTC),
                 submitted=True,
                 source="public_signup",
-                status="prospect",
+                status="new",
                 pending_volunteer_id=9,
                 first_name="Other",
                 last_name="Person",
@@ -1141,7 +1142,7 @@ def test_group_admin_can_manage_any_registration() -> None:
             created_at=datetime(2026, 3, 14, tzinfo=UTC),
             submitted=True,
             source="public_signup",
-            status="prospect",
+            status="new",
             pending_volunteer_id=9,
             first_name="Other",
             last_name="Person",
@@ -1259,3 +1260,79 @@ def test_public_prospect_api_forwards_friend_emails() -> None:
         "Friend@example.com",
         "second@example.com",
     ]
+
+
+def test_application_board_groups_all_states_and_keeps_empty_columns() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    states = ["new", "contacted", "trial", "volunteer", "not_volunteer"]
+    service.volunteer_applications = [
+        replace(service.volunteer_applications[0], registration_id=index,
+                status=state, email=f"{state}@example.test")
+        for index, state in enumerate(states)
+    ]
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications?group_id=0")
+
+    assert response.status_code == 200
+    for state in states:
+        column = response.text.split(f'data-application-state="{state}"', 1)[1].split("</section>", 1)[0]
+        assert f"{state}@example.test" in column
+        assert column.count("<article") == 1
+    service.volunteer_applications = []
+    response = client.get("/volunteer-applications")
+    assert response.text.count('data-application-state=') == 5
+    assert "Ingen søknader passer filtrene." in response.text
+
+
+def test_live_application_search_returns_only_board_and_passes_filters() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    calls = []
+
+    async def search(**filters):
+        calls.append(filters)
+        return []
+
+    service.list_volunteer_applications = search
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    client = TestClient(app)
+    response = client.get(
+        "/volunteer-applications?q=sample&application_status=trial&group_id=3",
+        headers={"HX-Request": "true", "HX-Target": "section#volunteer-application-list-panel"},
+    )
+
+    assert response.status_code == 200
+    assert calls == [{"query": "sample", "application_status": "trial", "group_id": 3}]
+    assert service.recent_registration_calls == []
+    assert '<html' not in response.text
+    assert response.text.count('data-application-state=') == 5
+
+
+def test_cancel_invitation_preserves_board_filters() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    calls = []
+
+    async def search(**filters):
+        calls.append(filters)
+        return []
+
+    service.list_volunteer_applications = search
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    client = TestClient(app)
+    response = client.delete(
+        "/volunteer-applications/7?q=sample&application_status=new&group_id=3",
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert service.deleted_registration_ids == [7]
+    assert calls == [{"query": "sample", "application_status": "new", "group_id": 3}]
+    assert response.text.count('data-application-state=') == 5

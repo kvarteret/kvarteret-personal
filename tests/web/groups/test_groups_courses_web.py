@@ -354,17 +354,17 @@ def test_groups_and_courses_pages_render() -> None:
     assert 'name="active_until_semester"' in group_detail_response.text
     assert "Vervet har medlemmer og kan ikke slettes." in group_detail_response.text
     assert "disabled" in group_detail_response.text
-    assert 'hx-boost="true"' in group_detail_response.text
+    assert 'hx-boost:inherited="true"' in group_detail_response.text
     assert "htmx-ext-preload" not in group_detail_response.text
-    assert 'hx-ext="morph"' in group_detail_response.text
-    assert 'hx-swap="morph:innerHTML"' in group_detail_response.text
+    assert 'htmx.org@4.0.0/dist/htmx.min.js' in group_detail_response.text
+    assert 'hx-swap:inherited="innerMorph"' in group_detail_response.text
     assert 'hx-select="#page-shell"' not in group_detail_response.text
     assert 'hx-target="#page-shell"' not in group_detail_response.text
     assert 'hx-get="/groups/7/stats"' in group_detail_response.text
     assert 'hx-get="/groups/7/history"' in group_detail_response.text
     assert 'id="group-stats-panel"' in group_detail_response.text
     assert 'id="group-history-panel"' in group_detail_response.text
-    assert 'hx-disinherit="hx-select hx-target hx-swap"' in group_detail_response.text
+    assert 'hx-disinherit=' not in group_detail_response.text
     assert 'href="/volunteers/12"' in group_detail_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in group_detail_response.text
     assert 'hx-delete="/groups/7/history/9"' in group_detail_response.text
@@ -397,7 +397,7 @@ def test_groups_and_courses_pages_render() -> None:
     assert "volunteerPicker({" in course_detail_response.text
     assert "/volunteers/search/options/typeahead" in course_detail_response.text
     assert "Valgte frivillige" in course_detail_response.text
-    assert "Alpine.initTree" in course_detail_response.text
+    assert "dist/ext/hx-alpine-compat.js" in course_detail_response.text
     assert 'action="/courses/4/completions"' in course_detail_response.text
     assert '/courses/4/completions/11?_method=DELETE' in course_detail_response.text
     assert 'href="/groups/7"' in course_detail_response.text
