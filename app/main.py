@@ -45,7 +45,6 @@ def create_app(container=None) -> FastAPI:
     app = FastAPI(title="Kvarteret Personal", lifespan=app_lifespan)
     app.state.container = resolved_container
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
-    configure_telemetry(app, resolved_container.settings)
 
     _install_security_headers(app)
     _install_method_override_middleware(app)
@@ -55,6 +54,7 @@ def create_app(container=None) -> FastAPI:
     _install_request_context_middleware(app)
     _install_http_exception_handler(app)
     _include_routers(app)
+    configure_telemetry(app, resolved_container.settings)
     return app
 
 

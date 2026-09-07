@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import json
 
 from fastapi import FastAPI
 from opentelemetry import trace
@@ -15,8 +16,11 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+from starlette.concurrency import run_in_threadpool
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
+from app.error_tracking import configure_error_tracking
 from app.observability import JsonLogFormatter
 
 logger = logging.getLogger(__name__)
@@ -24,20 +28,57 @@ _httpx_instrumented = False
 _TRACE_SAMPLE_RATE = 0.1
 
 
+class TelemetryFlushMiddleware:
+    """Finish exporting before the invocation returns, including failed requests."""
+
+    def __init__(self, app: ASGIApp, providers: tuple):
+        self.app = app
+        self.providers = providers
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            if scope["type"] == "http":
+                for provider in self.providers:
+                    try:
+                        await run_in_threadpool(
+                            provider.force_flush, timeout_millis=2000
+                        )
+                    except Exception:
+                        pass
+
+
+def install_telemetry_flush(app: FastAPI, providers: tuple) -> None:
+    # FastAPIInstrumentor wraps the user middleware stack. Wrap its completed
+    # stack so even the HTTP server span has ended before flushing.
+    build_stack = app.build_middleware_stack
+
+    def build_flushing_stack():
+        return TelemetryFlushMiddleware(build_stack(), providers)
+
+    app.build_middleware_stack = build_flushing_stack
+
+
 class _SanitizedLoggingHandler(LoggingHandler):
     """Export only the already-sanitized JSON body, never raw log extras."""
 
     def emit(self, record: logging.LogRecord) -> None:
+        body = JsonLogFormatter().format(record)
         safe_record = logging.LogRecord(
             name=record.name,
             level=record.levelno,
             pathname=record.pathname,
             lineno=record.lineno,
-            msg=JsonLogFormatter().format(record),
+            msg=body,
             args=(),
             exc_info=None,
             func=record.funcName,
         )
+        # Make sanitized diagnostic fields directly filterable in PostHog Logs.
+        for key, value in json.loads(body).items():
+            if key not in safe_record.__dict__ and key not in {"message", "timestamp"}:
+                safe_record.__dict__[key] = value
         super().emit(safe_record)
 
 
@@ -58,7 +99,8 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
         resource = Resource.create(
             {
                 "service.name": settings.otel_service_name,
-                "deployment.environment.name": settings.app_env,
+                "deployment.environment.name": os.getenv("VERCEL_ENV")
+                or settings.app_env,
                 "service.version": os.getenv("VERCEL_GIT_COMMIT_SHA", "unknown"),
                 "vercel.deployment.id": os.getenv("VERCEL_DEPLOYMENT_ID", "unknown"),
                 "cloud.region": os.getenv("VERCEL_REGION", "unknown"),
@@ -94,7 +136,9 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
             )
         )
 
+        configure_error_tracking(settings)
         FastAPIInstrumentor.instrument_app(app, tracer_provider=trace_provider)
+        install_telemetry_flush(app, (trace_provider, logger_provider))
         if not _httpx_instrumented:
             HTTPXClientInstrumentor().instrument(tracer_provider=trace_provider)
             _httpx_instrumented = True

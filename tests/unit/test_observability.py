@@ -185,6 +185,8 @@ def test_otlp_handler_exports_only_sanitized_record() -> None:
     assert "event_data" not in exported.attributes
     assert "exception.message" not in exported.attributes
     assert "exception.stacktrace" not in exported.attributes
+    assert exported.attributes["registration_id"] == 42
+    assert exported.attributes["error_category"] == "runtimeerror"
 
 
 @pytest.fixture(scope="module", autouse=True)

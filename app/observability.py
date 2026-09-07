@@ -266,15 +266,13 @@ def log_request(
 def log_request_exception(
     logger: logging.Logger, *, request: Request, started_at: float
 ) -> None:
-    emit_event(
-        logger,
+    logger.exception(
         "http.request.failed",
-        level=logging.ERROR,
-        fields={
+        extra={"event": "http.request.failed", "event_data": {
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             "http_method": request.method,
             "route_template": _route_template(request),
-        },
+        }},
     )
 
 
