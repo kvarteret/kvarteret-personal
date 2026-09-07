@@ -62,7 +62,6 @@
               action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=DELETE"
               hx-confirm="Avbryte denne invitasjonen?"
               hx-delete="/volunteer-applications/{{ volunteer_application.registration_id }}"
-              hx-disinherit="hx-select hx-target hx-swap"
               hx-swap="outerHTML"
               hx-target="#volunteer-application-list-panel"
               method="post"

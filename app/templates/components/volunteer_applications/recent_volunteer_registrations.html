@@ -41,7 +41,6 @@
 {% if next_cursor is not none %}
   <div
     class="py-4 text-center text-sm text-stone-500"
-    hx-disinherit="hx-select hx-target hx-swap"
     hx-get="/volunteer-applications/recent-registrations"
     hx-swap="outerHTML"
     hx-target="this"

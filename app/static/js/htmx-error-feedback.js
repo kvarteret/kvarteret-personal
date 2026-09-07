@@ -1,5 +1,5 @@
 /*
- * HTMX intentionally does not swap 4xx/5xx responses by default. Surface a
+ * The shared HTMX config keeps 4xx/5xx responses out of page swaps. Surface a
  * safe server-provided error instead of leaving boosted forms looking inert.
  */
 (function () {
@@ -8,11 +8,11 @@
   var ROOT_ID = "htmx-error-feedback";
   var DEFAULT_MESSAGE = "Noe gikk galt. Prøv igjen.";
 
-  function errorMessage(xhr) {
-    var contentType = xhr.getResponseHeader("Content-Type") || "";
+  function errorMessage(ctx) {
+    var contentType = ctx.response.headers.get("Content-Type") || "";
     if (contentType.indexOf("application/json") !== -1) {
       try {
-        var payload = JSON.parse(xhr.responseText || "{}");
+        var payload = JSON.parse(ctx.text || "{}");
         if (typeof payload.detail === "string" && payload.detail.trim()) {
           return payload.detail.trim();
         }
@@ -52,12 +52,14 @@
     document.body.append(root);
   }
 
-  document.addEventListener("htmx:beforeRequest", removeFeedback);
-  document.addEventListener("htmx:responseError", function (event) {
-    var xhr = event.detail && event.detail.xhr;
-    showFeedback(xhr ? errorMessage(xhr) : DEFAULT_MESSAGE);
+  document.addEventListener("htmx:before:request", removeFeedback);
+  document.addEventListener("htmx:response:error", function (event) {
+    var ctx = event.detail && event.detail.ctx;
+    showFeedback(ctx ? errorMessage(ctx) : DEFAULT_MESSAGE);
   });
-  document.addEventListener("htmx:sendError", function () {
+  document.addEventListener("htmx:error", function (event) {
+    // Superseded live searches are expected cancellations, not failures.
+    if (event.detail?.error?.name === "AbortError") return;
     showFeedback("Kunne ikke kontakte serveren. Sjekk tilkoblingen og prøv igjen.");
   });
 })();

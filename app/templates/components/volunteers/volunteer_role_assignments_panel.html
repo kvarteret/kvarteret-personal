@@ -16,7 +16,6 @@
     <form
       action="/volunteers/{{ volunteer.volunteer_id }}/role-assignments"
       class="mb-8 grid gap-4 border-b border-stone-300 pb-6"
-      hx-disinherit="hx-select hx-target hx-swap"
       hx-post="/volunteers/{{ volunteer.volunteer_id }}/role-assignments"
       hx-swap="outerHTML"
       hx-target="closest section"
@@ -67,7 +66,6 @@
             <div class="flex flex-wrap items-center gap-2 lg:justify-end">
               <button
                 class="inline-flex items-center justify-center rounded-full bg-white px-3 py-2 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100"
-                hx-disinherit="hx-select hx-target hx-swap"
                 hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/panel?edit_assignment_id={{ assignment.history_id }}"
                 hx-swap="outerHTML"
                 hx-target="closest section"
@@ -77,7 +75,6 @@
               </button>
               <form
                 action="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/{{ assignment.history_id }}?_method=DELETE"
-                hx-disinherit="hx-select hx-target hx-swap"
                 hx-delete="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/{{ assignment.history_id }}"
                 hx-swap="outerHTML"
                 hx-target="closest section"
@@ -93,7 +90,6 @@
           <form
             action="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/{{ assignment.history_id }}?_method=PATCH"
             class="mt-4 grid gap-4 rounded-3xl border border-stone-200 bg-white/70 p-4"
-            hx-disinherit="hx-select hx-target hx-swap"
             hx-patch="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/{{ assignment.history_id }}"
             hx-swap="outerHTML"
             hx-target="closest section"
@@ -106,7 +102,6 @@
               </div>
               <button
                 class="app-button-secondary"
-                hx-disinherit="hx-select hx-target hx-swap"
                 hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/panel"
                 hx-swap="outerHTML"
                 hx-target="closest section"
