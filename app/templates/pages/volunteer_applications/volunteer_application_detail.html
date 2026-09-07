@@ -182,7 +182,7 @@
       <section class="app-panel" id="application-profile">
         <div class="mb-5 flex items-center justify-between gap-3">
           <h2 class="text-2xl font-medium tracking-tight text-stone-900">Søkerprofil</h2>
-          <span class="text-sm text-stone-500">Sendt inn {{ volunteer_application.created_at.strftime("%d.%m.%Y %H:%M") }}</span>
+          <span class="text-sm text-stone-500">Sendt inn {{ format_datetime_oslo(volunteer_application.created_at) }}</span>
         </div>
         <dl class="grid gap-5 md:grid-cols-2">
           <div class="border-b border-stone-300 pb-3"><dt class="text-sm text-stone-500">Fornavn</dt><dd class="mt-1 text-stone-900">{{ volunteer_application.first_name or "Ikke satt" }}</dd></div>

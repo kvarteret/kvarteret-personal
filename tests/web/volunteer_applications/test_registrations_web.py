@@ -465,6 +465,7 @@ def test_volunteer_application_pages_render() -> None:
     assert '<details class="app-panel">' in admin_response.text
     assert 'x-show="inviteOpen"' not in admin_response.text
     assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
+    assert "13.03.2026 01:00" in admin_response.text
     assert 'name="application_status"' not in admin_response.text
     assert "Dra kort mellom kolonnene" not in admin_response.text
     assert "Ingen valgt = alle grupper" not in admin_response.text
@@ -591,7 +592,7 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
 
     assert response.status_code == 200
     assert "Søkerprofil" in response.text
-    assert "Sendt inn 13.03.2026 00:00" in response.text
+    assert "Sendt inn 13.03.2026 01:00" in response.text
     assert "Registrering" in response.text
     assert "registrant@example.com" in response.text
     assert "Oppgrader til frivillig" in response.text

@@ -9,7 +9,7 @@
     {% endif %}
     <p class="application-card-group">{{ volunteer_application.first_choice_group_name or volunteer_application.initial_group_name or "Ingen gruppe valgt" }}</p>
     <div class="application-card-meta">
-      <time datetime="{{ volunteer_application.created_at.isoformat() if volunteer_application.created_at else '' }}">{{ volunteer_application.created_at.strftime("%d.%m.%Y %H:%M") if volunteer_application.created_at else "" }}</time>
+      <time datetime="{{ volunteer_application.created_at.isoformat() if volunteer_application.created_at else '' }}">{{ format_datetime_oslo(volunteer_application.created_at) }}</time>
       {% if is_new_application %}
         <span class="application-card-age{% if age_days > 4 %} application-card-age-danger{% elif age_days > 2 %} application-card-age-warning{% endif %}"{% if age_days > 7 %} aria-label="Søknaden er eldre enn sju dager"{% endif %}>{{ age_days }} {{ "dag" if age_days == 1 else "dager" }} gammel</span>
       {% endif %}
