@@ -88,6 +88,7 @@ the distinction between application telemetry and Vercel drains.
 | `SPOTIFY_REFRESH_TOKEN` | unset | Fallback refresh token if no database token exists. |
 | `NOW_PLAYING_CACHE_SECONDS` | `10.0` | Fresh cache window for now-playing data. |
 | `NOW_PLAYING_STALE_GRACE_SECONDS` | `30.0` | Grace window for serving stale data during refresh failure. |
+| `SPOTIFY_NOW_PLAYING_ENABLED` | `false` | Kill switch for Spotify now-playing polling. When `false` the service never calls Spotify and `GET /api/now-playing` reports an authorized-but-idle state. Temporarily off by default while a recurring upstream `HTTPStatusError`/`413` retry loop is investigated; set to `true` once resolved and verified. |
 
 ## Sessions, Caches, and Mobile-card Limits
 

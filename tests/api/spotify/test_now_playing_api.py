@@ -131,6 +131,7 @@ async def test_now_playing_service_prefers_database_refresh_token_over_env_fallb
             spotify_client_id="spotify-client-id",
             spotify_client_secret="spotify-client-secret",
             spotify_refresh_token="env-refresh-token",
+            spotify_now_playing_enabled=True,
         ),
         repository=repository,  # type: ignore[arg-type]
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
@@ -164,6 +165,7 @@ async def test_now_playing_service_returns_unconfigured_state_without_any_refres
             app_public_base_url="https://personal.kvarteret.no",
             spotify_client_id="spotify-client-id",
             spotify_client_secret="spotify-client-secret",
+            spotify_now_playing_enabled=True,
         ),
         repository=FakeIntegrationTokensRepository(),  # type: ignore[arg-type]
     )
@@ -173,6 +175,55 @@ async def test_now_playing_service_returns_unconfigured_state_without_any_refres
 
     assert result.state == {
         "authorized": False,
+        "hasTrack": False,
+        "isPlaybackActive": False,
+        "name": None,
+        "artists": None,
+        "album": None,
+        "image": None,
+        "progressMs": None,
+        "durationMs": None,
+        "progressPercent": None,
+        "connectUrl": "https://personal.kvarteret.no/spotify/login",
+    }
+
+
+@pytest.mark.asyncio
+async def test_now_playing_service_polling_disabled_skips_spotify_and_repository() -> None:
+    class ExplodingRepository:
+        async def get_token(self, provider: str) -> FakeIntegrationToken | None:
+            raise AssertionError("repository must not be read while polling is disabled")
+
+        async def save_token(self, **kwargs) -> None:
+            raise AssertionError("repository must not be written while polling is disabled")
+
+        async def delete_token(self, provider: str) -> None:
+            raise AssertionError("repository must not be written while polling is disabled")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(
+            f"Spotify must not be contacted while polling is disabled: {request.url}"
+        )
+
+    service = NowPlayingService(
+        Settings(
+            app_public_base_url="https://personal.kvarteret.no",
+            spotify_client_id="spotify-client-id",
+            spotify_client_secret="spotify-client-secret",
+            spotify_now_playing_enabled=False,
+        ),
+        repository=ExplodingRepository(),  # type: ignore[arg-type]
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    result = await service.get_state()
+    await service.aclose()
+
+    assert service.is_polling_enabled() is False
+    assert result.cache_hit is False
+    assert result.cache_stale is False
+    assert result.state == {
+        "authorized": True,
         "hasTrack": False,
         "isPlaybackActive": False,
         "name": None,
@@ -222,6 +273,7 @@ async def test_now_playing_service_serves_stale_snapshot_after_refresh_failure()
             spotify_client_secret="spotify-client-secret",
             now_playing_cache_seconds=10.0,
             now_playing_stale_grace_seconds=30.0,
+            spotify_now_playing_enabled=True,
         ),
         repository=repository,  # type: ignore[arg-type]
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
@@ -259,6 +311,7 @@ async def test_now_playing_service_backs_off_and_logs_once_per_outage(caplog) ->
             app_public_base_url="https://personal.kvarteret.no",
             spotify_client_id="spotify-client-id",
             spotify_client_secret="spotify-client-secret",
+            spotify_now_playing_enabled=True,
         ),
         repository=repository,  # type: ignore[arg-type]
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
@@ -287,6 +340,7 @@ async def test_now_playing_service_builds_authorize_url_for_new_callback() -> No
             app_public_base_url="https://personal.kvarteret.no",
             spotify_client_id="spotify-client-id",
             spotify_client_secret="spotify-client-secret",
+            spotify_now_playing_enabled=True,
         ),
         repository=FakeIntegrationTokensRepository(),  # type: ignore[arg-type]
     )
@@ -318,6 +372,7 @@ async def test_now_playing_service_persists_refresh_token_after_callback() -> No
             app_public_base_url="https://personal.kvarteret.no",
             spotify_client_id="spotify-client-id",
             spotify_client_secret="spotify-client-secret",
+            spotify_now_playing_enabled=True,
         ),
         repository=repository,  # type: ignore[arg-type]
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
@@ -345,6 +400,7 @@ async def test_now_playing_service_rejects_callback_for_different_admin_session(
             app_public_base_url="https://personal.kvarteret.no",
             spotify_client_id="spotify-client-id",
             spotify_client_secret="spotify-client-secret",
+            spotify_now_playing_enabled=True,
         ),
         repository=FakeIntegrationTokensRepository(),  # type: ignore[arg-type]
     )

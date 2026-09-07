@@ -43,6 +43,12 @@
           {{ error_message }}
         </div>
       {% endif %}
+      {% if not spotify_polling_enabled %}
+        <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Spotify-polleringen er midlertidig slått av (<code>SPOTIFY_NOW_PLAYING_ENABLED=false</code>).
+          Nåværende spor vises ikke før integrasjonen er aktivert igjen.
+        </div>
+      {% endif %}
       {% if not is_spotify_configured %}
         <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Spotify OAuth er ikke konfigurert. Sett <code>SPOTIFY_CLIENT_ID</code>, <code>SPOTIFY_CLIENT_SECRET</code> og <code>APP_PUBLIC_BASE_URL</code>.
