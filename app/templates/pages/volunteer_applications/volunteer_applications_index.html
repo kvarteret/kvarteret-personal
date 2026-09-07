@@ -23,24 +23,14 @@
 
     <section class="app-panel min-w-0">
       <form id="application-filters" hx-get="/volunteer-applications"
-        hx-trigger="submit, input from:#application-query, change from:#application-status, change from:#application-groups"
+        hx-trigger="submit, input from:#application-query, change from:#application-groups"
         hx-target="#volunteer-application-list-panel" hx-select="#volunteer-application-list-panel"
         hx-swap="outerHTML" hx-sync="this:replace" hx-replace-url="true"
         hx-indicator="#application-loading"
-        action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_12rem_minmax(0,1fr)_auto]" method="get">
+        action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" method="get">
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Søk i søknader</span>
           <input class="app-input" id="application-query" name="q" autocomplete="off" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
-        </label>
-        <label class="grid gap-1">
-          <span class="text-sm text-stone-500">Status</span>
-          <select class="app-input" id="application-status" name="application_status">
-            <option value="active" {% if selected_application_status == "active" %}selected{% endif %}>Aktive søknader</option>
-            <option value="" {% if not selected_application_status %}selected{% endif %}>Alle statuser</option>
-            {% for value, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
-              <option value="{{ value }}" {% if selected_application_status == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
         </label>
         <div class="group-combobox" data-group-picker>
           <label id="application-group-label" for="application-groups" class="text-sm text-stone-500">Grupper</label>
@@ -58,7 +48,7 @@
             </div>
             <div id="application-group-options" class="group-combobox-options" role="listbox" aria-multiselectable="true" aria-labelledby="application-group-label" hidden></div>
           </div>
-          <span id="application-group-help" class="text-xs text-stone-500" data-group-status role="status">Ingen valgt = alle grupper</span>
+          <span id="application-group-help" class="text-xs text-stone-500" data-group-status role="status"></span>
         </div>
         <button class="app-button" type="submit">Oppdater søknader</button>
       </form>

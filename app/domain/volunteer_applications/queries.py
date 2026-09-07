@@ -8,7 +8,7 @@ side in the repository.
 
 from __future__ import annotations
 
-from sqlalchemy import func, literal, or_, select
+from sqlalchemy import case, func, literal, or_, select
 
 from app.cache import TTLCache
 from app.db.repository import SqlAlchemyRepository
@@ -107,8 +107,18 @@ class VolunteerApplicationsQueries(SqlAlchemyRepository):
                 )
             )
             .order_by(
-                volunteer_application_invites.c.created_at.desc(),
-                volunteer_application_invites.c.id.desc(),
+                case(
+                    (volunteer_application_invites.c.status.in_(("new", "trial")), volunteer_application_invites.c.created_at),
+                ).asc().nulls_last(),
+                case(
+                    (volunteer_application_invites.c.status.in_(("new", "trial")), volunteer_application_invites.c.id),
+                ).asc().nulls_last(),
+                case(
+                    (volunteer_application_invites.c.status.not_in(("new", "trial")), volunteer_application_invites.c.created_at),
+                ).desc().nulls_last(),
+                case(
+                    (volunteer_application_invites.c.status.not_in(("new", "trial")), volunteer_application_invites.c.id),
+                ).desc().nulls_last(),
             )
         )
         allowed_statuses = {"new", "contacted", "trial", "volunteer", "not_volunteer"}

@@ -81,7 +81,7 @@
             </a>
           </div>
         </header>
-        <main class="mx-auto w-full max-w-6xl flex-1 px-4 py-6 lg:px-8 lg:py-8">
+        <main class="mx-auto w-full {% if section == 'volunteer-applications' %}max-w-screen-2xl{% else %}max-w-6xl{% endif %} flex-1 px-4 py-6 lg:px-8 lg:py-8">
           {{ rendered_content | safe }}
         </main>
         <footer class="w-full p-6 text-center place-content-center flex flex-wrap space-x-4"><span>{{ _("Made with 💛 by E-tjenesten") }}</span></footer>

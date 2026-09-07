@@ -4510,6 +4510,25 @@
               ],
               "title": "Group Id"
             }
+          },
+          {
+            "in": "query",
+            "name": "group_ids",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Ids"
+            }
           }
         ],
         "responses": {
@@ -4701,54 +4720,6 @@
               "title": "Application Id",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "q",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Q"
-            }
-          },
-          {
-            "in": "query",
-            "name": "application_status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Application Status"
-            }
-          },
-          {
-            "in": "query",
-            "name": "group_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Group Id"
-            }
           }
         ],
         "responses": {
@@ -4878,6 +4849,9 @@
             },
             "description": "Successful Response"
           },
+          "204": {
+            "description": "Board status saved"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4915,6 +4889,9 @@
             },
             "description": "Successful Response"
           },
+          "204": {
+            "description": "Board status saved"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -4951,6 +4928,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "204": {
+            "description": "Board status saved"
           },
           "422": {
             "content": {
@@ -5026,6 +5006,9 @@
             },
             "description": "Successful Response"
           },
+          "204": {
+            "description": "Board status saved"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5062,6 +5045,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "204": {
+            "description": "Board status saved"
           },
           "422": {
             "content": {

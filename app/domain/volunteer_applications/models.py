@@ -168,6 +168,13 @@ class VolunteerApplicationListItem:
         return application_status_label(self.status)
 
     @property
+    def age_days(self) -> int:
+        created_at = self.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        return max(0, (datetime.now(UTC) - created_at.astimezone(UTC)).days)
+
+    @property
     def trial_days_remaining(self) -> int | None:
         return trial_days_remaining(self.trial_ends_at)
 

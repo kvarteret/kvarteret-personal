@@ -68,7 +68,11 @@ async def volunteer_applications_index(
             limit=10
         )
     )
-    group_options = await volunteers_service.list_assignment_groups()
+    group_options = [
+        group
+        for group in await volunteers_service.list_assignment_groups()
+        if group.active
+    ]
     return templates.TemplateResponse(
         request,
         "pages/volunteer_applications/volunteer_applications_index.html",

@@ -1,16 +1,27 @@
-<article class="application-card" data-application-card data-id="{{ volunteer_application.registration_id }}" data-state="{{ volunteer_application.status }}">
+{% set age_days = volunteer_application.age_days %}
+{% set is_new_application = volunteer_application.status == "new" %}
+{% set is_unsubmitted_friend = volunteer_application.source in ["friend_invite", "group_invite"] and not volunteer_application.pending_volunteer_id %}
+<article class="application-card{% if is_new_application and age_days > 7 %} application-card-critical{% endif %}" data-application-card data-created-at="{{ volunteer_application.created_at.isoformat() }}" data-id="{{ volunteer_application.registration_id }}" data-state="{{ volunteer_application.status }}">
   <a class="application-card-link" href="/volunteer-applications/{{ volunteer_application.registration_id }}" draggable="false">
-    <h3 class="application-card-name">{{ ((volunteer_application.first_name or '') ~ ' ' ~ (volunteer_application.last_name or '')) | trim or volunteer_application.email }}</h3>
+    <h3 class="application-card-name">{{ ((volunteer_application.first_name or '') ~ ' ' ~ (volunteer_application.last_name or '')) | trim or ("Venneinvitasjon" if is_unsubmitted_friend else volunteer_application.email) }}</h3>
     {% if volunteer_application.first_name or volunteer_application.last_name %}
       <p class="application-card-email">{{ volunteer_application.email }}</p>
     {% endif %}
     <p class="application-card-group">{{ volunteer_application.first_choice_group_name or volunteer_application.initial_group_name or "Ingen gruppe valgt" }}</p>
     <div class="application-card-meta">
-      <time>{{ volunteer_application.created_at.strftime("%d.%m.%Y") if volunteer_application.created_at else "" }}</time>
+      <time datetime="{{ volunteer_application.created_at.isoformat() if volunteer_application.created_at else '' }}">{{ format_datetime_oslo(volunteer_application.created_at) }}</time>
+      {% if is_new_application %}
+        <span class="application-card-age{% if age_days > 4 %} application-card-age-danger{% elif age_days > 2 %} application-card-age-warning{% endif %}"{% if age_days > 7 %} aria-label="Søknaden er eldre enn sju dager"{% endif %}>{{ age_days }} {{ "dag" if age_days == 1 else "dager" }} gammel</span>
+      {% endif %}
       {% if volunteer_application.status == "trial" and volunteer_application.trial_days_remaining is not none %}
         <span>{{ "Prøvetid utløpt" if volunteer_application.trial_expired else (volunteer_application.trial_days_remaining ~ " dager igjen") }}</span>
       {% elif not volunteer_application.pending_volunteer_id %}
-        <span>Venter på innsending</span>
+        <span>Venter på innsending{% if volunteer_application.invited_by %} · Invitert av {{ volunteer_application.invited_by.inviter_display_name }}{% endif %}</span>
+      {% elif volunteer_application.invited_by %}
+        <span>Invitert av {{ volunteer_application.invited_by.inviter_display_name }}</span>
+      {% endif %}
+      {% if volunteer_application.friend_invitees %}
+        <span>Inviterte: {% for friend in volunteer_application.friend_invitees %}{{ friend.invitee_name or "Venn venter på innsending" }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
       {% endif %}
     </div>
   </a>

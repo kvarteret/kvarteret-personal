@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import Request
@@ -27,6 +27,7 @@ from app.domain.volunteer_applications.models import (
     RecentVolunteerRegistrationPage,
     VolunteerAlreadyExistsError,
     VolunteerApplicationDetail,
+    VolunteerApplicationFriendRelationship,
     VolunteerApplicationListItem,
     VolunteerApplicationInvite,
 )
@@ -366,6 +367,7 @@ class FakeVolunteersService:
         return [
             GroupOption(group_id=3, name="Bar", active=True),
             GroupOption(group_id=8, name="Ukjent", active=True),
+            GroupOption(group_id=99, name="Ikke rekrutterer", active=False),
         ]
 
     async def list_assignment_roles(self, group_id: int) -> list[AssignmentRoleOption]:
@@ -462,10 +464,14 @@ def test_volunteer_application_pages_render() -> None:
     assert "Opprett invitasjon" in admin_response.text
     assert '<details class="app-panel">' in admin_response.text
     assert 'x-show="inviteOpen"' not in admin_response.text
-    assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
-    assert 'name="application_status"' in admin_response.text
+    assert "13.03.2026 01:00" in admin_response.text
+    assert 'name="application_status"' not in admin_response.text
+    assert "Dra kort mellom kolonnene" not in admin_response.text
+    assert "Ingen valgt = alle grupper" not in admin_response.text
+    assert "max-w-screen-2xl" in admin_response.text
     assert 'name="group_id"' in admin_response.text
     assert '<option value="3">Bar</option>' in admin_response.text
+    assert '<option value="99">Ikke rekrutterer</option>' not in admin_response.text
     assert "Siste nye frivillige" in admin_response.text
     assert "Ny Frivillig" in admin_response.text
     assert 'hx-get="/volunteer-applications/recent-registrations"' in admin_response.text
@@ -480,6 +486,7 @@ def test_volunteer_application_pages_render() -> None:
     assert 'enctype="multipart/form-data"' in public_response.text
     assert 'hx-boost="false"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
+    assert 'name="csrf_token"' in public_response.text
     assert "data-photo-input" in public_response.text
     assert "data-photo-preview" in public_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in public_response.text
@@ -487,6 +494,21 @@ def test_volunteer_application_pages_render() -> None:
     assert 'pattern="\\+[1-9][0-9]{7,14}"' not in public_response.text
     assert 'placeholder="91234567"' in public_response.text
     assert 'name="profile_photo"' in public_response.text
+
+
+def test_volunteer_application_group_filter_only_lists_active_groups() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications")
+
+    assert response.status_code == 200
+    assert '<option value="3">Bar</option>' in response.text
+    assert '<option value="8">Ukjent</option>' in response.text
+    assert '<option value="99">Ikke rekrutterer</option>' not in response.text
 
 
 def test_volunteer_applications_can_be_filtered_by_group() -> None:
@@ -569,6 +591,7 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
 
     assert response.status_code == 200
     assert "Søkerprofil" in response.text
+    assert "Sendt inn 13.03.2026 01:00" in response.text
     assert "Registrering" in response.text
     assert "registrant@example.com" in response.text
     assert "Oppgrader til frivillig" in response.text
@@ -761,8 +784,6 @@ def test_recent_registrations_render_people_individually() -> None:
 
     assert response.status_code == 200
     assert "Grupperegistrering" not in response.text
-    assert "Første valg:" in response.text
-    assert "Andre valg:" in response.text
     assert "Komitéønsker" not in response.text
     assert response.text.count("Inviter Person") == 1
     assert response.text.count("Invitee Person") == 1
@@ -889,6 +910,36 @@ def test_volunteer_application_submit_redirects_to_pending_status_page() -> None
 
     assert response.status_code == 303
     assert response.headers["location"] == "/apply/token-123/submitted"
+
+
+def test_volunteer_application_submit_accepts_rendered_csrf_token_with_session_cookie() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    service = FakeVolunteerApplicationsService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    client = TestClient(app)
+    client.cookies.set(app.state.container.settings.session_cookie_name, "session-present")
+
+    form_response = client.get("/apply/token-123")
+    csrf_token = client.cookies["kvarteret_csrf"]
+    assert f'name="csrf_token" type="hidden" value="{csrf_token}"' in form_response.text
+
+    response = client.post(
+        "/apply/token-123",
+        data={
+            "csrf_token": csrf_token,
+            "last_name": "Registrant",
+            "phone": "+4791234567",
+            "birth_date": "1815-12-10",
+            "gender": "K",
+            "postal_code": "0000",
+        },
+        files={"profile_photo": ("avatar.png", b"fake-image", "image/png")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert service.submission_calls
 
 
 def test_volunteer_application_submit_accepts_profile_photo_upload() -> None:
@@ -1038,7 +1089,7 @@ def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
     assert response.status_code == 200
     assert volunteer_applications_service.deleted_registration_ids == [7]
     assert "registrant@example.com" not in response.text
-    assert "Ingen søknader passer filtrene." in response.text
+    assert response.headers["HX-Redirect"] == "/volunteer-applications"
 
 
 def test_volunteer_application_delete_redirects_from_boosted_detail_page() -> None:
@@ -1055,8 +1106,8 @@ def test_volunteer_application_delete_redirects_from_boosted_detail_page() -> No
         follow_redirects=False,
     )
 
-    assert response.status_code == 303
-    assert response.headers["location"] == "/volunteer-applications"
+    assert response.status_code == 200
+    assert response.headers["HX-Redirect"] == "/volunteer-applications"
     assert volunteer_applications_service.deleted_registration_ids == [7]
 
 
@@ -1093,8 +1144,6 @@ def test_volunteer_application_resend_redirects_and_calls_service() -> None:
     resend_response = client.post("/volunteer-applications/7/resend", follow_redirects=False)
 
     assert page_response.status_code == 200
-    assert "Send e-post på nytt" in page_response.text
-    assert 'hx-confirm="Avbryte denne invitasjonen?"' in page_response.text
     assert resend_response.status_code == 303
     assert resend_response.headers["location"] == "/volunteer-applications"
     assert volunteer_applications_service.resent_registration_ids == [7]
@@ -1290,6 +1339,55 @@ def test_application_board_groups_all_states_and_keeps_empty_columns() -> None:
     assert "Ingen søknader passer filtrene." in response.text
 
 
+def test_application_board_renders_sort_controls_timestamps_and_age_styles() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    now = datetime.now(UTC)
+    friend_relationship = VolunteerApplicationFriendRelationship(
+        relationship_id=1,
+        inviter_application_id=1,
+        invitee_application_id=5,
+        inviter_name="Inga Inviter",
+        inviter_email="inga@example.test",
+        invitee_name=None,
+        invitee_email="frida@example.test",
+        created_at=now - timedelta(days=8),
+    )
+    service.volunteer_applications = [
+        replace(service.volunteer_applications[0], registration_id=1, status="new", email="old@example.test", created_at=now - timedelta(days=8), friend_invitees=[friend_relationship]),
+        replace(service.volunteer_applications[0], registration_id=2, status="new", email="red@example.test", created_at=now - timedelta(days=5)),
+        replace(service.volunteer_applications[0], registration_id=3, status="new", email="yellow@example.test", created_at=now - timedelta(days=3)),
+        replace(service.volunteer_applications[0], registration_id=4, status="contacted", email="moved@example.test", created_at=now - timedelta(days=8)),
+        replace(service.volunteer_applications[0], registration_id=5, status="new", source="friend_invite", email="pending@example.test", pending_volunteer_id=None, first_name=None, last_name=None, invited_by=friend_relationship, created_at=now - timedelta(days=1)),
+    ]
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications")
+
+    assert response.status_code == 200
+    assert response.text.count("data-application-sort") == 5
+    assert response.text.count('data-sort-direction="asc"') == 2
+    assert response.text.count('data-sort-direction="desc"') == 3
+    assert response.text.count("Nyeste først") == 3
+    assert "application-card-critical" in response.text
+    assert "application-card-age-danger" in response.text
+    assert "application-card-age-warning" in response.text
+    assert 'datetime="' in response.text
+    assert "dager gammel" in response.text
+    assert "Inviterte: Venn venter på innsending" in response.text
+    assert "Venter på innsending · Invitert av Inga Inviter" in response.text
+    assert "pending@example.test" not in response.text
+    assert "frida@example.test" not in response.text
+    contacted_card = response.text.split('data-state="contacted"', 1)[1].split("</article>", 1)[0]
+    assert "application-card-critical" not in contacted_card
+    assert "application-card-age-danger" not in contacted_card
+    assert "application-card-age-warning" not in contacted_card
+    assert "dager gammel" not in contacted_card
+
+
 def test_live_application_search_returns_only_board_and_passes_filters() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
@@ -1315,7 +1413,7 @@ def test_live_application_search_returns_only_board_and_passes_filters() -> None
     assert response.text.count('data-application-state=') == 5
 
 
-def test_cancel_invitation_preserves_board_filters() -> None:
+def test_cancel_invitation_redirects_back_to_board() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     service = FakeVolunteerApplicationsService()
@@ -1329,11 +1427,11 @@ def test_cancel_invitation_preserves_board_filters() -> None:
     app.dependency_overrides[get_volunteer_applications_service] = lambda: service
     client = TestClient(app)
     response = client.delete(
-        "/volunteer-applications/7?q=sample&application_status=new&group_id=3",
+        "/volunteer-applications/7?q=sample&group_id=3",
         headers={"HX-Request": "true"},
     )
 
     assert response.status_code == 200
     assert service.deleted_registration_ids == [7]
-    assert calls == [{"query": "sample", "application_status": "new", "group_id": 3}]
-    assert response.text.count('data-application-state=') == 5
+    assert calls == []
+    assert response.headers["HX-Redirect"] == "/volunteer-applications"
