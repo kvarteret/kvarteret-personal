@@ -1,6 +1,5 @@
 <div
   class="fixed inset-0 z-50 flex items-end justify-end bg-stone-950/45 p-4 sm:items-center sm:p-6"
-  hx-disinherit="hx-select hx-target hx-swap"
   hx-get="/feedback/dismiss"
   hx-swap="innerHTML"
   hx-target="#feedback-root"
@@ -36,7 +35,6 @@
         aria-label="Lukk tilbakemeldingsdialog"
         class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 text-xl text-stone-500 transition hover:border-stone-300 hover:text-stone-900"
         autofocus
-        hx-disinherit="hx-select hx-target hx-swap"
         hx-get="/feedback/dismiss"
         hx-swap="innerHTML"
         hx-target="#feedback-root"
@@ -50,7 +48,6 @@
       <form
         action="/feedback"
         class="flex flex-col gap-4"
-        hx-disinherit="hx-select hx-target hx-swap"
         hx-post="/feedback"
         hx-swap="innerHTML"
         hx-target="#feedback-root"
@@ -97,7 +94,6 @@
           <button
             class="app-button-secondary"
             formnovalidate
-            hx-disinherit="hx-select hx-target hx-swap"
             hx-get="/feedback/dismiss"
             hx-swap="innerHTML"
             hx-target="#feedback-root"
