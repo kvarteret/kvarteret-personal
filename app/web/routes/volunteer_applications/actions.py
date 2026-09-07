@@ -29,7 +29,6 @@ from app.web.routes.volunteer_applications.pages import (
     _render_public_apply_template,
 )
 from app.web.upload_helpers import read_upload_file_limited
-from app.web.templates import templates
 
 _VOLUNTEER_APPS_PATH = "/volunteer-applications"
 
