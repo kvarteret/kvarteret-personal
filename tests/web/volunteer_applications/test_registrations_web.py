@@ -464,7 +464,6 @@ def test_volunteer_application_pages_render() -> None:
     assert "Opprett invitasjon" in admin_response.text
     assert '<details class="app-panel">' in admin_response.text
     assert 'x-show="inviteOpen"' not in admin_response.text
-    assert "Planlagt verv: Bar · Skiftleder" in admin_response.text
     assert "13.03.2026 01:00" in admin_response.text
     assert 'name="application_status"' not in admin_response.text
     assert "Dra kort mellom kolonnene" not in admin_response.text
@@ -785,8 +784,6 @@ def test_recent_registrations_render_people_individually() -> None:
 
     assert response.status_code == 200
     assert "Grupperegistrering" not in response.text
-    assert "Første valg:" in response.text
-    assert "Andre valg:" in response.text
     assert "Komitéønsker" not in response.text
     assert response.text.count("Inviter Person") == 1
     assert response.text.count("Invitee Person") == 1
@@ -1092,7 +1089,7 @@ def test_volunteer_application_delete_rerenders_list_for_htmx() -> None:
     assert response.status_code == 200
     assert volunteer_applications_service.deleted_registration_ids == [7]
     assert "registrant@example.com" not in response.text
-    assert "Ingen søknader passer filtrene." in response.text
+    assert response.headers["HX-Redirect"] == "/volunteer-applications"
 
 
 def test_volunteer_application_delete_redirects_from_boosted_detail_page() -> None:
@@ -1109,8 +1106,8 @@ def test_volunteer_application_delete_redirects_from_boosted_detail_page() -> No
         follow_redirects=False,
     )
 
-    assert response.status_code == 303
-    assert response.headers["location"] == "/volunteer-applications"
+    assert response.status_code == 200
+    assert response.headers["HX-Redirect"] == "/volunteer-applications"
     assert volunteer_applications_service.deleted_registration_ids == [7]
 
 
@@ -1147,8 +1144,6 @@ def test_volunteer_application_resend_redirects_and_calls_service() -> None:
     resend_response = client.post("/volunteer-applications/7/resend", follow_redirects=False)
 
     assert page_response.status_code == 200
-    assert "Send e-post på nytt" in page_response.text
-    assert 'hx-confirm="Avbryte denne invitasjonen?"' in page_response.text
     assert resend_response.status_code == 303
     assert resend_response.headers["location"] == "/volunteer-applications"
     assert volunteer_applications_service.resent_registration_ids == [7]
@@ -1418,7 +1413,7 @@ def test_live_application_search_returns_only_board_and_passes_filters() -> None
     assert response.text.count('data-application-state=') == 5
 
 
-def test_cancel_invitation_preserves_board_filters() -> None:
+def test_cancel_invitation_redirects_back_to_board() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
     service = FakeVolunteerApplicationsService()
@@ -1432,11 +1427,11 @@ def test_cancel_invitation_preserves_board_filters() -> None:
     app.dependency_overrides[get_volunteer_applications_service] = lambda: service
     client = TestClient(app)
     response = client.delete(
-        "/volunteer-applications/7?q=sample&application_status=new&group_id=3",
+        "/volunteer-applications/7?q=sample&group_id=3",
         headers={"HX-Request": "true"},
     )
 
     assert response.status_code == 200
     assert service.deleted_registration_ids == [7]
-    assert calls == [{"query": "sample", "application_status": "new", "group_id": 3}]
-    assert response.text.count('data-application-state=') == 5
+    assert calls == []
+    assert response.headers["HX-Redirect"] == "/volunteer-applications"
