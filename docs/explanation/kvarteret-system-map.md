@@ -25,7 +25,7 @@ flowchart LR
     smtp["SMTP provider\ntransactional email"]
     slack["Slack Incoming Webhook\nfeedback"]
     studentbergen["StudentBergen\nexternal event publication context"]
-    posthog["PostHog\nanalytics in sibling apps"]
+    posthog["PostHog\nshared analytics and diagnostics"]
     sanity["Sanity\ncontent for samfunnetibergen"]
 
     internbevis -->|"mobile-card and now-playing API"| personal
@@ -37,6 +37,7 @@ flowchart LR
     personal -->|"access codes and onboarding mail"| smtp
     personal -->|"feedback messages"| slack
     samfunnet -->|"analytics events"| posthog
+    personal -->|"application logs and diagnostics"| posthog
     samfunnet -->|"content reads"| sanity
     frontendEventsideNote["frontend-eventside is retired; retained docs are historical context"]
     eventside --> frontendEventsideNote

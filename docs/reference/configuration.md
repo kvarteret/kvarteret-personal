@@ -67,6 +67,18 @@ The app accepts both current `SMTP_*` names and legacy `EMAIL_*` or `Email__*` a
 When `APP_ENV=development` and `SMTP_SERVER` is unset, outbound HTML is written
 to `.devdata/outbox/` and links are logged.
 
+## PostHog Observability
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `POSTHOG_OBSERVABILITY_ENABLED` | `false` | Enables OTLP logs/traces and server exception issues. |
+| `POSTHOG_PROJECT_TOKEN` | unset | Shared PostHog project token (`phc_`); required when enabled. |
+| `POSTHOG_HOST` | `https://eu.i.posthog.com` | EU ingestion origin, not the PostHog dashboard URL. |
+| `OTEL_SERVICE_NAME` | `kvarteret-personal` | Service filter in shared logs and error events. |
+
+See [PostHog diagnostics](../how-to/posthog-diagnostics.md) for verification and
+the distinction between application telemetry and Vercel drains.
+
 ## Spotify and Now Playing
 
 | Setting | Default | Purpose |
