@@ -23,11 +23,11 @@
 
     <section class="app-panel min-w-0">
       <form id="application-filters" hx-get="/volunteer-applications"
-        hx-trigger="submit, input from:#application-query, change from:#application-status, change from:#application-group"
+        hx-trigger="submit, input from:#application-query, change from:#application-status, change from:#application-groups"
         hx-target="#volunteer-application-list-panel" hx-select="#volunteer-application-list-panel"
         hx-swap="outerHTML" hx-sync="this:replace" hx-replace-url="true"
         hx-indicator="#application-loading"
-        action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_minmax(12rem,auto)_auto]" method="get">
+        action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_12rem_minmax(0,1fr)_auto]" method="get">
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Søk i søknader</span>
           <input class="app-input" id="application-query" name="q" autocomplete="off" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
@@ -42,28 +42,30 @@
             {% endfor %}
           </select>
         </label>
-        <div class="grid gap-2" data-group-filter>
-          <label class="grid gap-1" for="application-group-search">
-            <span class="text-sm text-stone-500">Finn gruppe</span>
-            <input id="application-group-search" class="app-input" type="search" autocomplete="off"
-              placeholder="Skriv gruppenavn" aria-controls="application-group" data-group-search>
-          </label>
-          <label class="grid gap-1" for="application-group">
-            <span class="text-sm text-stone-500">Filtrer på gruppe</span>
-            <select id="application-group" class="app-input" name="group_id" data-group-select>
-              <option value="0">Alle grupper</option>
-              {% for group in group_options %}
-                <option value="{{ group.group_id }}"{% if selected_application_group_id == group.group_id %} selected{% endif %}>{{ group.name }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <p class="text-sm text-stone-500" role="status" data-group-feedback></p>
+        <div class="group-combobox" data-group-picker>
+          <label id="application-group-label" for="application-groups" class="text-sm text-stone-500">Grupper</label>
+          <select id="application-groups" class="app-input" name="group_ids" multiple aria-describedby="application-group-help">
+            {% for group in group_options %}
+              <option value="{{ group.group_id }}"{% if group.group_id in selected_application_group_ids %} selected{% endif %}>{{ group.name }}</option>
+            {% endfor %}
+          </select>
+          <div data-group-enhanced hidden>
+            <div class="group-combobox-control">
+              <div class="group-combobox-chips" data-group-chips></div>
+              <input id="application-group-search" class="group-combobox-input" type="text" autocomplete="off"
+                role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false"
+                aria-controls="application-group-options" aria-labelledby="application-group-label" placeholder="Søk og velg grupper">
+            </div>
+            <div id="application-group-options" class="group-combobox-options" role="listbox" aria-multiselectable="true" aria-labelledby="application-group-label" hidden></div>
+          </div>
+          <span id="application-group-help" class="text-xs text-stone-500" data-group-status role="status">Ingen valgt = alle grupper</span>
         </div>
-        <button class="app-button" type="submit">Søk</button>
+        <button class="app-button" type="submit">Oppdater søknader</button>
       </form>
       <p id="application-loading" class="htmx-indicator mt-2 text-sm" role="status">Oppdaterer søknader …</p>
     </section>
 
+    <p id="application-board-feedback" role="status" class="text-sm" hidden></p>
     {% include "components/volunteer_applications/volunteer_applications_list.html" %}
 
     <section class="app-panel">

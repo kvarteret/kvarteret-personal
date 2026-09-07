@@ -1,21 +1,21 @@
 {# Keep every workflow state visible, including states with no matching applications. #}
 <section class="min-w-0" id="volunteer-application-list-panel" aria-label="Søknadstavle">
-  <p class="mb-3 text-sm text-stone-500" role="status">{{ volunteer_applications | length }} {{ "søknad" if volunteer_applications | length == 1 else "søknader" }} · Åpne en søknad for å endre status.</p>
+  <p class="mb-3 text-sm text-stone-500" role="status">{{ volunteer_applications | length }} {{ "søknad" if volunteer_applications | length == 1 else "søknader" }} · Dra kort mellom kolonnene, eller åpne en søknad.</p>
   {% if not volunteer_applications %}
     <p class="mb-4 text-sm">Ingen søknader passer filtrene.</p>
   {% endif %}
-  <div class="flex gap-4 overflow-x-auto pb-4" tabindex="0" role="region" aria-label="Statuskolonner, rull sidelengs for å se alle">
+  <div class="application-board" tabindex="0" role="region" aria-label="Statuskolonner, rull sidelengs for å se alle">
     {% for state, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
       {% set applications = volunteer_applications | selectattr("status", "equalto", state) | list %}
-      <section class="w-72 shrink-0 border border-stone-300 bg-stone-100 p-3" aria-labelledby="column-{{ state }}" data-application-state="{{ state }}">
+      <section class="application-column" aria-labelledby="column-{{ state }}" data-application-state="{{ state }}">
         <h2 id="column-{{ state }}" class="mb-4 flex items-center justify-between gap-2 border-t-4 border-kvarteret-red pt-3 text-lg font-medium">
           {{ label }} <span class="text-sm text-stone-500">{{ applications | length }}</span>
         </h2>
-        <div class="grid gap-3">
+        <div class="application-column-cards" data-application-lane="{{ state }}" role="region" aria-label="Søknader: {{ label }}" tabindex="0">
           {% for volunteer_application in applications %}
             {% include "components/volunteer_applications/volunteer_application_card.html" %}
           {% else %}
-            <p class="border border-dashed border-stone-300 p-4 text-sm text-stone-500">Ingen søknader</p>
+            <p class="application-column-empty">Ingen søknader</p>
           {% endfor %}
         </div>
       </section>
