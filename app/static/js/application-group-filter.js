@@ -59,9 +59,11 @@
           button.addEventListener('click', () => { active = index; toggle(option); });
           list.append(button);
         });
-        status.textContent = matches.length
-          ? (selected().length ? `${selected().length} grupper valgt` : 'Ingen valgt = alle grupper')
-          : 'Ingen grupper funnet';
+        if (status) {
+          status.textContent = matches.length
+            ? (selected().length ? `${selected().length} grupper valgt` : '')
+            : 'Ingen grupper funnet';
+        }
         if (!list.hidden) highlight();
       };
       const open = () => {
