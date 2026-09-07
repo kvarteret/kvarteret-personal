@@ -57,12 +57,16 @@
             {% if not volunteer_application.pending_volunteer_id %}
             <form
               action="/volunteer-applications/{{ volunteer_application.registration_id }}?_method=DELETE"
+              {% if vue_island %}
+              data-cancel-application="{{ volunteer_application.registration_id }}"
+              {% else %}
               hx-include="#application-filters"
               hx-sync="#application-filters:replace"
               hx-confirm="Avbryte denne invitasjonen?"
               hx-delete="/volunteer-applications/{{ volunteer_application.registration_id }}"
               hx-swap="outerHTML"
               hx-target="#volunteer-application-list-panel"
+              {% endif %}
               method="post"
             >
               <button class="app-button-secondary" type="submit">Avbryt</button>

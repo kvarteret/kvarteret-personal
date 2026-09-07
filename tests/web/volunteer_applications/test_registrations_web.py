@@ -509,7 +509,7 @@ def test_volunteer_applications_can_be_filtered_by_group() -> None:
     assert "registrant@example.com" in choice_group_response.text
     assert '<option value="8" selected>Ukjent</option>' in choice_group_response.text
     assert non_matching_response.status_code == 200
-    assert "registrant@example.com" not in non_matching_response.text
+    assert "registrant@example.com" not in non_matching_response.text.split("<template data-vue-card", 1)[0]
     assert "Ingen søknader passer filtrene." in non_matching_response.text
 
 
@@ -1336,3 +1336,23 @@ def test_cancel_invitation_preserves_board_filters() -> None:
     assert service.deleted_registration_ids == [7]
     assert calls == [{"query": "sample", "application_status": "new", "group_id": 3}]
     assert response.text.count('data-application-state=') == 5
+
+
+def test_vue_island_receives_escaped_authorized_snapshot_for_local_filtering() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    service.volunteer_applications[0].first_name = '<script>alert("name")</script>'
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+
+    response = TestClient(app).get('/volunteer-applications?group_id=99')
+
+    assert response.status_code == 200
+    fallback, snapshot = response.text.split('<template data-vue-card', 1)
+    assert 'registrant@example.com' not in fallback
+    assert 'registrant@example.com' in snapshot
+    assert '<script>alert("name")</script>' not in response.text
+    assert '&lt;script&gt;' in snapshot
+    assert 'data-cancel-application' not in snapshot  # Submitted applications cannot be cancelled.
+    assert 'js/application-board.js' in response.text

@@ -21,50 +21,61 @@
       </form>
     </details>
 
-    <section class="app-panel min-w-0">
-      <form id="application-filters" hx-get="/volunteer-applications"
-        hx-trigger="submit, input from:#application-query, change from:#application-status, change from:#application-group"
-        hx-target="#volunteer-application-list-panel" hx-select="#volunteer-application-list-panel"
-        hx-swap="outerHTML" hx-sync="this:replace" hx-replace-url="true"
-        hx-indicator="#application-loading"
-        action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_minmax(12rem,auto)_auto]" method="get">
-        <label class="grid gap-1">
-          <span class="text-sm text-stone-500">Søk i søknader</span>
-          <input class="app-input" id="application-query" name="q" autocomplete="off" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
-        </label>
-        <label class="grid gap-1">
-          <span class="text-sm text-stone-500">Status</span>
-          <select class="app-input" id="application-status" name="application_status">
-            <option value="active" {% if selected_application_status == "active" %}selected{% endif %}>Aktive søknader</option>
-            <option value="" {% if not selected_application_status %}selected{% endif %}>Alle statuser</option>
-            {% for value, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
-              <option value="{{ value }}" {% if selected_application_status == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <div class="grid gap-2" data-group-filter>
-          <label class="grid gap-1" for="application-group-search">
-            <span class="text-sm text-stone-500">Finn gruppe</span>
-            <input id="application-group-search" class="app-input" type="search" autocomplete="off"
-              placeholder="Skriv gruppenavn" aria-controls="application-group" data-group-search>
-          </label>
-          <label class="grid gap-1" for="application-group">
-            <span class="text-sm text-stone-500">Filtrer på gruppe</span>
-            <select id="application-group" class="app-input" name="group_id" data-group-select>
-              <option value="0">Alle grupper</option>
-              {% for group in group_options %}
-                <option value="{{ group.group_id }}"{% if selected_application_group_id == group.group_id %} selected{% endif %}>{{ group.name }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <p class="text-sm text-stone-500" role="status" data-group-feedback></p>
-        </div>
-        <button class="app-button" type="submit">Søk</button>
-      </form>
-      <p id="application-loading" class="htmx-indicator mt-2 text-sm" role="status">Oppdaterer søknader …</p>
-    </section>
+    <div id="application-vue-island" class="grid min-w-0 gap-7" hx-boost:inherited="false">
+      <div data-vue-mount>
+        <section class="app-panel min-w-0">
+          <form id="application-filters"
+            action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_minmax(12rem,auto)_auto]" method="get">
+            <label class="grid gap-1">
+              <span class="text-sm text-stone-500">Søk i søknader</span>
+              <input class="app-input" id="application-query" name="q" autocomplete="off" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
+            </label>
+            <label class="grid gap-1">
+              <span class="text-sm text-stone-500">Status</span>
+              <select class="app-input" id="application-status" name="application_status">
+                <option value="active" {% if selected_application_status == "active" %}selected{% endif %}>Aktive søknader</option>
+                <option value="" {% if not selected_application_status %}selected{% endif %}>Alle statuser</option>
+                {% for value, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
+                  <option value="{{ value }}" {% if selected_application_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <div class="grid gap-2" data-group-filter>
+              <label class="grid gap-1" for="application-group-search">
+                <span class="text-sm text-stone-500">Finn gruppe</span>
+                <input id="application-group-search" class="app-input" type="search" autocomplete="off"
+                  placeholder="Skriv gruppenavn" aria-controls="application-group" data-group-search>
+              </label>
+              <label class="grid gap-1" for="application-group">
+                <span class="text-sm text-stone-500">Filtrer på gruppe</span>
+                <select id="application-group" class="app-input" name="group_id" data-group-select>
+                  <option value="0">Alle grupper</option>
+                  {% for group in group_options %}
+                    <option value="{{ group.group_id }}"{% if selected_application_group_id == group.group_id %} selected{% endif %}>{{ group.name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <p class="text-sm text-stone-500" role="status" data-group-feedback></p>
+            </div>
+            <button class="app-button" type="submit">Søk</button>
+          </form>
+        </section>
 
-    {% include "components/volunteer_applications/volunteer_applications_list.html" %}
+        {% include "components/volunteer_applications/volunteer_applications_list.html" %}
+
+      </div>
+      {# Escaped, server-rendered card fragments are data, never Vue templates. #}
+      {% for volunteer_application in vue_applications %}
+        <template data-vue-card data-id="{{ volunteer_application.registration_id }}"
+          data-state="{{ volunteer_application.status }}"
+          data-search="{{ volunteer_application.first_name or '' }} {{ volunteer_application.last_name or '' }} {{ volunteer_application.email }} {{ volunteer_application.phone or '' }} {{ volunteer_application.study_institution or '' }}"
+          data-groups="{{ volunteer_application.initial_group_id or 0 }},{{ volunteer_application.first_choice_group_id or 0 }},{{ volunteer_application.second_choice_group_id or 0 }}">
+          {% with vue_island=true %}
+            {% include "components/volunteer_applications/volunteer_application_card.html" %}
+          {% endwith %}
+        </template>
+      {% endfor %}
+    </div>
 
     <section class="app-panel">
       <h2 class="text-2xl font-medium tracking-tight text-stone-900">Siste nye frivillige</h2>

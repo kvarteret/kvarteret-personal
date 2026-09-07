@@ -61,6 +61,13 @@ async def volunteer_applications_index(
             {"volunteer_applications": volunteer_applications},
             headers={"Vary": "HX-Target"},
         )
+    # The island filters a complete authorized snapshot without further requests.
+    # Reuse the initial result when no server-side fallback filters were supplied.
+    vue_applications = (
+        await volunteer_applications_service.list_volunteer_applications()
+        if q or application_status or group_id
+        else volunteer_applications
+    )
     recent_registrations_page = (
         await volunteer_applications_service.list_recent_volunteer_registrations_page(
             limit=10
@@ -75,6 +82,7 @@ async def volunteer_applications_index(
             "section": "volunteer-applications",
             "current_user": current_user,
             "volunteer_applications": volunteer_applications,
+            "vue_applications": vue_applications,
             "recent_registrations": recent_registrations_page.items,
             "recent_registrations_cursor": recent_registrations_page.cursor,
             "recent_registrations_next_cursor": recent_registrations_page.next_cursor,

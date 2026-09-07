@@ -29,3 +29,7 @@ public/static/css/output.css
 # Local dev harness artifacts
 .devdata/
 seeds/
+
+# Generated Vue island bundle
+app/static/js/application-board.js
+public/static/js/application-board.js
