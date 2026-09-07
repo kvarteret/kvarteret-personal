@@ -1,10 +1,10 @@
 {% extends "layouts/base.html" %}
 
+{% from "components/shared/ui_macros.html" import page_header %}
+
 {% block page_content %}
-  <section class="grid gap-7">
-    <header class="grid justify-items-center gap-3 pt-3 text-center">
-      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Søknader</h1>
-    </header>
+  <section class="grid min-w-0 gap-7">
+    {{ page_header(None, "Søknader", "Finn søknader og følg dem fra første kontakt til frivillig.") }}
 
     <details class="app-panel">
       <summary class="app-button inline-flex cursor-pointer list-none">Opprett invitasjon</summary>
@@ -21,33 +21,47 @@
       </form>
     </details>
 
-    <section class="app-panel">
-      <form action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_minmax(12rem,auto)_auto]" method="get">
+    <section class="app-panel min-w-0">
+      <form id="application-filters" hx-get="/volunteer-applications"
+        hx-trigger="submit, input from:#application-query, change from:#application-status, change from:#application-group"
+        hx-target="#volunteer-application-list-panel" hx-select="#volunteer-application-list-panel"
+        hx-swap="outerHTML" hx-sync="this:replace" hx-replace-url="true"
+        hx-indicator="#application-loading"
+        action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_minmax(12rem,auto)_auto]" method="get">
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Søk i søknader</span>
-          <input class="app-input" name="q" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
+          <input class="app-input" id="application-query" name="q" autocomplete="off" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">
         </label>
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Status</span>
-          <select class="app-input" name="application_status">
+          <select class="app-input" id="application-status" name="application_status">
             <option value="active" {% if selected_application_status == "active" %}selected{% endif %}>Aktive søknader</option>
-            <option value="">Alle statuser</option>
+            <option value="" {% if not selected_application_status %}selected{% endif %}>Alle statuser</option>
             {% for value, label in [("new", "Ny"), ("contacted", "Kontaktet"), ("trial", "På prøve"), ("volunteer", "Frivillig"), ("not_volunteer", "Ikke frivillig")] %}
               <option value="{{ value }}" {% if selected_application_status == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </label>
-        <label class="grid gap-1">
-          <span class="text-sm text-stone-500">Gruppe</span>
-          <select class="app-input" name="group_id">
-            <option value="">Alle grupper</option>
-            {% for group in group_options %}
-              <option value="{{ group.group_id }}"{% if selected_application_group_id == group.group_id %} selected{% endif %}>{{ group.name }}</option>
-            {% endfor %}
-          </select>
-        </label>
+        <div class="grid gap-2" data-group-filter>
+          <label class="grid gap-1" for="application-group-search">
+            <span class="text-sm text-stone-500">Finn gruppe</span>
+            <input id="application-group-search" class="app-input" type="search" autocomplete="off"
+              placeholder="Skriv gruppenavn" aria-controls="application-group" data-group-search>
+          </label>
+          <label class="grid gap-1" for="application-group">
+            <span class="text-sm text-stone-500">Filtrer på gruppe</span>
+            <select id="application-group" class="app-input" name="group_id" data-group-select>
+              <option value="0">Alle grupper</option>
+              {% for group in group_options %}
+                <option value="{{ group.group_id }}"{% if selected_application_group_id == group.group_id %} selected{% endif %}>{{ group.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <p class="text-sm text-stone-500" role="status" data-group-feedback></p>
+        </div>
         <button class="app-button" type="submit">Søk</button>
       </form>
+      <p id="application-loading" class="htmx-indicator mt-2 text-sm" role="status">Oppdaterer søknader …</p>
     </section>
 
     {% include "components/volunteer_applications/volunteer_applications_list.html" %}
