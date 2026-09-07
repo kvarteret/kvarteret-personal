@@ -4492,7 +4492,6 @@
                   "type": "null"
                 }
               ],
-              "default": "active",
               "title": "Application Status"
             }
           },
@@ -4701,6 +4700,54 @@
             "schema": {
               "title": "Application Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "application_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Application Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
             }
           }
         ],

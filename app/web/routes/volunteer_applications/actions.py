@@ -295,6 +295,9 @@ async def volunteer_application_restore_volunteer(
 async def volunteer_application_delete(
     request: Request,
     application_id: int,
+    q: str | None = None,
+    application_status: str | None = None,
+    group_id: int | None = None,
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
 ):
@@ -315,7 +318,9 @@ async def volunteer_application_delete(
         subject_id=application_id,
     )
     if request.headers.get("HX-Request") == "true" and request.headers.get("HX-Boosted") != "true":
-        volunteer_applications = await volunteer_applications_service.list_volunteer_applications()
+        volunteer_applications = await volunteer_applications_service.list_volunteer_applications(
+            query=q, application_status=application_status, group_id=group_id or None
+        )
         return templates.TemplateResponse(
             request,
             "components/volunteer_applications/volunteer_applications_list.html",
