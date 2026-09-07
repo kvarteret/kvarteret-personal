@@ -42,6 +42,10 @@ class FakeSpotifyNowPlayingService:
         self.complete_callback_calls: list[dict[str, object]] = []
         self.clear_calls = 0
         self.raise_on_callback: Exception | None = None
+        self.polling_enabled = True
+
+    def is_polling_enabled(self) -> bool:
+        return self.polling_enabled
 
     async def get_state(self) -> NowPlayingResult:
         return NowPlayingResult(
@@ -152,6 +156,21 @@ def test_spotify_now_playing_page_renders_track_and_admin_actions() -> None:
     assert "Paint It, Black" in response.text
     assert "Koble til Spotify" in response.text
     assert "Koble fra" in response.text
+
+
+def test_spotify_now_playing_page_banners_when_polling_disabled() -> None:
+    service = FakeSpotifyNowPlayingService()
+    service.polling_enabled = False
+    client, session_cookie = _build_authed_client(UserRole.ADMIN, service)
+
+    response = client.get(
+        "/spotify/now-playing",
+        cookies={"kvarteret_session": session_cookie},
+    )
+
+    assert response.status_code == 200
+    assert "midlertidig slått av" in response.text
+    assert "SPOTIFY_NOW_PLAYING_ENABLED" in response.text
 
 
 def test_spotify_login_redirects_to_spotify_authorize_url() -> None:

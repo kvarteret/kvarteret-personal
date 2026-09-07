@@ -30,6 +30,8 @@ Spotify powers the now-playing feature. Admins connect the shared account throug
 
 The public endpoint is `GET /api/now-playing`. It never exposes Spotify tokens.
 
+Polling is gated by `SPOTIFY_NOW_PLAYING_ENABLED` (default `false`). While disabled the service makes no repository or Spotify calls and the endpoint reports an authorized-but-idle state. The switch is off by default because a recurring upstream `HTTPStatusError`/`413` retry loop was observed; re-enable with `SPOTIFY_NOW_PLAYING_ENABLED=true` after the root cause is resolved.
+
 ## SMTP
 
 SMTP is required for flows that send email:

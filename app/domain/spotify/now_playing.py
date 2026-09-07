@@ -83,6 +83,11 @@ class NowPlayingService:
 
     async def get_state(self) -> NowPlayingResult:
         cache_seconds = self.settings.now_playing_cache_seconds
+        if not self.settings.spotify_now_playing_enabled:
+            # Spotify now-playing polling is temporarily disabled. Do not touch
+            # the repository or the Spotify API so the recurring upstream 4xx
+            # errors cannot recur or spam error tracking.
+            return self._polling_disabled_result(cache_seconds)
         stale_grace_seconds = self.settings.now_playing_stale_grace_seconds
         refresh_token = await self._get_refresh_token()
         if not self._has_oauth_client_config() or not refresh_token:
@@ -183,6 +188,9 @@ class NowPlayingService:
 
     def is_login_configured(self) -> bool:
         return self._is_login_configured()
+
+    def is_polling_enabled(self) -> bool:
+        return self.settings.spotify_now_playing_enabled
 
     async def _get_state_with_cache(
         self,
@@ -455,6 +463,16 @@ class NowPlayingService:
                 cache_stale=True,
                 cache_seconds=cache_seconds,
             )
+        return NowPlayingResult(
+            state=self._default_state(authorized=True),
+            cache_hit=False,
+            cache_stale=False,
+            cache_seconds=cache_seconds,
+        )
+
+    def _polling_disabled_result(self, cache_seconds: float) -> NowPlayingResult:
+        # Report the account as connected-but-idle so consumers do not prompt
+        # for a reconnect while the upstream polling issue is being resolved.
         return NowPlayingResult(
             state=self._default_state(authorized=True),
             cache_hit=False,
