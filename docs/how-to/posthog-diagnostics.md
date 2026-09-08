@@ -18,7 +18,9 @@ filter event property `service` to `kvarteret-personal`. After deploying the
 exception integration, `logger.exception` and ERROR records with `exc_info`
 produce exception issues. Unhandled request exceptions use this same path.
 Ordinary 4xx responses and log records without an exception do not create issues.
-Browser reports through `/api/v1/telemetry/client-errors` remain in Logs.
+Browser reports through `/api/v1/telemetry/client-errors` appear in Logs. A
+`RepeatedFormSubmissionFailure` report with `attempt_count=3` also creates an
+exception issue with safe field names and validation codes.
 
 Exception issues contain exception types and stack frame file/function/line
 metadata. Messages, source context, local variables, request payloads, and user
@@ -44,7 +46,7 @@ this can add latency to error paths. Normal requests do not send exception event
 Environment metadata uses `VERCEL_ENV` when available, otherwise `APP_ENV`.
 
 The sibling implementation is in
-`samfunnetibergen/apps/web/instrumentation.node.ts` (OTLP service
+`samfunnetibergen/apps/web/src/instrumentation.node.ts` (OTLP service
 `samfunnetibergen`) and `apps/web/src/lib/observability.ts` (operational fields
 and trace propagation). Its setup report links the same PostHog project.
 
@@ -87,3 +89,38 @@ References: [Python error tracking](https://posthog.com/docs/error-tracking/inst
 [Python logs](https://posthog.com/docs/logs/installation/python),
 [Vercel source webhook](https://posthog.com/docs/cdp/source_webhooks/source-vercel-log-drain),
 [Vercel drain formats](https://vercel.com/docs/drains/using-drains).
+
+
+## Validation and repeated submissions
+
+Empty optional group/role selections in the role-field GET fragment are treated
+as absent values. Invalid nonempty identifiers still return 422. The fragment
+only submits group, role, year, and term; it excludes CSRF and other form fields
+from the GET query. The management authorization requirement remains enforced.
+FastAPI request validation emits `http.validation.failed` at WARN with field
+locations, error codes, and issue count, never rejected input. Request completion
+logs use WARN for 4xx and ERROR for 5xx. The admin browser reporter also captures
+HTMX response failures; dependent GET fragments do not count as submissions.
+
+The four public forms (volunteer, event, room booking, karaoke) each keep a
+failure tracker for their mounted form. Three unsuccessful submissions produce
+one `RepeatedFormSubmissionFailure` issue with `form_id`, `attempt_count`, and
+`failure_history` containing stage, field names, and validation codes. Successful
+submission resets the sequence; changing fields does not. Remounting/reloading
+starts a new sequence. Admin HTMX form HTTP failures use the same threshold and
+include the union of safe validation fields/codes from failed responses.
+Browser issues retain PostHog session context; no entered form values or
+arbitrary validator messages are added by this tracking.
+
+Next server hooks must live beside `src/app`, under `apps/web/src`. A compiled
+instrumentation file at the app root is insufficient for Next's production hook
+detection when using `src/app`. The server uses `@vercel/otel`, records all
+produced spans, propagates context to Personal, and retains export completion
+with `waitUntil`. Browser logs remain separate and need not carry a trace ID.
+The Logs severity facet named Trace is unrelated to the Tracing product.
+
+Platform counts include static assets, middleware, redirects, and the analytics
+proxy. One page visit therefore produces many more platform records than server
+request logs. Use application services for business diagnostics and platform
+services for Vercel failures and request IDs. No sampling is used to reduce this
+volume.
