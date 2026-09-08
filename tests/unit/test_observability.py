@@ -23,16 +23,24 @@ from app.observability import (
 )
 from app.telemetry import (
     _SanitizedLoggingHandler,
-    _TRACE_SAMPLE_RATE,
     _build_trace_provider,
 )
 
 
-def test_trace_sample_rate_is_ten_percent() -> None:
+@pytest.mark.parametrize("parent_sampled", [None, False, True])
+def test_all_valid_traces_are_recorded(parent_sampled) -> None:
     provider = _build_trace_provider(Resource.create({}))
-
-    assert _TRACE_SAMPLE_RATE == 0.1
-    assert "root:TraceIdRatioBased{0.1}" in provider.sampler.get_description()
+    parent = None
+    if parent_sampled is not None:
+        parent = trace.set_span_in_context(trace.NonRecordingSpan(trace.SpanContext(
+            trace_id=1, span_id=2, is_remote=True,
+            trace_flags=trace.TraceFlags(1 if parent_sampled else 0),
+        )))
+    with provider.get_tracer(__name__).start_as_current_span("request", context=parent) as span:
+        assert span.is_recording()
+        assert span.get_span_context().trace_flags.sampled
+        if parent is not None:
+            assert span.get_span_context().trace_id == 1
     provider.shutdown()
 
 
@@ -185,6 +193,7 @@ def test_otlp_handler_exports_only_sanitized_record() -> None:
     assert "event_data" not in exported.attributes
     assert "exception.message" not in exported.attributes
     assert "exception.stacktrace" not in exported.attributes
+    assert exported.body == "email.delivery"
     assert exported.attributes["registration_id"] == 42
     assert exported.attributes["error_category"] == "runtimeerror"
 

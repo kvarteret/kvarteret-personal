@@ -15,7 +15,7 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -25,7 +25,6 @@ from app.observability import JsonLogFormatter
 
 logger = logging.getLogger(__name__)
 _httpx_instrumented = False
-_TRACE_SAMPLE_RATE = 0.1
 
 
 class TelemetryFlushMiddleware:
@@ -64,19 +63,19 @@ class _SanitizedLoggingHandler(LoggingHandler):
     """Export only the already-sanitized JSON body, never raw log extras."""
 
     def emit(self, record: logging.LogRecord) -> None:
-        body = JsonLogFormatter().format(record)
+        payload = json.loads(JsonLogFormatter().format(record))
         safe_record = logging.LogRecord(
             name=record.name,
             level=record.levelno,
             pathname=record.pathname,
             lineno=record.lineno,
-            msg=body,
+            msg=payload["event"],
             args=(),
             exc_info=None,
             func=record.funcName,
         )
         # Make sanitized diagnostic fields directly filterable in PostHog Logs.
-        for key, value in json.loads(body).items():
+        for key, value in payload.items():
             if key not in safe_record.__dict__ and key not in {"message", "timestamp"}:
                 safe_record.__dict__[key] = value
         super().emit(safe_record)
@@ -85,7 +84,7 @@ class _SanitizedLoggingHandler(LoggingHandler):
 def _build_trace_provider(resource: Resource) -> TracerProvider:
     return TracerProvider(
         resource=resource,
-        sampler=ParentBased(TraceIdRatioBased(_TRACE_SAMPLE_RATE)),
+        sampler=ALWAYS_ON,
     )
 
 
