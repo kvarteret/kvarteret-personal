@@ -19,6 +19,7 @@
       name="group_id"
       hx-get="/volunteers/{{ volunteer.volunteer_id }}/role-assignments/role-field"
       hx-include="closest form"
+      hx-params="group_id,role_id,year,term"
       hx-swap="outerHTML"
       hx-target="#{{ form_fields_id or 'volunteer-role-assignment-form-fields' }}"
       hx-trigger="change"

@@ -23,12 +23,25 @@ _ERROR_REPORT_LIMIT = 60
 _ERROR_REPORT_WINDOW_SECONDS = 60
 
 
+class RepeatedFormSubmissionFailure(Exception):
+    pass
+
+
 class ClientErrorReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     error_type: str = Field(default="Error", max_length=120)
     error_text: str = Field(default="", max_length=1200)
     error_source: str = Field(default="", max_length=300)
+    form_id: str = Field(default="", max_length=120, pattern=r"^[A-Za-z0-9_./:{}-]*$")
+    attempt_count: int = Field(default=0, ge=0, le=3)
+    validation_fields: str = Field(
+        default="", max_length=1000, pattern=r"^[A-Za-z0-9_.,\[\]-]*$"
+    )
+    validation_codes: str = Field(
+        default="", max_length=1000, pattern=r"^[A-Za-z0-9_,.-]*$"
+    )
+    status_code: int | None = Field(default=None, ge=100, le=599)
 
 
 @router.post("/")
@@ -62,6 +75,30 @@ async def report_client_error(
             "error_text": body.error_text[:1000],
             "error_source": body.error_source[:250],
             "route_template": request.url.path,
+            "form_id": body.form_id,
+            "attempt_count": body.attempt_count,
+            "validation_fields": body.validation_fields,
+            "validation_codes": body.validation_codes,
+            "status_code": body.status_code,
         },
     )
+    if body.error_type == "RepeatedFormSubmissionFailure" and body.attempt_count == 3:
+        error = RepeatedFormSubmissionFailure(
+            "Three unsuccessful form submission attempts"
+        )
+        logger.error(
+            "form.submission.repeated_failure",
+            exc_info=(type(error), error, None),
+            extra={
+                "event": "form.submission.repeated_failure",
+                "event_data": {
+                    "form_id": body.form_id,
+                    "attempt_count": body.attempt_count,
+                    "validation_fields": body.validation_fields,
+                    "validation_codes": body.validation_codes,
+                    "error_source": body.error_source,
+                    "status_code": body.status_code,
+                },
+            },
+        )
     return {"ok": True}
