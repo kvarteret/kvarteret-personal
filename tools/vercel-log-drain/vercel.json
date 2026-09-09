@@ -1,0 +1,1 @@
+{"regions":["arn1"],"functions":{"api/logs.mjs":{"maxDuration":30}}}

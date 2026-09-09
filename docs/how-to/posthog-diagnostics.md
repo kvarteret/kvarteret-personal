@@ -1,15 +1,16 @@
 # Inspect Kvarteret Personal in PostHog
 
 The shared EU project is [Samfunnet i Bergen, 202551](https://eu.posthog.com/project/202551).
-On 2026-09-07, production ingestion was verified under service
-`kvarteret-personal`; Vercel's team drain APIs returned no configured drains.
+Application logs use `kvarteret-personal` and `samfunnetibergen`; website console
+logs use `samfunnetibergen-browser` after the browser update. Historical browser
+logs remain under `posthog-browser-logs`.
 
 ## Find logs and exceptions
 
 Open [Logs](https://eu.posthog.com/project/202551/logs), choose service
 `kvarteret-personal`, and select the time range. Filter severity to error/warn.
 New log records expose sanitized fields such as `event`, `error_category`,
-`registration_id`, and `request_id` as attributes, as well as in the JSON body.
+`registration_id`, and `request_id` as attributes. OTLP bodies contain the event name; stdout retains JSON.
 Use `trace_id` or `registration_id` to correlate volunteer intake across apps.
 
 Open [Error Tracking](https://eu.posthog.com/project/202551/error_tracking) and
@@ -17,7 +18,9 @@ filter event property `service` to `kvarteret-personal`. After deploying the
 exception integration, `logger.exception` and ERROR records with `exc_info`
 produce exception issues. Unhandled request exceptions use this same path.
 Ordinary 4xx responses and log records without an exception do not create issues.
-Browser reports through `/api/v1/telemetry/client-errors` remain in Logs.
+Browser reports through `/api/v1/telemetry/client-errors` appear in Logs. A
+`RepeatedFormSubmissionFailure` report with `attempt_count=3` also creates an
+exception issue with safe field names and validation codes.
 
 Exception issues contain exception types and stack frame file/function/line
 metadata. Messages, source context, local variables, request payloads, and user
@@ -33,7 +36,8 @@ Set `POSTHOG_OBSERVABILITY_ENABLED=true`, the shared project's
 redeploy. Production already had these variables when inspected. Preview must
 be configured separately. Never use a personal PostHog API key for ingestion.
 
-`app/telemetry.py` exports sanitized logs and sampled traces. Its ASGI middleware
+`app/telemetry.py` exports sanitized logs and every produced trace (AlwaysOn), including spans
+with an incoming unsampled parent. Incoming trace IDs are preserved. Its ASGI middleware
 awaits provider flushes when each request finishes, including failures, rather
 than relying only on background timers. Exports remain best-effort: abrupt
 process termination or network failure can lose data. `app/error_tracking.py`
@@ -42,23 +46,81 @@ this can add latency to error paths. Normal requests do not send exception event
 Environment metadata uses `VERCEL_ENV` when available, otherwise `APP_ENV`.
 
 The sibling implementation is in
-`samfunnetibergen/apps/web/instrumentation.node.ts` (OTLP service
+`samfunnetibergen/apps/web/src/instrumentation.node.ts` (OTLP service
 `samfunnetibergen`) and `apps/web/src/lib/observability.ts` (operational fields
 and trace propagation). Its setup report links the same PostHog project.
 
 ## Vercel drains are a separate integration
 
-The current connection sends application telemetry directly to PostHog. It does
-not forward Vercel build, firewall, or platform logs. Vercel log drains send
+The current connection sends application telemetry directly to PostHog. The separate platform drain forwards Vercel runtime, firewall, static, redirect,
+and external request logs for both applications. Build logs are outside its scope. Vercel log drains send
 JSON/NDJSON, while PostHog Logs accepts OTLP; do not point a Vercel log drain at
 `/i/v1/logs` directly. PostHog's Vercel source webhook instead captures events,
 which is distinct from the Logs product.
 
-To add platform coverage later, configure an authenticated compatible receiver
-with explicit project/source scope, filtering of personnel paths and query
-strings, and duplicate handling for runtime logs already exported by the app.
+The `PostHog platform logs` drain (`drn_O0CCLHIbGya3HfXt`) sends 100% of
+production and preview records for the two source projects to
+`https://kvarteret-telemetry.vercel.app/api/logs`. The receiver is maintained in
+`tools/vercel-log-drain/` and deployed as the separate `kvarteret-telemetry`
+project. Never include that collector project in the drain sources: doing so
+would create a feedback loop.
+
+The collector requires `VERCEL_DRAIN_SECRET` and `POSTHOG_PROJECT_TOKEN` in
+Vercel. It authenticates the Authorization header, maps Vercel JSON to OTLP,
+redacts query values and credential paths, and exports safe diagnostic fields.
+Arbitrary console bodies and personal data are not exported. It acknowledges
+only accepted PostHog batches; failure returns 502 for Vercel to retry. Delivery
+is at least once: retries can duplicate records; `vercel.log.id` identifies the
+original record. Runtime records also sent directly by the application remain
+separate under the platform services.
+
+Search services `kvarteret-personal-platform` or `samfunnetibergen-platform`,
+then filter `vercel.request.id` using the request ID from Vercel. HTTP 4xx and
+5xx responses receive WARN and ERROR severity even when Vercel labels them INFO.
+A platform rejection before application execution has no application span;
+the drain preserves that fact rather than inventing a trace ID.
+
+The BFF uses `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` for both analytics and OTLP.
+Its exporter wrapper retains the actual HTTP completion promise with Vercel
+`waitUntil`, including spans ending at request completion. Incoming server
+spans also produce structured `http.request.completed` log records.
 
 References: [Python error tracking](https://posthog.com/docs/error-tracking/installation/python),
 [Python logs](https://posthog.com/docs/logs/installation/python),
 [Vercel source webhook](https://posthog.com/docs/cdp/source_webhooks/source-vercel-log-drain),
 [Vercel drain formats](https://vercel.com/docs/drains/using-drains).
+
+
+## Validation and repeated submissions
+
+Empty optional group/role selections in the role-field GET fragment are treated
+as absent values. Invalid nonempty identifiers still return 422. The fragment
+only submits group, role, year, and term; it excludes CSRF and other form fields
+from the GET query. The management authorization requirement remains enforced.
+FastAPI request validation emits `http.validation.failed` at WARN with field
+locations, error codes, and issue count, never rejected input. Request completion
+logs use WARN for 4xx and ERROR for 5xx. The admin browser reporter also captures
+HTMX response failures; dependent GET fragments do not count as submissions.
+
+The four public forms (volunteer, event, room booking, karaoke) each keep a
+failure tracker for their mounted form. Three unsuccessful submissions produce
+one `RepeatedFormSubmissionFailure` issue with `form_id`, `attempt_count`, and
+`failure_history` containing stage, field names, and validation codes. Successful
+submission resets the sequence; changing fields does not. Remounting/reloading
+starts a new sequence. Admin HTMX form HTTP failures use the same threshold and
+include the union of safe validation fields/codes from failed responses.
+Browser issues retain PostHog session context; no entered form values or
+arbitrary validator messages are added by this tracking.
+
+Next server hooks must live beside `src/app`, under `apps/web/src`. A compiled
+instrumentation file at the app root is insufficient for Next's production hook
+detection when using `src/app`. The server uses `@vercel/otel`, records all
+produced spans, propagates context to Personal, and retains export completion
+with `waitUntil`. Browser logs remain separate and need not carry a trace ID.
+The Logs severity facet named Trace is unrelated to the Tracing product.
+
+Platform counts include static assets, middleware, redirects, and the analytics
+proxy. One page visit therefore produces many more platform records than server
+request logs. Use application services for business diagnostics and platform
+services for Vercel failures and request IDs. No sampling is used to reduce this
+volume.

@@ -962,6 +962,13 @@
       "ClientErrorReport": {
         "additionalProperties": false,
         "properties": {
+          "attempt_count": {
+            "default": 0,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
           "error_source": {
             "default": "",
             "maxLength": 300,
@@ -978,6 +985,40 @@
             "default": "Error",
             "maxLength": 120,
             "title": "Error Type",
+            "type": "string"
+          },
+          "form_id": {
+            "default": "",
+            "maxLength": 120,
+            "pattern": "^[A-Za-z0-9_./:{}-]*$",
+            "title": "Form Id",
+            "type": "string"
+          },
+          "status_code": {
+            "anyOf": [
+              {
+                "maximum": 599.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Code"
+          },
+          "validation_codes": {
+            "default": "",
+            "maxLength": 1000,
+            "pattern": "^[A-Za-z0-9_,.-]*$",
+            "title": "Validation Codes",
+            "type": "string"
+          },
+          "validation_fields": {
+            "default": "",
+            "maxLength": 1000,
+            "pattern": "^[A-Za-z0-9_.,\\[\\]-]*$",
+            "title": "Validation Fields",
             "type": "string"
           }
         },

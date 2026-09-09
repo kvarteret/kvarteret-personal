@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Request
+from pydantic import BeforeValidator
 
 from app.dependencies import (
     get_courses_service,
@@ -21,6 +24,10 @@ from app.web.routes.volunteers.helpers import (
 from app.web.templates import templates
 
 router = APIRouter()
+
+OptionalSelection = Annotated[
+    int | None, BeforeValidator(lambda value: None if value == "" else value)
+]
 
 
 def _to_checkbox_bool(value: str | None, *, default: bool = False) -> bool:
@@ -87,8 +94,8 @@ async def volunteer_role_assignments_panel(
 async def volunteer_role_assignment_role_field(
     request: Request,
     volunteer_id: int,
-    group_id: int | None = None,
-    role_id: int | None = None,
+    group_id: OptionalSelection = None,
+    role_id: OptionalSelection = None,
     year: int | None = None,
     term: int | None = None,
     current_user=Depends(require_management_user),
@@ -139,7 +146,6 @@ async def volunteer_course_completions_panel(
         courses_service=courses_service,
         volunteer=volunteer,
     )
-
 
 
 @router.get("/volunteers/{volunteer_id}/relations/panel")
