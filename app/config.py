@@ -1,3 +1,4 @@
+import os
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -7,7 +8,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # The infra profile resolver sets this guard for every managed
+        # process.  That keeps a stale checkout-local .env from filling in
+        # values that were intentionally absent from the selected profile.
+        env_file=None if os.getenv("KVARERET_DISABLE_DOTENV") == "1" else ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
