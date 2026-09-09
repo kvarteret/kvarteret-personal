@@ -161,6 +161,11 @@ async def get_current_card(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
         ) from exc
+    except MobileCardPersonNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session is no longer valid.",
+        ) from exc
     if card_result.renewed_session_token:
         response.headers["X-Mobile-Card-Session-Token"] = (
             card_result.renewed_session_token

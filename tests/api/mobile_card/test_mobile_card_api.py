@@ -100,6 +100,10 @@ class FakeMobileCardService:
         self, session_token: str, *, include_role_history: bool = False
     ) -> MobileCardCurrentCardResult:
         if session_token != "token-123":
+            if session_token == "deleted-or-blocked":
+                raise MobileCardPersonNotFoundError(
+                    "Volunteer 12 was not found."
+                )
             if session_token == "renew-me":
                 return MobileCardCurrentCardResult(
                     card=(
@@ -242,6 +246,18 @@ def test_new_mobile_card_me_requires_known_bearer_token() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Unknown session token."
+
+
+def test_new_mobile_card_me_returns_401_when_volunteer_deleted_or_blocked() -> None:
+    client = _make_client()
+
+    response = client.get(
+        "/api/v1/mobile-card/me",
+        headers={"Authorization": "Bearer deleted-or-blocked"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Session is no longer valid."}
 
 
 def test_mobile_card_access_code_request_does_not_expose_whether_email_exists() -> None:
