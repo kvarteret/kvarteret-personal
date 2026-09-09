@@ -77,3 +77,20 @@ def test_client_error_report_rate_limits_runaway_reports() -> None:
         json={"error_text": "boom"},
     )
     assert response.status_code == 429
+
+
+def test_third_failed_submission_creates_exception_with_safe_diagnostics(caplog) -> None:
+    import logging
+    from app.observability import JsonLogFormatter
+    client, _ = _make_client()
+    logging.getLogger().addHandler(caplog.handler)
+    with caplog.at_level(logging.ERROR):
+        response = client.post("/api/v1/telemetry/client-errors", json={
+            "error_type": "RepeatedFormSubmissionFailure", "attempt_count": 3,
+            "form_id": "/volunteers/:id", "validation_fields": "body.role_id",
+            "validation_codes": "int_parsing", "status_code": 422,
+        })
+    assert response.status_code == 200
+    record = next(r for r in caplog.records if r.getMessage() == "form.submission.repeated_failure")
+    assert record.exc_info[0].__name__ == "RepeatedFormSubmissionFailure"
+    assert 'body.role_id' in JsonLogFormatter().format(record)

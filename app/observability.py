@@ -18,9 +18,7 @@ from opentelemetry import trace
 from app.auth.models import AuthenticatedUser
 from app.config import Settings
 
-_request_context: ContextVar[dict[str, Any]] = ContextVar(
-    "request_context", default={}
-)
+_request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
 
 # The root logger stays at settings.log_level, so application logs still emit at INFO by default.
 # Only these specific third-party loggers are overridden to WARNING to reduce Vercel noise.
@@ -68,6 +66,18 @@ _COMMON_FIELDS = frozenset(
 
 # Every event-specific field is declared here. Callers cannot add arbitrary data.
 _EVENT_FIELDS: dict[str, frozenset[str]] = {
+    "http.validation.failed": frozenset(
+        {"validation_fields", "validation_codes", "validation_issue_count"}
+    ),
+    "form.submission.repeated_failure": frozenset(
+        {
+            "form_id",
+            "attempt_count",
+            "validation_fields",
+            "validation_codes",
+            "error_source",
+        }
+    ),
     "admin.activity": frozenset(
         {
             "action",
@@ -88,7 +98,15 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
     "email.delivery": frozenset({"lease_owner"}),
     "volunteer.prospect.conflict": frozenset({"conflict_type"}),
     "web.client_error": frozenset(
-        {"error_type", "error_text", "error_source"}
+        {
+            "error_type",
+            "error_text",
+            "error_source",
+            "form_id",
+            "attempt_count",
+            "validation_fields",
+            "validation_codes",
+        }
     ),
 }
 
@@ -254,6 +272,11 @@ def log_request(
     emit_event(
         logger,
         "http.request.completed",
+        level=logging.ERROR
+        if status_code >= 500
+        else logging.WARNING
+        if status_code >= 400
+        else logging.INFO,
         fields={
             "status_code": status_code,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
@@ -268,11 +291,14 @@ def log_request_exception(
 ) -> None:
     logger.exception(
         "http.request.failed",
-        extra={"event": "http.request.failed", "event_data": {
-            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-            "http_method": request.method,
-            "route_template": _route_template(request),
-        }},
+        extra={
+            "event": "http.request.failed",
+            "event_data": {
+                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+                "http_method": request.method,
+                "route_template": _route_template(request),
+            },
+        },
     )
 
 
@@ -332,9 +358,7 @@ _tracer = trace.get_tracer("kvarteret-personal")
 
 
 @contextmanager
-def with_named_span(
-    name: str, attributes: Mapping[str, object] | None = None
-):
+def with_named_span(name: str, attributes: Mapping[str, object] | None = None):
     """Run the wrapped block inside a named business-domain span.
 
     The span records ERROR status when the block raises. When telemetry is

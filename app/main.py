@@ -2,7 +2,12 @@ import logging
 from time import perf_counter
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.exception_handlers import http_exception_handler
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
+import re
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature
@@ -20,6 +25,7 @@ from app.observability import (
     build_request_id,
     clear_request_context,
     configure_logging,
+    emit_event,
     log_request,
     log_request_exception,
     request_context_for_user,
@@ -196,6 +202,40 @@ def _install_request_context_middleware(app: FastAPI) -> None:
 
 
 def _install_http_exception_handler(app: FastAPI) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(request: Request, exc: RequestValidationError):
+        errors = exc.errors()
+        fields = sorted(
+            {
+                ".".join(
+                    str(part)
+                    if isinstance(part, str)
+                    and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part)
+                    else "[]"
+                    for part in error["loc"]
+                )
+                for error in errors
+            }
+        )
+        emit_event(
+            logger,
+            "http.validation.failed",
+            level=logging.WARNING,
+            fields={
+                "status_code": 422,
+                "http_method": request.method,
+                "route_template": getattr(
+                    request.scope.get("route"), "path", "unmatched"
+                ),
+                "validation_fields": ",".join(fields)[:1000],
+                "validation_codes": ",".join(
+                    sorted({error["type"] for error in errors})
+                )[:1000],
+                "validation_issue_count": len(errors),
+            },
+        )
+        return await request_validation_exception_handler(request, exc)
+
     @app.exception_handler(HTTPException)
     async def handle_http_exception(request: Request, exc: HTTPException):
         if exc.status_code == 401 and _is_web_navigation_request(request):

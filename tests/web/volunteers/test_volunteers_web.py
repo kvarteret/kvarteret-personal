@@ -940,3 +940,23 @@ def test_volunteer_upload_endpoints_are_not_available() -> None:
 
     assert client.put("/volunteers/12/photo").status_code == 405
     assert client.post("/volunteers/12/documents").status_code == 404
+
+
+def test_role_fragment_accepts_empty_optional_selections_and_logs_invalid_input(caplog) -> None:
+    import logging
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.GROUP_ADMIN))
+    service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: service
+    client = TestClient(app)
+    logging.getLogger().addHandler(caplog.handler)
+    with caplog.at_level(logging.WARNING):
+        response = client.get("/volunteers/12/role-assignments/role-field?group_id=&role_id=&year=2026&term=2")
+        invalid = client.get("/volunteers/12/role-assignments/role-field?role_id=private-value")
+    assert response.status_code == 200
+    assert 'hx-params="group_id,role_id,year,term"' in response.text
+    assert invalid.status_code == 422
+    records = [r for r in caplog.records if getattr(r, "event", "") == "http.validation.failed"]
+    assert len(records) == 1
+    assert records[0].event_data["validation_fields"] == "query.role_id"
+    assert "private-value" not in str(records[0].event_data)

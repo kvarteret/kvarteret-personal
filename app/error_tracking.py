@@ -60,6 +60,12 @@ def sanitize_exception_event(event: dict) -> dict | None:
             "$lib",
             "$lib_version",
             "logger",
+            "form_id",
+            "attempt_count",
+            "validation_fields",
+            "validation_codes",
+            "error_source",
+            "status_code",
         )
         if key in properties
     }
