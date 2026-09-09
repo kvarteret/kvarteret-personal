@@ -29,3 +29,4 @@ public/static/css/output.css
 # Local dev harness artifacts
 .devdata/
 seeds/
+.env*
