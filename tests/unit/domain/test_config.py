@@ -1,7 +1,48 @@
+import os
+from pathlib import Path
+import subprocess
+import sys
+
 from app.config import Settings
 from app.config import validate_production_secrets
 from app.db.session import build_database_runtime
 from app.db.session import NullPool
+
+
+def _settings_app_env_from_checkout(tmp_path: Path, *, disable_dotenv: bool) -> str:
+    (tmp_path / ".env").write_text(
+        "APP_ENV=production\nAPP_SECRET_KEY=from-checkout-dotenv\n",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[3])
+    environment.pop("APP_ENV", None)
+    environment.pop("APP_SECRET_KEY", None)
+    if disable_dotenv:
+        environment["KVARERET_DISABLE_DOTENV"] = "1"
+    else:
+        environment.pop("KVARERET_DISABLE_DOTENV", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from app.config import Settings; print(Settings().app_env or '')",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def test_managed_session_guard_ignores_checkout_dotenv(tmp_path: Path) -> None:
+    assert _settings_app_env_from_checkout(tmp_path, disable_dotenv=True) == ""
+
+
+def test_unmanaged_session_preserves_dotenv_loading(tmp_path: Path) -> None:
+    assert _settings_app_env_from_checkout(tmp_path, disable_dotenv=False) == "production"
 
 
 def test_validate_production_secrets_requires_explicit_app_env() -> None:
