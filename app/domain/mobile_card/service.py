@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hmac
-import logging
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from secrets import choice
@@ -35,7 +34,7 @@ from app.infrastructure.email.mobile_card_templates import (
 )
 from app.infrastructure.email.protocols import EmailDeliveryError, EmailSenderProtocol
 from app.media_tokens import MediaTokenService
-from app.observability import emit_event
+from app.observability import get_domain_logger
 from app.shared.semester import get_current_semester_code
 
 # Re-export for backward compatibility
@@ -55,13 +54,14 @@ __all__ = [
     "MobileCardSession",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_domain_logger(__name__)
 
 
 class TrialApplicantProviderProtocol(Protocol):
     async def find_active_trial_applicant_by_email(self, email: str) -> Any | None: ...
 
     async def get_active_trial_applicant(self, application_id: int) -> Any | None: ...
+
 
 _LEGACY_PENGUIN_WORD_PREFIXES = [
     "bug",
@@ -169,7 +169,9 @@ class MobileCardService:
                 normalized_email
             )
         if not volunteers and trial_applicant is None:
-            raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
+            raise MobileCardPersonNotFoundError(
+                "Email not found in the personnel database."
+            )
 
         now = datetime.now(UTC)
         access_code = _generate_access_code()
@@ -191,8 +193,7 @@ class MobileCardService:
             subject_type = "trial_application"
         # The code must be durably stored before the email announces it.
         await commit_request_session()
-        emit_event(
-            logger,
+        logger.event(
             "mobile_card.access_code.requested",
             fields={
                 "subject_type": subject_type,
@@ -234,8 +235,7 @@ class MobileCardService:
         if self._is_review_request(normalized_email, normalized_access_code):
             card = self._build_review_card(include_role_history=include_role_history)
             token = self.sessions.build_token({"person_id": 0, "review": True})
-            emit_event(
-                logger,
+            logger.event(
                 "mobile_card.session.created",
                 fields={"subject_type": "review", "subject_id": 0},
             )
@@ -266,15 +266,15 @@ class MobileCardService:
                     application_id=trial_applicant.application_id,
                     code_hash=self._hash_access_code(normalized_access_code),
                     expires_after=datetime.now(UTC)
-                    - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
+                    - timedelta(
+                        minutes=self.settings.mobile_card_access_code_ttl_minutes
+                    ),
                 )
                 if not accepted:
                     trial_applicant = None
         if volunteer_row is None and trial_applicant is None:
-            emit_event(
-                logger,
+            logger.event(
                 "mobile_card.session.rejected",
-                level=logging.WARNING,
                 fields={"reason_code": "invalid_access_code", "outcome": "failure"},
             )
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
@@ -299,8 +299,7 @@ class MobileCardService:
             else trial_applicant.application_id
         )
         await commit_request_session()
-        emit_event(
-            logger,
+        logger.event(
             "mobile_card.session.created",
             fields={
                 "subject_type": subject_type,
@@ -308,8 +307,7 @@ class MobileCardService:
                 "outcome": "success",
             },
         )
-        emit_event(
-            logger,
+        logger.event(
             "mobile_card.identity.resolved",
             fields={
                 "subject_type": subject_type,
@@ -329,8 +327,10 @@ class MobileCardService:
         elif decoded.trial_application_id is not None:
             if self.trial_applicant_provider is None:
                 raise MobileCardInvalidAccessCodeError("Trial access has expired.")
-            trial_applicant = await self.trial_applicant_provider.get_active_trial_applicant(
-                decoded.trial_application_id
+            trial_applicant = (
+                await self.trial_applicant_provider.get_active_trial_applicant(
+                    decoded.trial_application_id
+                )
             )
             if trial_applicant is None:
                 raise MobileCardInvalidAccessCodeError("Trial access has expired.")
@@ -352,10 +352,8 @@ class MobileCardService:
             if decoded.trial_application_id is not None
             else decoded.person_id
         )
-        emit_event(
-            logger,
+        logger.event(
             "mobile_card.session.read",
-            level=logging.DEBUG,
             fields={
                 "subject_type": subject_type,
                 "subject_id": subject_id,

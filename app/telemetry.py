@@ -25,9 +25,14 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
 from app.error_tracking import configure_error_tracking
-from app.observability import IsolatedLoggingHandler, JsonLogFormatter, emit_event
+from app.observability import (
+    IsolatedLoggingHandler,
+    JsonLogFormatter,
+    _record_diagnostic,
+    get_domain_logger,
+)
 
-logger = logging.getLogger(__name__)
+logger = get_domain_logger(__name__)
 _httpx_instrumented = False
 _TRACE_SAMPLE_RATE = 0.01
 
@@ -50,7 +55,7 @@ class TelemetryFlushMiddleware:
                             provider.force_flush, timeout_millis=2000
                         )
                     except Exception:
-                        pass
+                        _record_diagnostic("exporter_failure")
 
 
 def install_telemetry_flush(app: FastAPI, providers: tuple) -> None:
@@ -92,9 +97,7 @@ def _build_trace_provider(
     resource: Resource, *, sample_rate: float = 1.0
 ) -> TracerProvider:
     sampler = (
-        ALWAYS_ON
-        if sample_rate >= 1.0
-        else ParentBased(TraceIdRatioBased(sample_rate))
+        ALWAYS_ON if sample_rate >= 1.0 else ParentBased(TraceIdRatioBased(sample_rate))
     )
     return TracerProvider(
         resource=resource,
@@ -119,9 +122,7 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
                 "cloud.region": os.getenv("VERCEL_REGION", "unknown"),
             }
         )
-        trace_provider = _build_trace_provider(
-            resource, sample_rate=_TRACE_SAMPLE_RATE
-        )
+        trace_provider = _build_trace_provider(resource, sample_rate=_TRACE_SAMPLE_RATE)
         trace_provider.add_span_processor(
             BatchSpanProcessor(
                 OTLPSpanExporter(
@@ -161,9 +162,7 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
             _httpx_instrumented = True
     except Exception:
         # Telemetry is never authoritative and must not prevent app startup.
-        emit_event(
-            logger,
+        logger.event(
             "telemetry.configuration.failed",
-            level=logging.WARNING,
             fields={"error_category": "configuration", "outcome": "failure"},
         )

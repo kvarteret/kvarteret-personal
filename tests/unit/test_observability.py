@@ -4,6 +4,7 @@ import json
 import logging
 import sys
 from collections.abc import Iterator
+from time import perf_counter
 from typing import Any, cast
 
 import pytest
@@ -20,6 +21,10 @@ from app.observability import (
     IsolatedLoggingHandler,
     JsonLogFormatter,
     build_request_id,
+    diagnostic_counts,
+    emit_event,
+    get_domain_logger,
+    log_operation_timing,
     sanitize_fields,
     with_named_span,
 )
@@ -34,11 +39,19 @@ def test_all_valid_traces_are_recorded(parent_sampled) -> None:
     provider = _build_trace_provider(Resource.create({}))
     parent = None
     if parent_sampled is not None:
-        parent = trace.set_span_in_context(trace.NonRecordingSpan(trace.SpanContext(
-            trace_id=1, span_id=2, is_remote=True,
-            trace_flags=trace.TraceFlags(1 if parent_sampled else 0),
-        )))
-    with provider.get_tracer(__name__).start_as_current_span("request", context=parent) as span:
+        parent = trace.set_span_in_context(
+            trace.NonRecordingSpan(
+                trace.SpanContext(
+                    trace_id=1,
+                    span_id=2,
+                    is_remote=True,
+                    trace_flags=trace.TraceFlags(1 if parent_sampled else 0),
+                )
+            )
+        )
+    with provider.get_tracer(__name__).start_as_current_span(
+        "request", context=parent
+    ) as span:
         assert span.is_recording()
         assert span.get_span_context().trace_flags.sampled
         if parent is not None:
@@ -67,7 +80,9 @@ def test_allowlist_and_redaction_drop_sentinel_pii() -> None:
     assert "token=secret" not in serialized
 
 
-def test_request_id_accepts_bounded_client_correlation_and_replaces_invalid_values() -> None:
+def test_request_id_accepts_bounded_client_correlation_and_replaces_invalid_values() -> (
+    None
+):
     valid_request = Request(
         {
             "type": "http",
@@ -120,6 +135,29 @@ def test_emit_event_uses_catalog_message_and_occurrence_envelope(caplog) -> None
     assert payload["email_delivery_id"] == "delivery-1"
 
 
+def test_domain_logger_accepts_typed_keyword_fields(caplog) -> None:
+    logger = get_domain_logger("app.test.adapter")
+
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        logger.event("auth.login.failed", reason_code="account_not_found")
+
+    assert caplog.records[-1].event_data["reason_code"] == "account_not_found"
+
+
+def test_invalid_event_fields_drop_the_whole_event(caplog) -> None:
+    before = diagnostic_counts().get("invalid_envelope", 0)
+
+    with caplog.at_level(logging.INFO, logger="app.test.invalid"):
+        emit_event(
+            logging.getLogger("app.test.invalid"),
+            "auth.login.failed",
+            fields={"reason_code": "unexpected free text"},
+        )
+
+    assert not caplog.records
+    assert diagnostic_counts().get("invalid_envelope", 0) > before
+
+
 def test_json_formatter_preserves_occurrence_identity_across_projections() -> None:
     record = logging.LogRecord(
         name="app.test",
@@ -142,6 +180,44 @@ def test_json_formatter_preserves_occurrence_identity_across_projections() -> No
     assert first["event_id"] == second["event_id"] == "occurrence-1"
     assert first["occurred_at"] == second["occurred_at"]
     assert first["timestamp"] == second["timestamp"]
+
+
+def test_json_formatter_does_not_allow_null_occurrence_fields() -> None:
+    record = logging.LogRecord(
+        name="app.test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="ignored",
+        args=(),
+        exc_info=None,
+    )
+    record.event = "email.delivery.queued"
+    record.event_data = {"event_id": None, "occurred_at": None}
+
+    payload = json.loads(JsonLogFormatter().format(record))
+
+    assert payload["event_id"]
+    assert payload["occurred_at"]
+
+
+def test_operation_timing_is_preserved_as_a_span_event(
+    _global_trace_provider: InMemorySpanExporter,
+) -> None:
+    exporter = _global_trace_provider
+    exporter.clear()
+    with with_named_span("app.operation"):
+        log_operation_timing(
+            logging.getLogger("app.performance"),
+            operation="volunteers.detail.shell",
+            started_at=perf_counter(),
+            details={"volunteer_id": 7},
+        )
+
+    span = exporter.get_finished_spans()[0]
+    assert span.events[0].name == "app.operation.timing"
+    assert span.events[0].attributes["operation"] == "volunteers.detail.shell"
+    assert span.events[0].attributes["volunteer_id"] == 7
 
 
 def test_isolated_logging_handler_allows_later_sink_to_receive_record() -> None:
@@ -286,9 +362,7 @@ def test_otlp_handler_exports_only_sanitized_record() -> None:
         "registration_id": 42,
         "recipient_email": "sentinel@example.com",
     }
-    handler = _SanitizedLoggingHandler(
-        logger_provider=cast(Any, CapturingProvider())
-    )
+    handler = _SanitizedLoggingHandler(logger_provider=cast(Any, CapturingProvider()))
 
     handler.emit(record)
 
@@ -377,9 +451,7 @@ def test_fastapi_instrumentation_joins_incoming_traceparent() -> None:
     client.get(
         "/hello",
         headers={
-            "traceparent": (
-                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-            )
+            "traceparent": ("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         },
     )
 

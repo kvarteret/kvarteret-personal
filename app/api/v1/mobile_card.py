@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Literal
 
@@ -19,9 +18,13 @@ from app.domain.mobile_card.service import (
     MobileCardResponse,
     MobileCardService,
 )
-from app.observability import client_ip_from_request, emit_event, with_named_span
+from app.observability import (
+    client_ip_from_request,
+    get_domain_logger,
+    with_named_span,
+)
 
-logger = logging.getLogger("app.audit")
+logger = get_domain_logger("app.audit")
 
 
 class AccessCodeRequest(BaseModel):
@@ -240,8 +243,7 @@ async def _accept_client_diagnostic(
         # must not turn a client diagnostic into an application error.
         return
 
-    emit_event(
-        logger,
+    logger.event(
         "mobile_card.session.logout",
         event_id=payload.event_id,
         fields={
@@ -257,6 +259,8 @@ async def _accept_client_diagnostic(
             "runtime_version": payload.runtime_version,
             "update_channel": payload.update_channel,
             "update_id": payload.update_id,
-            "outcome": "failure" if payload.event_name == "session_invalidated" else "success",
+            "outcome": "failure"
+            if payload.event_name == "session_invalidated"
+            else "success",
         },
     )

@@ -1,4 +1,3 @@
-import logging
 from time import perf_counter
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -25,7 +24,7 @@ from app.observability import (
     build_request_id,
     clear_request_context,
     configure_logging,
-    emit_event,
+    get_domain_logger,
     log_request,
     log_request_exception,
     request_context_for_user,
@@ -42,7 +41,7 @@ from app.web.csrf import (
 )
 from app.web.router import web_router
 
-logger = logging.getLogger(__name__)
+logger = get_domain_logger(__name__)
 
 
 def create_app(container=None) -> FastAPI:
@@ -133,7 +132,9 @@ def _install_request_session_middleware(app: FastAPI, container) -> None:
             else:
                 if session.in_transaction():
                     await session.commit()
-                    from app.email_outbox_service import flush_pending_email_queued_events
+                    from app.email_outbox_service import (
+                        flush_pending_email_queued_events,
+                    )
 
                     await flush_pending_email_queued_events()
                 return response
@@ -223,10 +224,8 @@ def _install_http_exception_handler(app: FastAPI) -> None:
                 for error in errors
             }
         )
-        emit_event(
-            logger,
+        logger.event(
             "http.validation.failed",
-            level=logging.WARNING,
             fields={
                 "status_code": 422,
                 "http_method": request.method,

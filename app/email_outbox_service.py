@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
@@ -40,12 +39,12 @@ from app.email_message_preparation import (
     EmailPreparationFailure,
 )
 from app.email_outbox_repository import EmailOutboxRepository
-from app.observability import current_trace_id, emit_event
+from app.observability import current_trace_id, get_domain_logger
 
-logger = logging.getLogger(__name__)
+logger = get_domain_logger(__name__)
 tracer = trace.get_tracer(__name__)
-_pending_queued_events: ContextVar[tuple[tuple[UUID, int | None, str], ...]] = ContextVar(
-    "pending_email_queued_events", default=()
+_pending_queued_events: ContextVar[tuple[tuple[UUID, int | None, str], ...]] = (
+    ContextVar("pending_email_queued_events", default=())
 )
 
 _LEASE_DURATION = timedelta(minutes=5)
@@ -63,8 +62,7 @@ async def flush_pending_email_queued_events() -> None:
     pending = _pending_queued_events.get()
     _pending_queued_events.set(())
     for delivery_id, registration_id, template_key in pending:
-        emit_event(
-            logger,
+        logger.event(
             "email.delivery.queued",
             fields={
                 "email_delivery_id": delivery_id,
@@ -127,6 +125,7 @@ class EmailOutboxService:
                 (*pending, (delivery_id, request.registration_id, request.template_key))
             )
         return delivery_id
+
     async def dispatch_due(self, *, batch_size: int = 10) -> DispatchSummary:
         if not self.settings.email_dispatch_enabled:
             return DispatchSummary(0, 0, 0, 0, 0, 0, ())
@@ -232,10 +231,8 @@ class EmailOutboxService:
                 duration_ms=_duration_ms(started),
             )
         except Exception:
-            emit_event(
-                logger,
+            logger.event(
                 "email.delivery.unexpected",
-                level=logging.ERROR,
                 fields={
                     "email_delivery_id": delivery_id,
                     "failure_stage": stage,
@@ -263,8 +260,7 @@ class EmailOutboxService:
             duration_ms=duration_ms,
         )
         await commit_request_session()
-        emit_event(
-            logger,
+        logger.event(
             "email.delivery.accepted",
             fields={
                 "email_delivery_id": delivery_id,
@@ -276,12 +272,8 @@ class EmailOutboxService:
         )
         return "sent"
 
-    async def _start_attempt(
-        self, delivery_id: UUID
-    ) -> tuple[int, int, int | None]:
-        result = await self.repository.start_attempt(
-            delivery_id, now=self._now()
-        )
+    async def _start_attempt(self, delivery_id: UUID) -> tuple[int, int, int | None]:
+        result = await self.repository.start_attempt(delivery_id, now=self._now())
         await commit_request_session()
         return result
 
@@ -330,10 +322,10 @@ class EmailOutboxService:
             now=now,
         )
         await commit_request_session()
-        emit_event(
-            logger,
-            "email.delivery.retry_scheduled" if should_retry else "email.delivery.failed",
-            level=logging.WARNING if should_retry else logging.ERROR,
+        logger.event(
+            "email.delivery.retry_scheduled"
+            if should_retry
+            else "email.delivery.failed",
             fields={
                 "email_delivery_id": delivery_id,
                 "registration_id": registration_id,

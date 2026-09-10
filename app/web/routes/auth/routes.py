@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature
@@ -31,7 +29,7 @@ from app.dependencies import (
     get_supabase_auth_gateway,
     require_authenticated_user,
 )
-from app.observability import client_ip_from_request, emit_event
+from app.observability import client_ip_from_request, get_domain_logger
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -46,7 +44,7 @@ _PASSWORD_RESET_SENT_MESSAGE = (
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
-logger = logging.getLogger(__name__)
+logger = get_domain_logger(__name__)
 
 
 def _set_session_cookie(
@@ -143,10 +141,8 @@ async def login_submit(
                 window_seconds=settings.login_attempt_window_seconds,
             )
     except RateLimitExceeded:
-        emit_event(
-            logger,
+        logger.event(
             "auth.login.throttled",
-            level=logging.WARNING,
             fields={"reason_code": "rate_limited", "outcome": "failure"},
         )
         return templates.TemplateResponse(
@@ -370,14 +366,18 @@ async def set_password_submit(
     else:
         try:
             if normalized_token_hash:
-                auth_user_id = await supabase_auth_gateway.update_password_with_token_hash(
-                    normalized_token_hash,
-                    normalized_verification_type,
-                    password,
+                auth_user_id = (
+                    await supabase_auth_gateway.update_password_with_token_hash(
+                        normalized_token_hash,
+                        normalized_verification_type,
+                        password,
+                    )
                 )
             else:
-                auth_user_id = await supabase_auth_gateway.update_password_with_access_token(
-                    normalized_access_token, password
+                auth_user_id = (
+                    await supabase_auth_gateway.update_password_with_access_token(
+                        normalized_access_token, password
+                    )
                 )
             if auth_user_id is not None:
                 await admin_accounts_service.mark_onboarding_complete(auth_user_id)

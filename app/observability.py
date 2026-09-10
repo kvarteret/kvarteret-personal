@@ -21,9 +21,7 @@ from opentelemetry import trace
 from app.auth.models import AuthenticatedUser
 from app.config import Settings
 
-_request_context: ContextVar[dict[str, Any]] = ContextVar(
-    "request_context", default={}
-)
+_request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
 _diagnostic_counters: Counter[str] = Counter()
 _MAX_DIAGNOSTIC_COUNTER_KEYS = 32
 
@@ -52,6 +50,8 @@ _COMMON_FIELDS = frozenset(
         "registration_id",
         "origin_trace_id",
         "volunteer_id",
+        "group_id",
+        "course_id",
         "subject_type",
         "subject_id",
         "email_delivery_id",
@@ -78,6 +78,7 @@ _COMMON_FIELDS = frozenset(
         "validation_codes",
         "validation_issue_count",
         "user_account_id",
+        "role",
         "count",
         "claimed_count",
         "sent_count",
@@ -110,7 +111,13 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
         {"validation_fields", "validation_codes", "validation_issue_count"}
     ),
     "form.submission.repeated_failure": frozenset(
-        {"form_id", "attempt_count", "validation_fields", "validation_codes", "error_source"}
+        {
+            "form_id",
+            "attempt_count",
+            "validation_fields",
+            "validation_codes",
+            "error_source",
+        }
     ),
     "email.delivery.queued": frozenset(),
     "email.delivery.accepted": frozenset(),
@@ -118,9 +125,7 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
     "email.delivery.failed": frozenset(),
     "email.delivery.unexpected": frozenset(),
     "volunteer.prospect.conflict": frozenset({"conflict_type"}),
-    "web.client_error": frozenset(
-        {"error_type", "error_source"}
-    ),
+    "web.client_error": frozenset({"error_type", "error_source"}),
     "mobile_card.session.logout": frozenset(
         {
             "app_version",
@@ -144,55 +149,142 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
 class EventDefinition:
     message: str
     level: int = logging.INFO
+    default_outcome: str = "success"
 
 
 # The catalog is deliberately local to the service. It is the reviewable source
 # for readable log bodies; callers may only provide the typed fields below.
 _EVENT_CATALOG: dict[str, EventDefinition] = {
     "admin.activity": EventDefinition("Administrative action completed"),
-    "app.operation.timing": EventDefinition("Application operation completed", logging.DEBUG),
+    "app.operation.timing": EventDefinition(
+        "Application operation completed", logging.DEBUG
+    ),
     "email.delivery.queued": EventDefinition("Email delivery queued"),
     "email.delivery.accepted": EventDefinition("Email accepted by mail server"),
-    "email.delivery.retry_scheduled": EventDefinition("Email delivery retry scheduled", logging.WARNING),
-    "email.delivery.failed": EventDefinition("Email delivery failed", logging.ERROR),
-    "email.delivery.unexpected": EventDefinition("Unexpected email delivery failure", logging.ERROR),
-    "volunteer.prospect.conflict": EventDefinition("Volunteer prospect registration conflicted", logging.WARNING),
+    "email.delivery.retry_scheduled": EventDefinition(
+        "Email delivery retry scheduled", logging.WARNING, "retry_scheduled"
+    ),
+    "email.delivery.failed": EventDefinition(
+        "Email delivery failed", logging.ERROR, "failure"
+    ),
+    "email.delivery.unexpected": EventDefinition(
+        "Unexpected email delivery failure", logging.ERROR, "failure"
+    ),
+    "volunteer.prospect.conflict": EventDefinition(
+        "Volunteer prospect registration conflicted", logging.WARNING, "failure"
+    ),
     "volunteer.prospect.registered": EventDefinition("Volunteer prospect registered"),
-    "volunteer.application.invited": EventDefinition("Volunteer application invitation created"),
-    "volunteer.application.submitted": EventDefinition("Volunteer application submitted"),
-    "volunteer.application.profile_completed": EventDefinition("Volunteer application profile completed"),
+    "volunteer.application.invited": EventDefinition(
+        "Volunteer application invitation created"
+    ),
+    "volunteer.application.submitted": EventDefinition(
+        "Volunteer application submitted"
+    ),
+    "volunteer.application.profile_completed": EventDefinition(
+        "Volunteer application profile completed"
+    ),
     "volunteer.application.contacted": EventDefinition("Volunteer applicant contacted"),
-    "volunteer.application.trial_started": EventDefinition("Volunteer trial shift started"),
+    "volunteer.application.trial_started": EventDefinition(
+        "Volunteer trial shift started"
+    ),
     "volunteer.application.approved": EventDefinition("Volunteer application approved"),
     "volunteer.application.rejected": EventDefinition("Volunteer application rejected"),
     "volunteer.application.reopened": EventDefinition("Volunteer application reopened"),
-    "volunteer.application.volunteer_restored": EventDefinition("Volunteer status restored"),
-    "volunteer.application.deleted": EventDefinition("Volunteer application deleted"),
-    "volunteer.application.invitation_resent": EventDefinition("Volunteer invitation resent"),
-    "volunteer.application.transitioned": EventDefinition("Volunteer application transition completed"),
-    "mobile_card.access_code.requested": EventDefinition("Mobile-card access code requested"),
-    "mobile_card.session.created": EventDefinition("Mobile-card session created"),
-    "mobile_card.session.rejected": EventDefinition("Mobile-card session rejected", logging.WARNING),
-    "mobile_card.session.renewed": EventDefinition("Mobile-card session renewed", logging.DEBUG),
-    "mobile_card.session.read": EventDefinition("Mobile-card session read", logging.DEBUG),
-    "mobile_card.session.expired": EventDefinition("Mobile-card session expired"),
-    "mobile_card.session.invalid": EventDefinition("Mobile-card session rejected", logging.WARNING),
-    "mobile_card.identity.resolved": EventDefinition("Authenticated mobile-card session matched to subject"),
-    "mobile_card.session.logout": EventDefinition("Mobile-card client session logout reported", logging.INFO),
-    "web.client_error": EventDefinition("Web client error reported", logging.WARNING),
-    "http.validation.failed": EventDefinition("HTTP validation failed", logging.WARNING),
-    "form.submission.repeated_failure": EventDefinition(
-        "Repeated form submission failure", logging.ERROR
+    "volunteer.application.volunteer_restored": EventDefinition(
+        "Volunteer status restored"
     ),
-    "auth.login.failed": EventDefinition("Login failed", logging.WARNING),
+    "volunteer.application.deleted": EventDefinition("Volunteer application deleted"),
+    "volunteer.application.invitation_resent": EventDefinition(
+        "Volunteer invitation resent"
+    ),
+    "volunteer.application.transitioned": EventDefinition(
+        "Volunteer application transition completed"
+    ),
+    "mobile_card.access_code.requested": EventDefinition(
+        "Mobile-card access code requested"
+    ),
+    "mobile_card.session.created": EventDefinition("Mobile-card session created"),
+    "mobile_card.session.rejected": EventDefinition(
+        "Mobile-card session rejected", logging.WARNING, "failure"
+    ),
+    "mobile_card.session.renewed": EventDefinition(
+        "Mobile-card session renewed", logging.DEBUG
+    ),
+    "mobile_card.session.read": EventDefinition(
+        "Mobile-card session read", logging.DEBUG
+    ),
+    "mobile_card.session.expired": EventDefinition(
+        "Mobile-card session expired", default_outcome="unknown"
+    ),
+    "mobile_card.session.invalid": EventDefinition(
+        "Mobile-card session rejected", logging.WARNING, "failure"
+    ),
+    "mobile_card.identity.resolved": EventDefinition(
+        "Authenticated mobile-card session matched to subject"
+    ),
+    "mobile_card.session.logout": EventDefinition(
+        "Mobile-card client session logout reported", logging.INFO
+    ),
+    "web.client_error": EventDefinition(
+        "Web client error reported", logging.WARNING, "failure"
+    ),
+    "http.validation.failed": EventDefinition(
+        "HTTP validation failed", logging.WARNING, "failure"
+    ),
+    "form.submission.repeated_failure": EventDefinition(
+        "Repeated form submission failure", logging.ERROR, "failure"
+    ),
+    "auth.login.failed": EventDefinition("Login failed", logging.WARNING, "failure"),
     "auth.login.succeeded": EventDefinition("Login succeeded"),
-    "auth.login.throttled": EventDefinition("Login throttled", logging.WARNING),
-    "http.request.failed": EventDefinition("HTTP request failed", logging.ERROR),
-    "http.request.slow": EventDefinition("Slow HTTP request", logging.WARNING),
-    "telemetry.configuration.failed": EventDefinition("Telemetry configuration failed", logging.WARNING),
+    "auth.login.throttled": EventDefinition(
+        "Login throttled", logging.WARNING, "failure"
+    ),
+    "http.request.failed": EventDefinition(
+        "HTTP request failed", logging.ERROR, "failure"
+    ),
+    "http.request.slow": EventDefinition(
+        "Slow HTTP request", logging.WARNING, "unknown"
+    ),
+    "telemetry.configuration.failed": EventDefinition(
+        "Telemetry configuration failed", logging.WARNING, "failure"
+    ),
 }
 
 _ALLOWED_OUTCOMES = frozenset({"success", "failure", "retry_scheduled", "unknown"})
+_ALLOWED_REASON_CODES: dict[str, frozenset[str]] = {
+    "auth.login.failed": frozenset({"account_not_found", "invalid_credentials"}),
+    "auth.login.throttled": frozenset({"rate_limited"}),
+    "mobile_card.session.rejected": frozenset({"invalid_access_code"}),
+    "mobile_card.session.expired": frozenset({"expired"}),
+    "mobile_card.session.invalid": frozenset({"bad_signature", "malformed"}),
+}
+_ALLOWED_FIELD_VALUES: dict[str, dict[str, frozenset[str]]] = {
+    "volunteer.prospect.conflict": {
+        "conflict_type": frozenset(
+            {
+                "application_conflict",
+                "existing_volunteer",
+                "active_application",
+                "field_conflict",
+                "idempotency_key_content_mismatch",
+                "friend_email_existing_volunteer",
+                "friend_email_active_application",
+            }
+        )
+    },
+    "mobile_card.session.renewed": {
+        "subject_type": frozenset({"review", "trial_application", "volunteer"})
+    },
+    "mobile_card.session.created": {
+        "subject_type": frozenset({"review", "trial_application", "volunteer"})
+    },
+    "mobile_card.session.read": {
+        "subject_type": frozenset({"review", "trial_application", "volunteer"})
+    },
+    "mobile_card.identity.resolved": {
+        "subject_type": frozenset({"review", "trial_application", "volunteer"})
+    },
+}
 _MAX_STRING_FIELD_LENGTH = 512
 
 
@@ -208,8 +300,11 @@ class DomainLogger:
         *,
         fields: Mapping[str, object] | None = None,
         event_id: str | UUID | None = None,
+        **typed_fields: object,
     ) -> None:
-        emit_event(self._logger, event, fields=fields, event_id=event_id)
+        event_fields = dict(fields or {})
+        event_fields.update(typed_fields)
+        emit_event(self._logger, event, fields=event_fields, event_id=event_id)
 
     def __getattr__(self, name: str):
         return getattr(self._logger, name)
@@ -217,6 +312,7 @@ class DomainLogger:
 
 def get_domain_logger(name: str) -> DomainLogger:
     return DomainLogger(logging.getLogger(name))
+
 
 _FORBIDDEN_KEY_PARTS = (
     "authorization",
@@ -262,29 +358,58 @@ def _allowed_fields(event: str) -> frozenset[str]:
 
 
 def sanitize_fields(event: str, values: Mapping[str, object]) -> dict[str, object]:
+    return _sanitize_fields(event, values, reject_invalid=False)[0]
+
+
+def _sanitize_fields(
+    event: str,
+    values: Mapping[str, object],
+    *,
+    reject_invalid: bool,
+) -> tuple[dict[str, object], bool]:
     allowed = _allowed_fields(event)
     sanitized: dict[str, object] = {}
+    valid = True
     for key, value in values.items():
         normalized_key = key.strip()
         if normalized_key not in allowed:
             _record_diagnostic("invalid_field")
+            valid = False
             continue
         if not _is_safe_scalar(value):
             _record_diagnostic("invalid_field")
+            valid = False
             continue
         if isinstance(value, str) and len(value) > _MAX_STRING_FIELD_LENGTH:
             _record_diagnostic("invalid_field")
+            valid = False
             continue
         if normalized_key != "email_delivery_id" and any(
             part in normalized_key.lower() for part in _FORBIDDEN_KEY_PARTS
         ):
             _record_diagnostic("invalid_field")
+            valid = False
             continue
         if normalized_key == "outcome" and value not in _ALLOWED_OUTCOMES:
             _record_diagnostic("invalid_outcome")
+            valid = False
+            continue
+        allowed_reason_codes = _ALLOWED_REASON_CODES.get(event)
+        if (
+            normalized_key == "reason_code"
+            and allowed_reason_codes is not None
+            and value not in allowed_reason_codes
+        ):
+            _record_diagnostic("invalid_reason_code")
+            valid = False
+            continue
+        allowed_values = _ALLOWED_FIELD_VALUES.get(event, {}).get(normalized_key)
+        if allowed_values is not None and value not in allowed_values:
+            _record_diagnostic("invalid_enum")
+            valid = False
             continue
         sanitized[normalized_key] = _sanitize_scalar(value)
-    return sanitized
+    return (sanitized if valid or not reject_invalid else {}, valid)
 
 
 def _sanitize_scalar(value: object) -> object:
@@ -311,23 +436,39 @@ def emit_event(
         _record_diagnostic("unknown_event")
         return
     occurrence_id = event_id or uuid4()
+    if not _is_safe_scalar(occurrence_id) or (
+        isinstance(occurrence_id, str)
+        and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9:._-]{0,127}", occurrence_id)
+    ):
+        _record_diagnostic("invalid_envelope")
+        return
     occurred_at = datetime.now(UTC).isoformat()
+    reserved_fields = {
+        "event_id",
+        "schema_version",
+        "occurred_at",
+        "service",
+        "environment",
+        "request_id",
+        "trace_id",
+        "span_id",
+    }
     event_fields = {
         "schema_version": 1,
         "event_id": occurrence_id,
         "occurred_at": occurred_at,
         "service": "kvarteret-personal",
         "environment": os.getenv("VERCEL_ENV") or os.getenv("APP_ENV", "unknown"),
-        "outcome": "success",
+        "outcome": definition.default_outcome,
         **current_trace_fields(),
         **{
             key: value
             for key, value in (fields or {}).items()
-            if key not in {"event_id", "schema_version", "occurred_at", "service", "environment"}
+            if key not in reserved_fields
         },
     }
-    sanitized = sanitize_fields(event, event_fields)
-    if "event_id" not in sanitized or "occurred_at" not in sanitized:
+    sanitized, valid = _sanitize_fields(event, event_fields, reject_invalid=True)
+    if not valid or "event_id" not in sanitized or "occurred_at" not in sanitized:
         _record_diagnostic("invalid_envelope")
         return
     try:
@@ -356,18 +497,20 @@ class JsonLogFormatter(logging.Formatter):
             }
             record._observability_occurrence = occurrence
         definition = _EVENT_CATALOG.get(event)
+        safe_event_data = sanitize_fields(event, event_data)
         payload: dict[str, Any] = {
             "timestamp": occurrence["occurred_at"],
             "level": record.levelname,
             "logger": record.name,
             "event": event,
             "schema_version": 1,
-            "event_id": event_data.get("event_id", occurrence["event_id"]),
-            "occurred_at": event_data.get("occurred_at", occurrence["occurred_at"]),
+            "event_id": safe_event_data.get("event_id") or occurrence["event_id"],
+            "occurred_at": safe_event_data.get("occurred_at")
+            or occurrence["occurred_at"],
             "service": "kvarteret-personal",
             "environment": os.getenv("VERCEL_ENV") or os.getenv("APP_ENV", "unknown"),
-            "outcome": event_data.get(
-                "outcome", "success" if record.levelno < logging.WARNING else "failure"
+            "outcome": safe_event_data.get(
+                "outcome", definition.default_outcome if definition else "success"
             ),
             # Free-form log messages can contain names, response bodies, or other
             # identifiers that pattern redaction cannot reliably recognize.
@@ -376,11 +519,17 @@ class JsonLogFormatter(logging.Formatter):
             "message": definition.message if definition else event,
         }
         payload.update(sanitize_fields(event, _request_context.get({})))
-        reserved = {"event_id", "schema_version", "occurred_at", "service", "environment"}
+        reserved = {
+            "event_id",
+            "schema_version",
+            "occurred_at",
+            "service",
+            "environment",
+        }
         payload.update(
             {
                 key: value
-                for key, value in sanitize_fields(event, event_data).items()
+                for key, value in safe_event_data.items()
                 if key not in reserved
             }
         )
@@ -411,7 +560,10 @@ class IsolatedLoggingHandler(logging.Handler):
 
 
 def _record_diagnostic(kind: str) -> None:
-    if kind not in _diagnostic_counters and len(_diagnostic_counters) >= _MAX_DIAGNOSTIC_COUNTER_KEYS:
+    if (
+        kind not in _diagnostic_counters
+        and len(_diagnostic_counters) >= _MAX_DIAGNOSTIC_COUNTER_KEYS
+    ):
         kind = "other"
     _diagnostic_counters[kind] += 1
 
@@ -564,19 +716,29 @@ def log_operation_timing(
     started_at: float,
     details: dict[str, Any] | None = None,
 ) -> None:
-    # Operation timings are represented by repository spans/metrics. Keeping
-    # this compatibility seam avoids changing every caller while preventing a
-    # routine INFO record for every healthy query.
-    return None
+    try:
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        fields = {
+            "operation": operation,
+            "duration_ms": duration_ms,
+            **(details or {}),
+        }
+        safe_fields = sanitize_fields("app.operation.timing", fields)
+        safe_fields = {
+            key: value for key, value in safe_fields.items() if value is not None
+        }
+        span = trace.get_current_span()
+        if span.is_recording():
+            span.add_event("app.operation.timing", attributes=safe_fields)
+    except Exception:
+        _record_diagnostic("span_failure")
 
 
 _tracer = trace.get_tracer("kvarteret-personal")
 
 
 @contextmanager
-def with_named_span(
-    name: str, attributes: Mapping[str, object] | None = None
-):
+def with_named_span(name: str, attributes: Mapping[str, object] | None = None):
     """Run the wrapped block inside a named business-domain span.
 
     The span records ERROR status when the block raises. When telemetry is

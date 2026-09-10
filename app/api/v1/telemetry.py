@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,11 +9,11 @@ from app.dependencies import (
     require_authenticated_user,
 )
 from app.db.rate_limit import RateLimitExceeded, RateLimiter
-from app.observability import emit_event
+from app.observability import get_domain_logger
 
 router = APIRouter()
 
-logger = logging.getLogger("app.web.client_errors")
+logger = get_domain_logger("app.web.client_errors")
 
 # Generous ceiling: this endpoint exists so frontend failures become visible
 # in PostHog logs, but a single page session can legitimately produce several
@@ -66,13 +65,10 @@ async def report_client_error(
 
     # Structured fields go through the observability sanitizer (redacts
     # emails, query strings, bearer tokens) before export to PostHog logs.
-    emit_event(
-        logger,
+    logger.event(
         "web.client_error",
-        level=logging.WARNING,
         fields={
             "error_type": body.error_type[:120] or "Error",
-            "error_text": body.error_text[:1000],
             "error_source": body.error_source[:250],
             "route_template": request.url.path,
             "form_id": body.form_id,

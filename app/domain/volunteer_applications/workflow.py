@@ -19,7 +19,6 @@ independently, so one applicant's lifecycle never controls another's.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
@@ -42,7 +41,7 @@ from app.domain.volunteer_applications.state_machine import (
     TransitionContext,
     application_transition,
 )
-from app.observability import current_trace_id, emit_event, with_named_span
+from app.observability import current_trace_id, get_domain_logger, with_named_span
 
 if TYPE_CHECKING:
     from app.domain.volunteer_applications.service import (
@@ -52,6 +51,9 @@ if TYPE_CHECKING:
         VolunteerApplicationInvite,
         VolunteerApplicationSubmissionInput,
     )
+
+
+logger = get_domain_logger(__name__)
 
 
 class VolunteerApplicationWorkflowOperations(Protocol):
@@ -679,10 +681,8 @@ class VolunteerApplicationWorkflow:
         try:
             await self.email_outbox.dispatch_due(batch_size=10)
         except Exception:
-            emit_event(
-                logging.getLogger(__name__),
+            logger.event(
                 "email.delivery.unexpected",
-                level=logging.ERROR,
                 fields={
                     "outcome": "failure",
                     "error_category": "unexpected",
@@ -706,8 +706,7 @@ class VolunteerApplicationWorkflow:
                 span.set_attribute("origin_trace_id", origin_trace_id)
             if volunteer_id is not None:
                 span.set_attribute("volunteer_id", volunteer_id)
-        emit_event(
-            logging.getLogger(__name__),
+        logger.event(
             event_name,
             event_id=(
                 f"kvarteret-personal:{event_name}:{event_id}"

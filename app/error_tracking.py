@@ -9,7 +9,7 @@ import os
 from posthog import Posthog
 
 from app.config import Settings
-from app.observability import JsonLogFormatter
+from app.observability import IsolatedLoggingHandler, JsonLogFormatter
 
 
 def sanitize_exception_event(event: dict) -> dict | None:
@@ -119,4 +119,6 @@ def configure_error_tracking(settings: Settings) -> None:
         capture_exception_code_variables=False,
         before_send=sanitize_exception_event,
     )
-    logging.getLogger().addHandler(ExceptionLoggingHandler(client, settings))
+    logging.getLogger().addHandler(
+        IsolatedLoggingHandler(ExceptionLoggingHandler(client, settings))
+    )

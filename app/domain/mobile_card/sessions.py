@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -9,10 +8,10 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from app.config import Settings
 from app.domain.mobile_card.models import DecodedMobileCardSession
 from app.domain.mobile_card.errors import MobileCardInvalidSessionError
-from app.observability import emit_event
+from app.observability import get_domain_logger
 
 _UNKNOWN_SESSION_TOKEN = "Unknown session token."
-logger = logging.getLogger(__name__)
+logger = get_domain_logger(__name__)
 
 
 class MobileCardSessionManager:
@@ -74,16 +73,12 @@ class MobileCardSessionManager:
             is_review=is_review,
             person_id=person_id if isinstance(person_id, int) else None,
             trial_application_id=(
-                trial_application_id
-                if isinstance(trial_application_id, int)
-                else None
+                trial_application_id if isinstance(trial_application_id, int) else None
             ),
             remaining_seconds=remaining_seconds,
         )
 
-    def maybe_renew(
-        self, decoded: DecodedMobileCardSession
-    ) -> str | None:
+    def maybe_renew(self, decoded: DecodedMobileCardSession) -> str | None:
         if decoded.remaining_seconds > self._renewal_threshold_seconds():
             return None
 
@@ -94,13 +89,21 @@ class MobileCardSessionManager:
         else:
             payload = {"person_id": decoded.person_id or 0}
         renewed_token = self.build_token(payload)
-        emit_event(
-            logger,
+        logger.event(
             "mobile_card.session.renewed",
-            level=logging.DEBUG,
             fields={
-                "subject_type": "review" if decoded.is_review else "session",
-                "subject_id": decoded.person_id,
+                "subject_type": (
+                    "review"
+                    if decoded.is_review
+                    else "trial_application"
+                    if decoded.trial_application_id is not None
+                    else "volunteer"
+                ),
+                "subject_id": (
+                    decoded.trial_application_id
+                    if decoded.trial_application_id is not None
+                    else decoded.person_id
+                ),
                 "duration_ms": decoded.age_seconds * 1000,
                 "outcome": "success",
             },
@@ -116,9 +119,12 @@ class MobileCardSessionManager:
     def _log_invalid(
         self, reason: Literal["bad_signature", "expired", "malformed"]
     ) -> None:
-        emit_event(
-            logger,
-            "mobile_card.session.expired" if reason == "expired" else "mobile_card.session.invalid",
-            level=logging.INFO if reason == "expired" else logging.WARNING,
-            fields={"reason_code": reason, "outcome": "failure"},
+        logger.event(
+            "mobile_card.session.expired"
+            if reason == "expired"
+            else "mobile_card.session.invalid",
+            fields={
+                "reason_code": reason,
+                "outcome": "unknown" if reason == "expired" else "failure",
+            },
         )

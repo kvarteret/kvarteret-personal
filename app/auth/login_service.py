@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.repository import AuthRepositoryProtocol
 from app.auth.session_store import SessionStoreProtocol
 from app.auth.supabase_auth import SupabaseAuthGatewayProtocol
-from app.observability import emit_event
+from app.observability import get_domain_logger
 
-logger = logging.getLogger(__name__)
+logger = get_domain_logger(__name__)
 
 
 class LoginError(Exception):
@@ -46,10 +45,8 @@ class LoginService:
             normalized_identifier
         )
         if account is None:
-            emit_event(
-                logger,
+            logger.event(
                 "auth.login.failed",
-                level=logging.WARNING,
                 fields={"reason_code": "account_not_found", "outcome": "failure"},
             )
             raise LoginError("Invalid credentials.")
@@ -58,10 +55,8 @@ class LoginService:
             account.email, password
         )
         if auth_user_id is None:
-            emit_event(
-                logger,
+            logger.event(
                 "auth.login.failed",
-                level=logging.WARNING,
                 fields={"reason_code": "invalid_credentials", "outcome": "failure"},
             )
             raise LoginError("Invalid credentials.")
@@ -94,8 +89,7 @@ class LoginService:
                 role=account.role,
             ),
         )
-        emit_event(
-            logger,
+        logger.event(
             "auth.login.succeeded",
             fields={"user_account_id": account.id, "role": account.role.value},
         )
