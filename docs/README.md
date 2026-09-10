@@ -20,6 +20,7 @@ The docs are organized by purpose:
 - [API boundaries](reference/api-boundaries.md)
 - [External systems](reference/external-systems.md)
 - [Configuration](reference/configuration.md)
+- [Domain logging and analytics implementation plan](reference/observability-implementation-spec.md)
 - [Kvarteret system map](explanation/kvarteret-system-map.md)
 - [Kvarteret Personal architecture](explanation/kvarteret-personal-architecture.md)
 - [The volunteer application lifecycle](explanation/volunteer-application-lifecycle.md)

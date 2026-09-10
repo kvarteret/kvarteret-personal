@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.dependencies import get_mobile_card_service
 from app.dependencies import get_rate_limiter
@@ -51,31 +50,20 @@ class MobileCardSessionLogoutEventRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     app_version: str | None = None
-    auth_error_code: str | None = Field(default=None, max_length=64)
-    auth_error_message: str | None = Field(default=None, max_length=160)
+    auth_error_code: str | None = None
+    auth_error_message: str | None = None
     auth_error_status: int | None = None
     cached_user_id: int | None = None
-    event_id: str | None = Field(
-        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
-    )
     event_name: Literal["credentials_missing_after_login", "session_invalidated"]
     execution_environment: str | None = None
     had_cached_user: bool
     had_login_marker: bool
     had_stored_credentials: bool
-    occurred_at: datetime
-    platform: str = Field(max_length=32)
-    runtime_version: str | None = Field(default=None, max_length=64)
-    update_channel: str | None = Field(default=None, max_length=64)
-    update_id: str | None = Field(default=None, max_length=128)
-    operation_id: str | None = Field(
-        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
-    )
-    attempt_id: str | None = Field(
-        default=None, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
-    )
-    attempt_no: int | None = Field(default=None, ge=1, le=100)
-    source: Literal["client"] = "client"
+    occurred_at: str
+    platform: str
+    runtime_version: str | None = None
+    update_channel: str | None = None
+    update_id: str | None = None
 
 
 class AcceptedStatusResponse(BaseModel):
@@ -244,23 +232,9 @@ async def _accept_client_diagnostic(
         return
 
     logger.event(
-        "mobile_card.session.logout",
-        event_id=payload.event_id,
-        fields={
-            "event_name": payload.event_name,
-            "app_version": payload.app_version,
-            "platform": payload.platform,
-            "auth_error_code": payload.auth_error_code,
-            "auth_error_status": payload.auth_error_status,
-            "execution_environment": payload.execution_environment,
-            "had_cached_user": payload.had_cached_user,
-            "had_login_marker": payload.had_login_marker,
-            "had_stored_credentials": payload.had_stored_credentials,
-            "runtime_version": payload.runtime_version,
-            "update_channel": payload.update_channel,
-            "update_id": payload.update_id,
-            "outcome": "failure"
-            if payload.event_name == "session_invalidated"
-            else "success",
-        },
+        "mobile_card.client_session_invalidated"
+        if payload.event_name == "session_invalidated"
+        else "mobile_card.client_credentials_missing",
+        source="client",
+        platform=payload.platform if payload.platform in {"ios", "android", "web"} else "other",
     )

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, Mapping
@@ -39,14 +38,12 @@ from app.email_message_preparation import (
     EmailPreparationFailure,
 )
 from app.email_outbox_repository import EmailOutboxRepository
+from app.db.after_commit import after_commit
+from app.db.session import current_session
 from app.observability import current_trace_id, get_domain_logger
 
 logger = get_domain_logger(__name__)
 tracer = trace.get_tracer(__name__)
-_pending_queued_events: ContextVar[tuple[tuple[UUID, int | None, str], ...]] = (
-    ContextVar("pending_email_queued_events", default=())
-)
-
 _LEASE_DURATION = timedelta(minutes=5)
 _OPERATION_TIMEOUT_SECONDS = 20
 _MAX_AUTOMATIC_ATTEMPTS = 5
@@ -56,25 +53,6 @@ _RETRY_DELAYS = (
     timedelta(minutes=30),
     timedelta(hours=2),
 )
-
-
-async def flush_pending_email_queued_events() -> None:
-    pending = _pending_queued_events.get()
-    _pending_queued_events.set(())
-    for delivery_id, registration_id, template_key in pending:
-        logger.event(
-            "email.delivery.queued",
-            fields={
-                "email_delivery_id": delivery_id,
-                "registration_id": registration_id,
-                "template_key": template_key,
-                "outcome": "success",
-            },
-        )
-
-
-def discard_pending_email_queued_events() -> None:
-    _pending_queued_events.set(())
 
 
 class EmailDeliveryConflictError(ValueError):
@@ -118,12 +96,18 @@ class EmailOutboxService:
             enqueued_trace_id=request.enqueued_trace_id or current_trace_id(),
         )
         if created:
-            # The row may still roll back. The commit coordinator drains this
-            # context only after the owning transaction has committed.
-            pending = _pending_queued_events.get()
-            _pending_queued_events.set(
-                (*pending, (delivery_id, request.registration_id, request.template_key))
-            )
+            session = current_session()
+            if session is not None:
+                after_commit(
+                    session.sync_session,
+                    lambda: logger.event(
+                        "email.delivery.queued",
+                        event_id=f"kvarteret-personal:email.delivery.queued:{delivery_id}",
+                        email_delivery_id=delivery_id,
+                        registration_id=request.registration_id,
+                        template_key=request.template_key,
+                    ),
+                )
         return delivery_id
 
     async def dispatch_due(self, *, batch_size: int = 10) -> DispatchSummary:

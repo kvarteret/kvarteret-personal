@@ -214,10 +214,10 @@ class VolunteerApplicationWorkflow:
                 source_domain_event_id=event_id,
             )
             await commit_request_session()
-            await self.side_effects.after_invited(invite, base_url=base_url)
             self._record_lifecycle(
                 invite, event_name="volunteer.application.invited", event_id=event_id
             )
+            await self.side_effects.after_invited(invite, base_url=base_url)
             await self._dispatch_best_effort()
             return invite
 
@@ -308,13 +308,13 @@ class VolunteerApplicationWorkflow:
         except Exception:
             await rollback_request_session()
             raise
-        await self.side_effects.after_public_prospect_registered(
-            result, base_url=base_url
-        )
         self._record_lifecycle(
             result.detail,
             event_name="volunteer.prospect.registered",
             event_id=registration_event_id,
+        )
+        await self.side_effects.after_public_prospect_registered(
+            result, base_url=base_url
         )
         await self._dispatch_best_effort()
         return result.detail
@@ -352,7 +352,6 @@ class VolunteerApplicationWorkflow:
                     subject_id=detail.registration_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_submitted(detail)
             self._record_lifecycle(
                 detail,
                 event_name=(
@@ -364,6 +363,7 @@ class VolunteerApplicationWorkflow:
                 ),
                 event_id=event_id,
             )
+            await self.side_effects.after_submitted(detail)
             return detail
 
     async def contact(
@@ -511,14 +511,14 @@ class VolunteerApplicationWorkflow:
                 actor_user_account_id=actor_user_account_id,
             )
             await commit_request_session()
-            await self.side_effects.after_approved(
-                detail, volunteer_id=volunteer_id, base_url=base_url
-            )
             self._record_lifecycle(
                 detail,
                 event_name="volunteer.application.approved",
                 event_id=event.event_id if event is not None else None,
                 volunteer_id=volunteer_id,
+            )
+            await self.side_effects.after_approved(
+                detail, volunteer_id=volunteer_id, base_url=base_url
             )
             return volunteer_id
 
@@ -604,12 +604,12 @@ class VolunteerApplicationWorkflow:
                     subject_id=registration_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_deleted(detail)
             self._record_lifecycle(
                 detail,
                 event_name="volunteer.application.deleted",
                 event_id=event_id,
             )
+            await self.side_effects.after_deleted(detail)
 
     async def resend_invitation(
         self,
@@ -644,12 +644,12 @@ class VolunteerApplicationWorkflow:
                     source_domain_event_id=event_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_invitation_resent(detail, base_url=base_url)
             self._record_lifecycle(
                 detail,
                 event_name="volunteer.application.invitation_resent",
                 event_id=event_id,
             )
+            await self.side_effects.after_invitation_resent(detail, base_url=base_url)
             await self._dispatch_best_effort()
             return detail
 
@@ -682,7 +682,7 @@ class VolunteerApplicationWorkflow:
             await self.email_outbox.dispatch_due(batch_size=10)
         except Exception:
             logger.event(
-                "email.delivery.unexpected",
+                "email.dispatch.deferred",
                 fields={
                     "outcome": "failure",
                     "error_category": "unexpected",
@@ -697,6 +697,8 @@ class VolunteerApplicationWorkflow:
         event_id: int | None = None,
         volunteer_id: int | None = None,
     ) -> None:
+        if event_id is None:
+            return
         registration_id = int(getattr(detail, "registration_id"))
         origin_trace_id = getattr(detail, "origin_trace_id", None)
         span = trace.get_current_span()

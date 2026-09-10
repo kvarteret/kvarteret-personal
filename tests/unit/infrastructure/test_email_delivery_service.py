@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.config import Settings
 from app.db.metadata import public_metadata
 from app.db.session import reset_request_session, set_request_session
+from app.domain.admin_accounts.tables import user_accounts
 from app.domain.volunteer_applications.tables import (
     domain_events,
     volunteer_application_friend_invitations,
@@ -75,6 +76,7 @@ async def session():
         execution_options={"schema_translate_map": {"public": None}},
     )
     tables = [
+        user_accounts,
         volunteer_records,
         volunteer_application_invites,
         volunteer_application_friend_invitations,
@@ -402,3 +404,31 @@ async def test_expired_lease_marks_started_attempt_interrupted_before_reclaim(
         ).scalars()
     )
     assert outcomes == ["interrupted", "succeeded"]
+
+
+async def test_queued_occurrence_waits_for_real_commit_and_dies_on_rollback(session, caplog):
+    import logging
+    service = _service(FakeSender(), Clock())
+    await _seed_application(session)
+    await session.commit()
+    def request(key):
+        return EmailDeliveryRequest(
+            template_key=APPLICANT_APPLICATION_RECEIVED,
+            template_version=1,
+            recipient_email="synthetic@example.test",
+            business_type="volunteer_application",
+            business_id="7",
+            idempotency_key=key,
+            registration_id=7,
+        )
+    with caplog.at_level(logging.INFO):
+        await service.enqueue(request("rollback"))
+        assert not [r for r in caplog.records if getattr(r, "event", None) == "email.delivery.queued"]
+        await session.rollback()
+        delivery = await service.enqueue(request("commit"))
+        await session.commit()
+        await session.commit()
+    queued = [r for r in caplog.records if getattr(r, "event", None) == "email.delivery.queued"]
+    assert len(queued) == 1
+    assert queued[0].event_data["email_delivery_id"] == str(delivery)
+    assert queued[0].event_data["event_id"] == f"kvarteret-personal:email.delivery.queued:{delivery}"

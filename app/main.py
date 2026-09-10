@@ -125,18 +125,10 @@ def _install_request_session_middleware(app: FastAPI, container) -> None:
                 response = await call_next(request)
             except Exception:
                 await session.rollback()
-                from app.email_outbox_service import discard_pending_email_queued_events
-
-                discard_pending_email_queued_events()
                 raise
             else:
                 if session.in_transaction():
                     await session.commit()
-                    from app.email_outbox_service import (
-                        flush_pending_email_queued_events,
-                    )
-
-                    await flush_pending_email_queued_events()
                 return response
             finally:
                 reset_request_session(token)

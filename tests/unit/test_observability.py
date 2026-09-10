@@ -464,3 +464,29 @@ def test_fastapi_instrumentation_joins_incoming_traceparent() -> None:
     # traceparent header (00f067aa0ba902b7), proving the join.
     assert server_span.parent is not None
     assert server_span.parent.span_id == 0x00F067AA0BA902B7
+
+
+def test_shared_contract_fixture_executes_for_personal(caplog):
+    from pathlib import Path
+    fixture = json.loads((Path(__file__).parents[1] / "fixtures/observability_contract.json").read_text())
+    with caplog.at_level(logging.INFO):
+        get_domain_logger("app.fixture").event("email.delivery.queued", email_delivery_id=fixture["allowed_delivery_id"])
+    payload = json.loads(JsonLogFormatter().format(caplog.records[-1]))
+    assert set(fixture["envelope"]) <= payload.keys()
+    assert payload["schema_version"] == fixture["schema_version"]
+    for sentinel in fixture["redaction_sentinels"]:
+        safe = sanitize_fields("email.delivery.failed", {"error_category": sentinel})
+        assert sentinel not in json.dumps(safe)
+    for field in fixture["forbidden_fields"]:
+        assert field not in sanitize_fields("email.delivery.queued", {field: "private"})
+
+
+@pytest.mark.parametrize("fields", [
+    {"registration_id": "private name"}, {"registration_id": True},
+    {"registration_id": float("nan")}, {"outcome": "failure", "registration_id": 1},
+    {"service": "forged", "registration_id": 1}, {},
+])
+def test_invalid_occurrence_cannot_override_catalog_or_omit_required_fields(fields, caplog):
+    with caplog.at_level(logging.INFO):
+        get_domain_logger("app.invalid").event("volunteer.application.approved", fields=fields)
+    assert not caplog.records

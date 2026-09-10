@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -16,7 +17,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import Request
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 
 from app.auth.models import AuthenticatedUser
 from app.config import Settings
@@ -24,6 +25,10 @@ from app.config import Settings
 _request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
 _diagnostic_counters: Counter[str] = Counter()
 _MAX_DIAGNOSTIC_COUNTER_KEYS = 32
+_meter = metrics.get_meter("kvarteret-personal")
+_diagnostic_metric = _meter.create_counter("telemetry.projection.failures")
+_request_duration = _meter.create_histogram("app.http.request.duration", unit="ms")
+_operation_duration = _meter.create_histogram("app.operation.duration", unit="ms")
 
 # The root logger stays at settings.log_level, so application logs still emit at INFO by default.
 # Only these specific third-party loggers are overridden to WARNING to reduce Vercel noise.
@@ -159,6 +164,9 @@ _EVENT_CATALOG: dict[str, EventDefinition] = {
     "app.operation.timing": EventDefinition(
         "Application operation completed", logging.DEBUG
     ),
+    "email.dispatch.deferred": EventDefinition(
+        "Email dispatch deferred", logging.WARNING, "failure"
+    ),
     "email.delivery.queued": EventDefinition("Email delivery queued"),
     "email.delivery.accepted": EventDefinition("Email accepted by mail server"),
     "email.delivery.retry_scheduled": EventDefinition(
@@ -214,7 +222,7 @@ _EVENT_CATALOG: dict[str, EventDefinition] = {
         "Mobile-card session read", logging.DEBUG
     ),
     "mobile_card.session.expired": EventDefinition(
-        "Mobile-card session expired", default_outcome="unknown"
+        "Mobile-card session expired", default_outcome="failure"
     ),
     "mobile_card.session.invalid": EventDefinition(
         "Mobile-card session rejected", logging.WARNING, "failure"
@@ -222,8 +230,11 @@ _EVENT_CATALOG: dict[str, EventDefinition] = {
     "mobile_card.identity.resolved": EventDefinition(
         "Authenticated mobile-card session matched to subject"
     ),
-    "mobile_card.session.logout": EventDefinition(
-        "Mobile-card client session logout reported", logging.INFO
+    "mobile_card.client_session_invalidated": EventDefinition(
+        "Mobile app reported an invalid session", logging.WARNING, "failure"
+    ),
+    "mobile_card.client_credentials_missing": EventDefinition(
+        "Mobile app reported missing stored credentials", logging.WARNING, "failure"
     ),
     "web.client_error": EventDefinition(
         "Web client error reported", logging.WARNING, "failure"
@@ -300,11 +311,12 @@ class DomainLogger:
         *,
         fields: Mapping[str, object] | None = None,
         event_id: str | UUID | None = None,
+        occurred_at: datetime | None = None,
         **typed_fields: object,
     ) -> None:
         event_fields = dict(fields or {})
         event_fields.update(typed_fields)
-        emit_event(self._logger, event, fields=event_fields, event_id=event_id)
+        emit_event(self._logger, event, fields=event_fields, event_id=event_id, occurred_at=occurred_at)
 
     def __getattr__(self, name: str):
         return getattr(self._logger, name)
@@ -353,8 +365,45 @@ def _is_safe_scalar(value: object) -> bool:
     return value is None or isinstance(value, (bool, int, float, str, UUID))
 
 
+_ENVELOPE_FIELDS = frozenset({
+    "event_id", "schema_version", "occurred_at", "service", "environment",
+    "request_id", "trace_id", "span_id", "outcome",
+})
+_DOMAIN_FIELDS = {
+    "email": frozenset({"email_delivery_id", "registration_id", "template_key",
+        "attempt_no", "attempt_id", "operation_id", "duration_ms", "failure_stage",
+        "error_category", "smtp_status_class", "provider_http_status"}),
+    "volunteer": frozenset({"registration_id", "volunteer_id", "origin_trace_id"}),
+    "mobile": frozenset({"subject_type", "subject_id", "reason_code", "duration_ms"}),
+}
+
+
 def _allowed_fields(event: str) -> frozenset[str]:
+    if event.startswith("email.delivery."):
+        return _ENVELOPE_FIELDS | _DOMAIN_FIELDS["email"]
+    if event.startswith("volunteer.application.") or event == "volunteer.prospect.registered":
+        return _ENVELOPE_FIELDS | _DOMAIN_FIELDS["volunteer"]
+    if event.startswith("mobile_card.client_"):
+        return _ENVELOPE_FIELDS | {"platform", "source"}
+    if event.startswith("mobile_card.") and event != "mobile_card.session.logout":
+        return _ENVELOPE_FIELDS | _DOMAIN_FIELDS["mobile"]
+    if event.startswith("auth.login."):
+        return _ENVELOPE_FIELDS | {"reason_code", "user_account_id", "role"}
     return _COMMON_FIELDS | _EVENT_FIELDS.get(event, frozenset())
+
+
+def _required_fields(event: str) -> frozenset[str]:
+    if event.startswith("email.delivery."):
+        return frozenset({"email_delivery_id"})
+    if event.startswith("volunteer.application.") or event == "volunteer.prospect.registered":
+        return frozenset({"registration_id"})
+    if event in _ALLOWED_REASON_CODES:
+        return frozenset({"reason_code"})
+    if event in {"mobile_card.session.created", "mobile_card.identity.resolved"}:
+        return frozenset({"subject_type", "subject_id"})
+    if event.startswith("mobile_card.client_"):
+        return frozenset({"source", "platform"})
+    return frozenset()
 
 
 def sanitize_fields(event: str, values: Mapping[str, object]) -> dict[str, object]:
@@ -370,13 +419,39 @@ def _sanitize_fields(
     allowed = _allowed_fields(event)
     sanitized: dict[str, object] = {}
     valid = True
+    if reject_invalid and any(values.get(key) is None for key in _required_fields(event)):
+        _record_diagnostic("missing_field")
+        valid = False
+    numeric_fields = {"registration_id", "volunteer_id", "user_account_id", "attempt_no",
+        "duration_ms", "status_code", "provider_http_status", "schema_version", "smtp_status_class"}
     for key, value in values.items():
+        if not isinstance(key, str):
+            _record_diagnostic("invalid_field")
+            valid = False
+            continue
         normalized_key = key.strip()
         if normalized_key not in allowed:
             _record_diagnostic("invalid_field")
             valid = False
             continue
+        if value is not None and normalized_key in numeric_fields and (
+            not isinstance(value, (int, float)) or isinstance(value, bool)
+            or value < 0 or (normalized_key != "duration_ms" and not isinstance(value, int))
+        ):
+            _record_diagnostic("invalid_field")
+            valid = False
+            continue
+        if normalized_key in {"source", "platform"} and event.startswith("mobile_card.client_") and value not in (
+            {"client"} if normalized_key == "source" else {"ios", "android", "web", "other"}
+        ):
+            _record_diagnostic("invalid_enum")
+            valid = False
+            continue
         if not _is_safe_scalar(value):
+            _record_diagnostic("invalid_field")
+            valid = False
+            continue
+        if isinstance(value, float) and not math.isfinite(value):
             _record_diagnostic("invalid_field")
             valid = False
             continue
@@ -430,19 +505,25 @@ def emit_event(
     level: int | None = None,
     fields: Mapping[str, object] | None = None,
     event_id: str | UUID | None = None,
+    occurred_at: datetime | None = None,
 ) -> None:
     definition = _EVENT_CATALOG.get(event)
     if definition is None:
         _record_diagnostic("unknown_event")
         return
     occurrence_id = event_id or uuid4()
-    if not _is_safe_scalar(occurrence_id) or (
+    if not isinstance(occurrence_id, (str, UUID)) or (
         isinstance(occurrence_id, str)
         and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9:._-]{0,127}", occurrence_id)
     ):
         _record_diagnostic("invalid_envelope")
         return
-    occurred_at = datetime.now(UTC).isoformat()
+    if occurred_at is not None and (
+        not isinstance(occurred_at, datetime) or occurred_at.tzinfo is None
+    ):
+        _record_diagnostic("invalid_envelope")
+        return
+    occurrence_time = (occurred_at or datetime.now(UTC)).astimezone(UTC).isoformat()
     reserved_fields = {
         "event_id",
         "schema_version",
@@ -453,10 +534,17 @@ def emit_event(
         "trace_id",
         "span_id",
     }
+    for key, value in (fields or {}).items():
+        if key in reserved_fields or (
+            key == "outcome" and event != "admin.activity"
+            and value != definition.default_outcome
+        ):
+            _record_diagnostic("invalid_envelope")
+            return
     event_fields = {
         "schema_version": 1,
         "event_id": occurrence_id,
-        "occurred_at": occurred_at,
+        "occurred_at": occurrence_time,
         "service": "kvarteret-personal",
         "environment": os.getenv("VERCEL_ENV") or os.getenv("APP_ENV", "unknown"),
         "outcome": definition.default_outcome,
@@ -478,6 +566,7 @@ def emit_event(
             definition.level,
             definition.message,
             extra={"event": event, "event_data": sanitized},
+            stacklevel=3 if isinstance(logger, logging.Logger) else 2,
         )
     except Exception:
         _record_diagnostic("sink_failure")
@@ -566,6 +655,10 @@ def _record_diagnostic(kind: str) -> None:
     ):
         kind = "other"
     _diagnostic_counters[kind] += 1
+    try:
+        _diagnostic_metric.add(1, {"reason": kind})
+    except Exception:
+        pass
 
 
 def diagnostic_counts() -> dict[str, int]:
@@ -631,6 +724,14 @@ def log_request(
     # Healthy HTTP completions belong in request metrics and sampled spans.
     # Keep only server failures in the application log stream.
     duration_ms = round((perf_counter() - started_at) * 1000, 2)
+    try:
+        _request_duration.record(duration_ms, {
+            "http.request.method": request.method,
+            "http.route": _route_template(request),
+            "http.response.status_code": status_code,
+        })
+    except Exception:
+        _record_diagnostic("metric_failure")
     if duration_ms >= 2_000:
         emit_event(
             logger,
@@ -718,6 +819,7 @@ def log_operation_timing(
 ) -> None:
     try:
         duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        _operation_duration.record(duration_ms, {"operation": operation})
         fields = {
             "operation": operation,
             "duration_ms": duration_ms,

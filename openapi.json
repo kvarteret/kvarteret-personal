@@ -1340,36 +1340,9 @@
             ],
             "title": "App Version"
           },
-          "attempt_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "pattern": "^[A-Za-z0-9._:-]+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attempt Id"
-          },
-          "attempt_no": {
-            "anyOf": [
-              {
-                "maximum": 100.0,
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attempt No"
-          },
           "auth_error_code": {
             "anyOf": [
               {
-                "maxLength": 64,
                 "type": "string"
               },
               {
@@ -1381,7 +1354,6 @@
           "auth_error_message": {
             "anyOf": [
               {
-                "maxLength": 160,
                 "type": "string"
               },
               {
@@ -1411,19 +1383,6 @@
               }
             ],
             "title": "Cached User Id"
-          },
-          "event_id": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "pattern": "^[A-Za-z0-9._:-]+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Event Id"
           },
           "event_name": {
             "enum": [
@@ -1457,32 +1416,16 @@
             "type": "boolean"
           },
           "occurred_at": {
-            "format": "date-time",
             "title": "Occurred At",
             "type": "string"
           },
-          "operation_id": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "pattern": "^[A-Za-z0-9._:-]+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Operation Id"
-          },
           "platform": {
-            "maxLength": 32,
             "title": "Platform",
             "type": "string"
           },
           "runtime_version": {
             "anyOf": [
               {
-                "maxLength": 64,
                 "type": "string"
               },
               {
@@ -1491,16 +1434,9 @@
             ],
             "title": "Runtime Version"
           },
-          "source": {
-            "const": "client",
-            "default": "client",
-            "title": "Source",
-            "type": "string"
-          },
           "update_channel": {
             "anyOf": [
               {
-                "maxLength": 64,
                 "type": "string"
               },
               {
@@ -1512,7 +1448,6 @@
           "update_id": {
             "anyOf": [
               {
-                "maxLength": 128,
                 "type": "string"
               },
               {

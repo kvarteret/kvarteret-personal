@@ -125,6 +125,6 @@ class MobileCardSessionManager:
             else "mobile_card.session.invalid",
             fields={
                 "reason_code": reason,
-                "outcome": "unknown" if reason == "expired" else "failure",
+                "outcome": "failure",
             },
         )

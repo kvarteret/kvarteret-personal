@@ -126,9 +126,6 @@ async def commit_request_session() -> None:
     session = current_session()
     if session is not None and session.in_transaction():
         await session.commit()
-        from app.email_outbox_service import flush_pending_email_queued_events
-
-        await flush_pending_email_queued_events()
 
 
 async def rollback_request_session() -> None:
@@ -136,9 +133,6 @@ async def rollback_request_session() -> None:
     session = current_session()
     if session is not None and session.in_transaction():
         await session.rollback()
-    from app.email_outbox_service import discard_pending_email_queued_events
-
-    discard_pending_email_queued_events()
 
 
 @asynccontextmanager
@@ -155,14 +149,8 @@ async def session_scope(
         try:
             yield session
             await session.commit()
-            from app.email_outbox_service import flush_pending_email_queued_events
-
-            await flush_pending_email_queued_events()
         except Exception:
             await session.rollback()
-            from app.email_outbox_service import discard_pending_email_queued_events
-
-            discard_pending_email_queued_events()
             raise
         finally:
             _request_session_ctx.reset(token)

@@ -4,6 +4,8 @@ import logging
 import os
 import json
 
+import anyio
+
 from fastapi import FastAPI
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -20,7 +22,6 @@ from opentelemetry.sdk.trace.sampling import (
     ParentBased,
     TraceIdRatioBased,
 )
-from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
@@ -49,13 +50,23 @@ class TelemetryFlushMiddleware:
             await self.app(scope, receive, send)
         finally:
             if scope["type"] == "http":
-                for provider in self.providers:
+                async def flush(provider):
                     try:
-                        await run_in_threadpool(
-                            provider.force_flush, timeout_millis=2000
+                        result = await anyio.to_thread.run_sync(
+                            lambda: provider.force_flush(timeout_millis=2000),
+                            abandon_on_cancel=True,
                         )
+                        if result is False:
+                            _record_diagnostic("exporter_timeout")
                     except Exception:
                         _record_diagnostic("exporter_failure")
+
+                with anyio.move_on_after(2) as budget:
+                    async with anyio.create_task_group() as group:
+                        for provider in self.providers:
+                            group.start_soon(flush, provider)
+                if budget.cancel_called:
+                    _record_diagnostic("exporter_timeout")
 
 
 def install_telemetry_flush(app: FastAPI, providers: tuple) -> None:
@@ -128,7 +139,7 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
                 OTLPSpanExporter(
                     endpoint=f"{settings.posthog_host.rstrip('/')}/i/v1/traces",
                     headers=headers,
-                    timeout=5,
+                    timeout=2,
                 ),
                 schedule_delay_millis=1000,
             )
@@ -141,7 +152,7 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
                 OTLPLogExporter(
                     endpoint=f"{settings.posthog_host.rstrip('/')}/i/v1/logs",
                     headers=headers,
-                    timeout=5,
+                    timeout=2,
                 ),
                 schedule_delay_millis=1000,
             )
@@ -156,7 +167,26 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
 
         configure_error_tracking(settings)
         FastAPIInstrumentor.instrument_app(app, tracer_provider=trace_provider)
-        install_telemetry_flush(app, (trace_provider, logger_provider))
+        providers = [trace_provider, logger_provider]
+        # Metrics use the deployment's explicitly configured collector, not an
+        # invented PostHog metrics URL. Unconfigured environments remain no-op.
+        metrics_endpoint = os.getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
+        if metrics_endpoint:
+            from opentelemetry import metrics
+            from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+            from opentelemetry.sdk.metrics import MeterProvider
+            from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+            meter_provider = MeterProvider(resource=resource, metric_readers=[
+                PeriodicExportingMetricReader(
+                    OTLPMetricExporter(endpoint=metrics_endpoint, timeout=2),
+                    export_interval_millis=60000,
+                    export_timeout_millis=2000,
+                )
+            ])
+            metrics.set_meter_provider(meter_provider)
+            providers.append(meter_provider)
+        install_telemetry_flush(app, tuple(providers))
         if not _httpx_instrumented:
             HTTPXClientInstrumentor().instrument(tracer_provider=trace_provider)
             _httpx_instrumented = True
