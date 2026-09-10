@@ -15,7 +15,7 @@ async def test_console_email_sender_writes_html_without_logging_recipient_or_lin
 ) -> None:
     sender = ConsoleEmailSender(tmp_path)
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         await sender.send_email(
             recipient_email="applicant@example.com",
             subject="Complete your profile",

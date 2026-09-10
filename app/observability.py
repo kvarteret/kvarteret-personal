@@ -68,6 +68,11 @@ _COMMON_FIELDS = frozenset(
         "http_method",
         "route_template",
         "platform",
+        "form_id",
+        "attempt_count",
+        "validation_fields",
+        "validation_codes",
+        "validation_issue_count",
         "user_account_id",
         "count",
         "claimed_count",
@@ -96,6 +101,12 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
     ),
     "app.operation.timing": frozenset(
         {"operation", "limit", "semester_code", "query_present"}
+    ),
+    "http.validation.failed": frozenset(
+        {"validation_fields", "validation_codes", "validation_issue_count"}
+    ),
+    "form.submission.repeated_failure": frozenset(
+        {"form_id", "attempt_count", "validation_fields", "validation_codes", "error_source"}
     ),
     "email.delivery.queued": frozenset(),
     "email.delivery.accepted": frozenset(),
@@ -148,6 +159,10 @@ _EVENT_CATALOG: dict[str, EventDefinition] = {
     "mobile_card.identity.resolved": EventDefinition("Authenticated mobile-card session matched to subject"),
     "mobile_card.client_diagnostic": EventDefinition("Mobile-card client diagnostic received", logging.WARNING),
     "web.client_error": EventDefinition("Web client error reported", logging.WARNING),
+    "http.validation.failed": EventDefinition("HTTP validation failed", logging.WARNING),
+    "form.submission.repeated_failure": EventDefinition(
+        "Repeated form submission failure", logging.ERROR
+    ),
     "auth.login.failed": EventDefinition("Login failed", logging.WARNING),
     "auth.login.succeeded": EventDefinition("Login succeeded"),
     "auth.login.throttled": EventDefinition("Login throttled", logging.WARNING),
@@ -352,15 +367,18 @@ def log_request(
 def log_request_exception(
     logger: logging.Logger, *, request: Request, started_at: float
 ) -> None:
-    emit_event(
-        logger,
-        "http.request.failed",
-        level=logging.ERROR,
-        fields={
-            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-            "http_method": request.method,
-            "route_template": _route_template(request),
-            "outcome": "failure",
+    # Keep the active exception attached so the error-tracking handler can
+    # capture the stack while the formatter still exports only catalog fields.
+    logger.exception(
+        _EVENT_CATALOG["http.request.failed"].message,
+        extra={
+            "event": "http.request.failed",
+            "event_data": {
+                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+                "http_method": request.method,
+                "route_template": _route_template(request),
+                "outcome": "failure",
+            },
         },
     )
 
