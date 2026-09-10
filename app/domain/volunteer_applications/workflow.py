@@ -681,10 +681,10 @@ class VolunteerApplicationWorkflow:
         except Exception:
             emit_event(
                 logging.getLogger(__name__),
-                "email.delivery.failed",
+                "email.delivery.unexpected",
                 level=logging.ERROR,
                 fields={
-                    "outcome": "dispatch_deferred",
+                    "outcome": "failure",
                     "error_category": "unexpected",
                 },
             )

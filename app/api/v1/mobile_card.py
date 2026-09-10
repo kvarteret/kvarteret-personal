@@ -75,40 +75,6 @@ class MobileCardSessionLogoutEventRequest(BaseModel):
     source: Literal["client"] = "client"
 
 
-class MobileCardClientDiagnosticRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    app_version: str | None = Field(default=None, max_length=64)
-    auth_error_code: str | None = Field(default=None, max_length=64)
-    auth_error_status: int | None = Field(default=None, ge=400, le=599)
-    event_id: str | None = Field(
-        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
-    )
-    event_name: Literal[
-        "cache_fallback_started",
-        "cache_fallback_recovered",
-        "credentials_missing_after_login",
-        "response_invalid",
-        "session_invalidated",
-        "session_token_persist_failed",
-        "logout_succeeded",
-        "logout_failed",
-    ]
-    occurred_at: datetime
-    platform: str = Field(max_length=32)
-    runtime_version: str | None = Field(default=None, max_length=64)
-    update_channel: str | None = Field(default=None, max_length=64)
-    update_id: str | None = Field(default=None, max_length=128)
-    operation_id: str | None = Field(
-        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
-    )
-    attempt_id: str | None = Field(
-        default=None, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
-    )
-    attempt_no: int | None = Field(default=None, ge=1, le=100)
-    source: Literal["client"] = "client"
-
-
 class AcceptedStatusResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -238,24 +204,9 @@ async def log_client_session_logout_event(
     return AcceptedStatusResponse(status="accepted")
 
 
-@router.post(
-    "/client-events/diagnostics",
-    status_code=status.HTTP_202_ACCEPTED,
-    response_model=AcceptedStatusResponse,
-    operation_id="logMobileCardClientDiagnostic",
-)
-async def log_client_diagnostic(
-    request: Request,
-    payload: MobileCardClientDiagnosticRequest,
-    rate_limiter: RateLimiter = Depends(get_rate_limiter),
-) -> AcceptedStatusResponse:
-    await _accept_client_diagnostic(request, payload, rate_limiter)
-    return AcceptedStatusResponse(status="accepted")
-
-
 async def _accept_client_diagnostic(
     request: Request,
-    payload: MobileCardSessionLogoutEventRequest | MobileCardClientDiagnosticRequest,
+    payload: MobileCardSessionLogoutEventRequest,
     rate_limiter: RateLimiter,
 ) -> None:
     if len(await request.body()) > _CLIENT_DIAGNOSTIC_MAX_BYTES:
@@ -291,17 +242,21 @@ async def _accept_client_diagnostic(
 
     emit_event(
         logger,
-        "mobile_card.client_diagnostic",
+        "mobile_card.session.logout",
+        event_id=payload.event_id,
         fields={
-            "event_id": payload.event_id,
+            "event_name": payload.event_name,
+            "app_version": payload.app_version,
             "platform": payload.platform,
-            "reason_code": payload.event_name,
-            "error_category": getattr(payload, "auth_error_code", None),
-            "status_code": getattr(payload, "auth_error_status", None),
-            "operation_id": getattr(payload, "operation_id", None),
-            "attempt_id": getattr(payload, "attempt_id", None),
-            "attempt_no": getattr(payload, "attempt_no", None),
-            "source": payload.source,
-            "outcome": "failure" if payload.event_name.endswith(("failed", "invalidated", "started")) else "success",
+            "auth_error_code": payload.auth_error_code,
+            "auth_error_status": payload.auth_error_status,
+            "execution_environment": payload.execution_environment,
+            "had_cached_user": payload.had_cached_user,
+            "had_login_marker": payload.had_login_marker,
+            "had_stored_credentials": payload.had_stored_credentials,
+            "runtime_version": payload.runtime_version,
+            "update_channel": payload.update_channel,
+            "update_id": payload.update_id,
+            "outcome": "failure" if payload.event_name == "session_invalidated" else "success",
         },
     )

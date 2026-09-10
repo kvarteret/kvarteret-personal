@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, Mapping
@@ -43,6 +44,9 @@ from app.observability import current_trace_id, emit_event
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+_pending_queued_events: ContextVar[tuple[tuple[UUID, int | None, str], ...]] = ContextVar(
+    "pending_email_queued_events", default=()
+)
 
 _LEASE_DURATION = timedelta(minutes=5)
 _OPERATION_TIMEOUT_SECONDS = 20
@@ -53,6 +57,26 @@ _RETRY_DELAYS = (
     timedelta(minutes=30),
     timedelta(hours=2),
 )
+
+
+async def flush_pending_email_queued_events() -> None:
+    pending = _pending_queued_events.get()
+    _pending_queued_events.set(())
+    for delivery_id, registration_id, template_key in pending:
+        emit_event(
+            logger,
+            "email.delivery.queued",
+            fields={
+                "email_delivery_id": delivery_id,
+                "registration_id": registration_id,
+                "template_key": template_key,
+                "outcome": "success",
+            },
+        )
+
+
+def discard_pending_email_queued_events() -> None:
+    _pending_queued_events.set(())
 
 
 class EmailDeliveryConflictError(ValueError):
@@ -96,18 +120,13 @@ class EmailOutboxService:
             enqueued_trace_id=request.enqueued_trace_id or current_trace_id(),
         )
         if created:
-            emit_event(
-                logger,
-                "email.delivery.queued",
-                fields={
-                    "email_delivery_id": delivery_id,
-                    "registration_id": request.registration_id,
-                    "template_key": request.template_key,
-                    "outcome": "success",
-                },
+            # The row may still roll back. The commit coordinator drains this
+            # context only after the owning transaction has committed.
+            pending = _pending_queued_events.get()
+            _pending_queued_events.set(
+                (*pending, (delivery_id, request.registration_id, request.template_key))
             )
         return delivery_id
-
     async def dispatch_due(self, *, batch_size: int = 10) -> DispatchSummary:
         if not self.settings.email_dispatch_enabled:
             return DispatchSummary(0, 0, 0, 0, 0, 0, ())

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+from collections import Counter
 from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -23,6 +24,8 @@ from app.config import Settings
 _request_context: ContextVar[dict[str, Any]] = ContextVar(
     "request_context", default={}
 )
+_diagnostic_counters: Counter[str] = Counter()
+_MAX_DIAGNOSTIC_COUNTER_KEYS = 32
 
 # The root logger stays at settings.log_level, so application logs still emit at INFO by default.
 # Only these specific third-party loggers are overridden to WARNING to reduce Vercel noise.
@@ -116,7 +119,23 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
     "email.delivery.unexpected": frozenset(),
     "volunteer.prospect.conflict": frozenset({"conflict_type"}),
     "web.client_error": frozenset(
-        {"error_type", "error_text", "error_source"}
+        {"error_type", "error_source"}
+    ),
+    "mobile_card.session.logout": frozenset(
+        {
+            "app_version",
+            "auth_error_code",
+            "auth_error_status",
+            "event_name",
+            "execution_environment",
+            "had_cached_user",
+            "had_login_marker",
+            "had_stored_credentials",
+            "platform",
+            "runtime_version",
+            "update_channel",
+            "update_id",
+        }
     ),
 }
 
@@ -155,10 +174,11 @@ _EVENT_CATALOG: dict[str, EventDefinition] = {
     "mobile_card.session.created": EventDefinition("Mobile-card session created"),
     "mobile_card.session.rejected": EventDefinition("Mobile-card session rejected", logging.WARNING),
     "mobile_card.session.renewed": EventDefinition("Mobile-card session renewed", logging.DEBUG),
+    "mobile_card.session.read": EventDefinition("Mobile-card session read", logging.DEBUG),
     "mobile_card.session.expired": EventDefinition("Mobile-card session expired"),
     "mobile_card.session.invalid": EventDefinition("Mobile-card session rejected", logging.WARNING),
     "mobile_card.identity.resolved": EventDefinition("Authenticated mobile-card session matched to subject"),
-    "mobile_card.client_diagnostic": EventDefinition("Mobile-card client diagnostic received", logging.WARNING),
+    "mobile_card.session.logout": EventDefinition("Mobile-card client session logout reported", logging.INFO),
     "web.client_error": EventDefinition("Web client error reported", logging.WARNING),
     "http.validation.failed": EventDefinition("HTTP validation failed", logging.WARNING),
     "form.submission.repeated_failure": EventDefinition(
@@ -168,8 +188,35 @@ _EVENT_CATALOG: dict[str, EventDefinition] = {
     "auth.login.succeeded": EventDefinition("Login succeeded"),
     "auth.login.throttled": EventDefinition("Login throttled", logging.WARNING),
     "http.request.failed": EventDefinition("HTTP request failed", logging.ERROR),
+    "http.request.slow": EventDefinition("Slow HTTP request", logging.WARNING),
     "telemetry.configuration.failed": EventDefinition("Telemetry configuration failed", logging.WARNING),
 }
+
+_ALLOWED_OUTCOMES = frozenset({"success", "failure", "retry_scheduled", "unknown"})
+_MAX_STRING_FIELD_LENGTH = 512
+
+
+class DomainLogger:
+    """Small adapter that keeps domain-event policy out of call sites."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+
+    def event(
+        self,
+        event: str,
+        *,
+        fields: Mapping[str, object] | None = None,
+        event_id: str | UUID | None = None,
+    ) -> None:
+        emit_event(self._logger, event, fields=fields, event_id=event_id)
+
+    def __getattr__(self, name: str):
+        return getattr(self._logger, name)
+
+
+def get_domain_logger(name: str) -> DomainLogger:
+    return DomainLogger(logging.getLogger(name))
 
 _FORBIDDEN_KEY_PARTS = (
     "authorization",
@@ -219,11 +266,22 @@ def sanitize_fields(event: str, values: Mapping[str, object]) -> dict[str, objec
     sanitized: dict[str, object] = {}
     for key, value in values.items():
         normalized_key = key.strip()
-        if normalized_key not in allowed or not _is_safe_scalar(value):
+        if normalized_key not in allowed:
+            _record_diagnostic("invalid_field")
+            continue
+        if not _is_safe_scalar(value):
+            _record_diagnostic("invalid_field")
+            continue
+        if isinstance(value, str) and len(value) > _MAX_STRING_FIELD_LENGTH:
+            _record_diagnostic("invalid_field")
             continue
         if normalized_key != "email_delivery_id" and any(
             part in normalized_key.lower() for part in _FORBIDDEN_KEY_PARTS
         ):
+            _record_diagnostic("invalid_field")
+            continue
+        if normalized_key == "outcome" and value not in _ALLOWED_OUTCOMES:
+            _record_diagnostic("invalid_outcome")
             continue
         sanitized[normalized_key] = _sanitize_scalar(value)
     return sanitized
@@ -248,52 +306,118 @@ def emit_event(
     fields: Mapping[str, object] | None = None,
     event_id: str | UUID | None = None,
 ) -> None:
-    definition = _EVENT_CATALOG.get(event, EventDefinition("Application event"))
+    definition = _EVENT_CATALOG.get(event)
+    if definition is None:
+        _record_diagnostic("unknown_event")
+        return
+    occurrence_id = event_id or uuid4()
+    occurred_at = datetime.now(UTC).isoformat()
     event_fields = {
         "schema_version": 1,
-        "event_id": event_id or uuid4(),
-        "occurred_at": datetime.now(UTC).isoformat(),
+        "event_id": occurrence_id,
+        "occurred_at": occurred_at,
         "service": "kvarteret-personal",
         "environment": os.getenv("VERCEL_ENV") or os.getenv("APP_ENV", "unknown"),
         "outcome": "success",
         **current_trace_fields(),
-        **(fields or {}),
+        **{
+            key: value
+            for key, value in (fields or {}).items()
+            if key not in {"event_id", "schema_version", "occurred_at", "service", "environment"}
+        },
     }
-    logger.log(
-        definition.level if level is None else level,
-        definition.message,
-        extra={"event": event, "event_data": sanitize_fields(event, event_fields)},
-    )
+    sanitized = sanitize_fields(event, event_fields)
+    if "event_id" not in sanitized or "occurred_at" not in sanitized:
+        _record_diagnostic("invalid_envelope")
+        return
+    try:
+        logger.log(
+            # Severity belongs to the catalog. Keep the parameter for source
+            # compatibility while preventing call sites from overriding policy.
+            definition.level,
+            definition.message,
+            extra={"event": event, "event_data": sanitized},
+        )
+    except Exception:
+        _record_diagnostic("sink_failure")
 
 
 class JsonLogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         event = str(getattr(record, "event", "log.message"))
+        event_data = getattr(record, "event_data", None)
+        if not isinstance(event_data, dict):
+            event_data = {}
+        occurrence = getattr(record, "_observability_occurrence", None)
+        if not isinstance(occurrence, dict):
+            occurrence = {
+                "event_id": uuid4().hex,
+                "occurred_at": datetime.now(UTC).isoformat(),
+            }
+            record._observability_occurrence = occurrence
+        definition = _EVENT_CATALOG.get(event)
         payload: dict[str, Any] = {
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": occurrence["occurred_at"],
             "level": record.levelname,
             "logger": record.name,
             "event": event,
             "schema_version": 1,
-            "event_id": uuid4().hex,
-            "occurred_at": datetime.now(UTC).isoformat(),
+            "event_id": event_data.get("event_id", occurrence["event_id"]),
+            "occurred_at": event_data.get("occurred_at", occurrence["occurred_at"]),
             "service": "kvarteret-personal",
             "environment": os.getenv("VERCEL_ENV") or os.getenv("APP_ENV", "unknown"),
-            "outcome": "success" if record.levelno < logging.WARNING else "failure",
+            "outcome": event_data.get(
+                "outcome", "success" if record.levelno < logging.WARNING else "failure"
+            ),
             # Free-form log messages can contain names, response bodies, or other
             # identifiers that pattern redaction cannot reliably recognize.
             # Export the stable event name and require useful diagnostics to use
             # the allowlisted structured fields below.
-            "message": _EVENT_CATALOG.get(event, EventDefinition(event)).message,
+            "message": definition.message if definition else event,
         }
         payload.update(sanitize_fields(event, _request_context.get({})))
-        event_data = getattr(record, "event_data", None)
-        if isinstance(event_data, dict):
-            payload.update(sanitize_fields(event, event_data))
-        payload.update(current_trace_fields())
+        reserved = {"event_id", "schema_version", "occurred_at", "service", "environment"}
+        payload.update(
+            {
+                key: value
+                for key, value in sanitize_fields(event, event_data).items()
+                if key not in reserved
+            }
+        )
+        payload.update(
+            {
+                key: value
+                for key, value in current_trace_fields().items()
+                if key not in payload
+            }
+        )
         if record.exc_info:
             payload["error_category"] = record.exc_info[0].__name__.lower()
         return json.dumps(payload, default=str, ensure_ascii=True)
+
+
+class IsolatedLoggingHandler(logging.Handler):
+    """Prevent one sink failure from aborting logging or later sinks."""
+
+    def __init__(self, delegate: logging.Handler) -> None:
+        super().__init__(delegate.level)
+        self.delegate = delegate
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self.delegate.handle(record)
+        except Exception:
+            _record_diagnostic("sink_failure")
+
+
+def _record_diagnostic(kind: str) -> None:
+    if kind not in _diagnostic_counters and len(_diagnostic_counters) >= _MAX_DIAGNOSTIC_COUNTER_KEYS:
+        kind = "other"
+    _diagnostic_counters[kind] += 1
+
+
+def diagnostic_counts() -> dict[str, int]:
+    return dict(_diagnostic_counters)
 
 
 def configure_logging(settings: Settings) -> None:
@@ -301,7 +425,7 @@ def configure_logging(settings: Settings) -> None:
     handler.setFormatter(JsonLogFormatter())
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
-    root_logger.addHandler(handler)
+    root_logger.addHandler(IsolatedLoggingHandler(handler))
     root_logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
     for logger_name, level in _NOISY_LOGGER_LEVELS.items():
         logging.getLogger(logger_name).setLevel(level)
@@ -354,13 +478,25 @@ def log_request(
 ) -> None:
     # Healthy HTTP completions belong in request metrics and sampled spans.
     # Keep only server failures in the application log stream.
+    duration_ms = round((perf_counter() - started_at) * 1000, 2)
+    if duration_ms >= 2_000:
+        emit_event(
+            logger,
+            "http.request.slow",
+            fields={
+                "status_code": status_code,
+                "duration_ms": duration_ms,
+                "http_method": request.method,
+                "route_template": _route_template(request),
+            },
+        )
     if status_code >= 500:
         emit_event(
             logger,
             "http.request.failed",
             fields={
                 "status_code": status_code,
-                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+                "duration_ms": duration_ms,
                 "http_method": request.method,
                 "route_template": _route_template(request),
                 "outcome": "failure",

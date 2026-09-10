@@ -189,6 +189,8 @@ class MobileCardService:
             )
             subject_id = trial_applicant.application_id
             subject_type = "trial_application"
+        # The code must be durably stored before the email announces it.
+        await commit_request_session()
         emit_event(
             logger,
             "mobile_card.access_code.requested",
@@ -198,9 +200,6 @@ class MobileCardService:
                 "outcome": "success",
             },
         )
-
-        # The code must be durably stored before the email announces it.
-        await commit_request_session()
 
         rendered_email = self.email_template_renderer.render_access_code_email(
             access_code=access_code,
@@ -299,6 +298,7 @@ class MobileCardService:
             if volunteer_row is not None
             else trial_applicant.application_id
         )
+        await commit_request_session()
         emit_event(
             logger,
             "mobile_card.session.created",
@@ -340,6 +340,28 @@ class MobileCardService:
                 decoded.person_id or 0, include_role_history=include_role_history
             )
 
+        subject_type = (
+            "review"
+            if decoded.is_review
+            else "trial_application"
+            if decoded.trial_application_id is not None
+            else "volunteer"
+        )
+        subject_id = (
+            decoded.trial_application_id
+            if decoded.trial_application_id is not None
+            else decoded.person_id
+        )
+        emit_event(
+            logger,
+            "mobile_card.session.read",
+            level=logging.DEBUG,
+            fields={
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+                "outcome": "success",
+            },
+        )
         renewed_session_token = self.sessions.maybe_renew(decoded)
         return MobileCardCurrentCardResult(
             card=card,

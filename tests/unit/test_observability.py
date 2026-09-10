@@ -17,6 +17,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from app.observability import (
+    IsolatedLoggingHandler,
     JsonLogFormatter,
     build_request_id,
     sanitize_fields,
@@ -117,6 +118,59 @@ def test_emit_event_uses_catalog_message_and_occurrence_envelope(caplog) -> None
     assert payload["event_id"] == "occurrence-1"
     assert payload["schema_version"] == 1
     assert payload["email_delivery_id"] == "delivery-1"
+
+
+def test_json_formatter_preserves_occurrence_identity_across_projections() -> None:
+    record = logging.LogRecord(
+        name="app.test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="ignored",
+        args=(),
+        exc_info=None,
+    )
+    record.event = "email.delivery.queued"
+    record.event_data = {
+        "event_id": "occurrence-1",
+        "occurred_at": "2026-09-10T12:00:00+00:00",
+    }
+
+    first = json.loads(JsonLogFormatter().format(record))
+    second = json.loads(JsonLogFormatter().format(record))
+
+    assert first["event_id"] == second["event_id"] == "occurrence-1"
+    assert first["occurred_at"] == second["occurred_at"]
+    assert first["timestamp"] == second["timestamp"]
+
+
+def test_isolated_logging_handler_allows_later_sink_to_receive_record() -> None:
+    class FailingHandler(logging.Handler):
+        def emit(self, record) -> None:
+            raise RuntimeError("sink unavailable")
+
+    received: list[logging.LogRecord] = []
+
+    class CapturingHandler(logging.Handler):
+        def emit(self, record) -> None:
+            received.append(record)
+
+    logger = logging.getLogger("app.test.isolated")
+    logger.handlers.clear()
+    old_level = logger.level
+    old_propagate = logger.propagate
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.addHandler(IsolatedLoggingHandler(FailingHandler()))
+    logger.addHandler(IsolatedLoggingHandler(CapturingHandler()))
+    try:
+        logger.info("event")
+    finally:
+        logger.handlers.clear()
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
+
+    assert len(received) == 1
 
 
 def test_client_error_allowlist_keeps_only_declared_fields_and_redacts() -> None:

@@ -25,11 +25,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
 from app.error_tracking import configure_error_tracking
-from app.observability import JsonLogFormatter, emit_event
+from app.observability import IsolatedLoggingHandler, JsonLogFormatter, emit_event
 
 logger = logging.getLogger(__name__)
 _httpx_instrumented = False
-_TRACE_SAMPLE_RATE = 0.1
+_TRACE_SAMPLE_RATE = 0.01
 
 
 class TelemetryFlushMiddleware:
@@ -146,8 +146,10 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
             )
         )
         logging.getLogger().addHandler(
-            _SanitizedLoggingHandler(
-                level=logging.NOTSET, logger_provider=logger_provider
+            IsolatedLoggingHandler(
+                _SanitizedLoggingHandler(
+                    level=logging.NOTSET, logger_provider=logger_provider
+                )
             )
         )
 
