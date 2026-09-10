@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -51,17 +52,27 @@ class MobileCardSessionLogoutEventRequest(BaseModel):
     auth_error_message: str | None = Field(default=None, max_length=160)
     auth_error_status: int | None = None
     cached_user_id: int | None = None
-    event_id: str | None = Field(default=None, max_length=64)
+    event_id: str | None = Field(
+        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
     event_name: Literal["credentials_missing_after_login", "session_invalidated"]
     execution_environment: str | None = None
     had_cached_user: bool
     had_login_marker: bool
     had_stored_credentials: bool
-    occurred_at: str = Field(max_length=64)
+    occurred_at: datetime
     platform: str = Field(max_length=32)
     runtime_version: str | None = Field(default=None, max_length=64)
     update_channel: str | None = Field(default=None, max_length=64)
     update_id: str | None = Field(default=None, max_length=128)
+    operation_id: str | None = Field(
+        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
+    attempt_id: str | None = Field(
+        default=None, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
+    attempt_no: int | None = Field(default=None, ge=1, le=100)
+    source: Literal["client"] = "client"
 
 
 class MobileCardClientDiagnosticRequest(BaseModel):
@@ -70,7 +81,9 @@ class MobileCardClientDiagnosticRequest(BaseModel):
     app_version: str | None = Field(default=None, max_length=64)
     auth_error_code: str | None = Field(default=None, max_length=64)
     auth_error_status: int | None = Field(default=None, ge=400, le=599)
-    event_id: str | None = Field(default=None, max_length=64)
+    event_id: str | None = Field(
+        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
     event_name: Literal[
         "cache_fallback_started",
         "cache_fallback_recovered",
@@ -81,11 +94,19 @@ class MobileCardClientDiagnosticRequest(BaseModel):
         "logout_succeeded",
         "logout_failed",
     ]
-    occurred_at: str = Field(max_length=64)
+    occurred_at: datetime
     platform: str = Field(max_length=32)
     runtime_version: str | None = Field(default=None, max_length=64)
     update_channel: str | None = Field(default=None, max_length=64)
     update_id: str | None = Field(default=None, max_length=128)
+    operation_id: str | None = Field(
+        default=None, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
+    attempt_id: str | None = Field(
+        default=None, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
+    attempt_no: int | None = Field(default=None, ge=1, le=100)
+    source: Literal["client"] = "client"
 
 
 class AcceptedStatusResponse(BaseModel):
@@ -95,6 +116,8 @@ class AcceptedStatusResponse(BaseModel):
 
 
 router = APIRouter()
+
+_CLIENT_DIAGNOSTIC_MAX_BYTES = 8 * 1024
 
 
 @router.post(
@@ -235,6 +258,24 @@ async def _accept_client_diagnostic(
     payload: MobileCardSessionLogoutEventRequest | MobileCardClientDiagnosticRequest,
     rate_limiter: RateLimiter,
 ) -> None:
+    if len(await request.body()) > _CLIENT_DIAGNOSTIC_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Client diagnostic payload is too large.",
+        )
+
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_size = int(content_length)
+        except ValueError:
+            declared_size = _CLIENT_DIAGNOSTIC_MAX_BYTES + 1
+        if declared_size > _CLIENT_DIAGNOSTIC_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="Client diagnostic payload is too large.",
+            )
+
     try:
         await rate_limiter.hit(
             f"mobile-card:client-diagnostic:{client_ip_from_request(request) or 'unknown'}",
@@ -257,6 +298,10 @@ async def _accept_client_diagnostic(
             "reason_code": payload.event_name,
             "error_category": getattr(payload, "auth_error_code", None),
             "status_code": getattr(payload, "auth_error_status", None),
+            "operation_id": getattr(payload, "operation_id", None),
+            "attempt_id": getattr(payload, "attempt_id", None),
+            "attempt_no": getattr(payload, "attempt_no", None),
+            "source": payload.source,
             "outcome": "failure" if payload.event_name.endswith(("failed", "invalidated", "started")) else "success",
         },
     )

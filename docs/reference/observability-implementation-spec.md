@@ -1,8 +1,9 @@
 # Domain logging and analytics implementation spec
 
 Status: implemented for application-owned runtime paths in the current
-personal, website, and mobile checkouts. Mobile product analytics remains
-disabled until its approved privacy preference is wired. The deployed Vercel
+personal, website, and mobile checkouts. Mobile product analytics is wired
+through a persisted, off-by-default privacy preference and the supported
+React Native PostHog SDK. The deployed Vercel
 drain/collector remains an external dependency and was not changed because its
 owning configuration was not present in the inspected repositories.
 Date: 2026-09-10.
@@ -230,8 +231,9 @@ design rather than treating PostHog as the ledger.
    telemetry. Do not send duplicate “login succeeded” conversions from app and
    personal; app may separately record that the success UI was displayed.
 4. Product analytics uses the supported React Native PostHog SDK, selected and
-   verified at implementation time, behind the existing/product-approved privacy
-   preference. Default to disabled until that preference is explicitly wired.
+   verified at implementation time, behind the persisted privacy preference in
+   the app's privacy screen. The preference defaults to disabled; enabling it
+   explicitly permits the bounded `mobile_card.displayed` event only.
 5. Operational diagnostics use a dedicated bounded personal ingestion endpoint,
    not an embedded private ingest credential and not the existing admin-auth web
    error endpoint. Define a strict catalog/schema, request size limit, rate limit,

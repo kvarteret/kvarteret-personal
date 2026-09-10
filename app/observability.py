@@ -68,6 +68,7 @@ _COMMON_FIELDS = frozenset(
         "http_method",
         "route_template",
         "platform",
+        "source",
         "form_id",
         "attempt_count",
         "validation_fields",
@@ -321,7 +322,10 @@ def clear_request_context() -> None:
 
 
 def build_request_id(request: Request) -> str:
-    return request.headers.get("x-request-id") or uuid4().hex
+    candidate = request.headers.get("x-request-id", "").strip()
+    if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", candidate):
+        return candidate
+    return uuid4().hex
 
 
 def client_ip_from_request(request: Request) -> str | None:

@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -18,6 +18,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from app.observability import (
     JsonLogFormatter,
+    build_request_id,
     sanitize_fields,
     with_named_span,
 )
@@ -63,6 +64,38 @@ def test_allowlist_and_redaction_drop_sentinel_pii() -> None:
     assert "unknown" not in fields
     assert "sentinel@example.com" not in serialized
     assert "token=secret" not in serialized
+
+
+def test_request_id_accepts_bounded_client_correlation_and_replaces_invalid_values() -> None:
+    valid_request = Request(
+        {
+            "type": "http",
+            "headers": [(b"x-request-id", b"mobile-card:request-1")],
+            "method": "POST",
+            "path": "/api/v1/mobile-card/sessions",
+            "query_string": b"",
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 1234),
+            "scheme": "http",
+        }
+    )
+    invalid_request = Request(
+        {
+            "type": "http",
+            "headers": [(b"x-request-id", b"bad value with spaces")],
+            "method": "POST",
+            "path": "/api/v1/mobile-card/sessions",
+            "query_string": b"",
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 1234),
+            "scheme": "http",
+        }
+    )
+
+    assert build_request_id(valid_request) == "mobile-card:request-1"
+    generated_id = build_request_id(invalid_request)
+    assert len(generated_id) == 32
+    assert generated_id.isalnum()
 
 
 def test_emit_event_uses_catalog_message_and_occurrence_envelope(caplog) -> None:

@@ -342,3 +342,41 @@ def test_mobile_card_client_logout_event_rejects_invalid_payload() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_mobile_card_client_diagnostic_preserves_correlation_contract() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/v1/mobile-card/client-events/diagnostics",
+        json={
+            "event_id": "diagnostic-123",
+            "event_name": "response_invalid",
+            "occurred_at": "2026-03-28T10:15:00.000Z",
+            "platform": "ios",
+            "operation_id": "diagnostic-123",
+            "attempt_id": "diagnostic-123:1",
+            "attempt_no": 1,
+            "source": "client",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted"}
+
+
+def test_mobile_card_client_diagnostic_rejects_oversized_declared_payload() -> None:
+    client = _make_client()
+
+    response = client.post(
+        "/api/v1/mobile-card/client-events/diagnostics",
+        headers={"content-length": str(8 * 1024 + 1)},
+        json={
+            "event_name": "response_invalid",
+            "occurred_at": "2026-03-28T10:15:00.000Z",
+            "platform": "ios",
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Client diagnostic payload is too large."}
