@@ -31,7 +31,7 @@ from app.dependencies import (
     get_supabase_auth_gateway,
     require_authenticated_user,
 )
-from app.observability import client_ip_from_request
+from app.observability import client_ip_from_request, emit_event
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -143,12 +143,11 @@ async def login_submit(
                 window_seconds=settings.login_attempt_window_seconds,
             )
     except RateLimitExceeded:
-        logger.warning(
-            "login throttled",
-            extra={
-                "event": "auth.login.throttled",
-                "event_data": {"identifier": normalized_identifier},
-            },
+        emit_event(
+            logger,
+            "auth.login.throttled",
+            level=logging.WARNING,
+            fields={"reason_code": "rate_limited", "outcome": "failure"},
         )
         return templates.TemplateResponse(
             request,

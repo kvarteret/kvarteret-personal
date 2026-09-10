@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sys
 from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
@@ -18,7 +20,9 @@ from opentelemetry import trace
 from app.auth.models import AuthenticatedUser
 from app.config import Settings
 
-_request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
+_request_context: ContextVar[dict[str, Any]] = ContextVar(
+    "request_context", default={}
+)
 
 # The root logger stays at settings.log_level, so application logs still emit at INFO by default.
 # Only these specific third-party loggers are overridden to WARNING to reduce Vercel noise.
@@ -34,6 +38,9 @@ _NOISY_LOGGER_LEVELS: dict[str, int] = {
 
 _COMMON_FIELDS = frozenset(
     {
+        "event_id",
+        "schema_version",
+        "occurred_at",
         "service",
         "environment",
         "request_id",
@@ -42,11 +49,17 @@ _COMMON_FIELDS = frozenset(
         "registration_id",
         "origin_trace_id",
         "volunteer_id",
+        "subject_type",
+        "subject_id",
         "email_delivery_id",
         "template_key",
         "status",
         "status_code",
         "outcome",
+        "reason_code",
+        "operation_id",
+        "attempt_id",
+        "provider_http_status",
         "failure_stage",
         "error_category",
         "smtp_status_class",
@@ -54,6 +67,7 @@ _COMMON_FIELDS = frozenset(
         "duration_ms",
         "http_method",
         "route_template",
+        "platform",
         "user_account_id",
         "count",
         "claimed_count",
@@ -66,18 +80,6 @@ _COMMON_FIELDS = frozenset(
 
 # Every event-specific field is declared here. Callers cannot add arbitrary data.
 _EVENT_FIELDS: dict[str, frozenset[str]] = {
-    "http.validation.failed": frozenset(
-        {"validation_fields", "validation_codes", "validation_issue_count"}
-    ),
-    "form.submission.repeated_failure": frozenset(
-        {
-            "form_id",
-            "attempt_count",
-            "validation_fields",
-            "validation_codes",
-            "error_source",
-        }
-    ),
     "admin.activity": frozenset(
         {
             "action",
@@ -95,19 +97,62 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
     "app.operation.timing": frozenset(
         {"operation", "limit", "semester_code", "query_present"}
     ),
-    "email.delivery": frozenset({"lease_owner"}),
+    "email.delivery.queued": frozenset(),
+    "email.delivery.accepted": frozenset(),
+    "email.delivery.retry_scheduled": frozenset(),
+    "email.delivery.failed": frozenset(),
+    "email.delivery.unexpected": frozenset(),
     "volunteer.prospect.conflict": frozenset({"conflict_type"}),
     "web.client_error": frozenset(
-        {
-            "error_type",
-            "error_text",
-            "error_source",
-            "form_id",
-            "attempt_count",
-            "validation_fields",
-            "validation_codes",
-        }
+        {"error_type", "error_text", "error_source"}
     ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class EventDefinition:
+    message: str
+    level: int = logging.INFO
+
+
+# The catalog is deliberately local to the service. It is the reviewable source
+# for readable log bodies; callers may only provide the typed fields below.
+_EVENT_CATALOG: dict[str, EventDefinition] = {
+    "admin.activity": EventDefinition("Administrative action completed"),
+    "app.operation.timing": EventDefinition("Application operation completed", logging.DEBUG),
+    "email.delivery.queued": EventDefinition("Email delivery queued"),
+    "email.delivery.accepted": EventDefinition("Email accepted by mail server"),
+    "email.delivery.retry_scheduled": EventDefinition("Email delivery retry scheduled", logging.WARNING),
+    "email.delivery.failed": EventDefinition("Email delivery failed", logging.ERROR),
+    "email.delivery.unexpected": EventDefinition("Unexpected email delivery failure", logging.ERROR),
+    "volunteer.prospect.conflict": EventDefinition("Volunteer prospect registration conflicted", logging.WARNING),
+    "volunteer.prospect.registered": EventDefinition("Volunteer prospect registered"),
+    "volunteer.application.invited": EventDefinition("Volunteer application invitation created"),
+    "volunteer.application.submitted": EventDefinition("Volunteer application submitted"),
+    "volunteer.application.profile_completed": EventDefinition("Volunteer application profile completed"),
+    "volunteer.application.contacted": EventDefinition("Volunteer applicant contacted"),
+    "volunteer.application.trial_started": EventDefinition("Volunteer trial shift started"),
+    "volunteer.application.approved": EventDefinition("Volunteer application approved"),
+    "volunteer.application.rejected": EventDefinition("Volunteer application rejected"),
+    "volunteer.application.reopened": EventDefinition("Volunteer application reopened"),
+    "volunteer.application.volunteer_restored": EventDefinition("Volunteer status restored"),
+    "volunteer.application.deleted": EventDefinition("Volunteer application deleted"),
+    "volunteer.application.invitation_resent": EventDefinition("Volunteer invitation resent"),
+    "volunteer.application.transitioned": EventDefinition("Volunteer application transition completed"),
+    "mobile_card.access_code.requested": EventDefinition("Mobile-card access code requested"),
+    "mobile_card.session.created": EventDefinition("Mobile-card session created"),
+    "mobile_card.session.rejected": EventDefinition("Mobile-card session rejected", logging.WARNING),
+    "mobile_card.session.renewed": EventDefinition("Mobile-card session renewed", logging.DEBUG),
+    "mobile_card.session.expired": EventDefinition("Mobile-card session expired"),
+    "mobile_card.session.invalid": EventDefinition("Mobile-card session rejected", logging.WARNING),
+    "mobile_card.identity.resolved": EventDefinition("Authenticated mobile-card session matched to subject"),
+    "mobile_card.client_diagnostic": EventDefinition("Mobile-card client diagnostic received", logging.WARNING),
+    "web.client_error": EventDefinition("Web client error reported", logging.WARNING),
+    "auth.login.failed": EventDefinition("Login failed", logging.WARNING),
+    "auth.login.succeeded": EventDefinition("Login succeeded"),
+    "auth.login.throttled": EventDefinition("Login throttled", logging.WARNING),
+    "http.request.failed": EventDefinition("HTTP request failed", logging.ERROR),
+    "telemetry.configuration.failed": EventDefinition("Telemetry configuration failed", logging.WARNING),
 }
 
 _FORBIDDEN_KEY_PARTS = (
@@ -160,7 +205,9 @@ def sanitize_fields(event: str, values: Mapping[str, object]) -> dict[str, objec
         normalized_key = key.strip()
         if normalized_key not in allowed or not _is_safe_scalar(value):
             continue
-        if any(part in normalized_key.lower() for part in _FORBIDDEN_KEY_PARTS):
+        if normalized_key != "email_delivery_id" and any(
+            part in normalized_key.lower() for part in _FORBIDDEN_KEY_PARTS
+        ):
             continue
         sanitized[normalized_key] = _sanitize_scalar(value)
     return sanitized
@@ -181,13 +228,24 @@ def emit_event(
     logger: logging.Logger,
     event: str,
     *,
-    level: int = logging.INFO,
+    level: int | None = None,
     fields: Mapping[str, object] | None = None,
+    event_id: str | UUID | None = None,
 ) -> None:
-    event_fields = {**current_trace_fields(), **(fields or {})}
+    definition = _EVENT_CATALOG.get(event, EventDefinition("Application event"))
+    event_fields = {
+        "schema_version": 1,
+        "event_id": event_id or uuid4(),
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "service": "kvarteret-personal",
+        "environment": os.getenv("VERCEL_ENV") or os.getenv("APP_ENV", "unknown"),
+        "outcome": "success",
+        **current_trace_fields(),
+        **(fields or {}),
+    }
     logger.log(
-        level,
-        event,
+        definition.level if level is None else level,
+        definition.message,
         extra={"event": event, "event_data": sanitize_fields(event, event_fields)},
     )
 
@@ -200,11 +258,17 @@ class JsonLogFormatter(logging.Formatter):
             "level": record.levelname,
             "logger": record.name,
             "event": event,
+            "schema_version": 1,
+            "event_id": uuid4().hex,
+            "occurred_at": datetime.now(UTC).isoformat(),
+            "service": "kvarteret-personal",
+            "environment": os.getenv("VERCEL_ENV") or os.getenv("APP_ENV", "unknown"),
+            "outcome": "success" if record.levelno < logging.WARNING else "failure",
             # Free-form log messages can contain names, response bodies, or other
             # identifiers that pattern redaction cannot reliably recognize.
             # Export the stable event name and require useful diagnostics to use
             # the allowlisted structured fields below.
-            "message": event,
+            "message": _EVENT_CATALOG.get(event, EventDefinition(event)).message,
         }
         payload.update(sanitize_fields(event, _request_context.get({})))
         event_data = getattr(record, "event_data", None)
@@ -269,35 +333,34 @@ def _route_template(request: Request) -> str:
 def log_request(
     logger: logging.Logger, *, request: Request, status_code: int, started_at: float
 ) -> None:
-    emit_event(
-        logger,
-        "http.request.completed",
-        level=logging.ERROR
-        if status_code >= 500
-        else logging.WARNING
-        if status_code >= 400
-        else logging.INFO,
-        fields={
-            "status_code": status_code,
-            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-            "http_method": request.method,
-            "route_template": _route_template(request),
-        },
-    )
+    # Healthy HTTP completions belong in request metrics and sampled spans.
+    # Keep only server failures in the application log stream.
+    if status_code >= 500:
+        emit_event(
+            logger,
+            "http.request.failed",
+            fields={
+                "status_code": status_code,
+                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+                "http_method": request.method,
+                "route_template": _route_template(request),
+                "outcome": "failure",
+            },
+        )
 
 
 def log_request_exception(
     logger: logging.Logger, *, request: Request, started_at: float
 ) -> None:
-    logger.exception(
+    emit_event(
+        logger,
         "http.request.failed",
-        extra={
-            "event": "http.request.failed",
-            "event_data": {
-                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-                "http_method": request.method,
-                "route_template": _route_template(request),
-            },
+        level=logging.ERROR,
+        fields={
+            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+            "http_method": request.method,
+            "route_template": _route_template(request),
+            "outcome": "failure",
         },
     )
 
@@ -343,22 +406,19 @@ def log_operation_timing(
     started_at: float,
     details: dict[str, Any] | None = None,
 ) -> None:
-    emit_event(
-        logger,
-        "app.operation.timing",
-        fields={
-            "operation": operation,
-            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-            **(details or {}),
-        },
-    )
+    # Operation timings are represented by repository spans/metrics. Keeping
+    # this compatibility seam avoids changing every caller while preventing a
+    # routine INFO record for every healthy query.
+    return None
 
 
 _tracer = trace.get_tracer("kvarteret-personal")
 
 
 @contextmanager
-def with_named_span(name: str, attributes: Mapping[str, object] | None = None):
+def with_named_span(
+    name: str, attributes: Mapping[str, object] | None = None
+):
     """Run the wrapped block inside a named business-domain span.
 
     The span records ERROR status when the block raises. When telemetry is

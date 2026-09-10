@@ -98,12 +98,12 @@ class EmailOutboxService:
         if created:
             emit_event(
                 logger,
-                "email.delivery",
+                "email.delivery.queued",
                 fields={
                     "email_delivery_id": delivery_id,
                     "registration_id": request.registration_id,
                     "template_key": request.template_key,
-                    "status": "pending",
+                    "outcome": "success",
                 },
             )
         return delivery_id
@@ -213,15 +213,15 @@ class EmailOutboxService:
                 duration_ms=_duration_ms(started),
             )
         except Exception:
-            logger.exception(
+            emit_event(
+                logger,
                 "email.delivery.unexpected",
-                extra={
-                    "event": "email.delivery",
-                    "event_data": {
-                        "email_delivery_id": delivery_id,
-                        "failure_stage": stage,
-                        "error_category": "unexpected",
-                    },
+                level=logging.ERROR,
+                fields={
+                    "email_delivery_id": delivery_id,
+                    "failure_stage": stage,
+                    "error_category": "unexpected",
+                    "outcome": "failure",
                 },
             )
             return await self._finish_failure(
@@ -246,12 +246,11 @@ class EmailOutboxService:
         await commit_request_session()
         emit_event(
             logger,
-            "email.delivery",
+            "email.delivery.accepted",
             fields={
                 "email_delivery_id": delivery_id,
                 "registration_id": registration_id,
-                "status": "sent",
-                "outcome": "succeeded",
+                "outcome": "success",
                 "attempt_no": attempt_no,
                 "duration_ms": duration_ms,
             },
@@ -314,13 +313,12 @@ class EmailOutboxService:
         await commit_request_session()
         emit_event(
             logger,
-            "email.delivery",
+            "email.delivery.retry_scheduled" if should_retry else "email.delivery.failed",
             level=logging.WARNING if should_retry else logging.ERROR,
             fields={
                 "email_delivery_id": delivery_id,
                 "registration_id": registration_id,
-                "status": status,
-                "outcome": outcome,
+                "outcome": "retry_scheduled" if should_retry else "failure",
                 "failure_stage": stage,
                 "error_category": category,
                 "smtp_status_class": smtp_status // 100 if smtp_status else None,

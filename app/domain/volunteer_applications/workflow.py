@@ -213,6 +213,9 @@ class VolunteerApplicationWorkflow:
             )
             await commit_request_session()
             await self.side_effects.after_invited(invite, base_url=base_url)
+            self._record_lifecycle(
+                invite, event_name="volunteer.application.invited", event_id=event_id
+            )
             await self._dispatch_best_effort()
             return invite
 
@@ -306,7 +309,11 @@ class VolunteerApplicationWorkflow:
         await self.side_effects.after_public_prospect_registered(
             result, base_url=base_url
         )
-        self._record_lifecycle(result.detail, status="prospect_registered")
+        self._record_lifecycle(
+            result.detail,
+            event_name="volunteer.prospect.registered",
+            event_id=registration_event_id,
+        )
         await self._dispatch_best_effort()
         return result.detail
 
@@ -336,14 +343,25 @@ class VolunteerApplicationWorkflow:
                 photo_content=photo_content,
                 photo_content_type=photo_content_type,
             )
+            event_id = None
             if result is not None and result.event is not None:
-                await self.operations.append_domain_event(
+                event_id = await self.operations.append_domain_event(
                     replace(result.event, subject_id=detail.registration_id),
                     subject_id=detail.registration_id,
                 )
             await commit_request_session()
             await self.side_effects.after_submitted(detail)
-            self._record_lifecycle(detail, status="application_submitted")
+            self._record_lifecycle(
+                detail,
+                event_name=(
+                    "volunteer.application.profile_completed"
+                    if result is not None
+                    and result.event is not None
+                    and result.event.event_type == "profile_completed"
+                    else "volunteer.application.submitted"
+                ),
+                event_id=event_id,
+            )
             return detail
 
     async def contact(
@@ -458,6 +476,12 @@ class VolunteerApplicationWorkflow:
                 source_domain_event_id=event_id,
             )
         await commit_request_session()
+        if result is not None and result.event is not None:
+            self._record_lifecycle(
+                detail,
+                event_name=_observability_event_name(result.event.event_type),
+                event_id=event_id,
+            )
         if email_template_key is not None:
             await self._dispatch_best_effort()
         return detail
@@ -475,7 +499,7 @@ class VolunteerApplicationWorkflow:
         actor_user_account_id: int | None = None,
     ) -> int:
         with with_named_span("volunteer.application.approve"):
-            detail, volunteer_id, _ = await self._approve_one(
+            detail, volunteer_id, event = await self._approve_one(
                 registration_id,
                 accepted_group_id=accepted_group_id,
                 accepted_role_id=accepted_role_id,
@@ -489,7 +513,10 @@ class VolunteerApplicationWorkflow:
                 detail, volunteer_id=volunteer_id, base_url=base_url
             )
             self._record_lifecycle(
-                detail, status="application_approved", volunteer_id=volunteer_id
+                detail,
+                event_name="volunteer.application.approved",
+                event_id=event.event_id if event is not None else None,
+                volunteer_id=volunteer_id,
             )
             return volunteer_id
 
@@ -561,8 +588,9 @@ class VolunteerApplicationWorkflow:
                     ),
                 )
             detail = await self.operations.delete_application_record(registration_id)
+            event_id = None
             if result is not None and result.event is not None:
-                await self.operations.append_domain_event(
+                event_id = await self.operations.append_domain_event(
                     replace(
                         result.event,
                         subject_id=registration_id,
@@ -575,7 +603,11 @@ class VolunteerApplicationWorkflow:
                 )
             await commit_request_session()
             await self.side_effects.after_deleted(detail)
-            self._record_lifecycle(detail, status="application_deleted")
+            self._record_lifecycle(
+                detail,
+                event_name="volunteer.application.deleted",
+                event_id=event_id,
+            )
 
     async def resend_invitation(
         self,
@@ -598,6 +630,7 @@ class VolunteerApplicationWorkflow:
                     ),
                 )
             detail = await self.operations.resend_invitation_record(registration_id)
+            event_id = None
             if result is not None and result.event is not None:
                 event_id = await self.operations.append_domain_event(
                     replace(result.event, subject_id=registration_id),
@@ -610,7 +643,11 @@ class VolunteerApplicationWorkflow:
                 )
             await commit_request_session()
             await self.side_effects.after_invitation_resent(detail, base_url=base_url)
-            self._record_lifecycle(detail, status="invitation_resent")
+            self._record_lifecycle(
+                detail,
+                event_name="volunteer.application.invitation_resent",
+                event_id=event_id,
+            )
             await self._dispatch_best_effort()
             return detail
 
@@ -644,7 +681,7 @@ class VolunteerApplicationWorkflow:
         except Exception:
             emit_event(
                 logging.getLogger(__name__),
-                "email.delivery",
+                "email.delivery.failed",
                 level=logging.ERROR,
                 fields={
                     "outcome": "dispatch_deferred",
@@ -656,7 +693,8 @@ class VolunteerApplicationWorkflow:
         self,
         detail: object,
         *,
-        status: str,
+        event_name: str,
+        event_id: int | None = None,
         volunteer_id: int | None = None,
     ) -> None:
         registration_id = int(getattr(detail, "registration_id"))
@@ -670,11 +708,33 @@ class VolunteerApplicationWorkflow:
                 span.set_attribute("volunteer_id", volunteer_id)
         emit_event(
             logging.getLogger(__name__),
-            "volunteer.lifecycle",
+            event_name,
+            event_id=(
+                f"kvarteret-personal:{event_name}:{event_id}"
+                if event_id is not None
+                else None
+            ),
             fields={
                 "registration_id": registration_id,
                 "origin_trace_id": origin_trace_id,
                 "volunteer_id": volunteer_id,
-                "status": status,
+                "outcome": "success",
             },
         )
+
+
+def _observability_event_name(domain_event_type: str) -> str:
+    return {
+        "prospect_registered": "volunteer.prospect.registered",
+        "application_submitted": "volunteer.application.submitted",
+        "profile_completed": "volunteer.application.profile_completed",
+        "application_contacted": "volunteer.application.contacted",
+        "trial_started": "volunteer.application.trial_started",
+        "application_approved": "volunteer.application.approved",
+        "application_rejected": "volunteer.application.rejected",
+        "application_reopened": "volunteer.application.reopened",
+        "application_volunteer_restored": "volunteer.application.volunteer_restored",
+        "application_deleted": "volunteer.application.deleted",
+        "invitation_resent": "volunteer.application.invitation_resent",
+        "application_invited": "volunteer.application.invited",
+    }.get(domain_event_type, "volunteer.application.transitioned")

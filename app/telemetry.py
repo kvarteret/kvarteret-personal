@@ -15,16 +15,21 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.trace.sampling import ALWAYS_ON
+from opentelemetry.sdk.trace.sampling import (
+    ALWAYS_ON,
+    ParentBased,
+    TraceIdRatioBased,
+)
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
 from app.error_tracking import configure_error_tracking
-from app.observability import JsonLogFormatter
+from app.observability import JsonLogFormatter, emit_event
 
 logger = logging.getLogger(__name__)
 _httpx_instrumented = False
+_TRACE_SAMPLE_RATE = 0.1
 
 
 class TelemetryFlushMiddleware:
@@ -69,7 +74,9 @@ class _SanitizedLoggingHandler(LoggingHandler):
             level=record.levelno,
             pathname=record.pathname,
             lineno=record.lineno,
-            msg=payload["event"],
+            # The OTel body is the reviewed human-readable message. Structured
+            # fields remain attributes so PostHog Logs can filter them.
+            msg=payload.get("message", "Application event"),
             args=(),
             exc_info=None,
             func=record.funcName,
@@ -81,10 +88,17 @@ class _SanitizedLoggingHandler(LoggingHandler):
         super().emit(safe_record)
 
 
-def _build_trace_provider(resource: Resource) -> TracerProvider:
+def _build_trace_provider(
+    resource: Resource, *, sample_rate: float = 1.0
+) -> TracerProvider:
+    sampler = (
+        ALWAYS_ON
+        if sample_rate >= 1.0
+        else ParentBased(TraceIdRatioBased(sample_rate))
+    )
     return TracerProvider(
         resource=resource,
-        sampler=ALWAYS_ON,
+        sampler=sampler,
     )
 
 
@@ -105,7 +119,9 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
                 "cloud.region": os.getenv("VERCEL_REGION", "unknown"),
             }
         )
-        trace_provider = _build_trace_provider(resource)
+        trace_provider = _build_trace_provider(
+            resource, sample_rate=_TRACE_SAMPLE_RATE
+        )
         trace_provider.add_span_processor(
             BatchSpanProcessor(
                 OTLPSpanExporter(
@@ -143,10 +159,9 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
             _httpx_instrumented = True
     except Exception:
         # Telemetry is never authoritative and must not prevent app startup.
-        logger.warning(
+        emit_event(
+            logger,
             "telemetry.configuration.failed",
-            extra={
-                "event": "telemetry.configuration.failed",
-                "event_data": {"error_category": "configuration"},
-            },
+            level=logging.WARNING,
+            fields={"error_category": "configuration", "outcome": "failure"},
         )

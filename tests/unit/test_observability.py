@@ -57,11 +57,33 @@ def test_allowlist_and_redaction_drop_sentinel_pii() -> None:
     )
 
     serialized = json.dumps(fields)
+    assert fields["email_delivery_id"] == "01234567-89ab-cdef-0123-456789abcdef"
     assert fields["registration_id"] == 42
     assert "recipient_email" not in fields
     assert "unknown" not in fields
     assert "sentinel@example.com" not in serialized
     assert "token=secret" not in serialized
+
+
+def test_emit_event_uses_catalog_message_and_occurrence_envelope(caplog) -> None:
+    logger = logging.getLogger("app.test.catalog")
+
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        from app.observability import emit_event
+
+        emit_event(
+            logger,
+            "email.delivery.queued",
+            fields={"email_delivery_id": "delivery-1"},
+            event_id="occurrence-1",
+        )
+
+    record = caplog.records[-1]
+    payload = json.loads(JsonLogFormatter().format(record))
+    assert payload["message"] == "Email delivery queued"
+    assert payload["event_id"] == "occurrence-1"
+    assert payload["schema_version"] == 1
+    assert payload["email_delivery_id"] == "delivery-1"
 
 
 def test_client_error_allowlist_keeps_only_declared_fields_and_redacts() -> None:

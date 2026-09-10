@@ -35,6 +35,7 @@ from app.infrastructure.email.mobile_card_templates import (
 )
 from app.infrastructure.email.protocols import EmailDeliveryError, EmailSenderProtocol
 from app.media_tokens import MediaTokenService
+from app.observability import emit_event
 from app.shared.semester import get_current_semester_code
 
 # Re-export for backward compatibility
@@ -188,7 +189,15 @@ class MobileCardService:
             )
             subject_id = trial_applicant.application_id
             subject_type = "trial_application"
-        logger.info("Generated mobile-card access code for %s %s", subject_type, subject_id)
+        emit_event(
+            logger,
+            "mobile_card.access_code.requested",
+            fields={
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+                "outcome": "success",
+            },
+        )
 
         # The code must be durably stored before the email announces it.
         await commit_request_session()
@@ -211,9 +220,6 @@ class MobileCardService:
             raise MobileCardError(
                 "Could not send access code email. Please try again later."
             )
-        logger.info(
-            "Sent mobile-card access code email for %s %s", subject_type, subject_id
-        )
         return None
 
     async def create_session(
@@ -229,6 +235,11 @@ class MobileCardService:
         if self._is_review_request(normalized_email, normalized_access_code):
             card = self._build_review_card(include_role_history=include_role_history)
             token = self.sessions.build_token({"person_id": 0, "review": True})
+            emit_event(
+                logger,
+                "mobile_card.session.created",
+                fields={"subject_type": "review", "subject_id": 0},
+            )
             return MobileCardSession(session_token=token, card=card)
         attempt_keys = _build_rate_limit_keys(normalized_email, source_key)
         # Counts BEFORE validation to prevent TOCTOU races.
@@ -261,6 +272,12 @@ class MobileCardService:
                 if not accepted:
                     trial_applicant = None
         if volunteer_row is None and trial_applicant is None:
+            emit_event(
+                logger,
+                "mobile_card.session.rejected",
+                level=logging.WARNING,
+                fields={"reason_code": "invalid_access_code", "outcome": "failure"},
+            )
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         await self.rate_limiter.clear(
             *(f"mobile-card:attempt:{key}" for key in attempt_keys)
@@ -276,6 +293,30 @@ class MobileCardService:
                 {"trial_application_id": trial_applicant.application_id}
             )
             card = self._build_trial_card(trial_applicant)
+        subject_type = "volunteer" if volunteer_row is not None else "trial_application"
+        subject_id = (
+            volunteer_row["id"]
+            if volunteer_row is not None
+            else trial_applicant.application_id
+        )
+        emit_event(
+            logger,
+            "mobile_card.session.created",
+            fields={
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+                "outcome": "success",
+            },
+        )
+        emit_event(
+            logger,
+            "mobile_card.identity.resolved",
+            fields={
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+                "outcome": "success",
+            },
+        )
         return MobileCardSession(session_token=token, card=card)
 
     async def get_current_card(

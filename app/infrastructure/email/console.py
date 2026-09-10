@@ -26,13 +26,7 @@ class ConsoleEmailSender:
         filename = f"{time.strftime('%Y%m%d-%H%M%S')}-{_slug(subject)}.html"
         path = self.outbox_dir / filename
         path.write_text(html_body, encoding="utf-8")
-        logger.info(
-            "email.console.saved",
-            extra={
-                "event": "email.delivery",
-                "event_data": {"status": "saved"},
-            },
-        )
+        logger.debug("Development email written to local outbox")
 
 
 def _slug(value: str) -> str:

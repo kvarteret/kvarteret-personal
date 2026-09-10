@@ -4,9 +4,11 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.dependencies import get_mobile_card_service
+from app.dependencies import get_rate_limiter
+from app.db.rate_limit import RateLimitExceeded, RateLimiter
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardDuplicatePersonError,
@@ -16,7 +18,7 @@ from app.domain.mobile_card.service import (
     MobileCardResponse,
     MobileCardService,
 )
-from app.observability import client_ip_from_request, with_named_span
+from app.observability import client_ip_from_request, emit_event, with_named_span
 
 logger = logging.getLogger("app.audit")
 
@@ -45,20 +47,45 @@ class MobileCardSessionLogoutEventRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     app_version: str | None = None
-    auth_error_code: str | None = None
-    auth_error_message: str | None = None
+    auth_error_code: str | None = Field(default=None, max_length=64)
+    auth_error_message: str | None = Field(default=None, max_length=160)
     auth_error_status: int | None = None
     cached_user_id: int | None = None
+    event_id: str | None = Field(default=None, max_length=64)
     event_name: Literal["credentials_missing_after_login", "session_invalidated"]
     execution_environment: str | None = None
     had_cached_user: bool
     had_login_marker: bool
     had_stored_credentials: bool
-    occurred_at: str
-    platform: str
-    runtime_version: str | None = None
-    update_channel: str | None = None
-    update_id: str | None = None
+    occurred_at: str = Field(max_length=64)
+    platform: str = Field(max_length=32)
+    runtime_version: str | None = Field(default=None, max_length=64)
+    update_channel: str | None = Field(default=None, max_length=64)
+    update_id: str | None = Field(default=None, max_length=128)
+
+
+class MobileCardClientDiagnosticRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    app_version: str | None = Field(default=None, max_length=64)
+    auth_error_code: str | None = Field(default=None, max_length=64)
+    auth_error_status: int | None = Field(default=None, ge=400, le=599)
+    event_id: str | None = Field(default=None, max_length=64)
+    event_name: Literal[
+        "cache_fallback_started",
+        "cache_fallback_recovered",
+        "credentials_missing_after_login",
+        "response_invalid",
+        "session_invalidated",
+        "session_token_persist_failed",
+        "logout_succeeded",
+        "logout_failed",
+    ]
+    occurred_at: str = Field(max_length=64)
+    platform: str = Field(max_length=32)
+    runtime_version: str | None = Field(default=None, max_length=64)
+    update_channel: str | None = Field(default=None, max_length=64)
+    update_id: str | None = Field(default=None, max_length=128)
 
 
 class AcceptedStatusResponse(BaseModel):
@@ -182,16 +209,54 @@ async def get_current_card(
 async def log_client_session_logout_event(
     request: Request,
     payload: MobileCardSessionLogoutEventRequest,
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ) -> AcceptedStatusResponse:
-    logger.info(
-        "mobile-card client session logout event",
-        extra={
-            "event": "mobile_card.client_session_logout",
-            "event_data": {
-                **payload.model_dump(),
-                "client_ip": client_ip_from_request(request),
-                "user_agent": request.headers.get("user-agent"),
-            },
+    await _accept_client_diagnostic(request, payload, rate_limiter)
+    return AcceptedStatusResponse(status="accepted")
+
+
+@router.post(
+    "/client-events/diagnostics",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AcceptedStatusResponse,
+    operation_id="logMobileCardClientDiagnostic",
+)
+async def log_client_diagnostic(
+    request: Request,
+    payload: MobileCardClientDiagnosticRequest,
+    rate_limiter: RateLimiter = Depends(get_rate_limiter),
+) -> AcceptedStatusResponse:
+    await _accept_client_diagnostic(request, payload, rate_limiter)
+    return AcceptedStatusResponse(status="accepted")
+
+
+async def _accept_client_diagnostic(
+    request: Request,
+    payload: MobileCardSessionLogoutEventRequest | MobileCardClientDiagnosticRequest,
+    rate_limiter: RateLimiter,
+) -> None:
+    try:
+        await rate_limiter.hit(
+            f"mobile-card:client-diagnostic:{client_ip_from_request(request) or 'unknown'}",
+            limit=100,
+            window_seconds=24 * 60 * 60,
+        )
+    except RateLimitExceeded:
+        return
+    except Exception:
+        # Diagnostic collection is best-effort; a rate-limit backend outage
+        # must not turn a client diagnostic into an application error.
+        return
+
+    emit_event(
+        logger,
+        "mobile_card.client_diagnostic",
+        fields={
+            "event_id": payload.event_id,
+            "platform": payload.platform,
+            "reason_code": payload.event_name,
+            "error_category": getattr(payload, "auth_error_code", None),
+            "status_code": getattr(payload, "auth_error_status", None),
+            "outcome": "failure" if payload.event_name.endswith(("failed", "invalidated", "started")) else "success",
         },
     )
-    return AcceptedStatusResponse(status="accepted")

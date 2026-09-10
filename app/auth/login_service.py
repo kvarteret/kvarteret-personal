@@ -7,6 +7,7 @@ from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.repository import AuthRepositoryProtocol
 from app.auth.session_store import SessionStoreProtocol
 from app.auth.supabase_auth import SupabaseAuthGatewayProtocol
+from app.observability import emit_event
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +46,11 @@ class LoginService:
             normalized_identifier
         )
         if account is None:
-            logger.warning(
-                "login failed",
-                extra={
-                    "event": "auth.login.failed",
-                    "event_data": {
-                        "identifier": normalized_identifier,
-                        "reason": "account_not_found",
-                    },
-                },
+            emit_event(
+                logger,
+                "auth.login.failed",
+                level=logging.WARNING,
+                fields={"reason_code": "account_not_found", "outcome": "failure"},
             )
             raise LoginError("Invalid credentials.")
 
@@ -61,15 +58,11 @@ class LoginService:
             account.email, password
         )
         if auth_user_id is None:
-            logger.warning(
-                "login failed",
-                extra={
-                    "event": "auth.login.failed",
-                    "event_data": {
-                        "identifier": normalized_identifier,
-                        "reason": "invalid_credentials",
-                    },
-                },
+            emit_event(
+                logger,
+                "auth.login.failed",
+                level=logging.WARNING,
+                fields={"reason_code": "invalid_credentials", "outcome": "failure"},
             )
             raise LoginError("Invalid credentials.")
 
@@ -101,15 +94,9 @@ class LoginService:
                 role=account.role,
             ),
         )
-        logger.info(
-            "login succeeded",
-            extra={
-                "event": "auth.login.succeeded",
-                "event_data": {
-                    "identifier": normalized_identifier,
-                    "user_account_id": account.id,
-                    "role": account.role.value,
-                },
-            },
+        emit_event(
+            logger,
+            "auth.login.succeeded",
+            fields={"user_account_id": account.id, "role": account.role.value},
         )
         return result

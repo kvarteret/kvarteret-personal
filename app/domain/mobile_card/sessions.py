@@ -9,6 +9,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from app.config import Settings
 from app.domain.mobile_card.models import DecodedMobileCardSession
 from app.domain.mobile_card.errors import MobileCardInvalidSessionError
+from app.observability import emit_event
 
 _UNKNOWN_SESSION_TOKEN = "Unknown session token."
 logger = logging.getLogger(__name__)
@@ -93,18 +94,15 @@ class MobileCardSessionManager:
         else:
             payload = {"person_id": decoded.person_id or 0}
         renewed_token = self.build_token(payload)
-        logger.info(
-            "mobile-card session renewed",
-            extra={
-                "event": "mobile_card.session.renewed",
-                "event_data": {
-                    "age_seconds": decoded.age_seconds,
-                    "is_review": decoded.is_review,
-                    "person_id": decoded.person_id,
-                    "remaining_seconds": decoded.remaining_seconds,
-                    "renewal_threshold_seconds": self._renewal_threshold_seconds(),
-                    "ttl_seconds": self._ttl_seconds(),
-                },
+        emit_event(
+            logger,
+            "mobile_card.session.renewed",
+            level=logging.DEBUG,
+            fields={
+                "subject_type": "review" if decoded.is_review else "session",
+                "subject_id": decoded.person_id,
+                "duration_ms": decoded.age_seconds * 1000,
+                "outcome": "success",
             },
         )
         return renewed_token
@@ -118,10 +116,9 @@ class MobileCardSessionManager:
     def _log_invalid(
         self, reason: Literal["bad_signature", "expired", "malformed"]
     ) -> None:
-        logger.warning(
-            "mobile-card session invalid",
-            extra={
-                "event": "mobile_card.session.invalid",
-                "event_data": {"reason": reason},
-            },
+        emit_event(
+            logger,
+            "mobile_card.session.expired" if reason == "expired" else "mobile_card.session.invalid",
+            level=logging.INFO if reason == "expired" else logging.WARNING,
+            fields={"reason_code": reason, "outcome": "failure"},
         )
