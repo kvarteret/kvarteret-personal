@@ -29,7 +29,9 @@
     "tailwindcss": "^4.3.3"
   },
   "overrides": {
-    "js-beautify": "2.0.3"
+    "js-beautify": "2.0.3",
+    "js-yaml": "4.3.2",
+    "svgo": "4.1.0"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
