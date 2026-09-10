@@ -121,6 +121,9 @@ class FeedbackService:
             user_id=user_id,
             source=source,
         )
+        if self.settings.remote_writes_disabled:
+            logger.info("[feedback] remote writes disabled; local submission accepted")
+            return
         await to_thread(_create_linear_issue, submission, self.settings)
 
 

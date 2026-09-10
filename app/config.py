@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     dev_admin_password: str | None = Field(default=None)
     app_secret_key: str = Field(default="change-me")
     app_public_base_url: str | None = Field(default=None)
+    remote_writes_disabled: bool = Field(default=False)
     volunteer_prospect_hmac_secret: str | None = Field(default=None)
     volunteer_prospect_hmac_previous_secret: str | None = Field(default=None)
     volunteer_prospect_max_body_bytes: int = Field(default=16 * 1024, gt=0)
