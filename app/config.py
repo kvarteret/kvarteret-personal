@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     email_dispatch_enabled: bool = Field(default=True)
     cron_secret: str | None = Field(default=None)
     session_cookie_name: str = Field(default="kvarteret_session")
+    session_cookie_domain: str | None = Field(default=None)
     session_ttl_hours: int = Field(default=12)
     session_cache_ttl_seconds: int = Field(default=300)
     login_attempt_limit: int = Field(default=10)
@@ -169,6 +170,7 @@ class Settings(BaseSettings):
         "otel_service_name",
         "cron_secret",
         "session_cookie_name",
+        "session_cookie_domain",
         mode="before",
     )
     @classmethod

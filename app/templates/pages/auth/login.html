@@ -24,6 +24,7 @@
       {% endif %}
 
       <form action="/login" class="mt-8 grid gap-6" hx-boost="false" method="post">
+        <input type="hidden" name="next" value="{{ next_path or '/' }}">
         <label class="grid gap-1">
           <span class="text-sm text-kvarteret-sky">Brukernavn</span>
           <input class="app-input" type="text" name="identifier" required>
