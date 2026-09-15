@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
@@ -71,6 +71,16 @@ def _safe_login_redirect(next_url: str | None) -> str:
     if not next_url.startswith("/") or next_url.startswith("//"):
         return "/"
     return next_url
+
+
+def _login_redirect_from_request(request: Request, next_url: str | None) -> str:
+    if next_url:
+        return _safe_login_redirect(next_url)
+    referer = request.headers.get("referer")
+    if referer:
+        referer_query = parse_qs(urlsplit(referer).query)
+        return _safe_login_redirect(referer_query.get("next", [None])[0])
+    return "/"
 
 
 def _set_session_cookie(
@@ -163,6 +173,7 @@ async def login_submit(
     settings=Depends(get_settings),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ):
+    login_redirect = _login_redirect_from_request(request, next)
     normalized_identifier = identifier.strip().lower()
     client_ip = client_ip_from_request(request)
     throttle_keys = [f"login:account:{normalized_identifier}"]
@@ -192,7 +203,7 @@ async def login_submit(
                 "section": "login",
                 "error_message": "For mange innloggingsforsøk. Prøv igjen senere.",
                 "message": None,
-                "next_path": _safe_login_redirect(next),
+                "next_path": login_redirect,
             },
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
@@ -212,7 +223,7 @@ async def login_submit(
                 "section": "login",
                 "error_message": "Innlogging er ikke konfigurert.",
                 "message": None,
-                "next_path": _safe_login_redirect(next),
+                "next_path": login_redirect,
             },
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
@@ -229,7 +240,7 @@ async def login_submit(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
     response = RedirectResponse(
-        url=_safe_login_redirect(next), status_code=status.HTTP_303_SEE_OTHER
+        url=login_redirect, status_code=status.HTTP_303_SEE_OTHER
     )
     _set_session_cookie(
         response,
