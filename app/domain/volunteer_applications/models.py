@@ -266,6 +266,7 @@ class TrialApplicantCardSnapshot:
     group_name: str
     role_name: str
     discount_level: int | None
+    volunteer_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -417,10 +418,11 @@ class VolunteerCreatorProtocol(Protocol):
         phone: str | None,
         photo_sha1: str | None,
         photo_filetype: str | None,
-        group_id: int,
+        group_id: int | None,
         role_id: int | None,
         semester_code: int,
         contract_signed: bool,
+        volunteer_id: int | None = None,
     ) -> int: ...
 
 
@@ -508,6 +510,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         *,
         status: ApplicationState,
         start_trial: bool = False,
+        volunteer_id: int | None = None,
     ) -> None: ...
     async def find_active_trial_applicant_by_email(
         self, email: str

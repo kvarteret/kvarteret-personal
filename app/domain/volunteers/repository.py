@@ -151,50 +151,98 @@ class VolunteersRepository(SqlAlchemyRepository):
         phone: str | None,
         photo_sha1: str | None,
         photo_filetype: str | None,
-        group_id: int,
+        group_id: int | None,
         role_id: int | None,
         semester_code: int,
         contract_signed: bool,
+        volunteer_id: int | None = None,
     ) -> int:
-        """Onboard a volunteer promoted from an application.
+        """Create or update a volunteer record from an application.
 
-        Creates the volunteer record with its photo and the selected initial role
-        assignment — the same row family ``delete_volunteer`` removes on
-        offboarding. Called by the applications workflow through the
-        ``VolunteerCreatorProtocol`` port wired in ``app/runtime.py``.
+        Trial applications get their volunteer record before approval. Approval
+        reuses that record and finalizes its assignment instead of creating a
+        second volunteer.
         """
-        inserted = await self.execute_one_mapping(
-            insert(volunteer_records)
-            .values(
-                first_name=first_name,
-                last_name=last_name,
-                email=email,
-                gender=gender,
-                birth_date=birth_date,
-                street_address=street_address,
-                postal_code=postal_code,
-                phone=phone,
+        if volunteer_id is None:
+            inserted = await self.execute_one_mapping(
+                insert(volunteer_records)
+                .values(
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                    gender=gender,
+                    birth_date=birth_date,
+                    street_address=street_address,
+                    postal_code=postal_code,
+                    phone=phone,
+                )
+                .returning(volunteer_records.c.id)
             )
-            .returning(volunteer_records.c.id)
-        )
-        volunteer_id = int(inserted["id"])
-        if photo_sha1 and photo_filetype:
+            volunteer_id = int(inserted["id"])
+        else:
             await self.execute(
-                insert(volunteer_photos).values(
-                    volunteer_id=volunteer_id,
-                    sha1=photo_sha1,
-                    filetype=photo_filetype,
+                update(volunteer_records)
+                .where(volunteer_records.c.id == volunteer_id)
+                .values(
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                    gender=gender,
+                    birth_date=birth_date,
+                    street_address=street_address,
+                    postal_code=postal_code,
+                    phone=phone,
                 )
             )
-        await self.execute(
-            insert(role_assignments).values(
-                volunteer_id=volunteer_id,
-                group_id=group_id,
-                role_id=role_id,
-                semester=semester_code,
-                contract_signed=contract_signed,
+
+        if photo_sha1 and photo_filetype:
+            existing_photo = await self.fetch_first_mapping(
+                select(volunteer_photos.c.volunteer_id).where(
+                    volunteer_photos.c.volunteer_id == volunteer_id
+                )
             )
-        )
+            if existing_photo:
+                await self.execute(
+                    update(volunteer_photos)
+                    .where(volunteer_photos.c.volunteer_id == volunteer_id)
+                    .values(sha1=photo_sha1, filetype=photo_filetype)
+                )
+            else:
+                await self.execute(
+                    insert(volunteer_photos).values(
+                        volunteer_id=volunteer_id,
+                        sha1=photo_sha1,
+                        filetype=photo_filetype,
+                    )
+                )
+
+        if group_id is not None:
+            existing_assignment = await self.fetch_first_mapping(
+                select(role_assignments.c.id)
+                .where(role_assignments.c.volunteer_id == volunteer_id)
+                .order_by(role_assignments.c.id.desc())
+                .limit(1)
+            )
+            assignment_values = {
+                "group_id": group_id,
+                "role_id": role_id,
+                "semester": semester_code,
+                "contract_signed": contract_signed,
+            }
+            if existing_assignment:
+                await self.execute(
+                    update(role_assignments)
+                    .where(role_assignments.c.id == existing_assignment["id"])
+                    .values(**assignment_values)
+                )
+            else:
+                await self.execute(
+                    insert(role_assignments).values(
+                        volunteer_id=volunteer_id,
+                        **assignment_values,
+                    )
+                )
+
         return volunteer_id
 
     async def delete_volunteer(self, volunteer_id: int) -> None:

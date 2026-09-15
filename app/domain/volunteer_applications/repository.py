@@ -501,8 +501,11 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         *,
         status: ApplicationState,
         start_trial: bool = False,
+        volunteer_id: int | None = None,
     ) -> None:
         values: dict[str, object] = {"status": status}
+        if volunteer_id is not None:
+            values["promoted_volunteer_id"] = volunteer_id
         if start_trial:
             started_at = datetime.now(UTC)
             values.update(
@@ -695,6 +698,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         stmt = (
             select(
                 volunteer_application_invites.c.id,
+                volunteer_application_invites.c.promoted_volunteer_id,
                 volunteer_application_invites.c.created_at,
                 volunteer_application_invites.c.trial_ends_at,
                 volunteer_application_submissions.c.first_name,
@@ -746,6 +750,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             return None
         return TrialApplicantCardSnapshot(
             application_id=row["id"],
+            volunteer_id=row["promoted_volunteer_id"],
             first_name=row["first_name"] or "",
             last_name=row["last_name"],
             birth_date=row["birth_date"],

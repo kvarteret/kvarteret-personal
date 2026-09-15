@@ -70,15 +70,24 @@ sequenceDiagram
     participant DB as Request transaction
     participant SMTP as SMTP
 
-    R->>W: approve(application_id, group)
-    W->>SM: application_transition(state, APPROVE, context)
+    R->>W: start_trial(application_id)
+    W->>SM: application_transition(state, START_TRIAL, context)
     SM-->>W: TransitionResult or IllegalTransition
-    W->>V: create_from_application(...)
-    V->>DB: insert volunteer_records, photo, role_assignments
+    W->>V: create_from_application(..., contract_signed=false)
+    V->>DB: insert volunteer_records and temporary assignment
+    W->>Repo: set trial status and promoted_volunteer_id
+    W->>Repo: append_domain_event(...)
+    W->>DB: commit_request_session()
+    W->>SMTP: profile-completion email for this applicant
+
+    R->>W: approve(application_id, group)
+    W->>SM: application_transition(state, PROMOTE, context)
+    SM-->>W: TransitionResult or IllegalTransition
+    W->>V: create_from_application(..., volunteer_id=promoted_volunteer_id)
+    V->>DB: update volunteer record and finalize assignment
     W->>Repo: mark_promoted(invite row)
     W->>Repo: append_domain_event(...)
     W->>DB: commit_request_session()
-    W->>SMTP: approval email for this applicant
 ```
 
 Each applicant's promotion happens in that applicant's request transaction. A
@@ -89,8 +98,8 @@ of truth; the log is an audit, not an event-sourcing store (ADR-003).
 
 ## Cross-Module Boundary
 
-Approval creates a volunteer — a write into the volunteers module's tables.
-That write goes through `VolunteersService.create_from_application`, reached
-via `VolunteerCreatorProtocol` injected in `app/runtime.py`. There is no
-static service import between the modules; the owning module performs its own
-write.
+Trial start provisions the volunteer record and temporary assignment, and
+approval reuses that record to finalize the assignment. Both writes go through
+`VolunteersService.create_from_application`, reached via
+`VolunteerCreatorProtocol` injected in `app/runtime.py`. There is no static
+service import between the modules; the owning module performs its own write.

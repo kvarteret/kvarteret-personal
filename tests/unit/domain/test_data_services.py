@@ -111,6 +111,7 @@ class FakeVolunteerApplicationsRepository:
         self.created_public_prospects: list[dict[str, object | None]] = []
         self.application_submitted = True
         self.detail_status = "new"
+        self.promoted_volunteer_id: int | None = None
 
     async def create_public_prospect_registration(self, **kwargs):
         self.created_public_prospects.append(kwargs)
@@ -207,6 +208,7 @@ class FakeVolunteerApplicationsRepository:
             initial_group_name="Bar",
             initial_role_id=9,
             initial_role_name="Skiftleder",
+            promoted_volunteer_id=self.promoted_volunteer_id,
         )
 
     async def save_submission(
@@ -222,9 +224,16 @@ class FakeVolunteerApplicationsRepository:
         self.saved_submission_phones.append(submission.phone)
 
     async def set_application_status(
-        self, registration_id: int, *, status, start_trial: bool = False
+        self,
+        registration_id: int,
+        *,
+        status,
+        start_trial: bool = False,
+        volunteer_id: int | None = None,
     ) -> None:
         self.detail_status = status.value
+        if volunteer_id is not None:
+            self.promoted_volunteer_id = volunteer_id
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return self.existing_volunteer_ids_by_email.get(email.lower())
@@ -1272,11 +1281,38 @@ async def test_starting_trial_enqueues_profile_completion_email() -> None:
     detail = await service.start_trial(7)
 
     assert detail.status == "trial"
+    assert detail.promoted_volunteer_id == 12
+    assert repository.promoted_volunteer_id == 12
+    assert service.volunteer_creator.created[0]["contract_signed"] is False  # type: ignore[attr-defined]
     assert_email_enqueued(
         email_outbox.requests[0],
         recipient_email="registrant@example.com",
         template_key=APPLICANT_PROFILE_COMPLETION,
     )
+
+
+@pytest.mark.asyncio
+async def test_approving_trial_reuses_trial_volunteer_record() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "contacted"
+    creator = FakeVolunteerCreator()
+    service = VolunteerApplicationsService(
+        volunteer_creator=creator,
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+
+    await service.start_trial(7)
+    repository.detail_status = "trial"
+
+    volunteer_id = await service.approve_volunteer_application(7)
+
+    assert volunteer_id == 12
+    assert len(creator.created) == 2
+    assert creator.created[0]["contract_signed"] is False
+    assert creator.created[1]["volunteer_id"] == 12
+    assert creator.created[1]["contract_signed"] is True
 
 
 @pytest.mark.asyncio
@@ -1477,6 +1513,7 @@ async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
         group_name="Bar",
         role_name="Prøvefrivillig",
         discount_level=1,
+        volunteer_id=12,
     )
     repository = FakeMobileCardRepository()
     service = MobileCardService(
@@ -1492,7 +1529,7 @@ async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
     session = await service.create_session("trial@example.com", "123456")
 
     assert repository.stored_trial_access_codes[0][0] == 77
-    assert session.card.person_id == -77
+    assert session.card.person_id == 12
     assert session.card.valid_until == trial_ends_at
     assert session.card.photo_url == "/media/photos/trial.jpg?token=test"
     assert session.card.active_roles[0].signed_contract is False

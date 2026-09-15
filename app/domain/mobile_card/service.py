@@ -157,15 +157,19 @@ class MobileCardService:
             message="Too many access-code requests. Try again later.",
         )
 
-        volunteers = await self.repository.find_volunteers_by_email(normalized_email)
+        trial_applicant = None
+        if self.trial_applicant_provider is not None:
+            trial_applicant = await self.trial_applicant_provider.find_active_trial_applicant_by_email(
+                normalized_email
+            )
+        volunteers = (
+            []
+            if trial_applicant is not None
+            else await self.repository.find_volunteers_by_email(normalized_email)
+        )
         if len(volunteers) > 1:
             raise MobileCardDuplicatePersonError(
                 "More than one person uses this email address. Contact an administrator."
-            )
-        trial_applicant = None
-        if not volunteers and self.trial_applicant_provider is not None:
-            trial_applicant = await self.trial_applicant_provider.find_active_trial_applicant_by_email(
-                normalized_email
             )
         if not volunteers and trial_applicant is None:
             raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
@@ -240,26 +244,28 @@ class MobileCardService:
             message="Too many access-code attempts. Try again later.",
         )
 
-        volunteer_row = await self.repository.find_volunteer_by_email_and_code(
-            email=normalized_email,
-            code_hash=self._hash_access_code(normalized_access_code),
-            expires_after=datetime.now(UTC)
-            - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
-        )
         trial_applicant = None
-        if volunteer_row is None and self.trial_applicant_provider is not None:
+        if self.trial_applicant_provider is not None:
             trial_applicant = await self.trial_applicant_provider.find_active_trial_applicant_by_email(
                 normalized_email
             )
-            if trial_applicant is not None:
-                accepted = await self.repository.consume_trial_access_code(
-                    application_id=trial_applicant.application_id,
-                    code_hash=self._hash_access_code(normalized_access_code),
-                    expires_after=datetime.now(UTC)
-                    - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
-                )
-                if not accepted:
-                    trial_applicant = None
+        volunteer_row = None
+        if trial_applicant is not None:
+            accepted = await self.repository.consume_trial_access_code(
+                application_id=trial_applicant.application_id,
+                code_hash=self._hash_access_code(normalized_access_code),
+                expires_after=datetime.now(UTC)
+                - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
+            )
+            if not accepted:
+                trial_applicant = None
+        if trial_applicant is None:
+            volunteer_row = await self.repository.find_volunteer_by_email_and_code(
+                email=normalized_email,
+                code_hash=self._hash_access_code(normalized_access_code),
+                expires_after=datetime.now(UTC)
+                - timedelta(minutes=self.settings.mobile_card_access_code_ttl_minutes),
+            )
         if volunteer_row is None and trial_applicant is None:
             raise MobileCardInvalidAccessCodeError("Invalid access code.")
         await self.rate_limiter.clear(
@@ -312,7 +318,7 @@ class MobileCardService:
             else None
         )
         return MobileCardResponse(
-            person_id=-snapshot.application_id,
+            person_id=snapshot.volunteer_id or -snapshot.application_id,
             first_name=snapshot.first_name,
             last_name=snapshot.last_name,
             birth_date=snapshot.birth_date,
