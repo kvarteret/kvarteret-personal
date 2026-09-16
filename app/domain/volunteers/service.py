@@ -70,13 +70,14 @@ class VolunteersService(VolunteersQueries):
         phone: str | None,
         photo_sha1: str | None,
         photo_filetype: str | None,
-        group_id: int,
+        group_id: int | None,
         role_id: int | None,
         semester_code: int,
         contract_signed: bool,
+        volunteer_id: int | None = None,
     ) -> int:
-        """Create a volunteer from an approved application; returns the id."""
-        return await self.repository.create_from_application(
+        """Create or update the volunteer record for an application."""
+        resolved_volunteer_id = await self.repository.create_from_application(
             first_name=first_name,
             last_name=last_name,
             email=email,
@@ -91,7 +92,11 @@ class VolunteersService(VolunteersQueries):
             role_id=role_id,
             semester_code=semester_code,
             contract_signed=contract_signed,
+            volunteer_id=volunteer_id,
         )
+        if volunteer_id is not None:
+            self.invalidate_volunteer_cache(volunteer_id)
+        return resolved_volunteer_id
 
     async def update_volunteer_profile(
         self,

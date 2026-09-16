@@ -16,6 +16,7 @@ from sqlalchemy import (
     literal,
     or_,
     select,
+    union,
 )
 
 from app.domain.groups.tables import groups
@@ -145,10 +146,20 @@ def current_discount_level_subquery():
 
 
 def current_active_volunteers_subquery():
-    return (
+    active_trial = (
+        select(volunteer_application_invites.c.id)
+        .where(
+            volunteer_application_invites.c.promoted_volunteer_id
+            == role_assignments.c.volunteer_id,
+            volunteer_application_invites.c.status == "trial",
+            volunteer_application_invites.c.trial_ends_at > func.now(),
+        )
+        .exists()
+    )
+    assigned_volunteers = (
         select(role_assignments.c.volunteer_id.label("volunteer_id"))
         .where(role_assignments.c.semester == get_current_semester_code())
-        .where(role_assignments.c.contract_signed.is_(True))
+        .where(or_(role_assignments.c.contract_signed.is_(True), active_trial))
         .where(
             ~select(volunteer_application_invites.c.id)
             .where(
@@ -159,8 +170,15 @@ def current_active_volunteers_subquery():
             .exists()
         )
         .group_by(role_assignments.c.volunteer_id)
-        .subquery()
     )
+    trial_volunteers = select(
+        volunteer_application_invites.c.promoted_volunteer_id.label("volunteer_id")
+    ).where(
+        volunteer_application_invites.c.status == "trial",
+        volunteer_application_invites.c.trial_ends_at > func.now(),
+        volunteer_application_invites.c.promoted_volunteer_id.is_not(None),
+    )
+    return union(assigned_volunteers, trial_volunteers).subquery()
 
 
 def _assignment_search_text_subquery(*, only_current_semester: bool = True):

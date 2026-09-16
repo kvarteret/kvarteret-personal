@@ -62,7 +62,7 @@ class MobileCardRepository(SqlAlchemyRepository):
     def _not_blocked_volunteer(volunteer_id):
         return ~select(volunteer_application_invites.c.id).where(
             volunteer_application_invites.c.promoted_volunteer_id == volunteer_id,
-            volunteer_application_invites.c.status == "not_volunteer",
+            volunteer_application_invites.c.status.in_(("not_volunteer", "trial")),
         ).exists()
 
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
