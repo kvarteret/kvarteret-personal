@@ -738,6 +738,29 @@ async def test_active_trial_profile_gets_temporary_card_until_trial_expires(
                 follow_redirects=False,
             )
             assert response.status_code == 303, response.text
+        trial_volunteers = await _fetch_all(
+            e2e_engine,
+            "SELECT id, email FROM public.volunteer_records WHERE email = :email",
+            email=email,
+        )
+        assert len(trial_volunteers) == 1
+        trial_volunteer_id = trial_volunteers[0]["id"]
+        trial_link = await _fetch_all(
+            e2e_engine,
+            "SELECT promoted_volunteer_id FROM public.volunteer_application_invites "
+            "WHERE id = :id",
+            id=application["id"],
+        )
+        assert trial_link == [{"promoted_volunteer_id": trial_volunteer_id}]
+        trial_assignments = await _fetch_all(
+            e2e_engine,
+            "SELECT volunteer_id, contract_signed FROM public.role_assignments "
+            "WHERE volunteer_id = :volunteer_id",
+            volunteer_id=trial_volunteer_id,
+        )
+        assert trial_assignments == [
+            {"volunteer_id": trial_volunteer_id, "contract_signed": False}
+        ]
         await _submit_profile(
             client,
             application["token"],
@@ -762,7 +785,7 @@ async def test_active_trial_profile_gets_temporary_card_until_trial_expires(
         )
         assert response.status_code == 200, response.text
         session = response.json()
-        assert session["card"]["person_id"] == -application["id"]
+        assert session["card"]["person_id"] == trial_volunteer_id
         assert session["card"]["active_roles"][0]["signed_contract"] is False
 
         async with e2e_engine.begin() as conn:

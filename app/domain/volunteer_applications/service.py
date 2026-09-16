@@ -508,10 +508,30 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
+        trial_volunteer_id = detail.promoted_volunteer_id
+        if start_trial and trial_volunteer_id is None:
+            resolved_group_id = detail.initial_group_id or detail.first_choice_group_id
+            trial_volunteer_id = await self.volunteer_creator.create_from_application(
+                first_name=detail.first_name,
+                last_name=detail.last_name or detail.email,
+                email=detail.email,
+                gender=detail.gender or "A",
+                birth_date=detail.birth_date,
+                street_address=detail.address,
+                postal_code=detail.postal_code,
+                phone=normalize_phone_number(detail.phone),
+                photo_sha1=detail.photo_sha1,
+                photo_filetype=detail.photo_filetype,
+                group_id=resolved_group_id,
+                role_id=detail.initial_role_id,
+                semester_code=get_current_semester_code(),
+                contract_signed=False,
+            )
         await self.repository.set_application_status(
             registration_id,
             status=status,
             start_trial=start_trial,
+            volunteer_id=trial_volunteer_id if start_trial else None,
         )
         refreshed = await self.get_volunteer_application_detail(registration_id)
         if refreshed is None:
@@ -559,10 +579,8 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         if detail.pending_volunteer_id is None:
             raise VolunteerApplicationConflictError("Registration is missing prospect details.")
-        if detail.promoted_volunteer_id is not None:
-            raise VolunteerApplicationConflictError("Registration has already been promoted.")
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(detail.email)
-        if duplicate_volunteer is not None:
+        if duplicate_volunteer is not None and duplicate_volunteer != detail.promoted_volunteer_id:
             raise VolunteerAlreadyExistsError(duplicate_volunteer, detail.email)
         resolved_group_id = accepted_group_id or detail.initial_group_id or detail.first_choice_group_id
         allowed_group_ids = {
@@ -612,6 +630,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             role_id=resolved_role_id,
             semester_code=semester_code,
             contract_signed=contract_signed,
+            volunteer_id=detail.promoted_volunteer_id,
         )
         await self.repository.mark_promoted(
             registration_id=detail.registration_id,
