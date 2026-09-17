@@ -95,6 +95,7 @@ the distinction between application telemetry and Vercel drains.
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `SESSION_COOKIE_NAME` | `kvarteret_session` | Web admin session cookie name. |
+| `SESSION_COOKIE_DOMAIN` | unset | Optional cookie domain, e.g. `.samfunnetibergen.no`, for sharing the session across trusted subdomains. |
 | `SESSION_TTL_HOURS` | `12` | Web session lifetime. |
 | `SESSION_CACHE_TTL_SECONDS` | `300` | In-process session cache lifetime. |
 | `PENDING_VOLUNTEER_APPLICATIONS_CACHE_TTL_SECONDS` | `30` | Pending application count cache lifetime. |

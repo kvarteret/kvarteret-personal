@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
@@ -47,6 +48,39 @@ _PASSWORD_RESET_SENT_MESSAGE = (
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 logger = logging.getLogger(__name__)
+_ORAKEL_ORIGIN = "https://orakel.samfunnetibergen.no"
+_ORAKEL_HOST = urlsplit(_ORAKEL_ORIGIN).hostname
+
+
+def _safe_login_redirect(next_url: str | None) -> str:
+    """Allow only local paths or the Orakel origin as a post-login target."""
+    if not next_url:
+        return "/"
+    parsed = urlsplit(next_url)
+    if parsed.scheme or parsed.netloc:
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != _ORAKEL_HOST
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            return "/"
+        return urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, parsed.fragment)
+        )
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        return "/"
+    return next_url
+
+
+def _login_redirect_from_request(request: Request, next_url: str | None) -> str:
+    if next_url:
+        return _safe_login_redirect(next_url)
+    referer = request.headers.get("referer")
+    if referer:
+        referer_query = parse_qs(urlsplit(referer).query)
+        return _safe_login_redirect(referer_query.get("next", [None])[0])
+    return "/"
 
 
 def _set_session_cookie(
@@ -64,6 +98,11 @@ def _set_session_cookie(
         secure=request.url.scheme == "https" or settings.app_env == "production",
         samesite="lax",
         max_age=settings.session_ttl_hours * 3600,
+        **(
+            {"domain": settings.session_cookie_domain}
+            if settings.session_cookie_domain
+            else {}
+        ),
     )
 
 
@@ -103,10 +142,13 @@ async def dashboard(
 async def login_page(
     request: Request,
     message: str | None = None,
+    next: str | None = None,
     current_user=Depends(get_current_user),
 ):
     if current_user is not None:
-        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(
+            url=_safe_login_redirect(next), status_code=status.HTTP_303_SEE_OTHER
+        )
     return templates.TemplateResponse(
         request,
         _LOGIN_TEMPLATE,
@@ -115,6 +157,7 @@ async def login_page(
             "section": "login",
             "error_message": None,
             "message": message,
+            "next_path": _safe_login_redirect(next),
         },
     )
 
@@ -124,11 +167,13 @@ async def login_submit(
     request: Request,
     identifier: str = Form(...),
     password: str = Form(...),
+    next: str | None = Form(default=None),
     login_service: LoginService = Depends(get_login_service),
     session_cookie_signer: SessionCookieSigner = Depends(get_session_cookie_signer),
     settings=Depends(get_settings),
     rate_limiter: RateLimiter = Depends(get_rate_limiter),
 ):
+    login_redirect = _login_redirect_from_request(request, next)
     normalized_identifier = identifier.strip().lower()
     client_ip = client_ip_from_request(request)
     throttle_keys = [f"login:account:{normalized_identifier}"]
@@ -158,6 +203,7 @@ async def login_submit(
                 "section": "login",
                 "error_message": "For mange innloggingsforsøk. Prøv igjen senere.",
                 "message": None,
+                "next_path": login_redirect,
             },
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
@@ -177,6 +223,7 @@ async def login_submit(
                 "section": "login",
                 "error_message": "Innlogging er ikke konfigurert.",
                 "message": None,
+                "next_path": login_redirect,
             },
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
@@ -192,7 +239,9 @@ async def login_submit(
             },
             status_code=status.HTTP_400_BAD_REQUEST,
         )
-    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(
+        url=login_redirect, status_code=status.HTTP_303_SEE_OTHER
+    )
     _set_session_cookie(
         response,
         request=request,
@@ -322,7 +371,14 @@ async def logout(
             ),
         )
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    response.delete_cookie(settings.session_cookie_name)
+    response.delete_cookie(
+        settings.session_cookie_name,
+        **(
+            {"domain": settings.session_cookie_domain}
+            if settings.session_cookie_domain
+            else {}
+        ),
+    )
     return response
 
 

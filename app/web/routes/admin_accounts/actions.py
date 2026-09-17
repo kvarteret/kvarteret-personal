@@ -112,6 +112,11 @@ def _set_session_cookie(
         secure=request.url.scheme == "https" or settings.app_env == "production",
         samesite="lax",
         max_age=settings.session_ttl_hours * 3600,
+        **(
+            {"domain": settings.session_cookie_domain}
+            if settings.session_cookie_domain
+            else {}
+        ),
     )
 
 
