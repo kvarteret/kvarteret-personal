@@ -36,6 +36,7 @@ from app.observability import client_ip_from_request
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
+from app.web.cookies import resolve_cookie_domain
 from app.web.templates import templates
 
 _LOGIN_TEMPLATE = "pages/auth/login.html"
@@ -91,6 +92,7 @@ def _set_session_cookie(
     session_cookie_signer: SessionCookieSigner,
     session_id: str,
 ) -> None:
+    cookie_domain = resolve_cookie_domain(request, settings.session_cookie_domain)
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_cookie_signer.sign_session_id(session_id),
@@ -98,11 +100,7 @@ def _set_session_cookie(
         secure=request.url.scheme == "https" or settings.app_env == "production",
         samesite="lax",
         max_age=settings.session_ttl_hours * 3600,
-        **(
-            {"domain": settings.session_cookie_domain}
-            if settings.session_cookie_domain
-            else {}
-        ),
+        **({"domain": cookie_domain} if cookie_domain else {}),
     )
 
 
@@ -371,13 +369,10 @@ async def logout(
             ),
         )
     response = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    cookie_domain = resolve_cookie_domain(request, settings.session_cookie_domain)
     response.delete_cookie(
         settings.session_cookie_name,
-        **(
-            {"domain": settings.session_cookie_domain}
-            if settings.session_cookie_domain
-            else {}
-        ),
+        **({"domain": cookie_domain} if cookie_domain else {}),
     )
     return response
 

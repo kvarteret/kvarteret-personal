@@ -34,6 +34,14 @@ session. The cookie domain is configured with `SESSION_COOKIE_DOMAIN`; it must
 be restricted to the intended parent domain and must use secure, HTTP-only
 cookie settings in production.
 
+`app/web/cookies.py` only attaches `SESSION_COOKIE_DOMAIN` when the request
+host is that domain or a subdomain of it. The same application is also served
+on the `personal.kvarteret.no` alias, which is outside the
+`samfunnetibergen.no` parent domain; there the browser would reject the shared
+cookie, so it falls back to a host-only cookie. Cross-domain single sign-on
+between Personal and Orakel therefore requires users to land on
+`personal.samfunnetibergen.no`, not the `kvarteret.no` alias.
+
 Hermes must validate the Personal session before serving the web UI or
 forwarding a user request to an MCP integration. Hermes does not create a
 second user directory and must not accept an Entra-only identity as a

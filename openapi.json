@@ -484,6 +484,17 @@
             "title": "Identifier",
             "type": "string"
           },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
+          },
           "password": {
             "title": "Password",
             "type": "string"
@@ -3947,6 +3958,22 @@
                 }
               ],
               "title": "Message"
+            }
+          },
+          {
+            "in": "query",
+            "name": "next",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Next"
             }
           }
         ],

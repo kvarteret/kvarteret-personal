@@ -304,6 +304,120 @@ def test_login_form_token_satisfies_csrf_with_stale_session_cookie() -> None:
     assert response.status_code == 303
 
 
+def _login_client_with_shared_cookie_domain(domain: str, base_url: str) -> TestClient:
+    """Build a client whose app shares session cookies on ``domain``."""
+    container = build_application_container()
+    container.settings = container.settings.model_copy(
+        update={"session_cookie_domain": domain}
+    )
+    app = create_app(container=container)
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
+    app.dependency_overrides[get_login_service] = lambda: FakeLoginService()
+    return TestClient(app, base_url=base_url)
+
+
+def _session_cookie_header(response) -> str:
+    headers = [
+        header
+        for header in response.headers.get_list("set-cookie")
+        if header.startswith("kvarteret_session=")
+    ]
+    assert headers, response.headers.get_list("set-cookie")
+    return headers[0]
+
+
+def test_login_sets_host_only_session_cookie_on_kvarteret_alias() -> None:
+    """The shared cookie domain must not be sent from the kvarteret.no alias.
+
+    Browsers reject a Domain attribute that is not the request host, so a
+    cookie scoped to ``.samfunnetibergen.no`` is dropped on
+    ``personal.kvarteret.no`` and the user bounces back to the login page.
+    """
+    client = _login_client_with_shared_cookie_domain(
+        ".samfunnetibergen.no", "https://personal.kvarteret.no"
+    )
+
+    response = client.post(
+        "/login",
+        data={"identifier": "admin", "password": "Password123"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    session_cookie = _session_cookie_header(response)
+    assert "Domain=" not in session_cookie
+
+
+def test_login_sets_shared_session_cookie_on_samfunnetibergen_subdomain() -> None:
+    """A request on the shared parent domain keeps cross-subdomain SSO."""
+    client = _login_client_with_shared_cookie_domain(
+        ".samfunnetibergen.no", "https://personal.samfunnetibergen.no"
+    )
+
+    response = client.post(
+        "/login",
+        data={"identifier": "admin", "password": "Password123"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    session_cookie = _session_cookie_header(response)
+    assert "Domain=.samfunnetibergen.no" in session_cookie
+
+
+def test_login_on_kvarteret_alias_authenticates_followup_request() -> None:
+    """Regression: the browser jar must accept the session cookie it is sent.
+
+    ``http.cookiejar`` (used by real browsers and by httpx) rejects a cookie
+    whose ``Domain`` attribute does not match the request host, so the earlier
+    shared-domain-only behavior produced a login loop on the kvarteret.no
+    alias: login returned 303, but the next request had no session.
+    """
+    container = build_application_container()
+    container.settings = container.settings.model_copy(
+        update={"session_cookie_domain": ".samfunnetibergen.no"}
+    )
+    container.session_store = MiddlewareSessionStore(make_authenticated_user())
+    app = create_app(container=container)
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
+    app.dependency_overrides[get_login_service] = lambda: FakeLoginService()
+    client = TestClient(app, base_url="https://personal.kvarteret.no")
+
+    login = client.post(
+        "/login",
+        data={"identifier": "admin", "password": "Password123"},
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+
+    dashboard = client.get("/", follow_redirects=False)
+    assert dashboard.status_code == 200
+
+
+def test_logout_deletes_the_same_host_only_cookie_it_created() -> None:
+    client = _login_client_with_shared_cookie_domain(
+        ".samfunnetibergen.no", "https://personal.kvarteret.no"
+    )
+    container = client.app.state.container
+    container.session_store = MiddlewareSessionStore(make_authenticated_user())
+    prime_csrf(
+        client,
+        cookies={
+            container.settings.session_cookie_name: container.session_cookie_signer.sign_session_id(
+                "session-123"
+            )
+        },
+    )
+
+    response = client.post(
+        "/logout", headers=csrf_headers(client), follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    session_cookie = _session_cookie_header(response)
+    assert "Domain=" not in session_cookie
+
+
 def test_forgot_password_form_renders_csrf_token_matching_cookie() -> None:
     client = TestClient(create_app())
 
