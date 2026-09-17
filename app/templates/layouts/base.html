@@ -23,13 +23,29 @@
           return document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
         }
 
+        function setCurrentCsrfToken(token) {
+          const meta = document.querySelector('meta[name="csrf-token"]');
+          if (meta && token) {
+            meta.setAttribute("content", token);
+          }
+        }
+
         function applyCsrfFields(root) {
-          const csrfToken = currentCsrfToken();
-          if (!root || !csrfToken) return;
+          if (!root) return;
           const forms = root.matches?.('form[method="post"]') ? [root] : root.querySelectorAll?.('form[method="post"]');
           if (!forms) return;
           for (const form of forms) {
             let field = form.querySelector('input[name="csrf_token"]');
+            // A token rendered by the server belongs to the response that
+            // produced this markup, so it wins over the (possibly stale) meta
+            // tag retained from a previous htmx swap. Keep the meta in sync so
+            // later requests use the same token.
+            if (field && field.value) {
+              setCurrentCsrfToken(field.value);
+              continue;
+            }
+            const csrfToken = currentCsrfToken();
+            if (!csrfToken) continue;
             if (!field) {
               field = document.createElement("input");
               field.type = "hidden";
@@ -43,9 +59,14 @@
         document.addEventListener("DOMContentLoaded", () => {
           applyCsrfFields(document.body);
         });
+        // `htmx:after:init` only fires for elements htmx actually initializes
+        // (action elements and boosted elements). A plain `hx-boost="false"`
+        // form is not initialized, so hook settle to cover all swapped markup.
+        document.addEventListener("htmx:after:settle", (event) => {
+          applyCsrfFields(event.target);
+        });
         document.addEventListener("htmx:after:init", (event) => {
-          const root = event.target;
-          applyCsrfFields(root);
+          applyCsrfFields(event.target);
         });
         document.addEventListener("htmx:config:request", (event) => {
           const request = event.detail?.ctx?.request;

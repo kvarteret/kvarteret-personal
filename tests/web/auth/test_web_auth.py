@@ -22,6 +22,7 @@ from app.dependencies import (
 from app.main import create_app
 from app.runtime import build_application_container
 from app.domain.volunteers.models import VolunteerListItem, VolunteerListPage
+from app.web.csrf import CSRF_COOKIE_NAME
 from tests.support.helpers import csrf_headers, make_authenticated_user, prime_csrf
 
 
@@ -259,6 +260,59 @@ def test_login_page_links_to_password_reset_form() -> None:
     assert 'hx-boost="false"' in response.text
     assert 'href="/forgot-password"' in response.text
     assert "Glemt passord?" in response.text
+
+
+def test_login_form_renders_csrf_token_matching_cookie() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    token = client.cookies[CSRF_COOKIE_NAME]
+    assert 'name="csrf_token"' in response.text
+    assert f'value="{token}"' in response.text
+
+
+def test_login_form_token_satisfies_csrf_with_stale_session_cookie() -> None:
+    """A stale session cookie must not turn a valid login form into a 403.
+
+    The login page is frequently reached through htmx-boosted navigation, so
+    the hidden CSRF field has to be rendered server-side instead of relying on
+    client-side injection.
+    """
+    container = build_application_container()
+    app = create_app(container=container)
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
+    app.dependency_overrides[get_login_service] = lambda: FakeLoginService()
+    client = TestClient(app)
+
+    page = client.get("/login")
+    assert page.status_code == 200
+    token = client.cookies[CSRF_COOKIE_NAME]
+    client.cookies.set(container.settings.session_cookie_name, "inert-session-cookie")
+
+    response = client.post(
+        "/login",
+        data={
+            "identifier": "admin",
+            "password": "Password123",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+
+def test_forgot_password_form_renders_csrf_token_matching_cookie() -> None:
+    client = TestClient(create_app())
+
+    response = client.get("/forgot-password")
+
+    assert response.status_code == 200
+    token = client.cookies[CSRF_COOKIE_NAME]
+    assert 'name="csrf_token"' in response.text
+    assert f'value="{token}"' in response.text
 
 
 def test_password_reset_page_renders() -> None:
