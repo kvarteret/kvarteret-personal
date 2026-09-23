@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
 from uuid import uuid4
 
@@ -25,6 +25,7 @@ from app.domain.volunteer_applications.models import (
 )
 from app.domain.volunteer_applications.service import (
     VolunteerAlreadyExistsError,
+    VolunteerApplicationConflictError,
     VolunteerApplicationDetail,
     VolunteerApplicationSubmissionInput,
     VolunteerApplicationValidationError,
@@ -195,10 +196,10 @@ class FakeVolunteerApplicationsRepository:
             first_name="Sample",
             last_name="Registrant",
             phone="00000000",
-            birth_date=None,
+            birth_date=date(1815, 12, 10),
             gender="K",
-            address=None,
-            postal_code=None,
+            address="Adresse 1",
+            postal_code="5000",
             photo_sha1=self.application_photo_sha1,
             photo_filetype=self.application_photo_filetype,
             photo_url=self.application_photo_url,
@@ -1103,10 +1104,10 @@ async def test_volunteer_applications_submit_invalidates_pending_count_cache() -
             first_name="Ada",
             last_name="Lovelace",
             phone="+4799999998",
-            birth_date=None,
+            birth_date=date(1815, 12, 10),
             gender="K",
-            address=None,
-            postal_code=None,
+            address="Adresse 1",
+            postal_code="5000",
         ),
     )
     refreshed = await service.count_pending_volunteer_applications()
@@ -1142,7 +1143,7 @@ async def test_volunteer_applications_submit_does_not_enqueue_email() -> None:
             first_name="Ada",
             last_name="Lovelace",
             phone="+4799999998",
-            birth_date=None,
+            birth_date=date(1815, 12, 10),
             gender="K",
             address="Adresse 1",
             postal_code="5000",
@@ -1173,10 +1174,10 @@ async def test_volunteer_applications_submit_normalizes_local_phone_number() -> 
             first_name="Ada",
             last_name="Lovelace",
             phone="95230903",
-            birth_date=None,
+            birth_date=date(1815, 12, 10),
             gender="K",
-            address=None,
-            postal_code=None,
+            address="Adresse 1",
+            postal_code="5000",
         ),
     )
 
@@ -1201,10 +1202,10 @@ async def test_volunteer_applications_submit_rejects_invalid_phone_number() -> N
                 first_name="Ada",
                 last_name="Lovelace",
                 phone="123",
-                birth_date=None,
+                birth_date=date(1815, 12, 10),
                 gender="K",
-                address=None,
-                postal_code=None,
+                address="Adresse 1",
+                postal_code="5000",
             ),
         )
 
@@ -1227,10 +1228,52 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
                 first_name="Ada",
                 last_name="Lovelace",
                 phone="+4799999998",
-                birth_date=None,
+                birth_date=date(1815, 12, 10),
                 gender="K",
-                address=None,
-                postal_code=None,
+                address="Adresse 1",
+                postal_code="5000",
+            ),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("birth_date", "address", "postal_code", "message"),
+    [
+        (None, "Adresse 1", "5000", "Birth date is required."),
+        (date(1815, 12, 10), " ", "5000", "Address is required."),
+        (
+            date(1815, 12, 10),
+            "Adresse 1",
+            None,
+            "Postal code must be exactly 4 digits",
+        ),
+    ],
+)
+async def test_volunteer_applications_submit_requires_complete_profile_fields(
+    birth_date, address, postal_code, message
+) -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.application_photo_sha1 = "abc123"
+    repository.application_photo_filetype = "jpg"
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+
+    with pytest.raises(VolunteerApplicationValidationError, match=message):
+        await service.submit_volunteer_application(
+            "token-123",
+            VolunteerApplicationSubmissionInput(
+                first_name="Ada",
+                last_name="Lovelace",
+                phone="+4799999998",
+                birth_date=birth_date,
+                gender="K",
+                address=address,
+                postal_code=postal_code,
             ),
         )
 
@@ -1239,6 +1282,8 @@ async def test_volunteer_applications_submit_requires_profile_photo_when_missing
 async def test_volunteer_applications_approve_invalidates_pending_count_cache() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.detail_status = "trial"
+    repository.application_photo_sha1 = "abc123"
+    repository.application_photo_filetype = "jpg"
     email_outbox = FakeEmailOutbox()
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
@@ -1295,6 +1340,8 @@ async def test_starting_trial_enqueues_profile_completion_email() -> None:
 async def test_approving_trial_reuses_trial_volunteer_record() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.detail_status = "contacted"
+    repository.application_photo_sha1 = "abc123"
+    repository.application_photo_filetype = "jpg"
     creator = FakeVolunteerCreator()
     service = VolunteerApplicationsService(
         volunteer_creator=creator,
@@ -1313,6 +1360,27 @@ async def test_approving_trial_reuses_trial_volunteer_record() -> None:
     assert creator.created[0]["contract_signed"] is False
     assert creator.created[1]["volunteer_id"] == 12
     assert creator.created[1]["contract_signed"] is True
+
+
+@pytest.mark.asyncio
+async def test_approving_trial_rejects_incomplete_profile() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "trial"
+    repository.application_submitted = False
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+
+    with pytest.raises(
+        VolunteerApplicationConflictError,
+        match="full profile is complete",
+    ):
+        await service.approve_volunteer_application(7)
+
+    assert repository.approved_registration_ids == []
 
 
 @pytest.mark.asyncio

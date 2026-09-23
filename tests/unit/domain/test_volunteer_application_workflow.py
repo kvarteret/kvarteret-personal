@@ -118,6 +118,7 @@ class FakeWorkflowOperations:
             status=self.detail_status,
             email="applicant@example.test",
             pending_volunteer_id=8,
+            profile_complete=True,
             invited_by=None,
             friend_invitees=None,
         )

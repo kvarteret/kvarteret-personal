@@ -225,6 +225,24 @@ class VolunteerApplicationDetail:
     origin_trace_id: str | None = None
 
     @property
+    def profile_complete(self) -> bool:
+        """Whether the applicant submitted every field required for promotion."""
+        return (
+            self.submitted
+            and bool(self.last_name and self.last_name.strip())
+            and bool(self.phone and self.phone.strip())
+            and self.birth_date is not None
+            and bool(self.address and self.address.strip())
+            and bool(
+                self.postal_code
+                and len(self.postal_code) == 4
+                and self.postal_code.isdigit()
+            )
+            and self.photo_sha1 is not None
+            and self.photo_filetype is not None
+        )
+
+    @property
     def status_label(self) -> str:
         return application_status_label(self.status)
 
@@ -239,11 +257,6 @@ class VolunteerApplicationDetail:
     @property
     def trial_expired(self) -> bool:
         return self.status == "trial" and self.trial_ends_at is not None and not self.trial_active
-
-    @property
-    def profile_complete(self) -> bool:
-        return self.submitted and self.photo_sha1 is not None and self.photo_filetype is not None
-
 
 @dataclass(frozen=True, slots=True)
 class VolunteerApplicationStatusEvent:
