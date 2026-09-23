@@ -41,7 +41,7 @@ opentelemetry-semantic-conventions==0.65b0
 opentelemetry-util-http==0.65b0
 packaging==26.0
 passlib==1.7.4
-phonenumbers==9.0.26
+phonenumbers==9.0.39
 pillow==12.3.0
 posthog==7.47.0
 protobuf==7.35.1
