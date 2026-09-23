@@ -92,8 +92,4 @@ The Vercel build runs the CSS/static preparation steps so `/static/...` assets a
 
 Operational checks are documented in [Deploy and runtime checks](docs/how-to/deploy-and-runtime-checks.md).
 
-## Historical Migration Notes
-
-The old one-time rewrite and migration plan is preserved in [plans/fastapi-rewrite.md](plans/fastapi-rewrite.md). Treat it as history and implementation evidence, not as the current architecture entry point.
-
 Current documentation issues are tracked in [docs/issues/current-documentation-issues.md](docs/issues/current-documentation-issues.md).
