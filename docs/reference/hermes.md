@@ -7,23 +7,30 @@ configuration belongs in Azure and Hermes.
 
 ## Azure model deployment
 
-The active Azure AI Foundry deployment is:
+The active Azure AI Foundry deployment for Hermes is:
 
 | Setting | Value |
 | --- | --- |
 | Resource | `kvarteret-nor-east-resource` |
 | Region | Norway East |
-| Deployment | `hermes-gpt-5-6-luna` |
-| Model | `gpt-5.6-luna` |
+| Deployment | `hermes-gpt-6-luna` |
+| Model | `gpt-6-luna` (2026-09-22) |
 | Deployment type | Global Standard |
 | Provisioning state | Succeeded |
 | Tokens/minute | 200,000 |
 | Requests/minute | 200 |
 
-The endpoint and API key are runtime secrets/configuration. They must be
-stored in the Hermes host's secret store and must not be committed here.
-Quota changes are made in Azure AI Foundry and should be reflected in this
-record after verification.
+The endpoint is runtime configuration. Hermes authenticates to Azure with its
+VM identity; any other runtime secrets must remain in the host's secret store
+and must not be committed here.
+The Hermes VM selects this deployment in `/opt/hermes/config.yaml` and uses
+Entra ID authentication. The same Azure resource also has `gpt-6-luna`
+and `gpt-6-sol` deployments for Pi, each with 500,000 tokens/minute of Global
+Standard capacity. Pi uses its existing Azure resource key and the resource
+endpoint; model IDs match those two deployment names. Resource keys are shared
+across deployments, so adding these deployments does not require a key
+rotation. Quota changes are made in Azure AI Foundry and should be reflected in
+this record after verification.
 
 ## Authentication boundary
 
