@@ -62,6 +62,8 @@ class TrialApplicantProviderProtocol(Protocol):
 
     async def get_active_trial_applicant(self, application_id: int) -> Any | None: ...
 
+    async def get_approved_volunteer_id(self, application_id: int) -> int | None: ...
+
 _LEGACY_PENGUIN_WORD_PREFIXES = [
     "bug",
     "mordi",
@@ -289,6 +291,7 @@ class MobileCardService:
     ) -> MobileCardCurrentCardResult:
         decoded = self.sessions.decode_token(session_token)
 
+        promoted_session_token = None
         if decoded.is_review:
             card = self._build_review_card(include_role_history=include_role_history)
         elif decoded.trial_application_id is not None:
@@ -298,14 +301,21 @@ class MobileCardService:
                 decoded.trial_application_id
             )
             if trial_applicant is None:
-                raise MobileCardInvalidAccessCodeError("Trial access has expired.")
-            card = self._build_trial_card(trial_applicant)
+                volunteer_id = await self.trial_applicant_provider.get_approved_volunteer_id(
+                    decoded.trial_application_id
+                )
+                if volunteer_id is None:
+                    raise MobileCardInvalidAccessCodeError("Trial access has expired.")
+                card = await self._build_card(volunteer_id, include_role_history=include_role_history)
+                promoted_session_token = self.sessions.build_token({"person_id": volunteer_id})
+            else:
+                card = self._build_trial_card(trial_applicant)
         else:
             card = await self._build_card(
                 decoded.person_id or 0, include_role_history=include_role_history
             )
 
-        renewed_session_token = self.sessions.maybe_renew(decoded)
+        renewed_session_token = promoted_session_token or self.sessions.maybe_renew(decoded)
         return MobileCardCurrentCardResult(
             card=card,
             renewed_session_token=renewed_session_token,
@@ -314,7 +324,7 @@ class MobileCardService:
     def _build_trial_card(self, snapshot: Any) -> MobileCardResponse:
         photo_url = (
             self.media_token_service.build_photo_media_url(snapshot.photo_path)
-            if self.media_token_service is not None
+            if self.media_token_service is not None and snapshot.photo_path
             else None
         )
         return MobileCardResponse(
@@ -328,7 +338,7 @@ class MobileCardService:
             pingvin_points=0,
             active_roles=[
                 MobileCardRole(
-                    name=snapshot.role_name,
+                    name=f"{snapshot.role_name} (Prøvetid)",
                     group=snapshot.group_name,
                     discount_level=snapshot.discount_level,
                     pingvin_points=0,

@@ -440,12 +440,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                             filetype=photo_filetype,
                         )
                     )
-            await session.execute(
-                update(volunteer_application_invites)
-                .where(volunteer_application_invites.c.id == registration_id)
-                .values(full_profile_submitted_at=func.now())
-            )
-            return
 
         existing_row = (
             (
@@ -502,6 +496,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         status: ApplicationState,
         start_trial: bool = False,
         volunteer_id: int | None = None,
+        trial_assignment_id: int | None = None,
     ) -> None:
         values: dict[str, object] = {"status": status}
         if volunteer_id is not None:
@@ -509,6 +504,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
         if start_trial:
             started_at = datetime.now(UTC)
             values.update(
+                trial_assignment_id=trial_assignment_id,
                 trial_started_at=started_at,
                 trial_ends_at=started_at + timedelta(days=30),
             )
@@ -517,6 +513,24 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(volunteer_application_invites.c.id == registration_id)
             .values(**values)
         )
+
+    async def lock_registration_emails(self, emails: list[str]) -> None:
+        """Serialize registration writes until the request transaction commits."""
+        if self.session.get_bind().dialect.name != "postgresql":
+            return
+        for email in sorted({email.strip().lower() for email in emails}):
+            await self.session.execute(select(func.pg_advisory_xact_lock(
+                func.hashtextextended("volunteer-registration:" + email, 0)
+            )))
+
+    async def get_approved_volunteer_id(self, application_id: int) -> int | None:
+        return await self.session.scalar(select(
+            volunteer_application_invites.c.promoted_volunteer_id
+        ).where(
+            volunteer_application_invites.c.id == application_id,
+            volunteer_application_invites.c.status == ApplicationState.VOLUNTEER,
+            volunteer_application_invites.c.promoted_at.is_not(None),
+        ))
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         session = self.session
@@ -701,20 +715,41 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_application_invites.c.promoted_volunteer_id,
                 volunteer_application_invites.c.created_at,
                 volunteer_application_invites.c.trial_ends_at,
-                volunteer_application_submissions.c.first_name,
-                volunteer_application_submissions.c.last_name,
+                func.coalesce(
+                    volunteer_records.c.first_name,
+                    volunteer_application_submissions.c.first_name,
+                ).label("first_name"),
+                func.coalesce(
+                    volunteer_records.c.last_name,
+                    volunteer_application_submissions.c.last_name,
+                ).label("last_name"),
+                volunteer_records.c.birth_date.label("linked_birth_date"),
                 volunteer_application_submissions.c.birth_date,
-                volunteer_application_submissions.c.photo_sha1,
-                volunteer_application_submissions.c.photo_filetype,
+                func.coalesce(
+                    volunteer_photos.c.sha1,
+                    volunteer_application_submissions.c.photo_sha1,
+                ).label("photo_sha1"),
+                func.coalesce(
+                    volunteer_photos.c.filetype,
+                    volunteer_application_submissions.c.photo_filetype,
+                ).label("photo_filetype"),
                 accepted_group.c.name.label("group_name"),
                 accepted_group.c.discount_tier,
                 accepted_role.c.name.label("role_name"),
             )
             .select_from(
-                volunteer_application_invites.join(
+                volunteer_application_invites.outerjoin(
                     volunteer_application_submissions,
                     volunteer_application_submissions.c.invite_id
                     == volunteer_application_invites.c.id,
+                )
+                .outerjoin(
+                    volunteer_records,
+                    volunteer_records.c.id == volunteer_application_invites.c.promoted_volunteer_id,
+                )
+                .outerjoin(
+                    volunteer_photos,
+                    volunteer_photos.c.volunteer_id == volunteer_records.c.id,
                 )
                 .outerjoin(
                     accepted_group,
@@ -733,9 +768,6 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             .where(
                 volunteer_application_invites.c.status == ApplicationState.TRIAL,
                 volunteer_application_invites.c.trial_ends_at > func.now(),
-                volunteer_application_invites.c.full_profile_submitted_at.is_not(None),
-                volunteer_application_submissions.c.photo_sha1.is_not(None),
-                volunteer_application_submissions.c.photo_filetype.is_not(None),
             )
             .limit(1)
         )
@@ -752,11 +784,19 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             application_id=row["id"],
             volunteer_id=row["promoted_volunteer_id"],
             first_name=row["first_name"] or "",
-            last_name=row["last_name"],
-            birth_date=row["birth_date"],
+            last_name=row["last_name"] or "",
+            birth_date=row["linked_birth_date"] or (
+                row["birth_date"].date()
+                if isinstance(row["birth_date"], datetime)
+                else row["birth_date"]
+            ),
             created_at=row["created_at"],
             trial_ends_at=row["trial_ends_at"],
-            photo_path=f"{row['photo_sha1']}.{row['photo_filetype']}",
+            photo_path=(
+                f"{row['photo_sha1']}.{row['photo_filetype']}"
+                if row["photo_sha1"] and row["photo_filetype"]
+                else None
+            ),
             group_name=row["group_name"] or "Kvarteret",
             role_name=row["role_name"] or "Prøvefrivillig",
             discount_level=row["discount_tier"],
@@ -815,6 +855,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
                 volunteer_application_invites.c.full_profile_submitted_at,
                 volunteer_application_invites.c.promoted_volunteer_id,
                 volunteer_application_invites.c.promoted_at,
+                volunteer_application_invites.c.trial_assignment_id,
                 volunteer_application_invites.c.origin_trace_id,
                 volunteer_application_submissions.c.id.label("pending_volunteer_id"),
                 volunteer_application_submissions.c.first_name,
@@ -910,6 +951,7 @@ class VolunteerApplicationsRepository(SqlAlchemyRepository):
             trial_ends_at=row["trial_ends_at"],
             promoted_volunteer_id=row["promoted_volunteer_id"],
             promoted_at=row["promoted_at"],
+            trial_assignment_id=row["trial_assignment_id"],
             invited_by=invited_by,
             friend_invitees=friend_invitees,
             status_history=status_history,

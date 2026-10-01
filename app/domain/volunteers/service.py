@@ -75,9 +75,10 @@ class VolunteersService(VolunteersQueries):
         semester_code: int,
         contract_signed: bool,
         volunteer_id: int | None = None,
-    ) -> int:
+        assignment_id: int | None = None,
+    ) -> tuple[int, int | None]:
         """Create or update the volunteer record for an application."""
-        resolved_volunteer_id = await self.repository.create_from_application(
+        result = await self.repository.create_from_application(
             first_name=first_name,
             last_name=last_name,
             email=email,
@@ -93,10 +94,11 @@ class VolunteersService(VolunteersQueries):
             semester_code=semester_code,
             contract_signed=contract_signed,
             volunteer_id=volunteer_id,
+            assignment_id=assignment_id,
         )
         if volunteer_id is not None:
             self.invalidate_volunteer_cache(volunteer_id)
-        return resolved_volunteer_id
+        return result
 
     async def update_volunteer_profile(
         self,

@@ -134,8 +134,8 @@
                   </form>
                 </dialog>
             {% elif volunteer_application.status == "not_volunteer" %}
-              <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/{% if volunteer_application.promoted_volunteer_id %}restore-volunteer{% else %}reopen{% endif %}" class="grid" method="post">
-                <button class="app-button-secondary min-h-20" type="submit">{% if volunteer_application.promoted_volunteer_id %}Gjenopprett frivillig{% else %}Gjenåpne som kontaktet{% endif %}</button>
+              <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/{% if volunteer_application.promoted_volunteer_id and volunteer_application.promoted_at %}restore-volunteer{% else %}reopen{% endif %}" class="grid" method="post">
+                <button class="app-button-secondary min-h-20" type="submit">{% if volunteer_application.promoted_volunteer_id and volunteer_application.promoted_at %}Gjenopprett frivillig{% else %}Gjenåpne som kontaktet{% endif %}</button>
               </form>
             {% endif %}
           </div>

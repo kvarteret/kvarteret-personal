@@ -217,6 +217,7 @@ class VolunteerApplicationDetail:
     trial_shift_marked_at: datetime | None = None
     promoted_volunteer_id: int | None = None
     promoted_at: datetime | None = None
+    trial_assignment_id: int | None = None
     invited_by: VolunteerApplicationFriendRelationship | None = None
     friend_invitees: list[VolunteerApplicationFriendRelationship] | None = None
     trial_started_at: datetime | None = None
@@ -275,7 +276,7 @@ class TrialApplicantCardSnapshot:
     birth_date: date | None
     created_at: datetime
     trial_ends_at: datetime
-    photo_path: str
+    photo_path: str | None
     group_name: str
     role_name: str
     discount_level: int | None
@@ -436,7 +437,8 @@ class VolunteerCreatorProtocol(Protocol):
         semester_code: int,
         contract_signed: bool,
         volunteer_id: int | None = None,
-    ) -> int: ...
+        assignment_id: int | None = None,
+    ) -> tuple[int, int | None]: ...
 
 
 _APPLICATION_STATUS_LABELS = {
@@ -524,6 +526,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         status: ApplicationState,
         start_trial: bool = False,
         volunteer_id: int | None = None,
+        trial_assignment_id: int | None = None,
     ) -> None: ...
     async def find_active_trial_applicant_by_email(
         self, email: str
@@ -531,6 +534,8 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def get_active_trial_applicant(
         self, application_id: int
     ) -> TrialApplicantCardSnapshot | None: ...
+    async def lock_registration_emails(self, emails: list[str]) -> None: ...
+    async def get_approved_volunteer_id(self, application_id: int) -> int | None: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
     async def find_active_registration_id_by_email(self, email: str) -> int | None: ...
     async def get_friend_inviter(
