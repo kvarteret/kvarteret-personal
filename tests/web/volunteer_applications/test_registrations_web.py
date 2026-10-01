@@ -1285,7 +1285,7 @@ def test_public_prospect_api_accepts_any_valid_group_slug() -> None:
     )
 
     assert response.status_code == 201
-    assert response.json() == {"registrationId": 55}
+    assert response.json() == {"registrationId": 55, "registrationIds": [55]}
     assert volunteer_applications_service.public_prospect_calls == [
         {
             "full_name": "Test Person",

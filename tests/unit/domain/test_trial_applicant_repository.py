@@ -73,6 +73,7 @@ async def session():
                     created_at=now,
                     trial_ends_at=now + timedelta(days=30),
                     promoted_volunteer_id=12,
+                    owns_volunteer_profile=True,
                     first_choice_group_id=1,
                 )
             )

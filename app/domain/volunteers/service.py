@@ -100,6 +100,36 @@ class VolunteersService(VolunteersQueries):
             self.invalidate_volunteer_cache(volunteer_id)
         return result
 
+    async def add_application_assignment(
+        self,
+        *,
+        volunteer_id: int,
+        group_id: int | None,
+        role_id: int | None,
+        semester_code: int,
+        contract_signed: bool,
+        assignment_id: int | None = None,
+    ) -> tuple[int, int | None]:
+        result = await self.repository.add_application_assignment(
+            volunteer_id=volunteer_id,
+            group_id=group_id,
+            role_id=role_id,
+            semester_code=semester_code,
+            contract_signed=contract_signed,
+            assignment_id=assignment_id,
+        )
+        self.invalidate_volunteer_cache(volunteer_id)
+        return result
+
+    async def remove_trial_assignment(
+        self, *, volunteer_id: int, assignment_id: int
+    ) -> None:
+        await self.repository.remove_trial_assignment(
+            volunteer_id=volunteer_id,
+            assignment_id=assignment_id,
+        )
+        self.invalidate_volunteer_cache(volunteer_id)
+
     async def update_volunteer_profile(
         self,
         *,
@@ -313,4 +343,4 @@ async def _best_effort_remove(remove_action) -> None:
     try:
         await to_thread(remove_action)
     except Exception:
-        cleanup_logger.warning("storage cleanup failed", exc_info=True)
+        cleanup_logger.warning("volunteer.photo.cleanup_failed", exc_info=True, extra={"event": "volunteer.photo.cleanup_failed"})
