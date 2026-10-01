@@ -579,6 +579,22 @@ def test_volunteer_application_form_requires_photo_when_none_exists() -> None:
     assert 'name="profile_photo"' in response.text and "required" in response.text
 
 
+def test_volunteer_application_form_requires_core_profile_fields() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: (
+        FakeVolunteerApplicationsService()
+    )
+    client = TestClient(app)
+
+    response = client.get("/apply/token-123")
+
+    assert response.status_code == 200
+    for field_name in ("birth_date", "address", "postal_code"):
+        field = response.text.split(f'name="{field_name}"', 1)[1].split(">", 1)[0]
+        assert "required" in field
+
+
 def test_volunteer_application_detail_page_renders_full_preview() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
@@ -611,6 +627,34 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Grøndahls" in response.text
     assert "Komitéønsker" not in response.text
     assert "Lenke" not in response.text
+
+
+def test_incomplete_profile_disables_promotion_control() -> None:
+    class IncompleteProfileService(FakeVolunteerApplicationsService):
+        async def get_volunteer_application_detail(
+            self, registration_id: int
+        ) -> VolunteerApplicationDetail | None:
+            detail = await super().get_volunteer_application_detail(registration_id)
+            assert detail is not None
+            detail.submitted = False
+            detail.photo_sha1 = None
+            detail.photo_filetype = None
+            return detail
+
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = IncompleteProfileService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_email_outbox_service] = lambda: FakeEmailOutboxService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications/7")
+
+    assert response.status_code == 200
+    button = response.text.split("Oppgrader til frivillig", 1)[0].rsplit("<button", 1)[1]
+    assert "disabled" in button
+    assert "Profilen må fullføres før personen kan oppgraderes" in response.text
 
 
 def test_promoted_application_uses_profile_badge_for_active_status() -> None:

@@ -67,8 +67,22 @@ def _normalize_phone(phone: str) -> str:
 
 
 def _check_postal_code(postal_code: str | None) -> None:
-    if postal_code is not None and not re.fullmatch(r"\d{4}", postal_code):
+    if postal_code is None or not re.fullmatch(r"\d{4}", postal_code):
         raise VolunteerApplicationValidationError("Postal code must be exactly 4 digits (e.g. 5011).")
+
+
+def _validate_required_profile_fields(
+    submission: VolunteerApplicationSubmissionInput,
+) -> None:
+    if submission.birth_date is None:
+        raise VolunteerApplicationValidationError("Birth date is required.")
+    if not submission.address or not submission.address.strip():
+        raise VolunteerApplicationValidationError("Address is required.")
+    submission.address = submission.address.strip()
+    submission.postal_code = (
+        submission.postal_code.strip() if submission.postal_code else None
+    )
+    _check_postal_code(submission.postal_code)
 
 
 logger = logging.getLogger(__name__)
@@ -308,7 +322,7 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationNotFoundError("Registration token was not found.")
 
         submission.phone = _normalize_phone(submission.phone)
-        _check_postal_code(submission.postal_code)
+        _validate_required_profile_fields(submission)
 
         # --- Photo handling ---
         has_existing_photo = existing.photo_sha1 is not None
@@ -577,8 +591,10 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
-        if detail.pending_volunteer_id is None:
-            raise VolunteerApplicationConflictError("Registration is missing prospect details.")
+        if not detail.profile_complete:
+            raise VolunteerApplicationConflictError(
+                "The applicant must complete the full profile before promotion."
+            )
         duplicate_volunteer = await self.repository.find_volunteer_id_by_email(detail.email)
         if duplicate_volunteer is not None and duplicate_volunteer != detail.promoted_volunteer_id:
             raise VolunteerAlreadyExistsError(duplicate_volunteer, detail.email)

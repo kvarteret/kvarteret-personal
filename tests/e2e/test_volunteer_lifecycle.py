@@ -761,6 +761,20 @@ async def test_active_trial_profile_gets_temporary_card_until_trial_expires(
         assert trial_assignments == [
             {"volunteer_id": trial_volunteer_id, "contract_signed": False}
         ]
+
+        incomplete_approval = await client.post(
+            f"/volunteer-applications/{application['id']}/approval",
+            follow_redirects=False,
+        )
+        assert incomplete_approval.status_code == 400
+        unchanged_application = await _fetch_all(
+            e2e_engine,
+            "SELECT status, promoted_at FROM public.volunteer_application_invites "
+            "WHERE id = :id",
+            id=application["id"],
+        )
+        assert unchanged_application == [{"status": "trial", "promoted_at": None}]
+
         await _submit_profile(
             client,
             application["token"],

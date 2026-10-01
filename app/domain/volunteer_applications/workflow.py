@@ -164,7 +164,7 @@ def _approval_context(
 ) -> TransitionContext:
     return TransitionContext(
         actor_user_account_id=actor_user_account_id,
-        has_submission=detail.pending_volunteer_id is not None,
+        has_complete_profile=detail.profile_complete,
     )
 
 
