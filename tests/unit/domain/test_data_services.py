@@ -19,12 +19,11 @@ from app.domain.courses.service import (
 from app.domain.groups.service import GroupsService
 from app.domain.volunteer_applications.models import (
     PublicProspectGroup,
+    PublicProspectRegistrationResult,
     PublicProspectRegistrationInput,
     TrialApplicantCardSnapshot,
-    VolunteerApplicationFieldConflictError,
 )
 from app.domain.volunteer_applications.service import (
-    VolunteerAlreadyExistsError,
     VolunteerApplicationConflictError,
     VolunteerApplicationDetail,
     VolunteerApplicationSubmissionInput,
@@ -86,9 +85,16 @@ class FakeVolunteerCreator:
     def __init__(self) -> None:
         self.created: list[dict[str, object | None]] = []
 
-    async def create_from_application(self, **kwargs) -> int:
+    async def add_application_assignment(self, **kwargs):
         self.created.append(kwargs)
-        return 12
+        return kwargs["volunteer_id"], kwargs.get("assignment_id") or 35
+
+    async def remove_trial_assignment(self, **kwargs):
+        self.removed = getattr(self, "removed", []) + [kwargs]
+
+    async def create_from_application(self, **kwargs) -> tuple[int, int | None]:
+        self.created.append(kwargs)
+        return 12, kwargs.get("assignment_id") or 34
 
 
 class FakeVolunteerApplicationsRepository:
@@ -116,21 +122,14 @@ class FakeVolunteerApplicationsRepository:
 
     async def create_public_prospect_registration(self, **kwargs):
         self.created_public_prospects.append(kwargs)
-        return type(
-            "PublicProspectResult",
-            (),
-            {
-                "detail": type(
-                    "PublicProspectDetail",
-                    (),
-                    {
-                        "registration_id": 7,
-                        "email": kwargs["email"],
-                    },
-                )(),
-                "friend_invites": [],
-            },
-        )()
+        from types import SimpleNamespace
+        return PublicProspectRegistrationResult(
+            detail=SimpleNamespace(
+                registration_id=7 + len(self.created_public_prospects) - 1,
+                email=kwargs["email"],
+            ),
+            friend_invites=[],
+        )
 
     async def create_volunteer_application_invitation(
         self,
@@ -207,9 +206,12 @@ class FakeVolunteerApplicationsRepository:
             background_details=None,
             initial_group_id=3,
             initial_group_name="Bar",
-            initial_role_id=9,
+            initial_role_id=getattr(self, "initial_role_id", 9),
             initial_role_name="Skiftleder",
             promoted_volunteer_id=self.promoted_volunteer_id,
+            owns_volunteer_profile=getattr(self, "owns_volunteer_profile", False),
+            promoted_at=getattr(self, "promoted_at", None),
+            trial_assignment_id=getattr(self, "trial_assignment_id", None),
         )
 
     async def save_submission(
@@ -231,16 +233,34 @@ class FakeVolunteerApplicationsRepository:
         status,
         start_trial: bool = False,
         volunteer_id: int | None = None,
+        trial_assignment_id: int | None = None,
+        owns_volunteer_profile: bool | None = None,
     ) -> None:
         self.detail_status = status.value
+        if owns_volunteer_profile is not None:
+            self.owns_volunteer_profile = owns_volunteer_profile
         if volunteer_id is not None:
             self.promoted_volunteer_id = volunteer_id
+        if start_trial:
+            self.trial_assignment_id = trial_assignment_id
+
+    async def lock_registration_emails(self, emails: list[str]) -> None:
+        self.locked_emails = getattr(self, "locked_emails", []) + [emails]
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return self.existing_volunteer_ids_by_email.get(email.lower())
 
     async def find_active_registration_id_by_email(self, email: str) -> int | None:
         return self.active_registration_ids_by_email.get(email.lower())
+
+    async def has_target_membership(self, email, **kwargs):
+        return False
+
+    async def find_active_registration_for_target(self, email, *, group_id, role_id, exclude_id=None):
+        return getattr(self, "active_targets", {}).get((email.lower(), group_id, role_id))
+
+    async def photo_in_use(self, sha1):
+        return False
 
     async def find_public_prospect_groups_by_slugs(self, slugs: list[str]) -> dict[str, PublicProspectGroup]:
         return {slug: self.public_prospect_groups[slug] for slug in slugs if slug in self.public_prospect_groups}
@@ -294,6 +314,9 @@ class FakeMobileCardRepository:
     ) -> None:
         self.stored_trial_access_codes.append((application_id, code_hash, created_at))
 
+    async def find_trial_application_for_code(self, **kwargs):
+        return 77
+
     async def consume_trial_access_code(self, **kwargs) -> bool:
         return self.accept_trial_code
 
@@ -331,6 +354,7 @@ class FakeEmailSender:
 class FakeTrialApplicantProvider:
     def __init__(self, snapshot: TrialApplicantCardSnapshot | None) -> None:
         self.snapshot = snapshot
+        self.approved_volunteer_id = None
 
     async def find_active_trial_applicant_by_email(self, email: str):
         return self.snapshot
@@ -339,6 +363,9 @@ class FakeTrialApplicantProvider:
         if self.snapshot and self.snapshot.application_id == application_id:
             return self.snapshot
         return None
+
+    async def get_approved_volunteer_id(self, application_id: int) -> int | None:
+        return self.approved_volunteer_id
 
 
 class FakeEmailOutbox:
@@ -824,9 +851,11 @@ async def test_public_prospect_resolves_any_configured_group_slug() -> None:
 
     created = repository.created_public_prospects[0]
     assert created["first_choice_group_id"] == 81
-    assert created["second_choice_group_id"] == 82
+    assert created["second_choice_group_id"] is None
+    assert repository.created_public_prospects[1]["first_choice_group_id"] == 82
     assert created["first_choice_label"] == "Debattkomiteen"
-    assert created["second_choice_label"] == "Festkomiteen"
+    assert created["second_choice_label"] is None
+    assert repository.created_public_prospects[1]["first_choice_label"] == "Festkomiteen"
 
 
 @pytest.mark.asyncio
@@ -874,6 +903,7 @@ async def test_public_bar_choices_preserve_labels_and_route_only_primary_choice(
         ),
     }
     repository.public_prospect_role_ids[(81, "Halvtimen-skjenker")] = 17
+    repository.public_prospect_role_ids[(81, "Pubdyr")] = 18
     service = VolunteerApplicationsService(
         volunteer_creator=FakeVolunteerCreator(),
         settings=Settings(app_secret_key="test-secret"),
@@ -895,9 +925,11 @@ async def test_public_bar_choices_preserve_labels_and_route_only_primary_choice(
 
     created = repository.created_public_prospects[0]
     assert created["first_choice_group_id"] == 81
-    assert created["second_choice_group_id"] == 81
+    assert created["second_choice_group_id"] is None
+    assert repository.created_public_prospects[1]["first_choice_group_id"] == 81
     assert created["first_choice_label"] == "Halvtimen"
-    assert created["second_choice_label"] == "Grøndahls"
+    assert created["second_choice_label"] is None
+    assert repository.created_public_prospects[1]["first_choice_label"] == "Grøndahls"
     assert created["initial_group_id"] == 81
     assert created["initial_role_id"] == 17
 
@@ -934,7 +966,7 @@ async def test_public_quiz_choice_routes_to_quiz_and_preserves_quiz_label() -> N
     created = repository.created_public_prospects[0]
     assert created["first_choice_group_id"] == 298
     assert created["first_choice_label"] == "Quiz-gruppen"
-    assert created["initial_group_id"] is None
+    assert created["initial_group_id"] == created["first_choice_group_id"]
     assert created["initial_role_id"] is None
 
 
@@ -968,7 +1000,7 @@ async def test_public_prospect_rejects_an_unknown_group_slug() -> None:
 
 
 @pytest.mark.asyncio
-async def test_public_prospect_friend_volunteer_conflict_keeps_volunteer_id() -> None:
+async def test_public_prospect_allows_friend_who_is_already_volunteer() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.existing_volunteer_ids_by_email = {"friend@example.test": 10232}
     repository.public_prospect_groups = {
@@ -981,26 +1013,22 @@ async def test_public_prospect_friend_volunteer_conflict_keeps_volunteer_id() ->
         email_outbox=FakeEmailOutbox(),
     )
 
-    with pytest.raises(VolunteerApplicationFieldConflictError) as exc_info:
-        await service.create_public_prospect_registration_record(
-            PublicProspectRegistrationInput(
-                full_name="Kari Nordmann",
-                email="kari@example.test",
-                phone="41234567",
-                study_institution="UiB",
-                background_details=None,
-                first_choice_group_slug="debatt",
-                second_choice_group_slug=None,
-                friend_emails=["friend@example.test"],
-            )
+    await service.create_public_prospect_registration_record(
+        PublicProspectRegistrationInput(
+            full_name="Kari Nordmann",
+            email="kari@example.test",
+            phone="41234567",
+            study_institution="UiB",
+            background_details=None,
+            first_choice_group_slug="debatt",
+            second_choice_group_slug=None,
+            friend_emails=["friend@example.test"],
         )
-
-    assert exc_info.value.conflict_type == "friend_email_existing_volunteer"
-    assert exc_info.value.volunteer_id == 10232
-
+    )
+    assert repository.created_public_prospects[0]["friend_invites"][0][0] == "friend@example.test"
 
 @pytest.mark.asyncio
-async def test_public_prospect_friend_application_conflict_keeps_registration_id() -> None:
+async def test_public_prospect_allows_friend_with_another_application() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.active_registration_ids_by_email = {"friend@example.test": 77}
     repository.public_prospect_groups = {
@@ -1013,23 +1041,19 @@ async def test_public_prospect_friend_application_conflict_keeps_registration_id
         email_outbox=FakeEmailOutbox(),
     )
 
-    with pytest.raises(VolunteerApplicationFieldConflictError) as exc_info:
-        await service.create_public_prospect_registration_record(
-            PublicProspectRegistrationInput(
-                full_name="Kari Nordmann",
-                email="kari@example.test",
-                phone="41234567",
-                study_institution="UiB",
-                background_details=None,
-                first_choice_group_slug="debatt",
-                second_choice_group_slug=None,
-                friend_emails=["friend@example.test"],
-            )
+    await service.create_public_prospect_registration_record(
+        PublicProspectRegistrationInput(
+            full_name="Kari Nordmann",
+            email="kari@example.test",
+            phone="41234567",
+            study_institution="UiB",
+            background_details=None,
+            first_choice_group_slug="debatt",
+            second_choice_group_slug=None,
+            friend_emails=["friend@example.test"],
         )
-
-    assert exc_info.value.conflict_type == "friend_email_active_application"
-    assert exc_info.value.registration_id == 77
-
+    )
+    assert repository.created_public_prospects[0]["friend_invites"][0][0] == "friend@example.test"
 
 @pytest.mark.asyncio
 async def test_volunteer_applications_recent_registrations_are_individual() -> None:
@@ -1358,6 +1382,8 @@ async def test_approving_trial_reuses_trial_volunteer_record() -> None:
     assert volunteer_id == 12
     assert len(creator.created) == 2
     assert creator.created[0]["contract_signed"] is False
+    assert repository.trial_assignment_id == 34
+    assert creator.created[1]["assignment_id"] == 34
     assert creator.created[1]["volunteer_id"] == 12
     assert creator.created[1]["contract_signed"] is True
 
@@ -1485,7 +1511,7 @@ async def test_volunteer_applications_service_enqueues_with_explicit_base_url() 
 
 
 @pytest.mark.asyncio
-async def test_volunteer_applications_service_rejects_duplicate_email_before_creating_invitation() -> None:
+async def test_volunteer_applications_service_allows_existing_volunteer_invitation() -> None:
     repository = FakeVolunteerApplicationsRepository()
     repository.existing_volunteer_ids_by_email = {"existing@example.test": 42}
     email_outbox = FakeEmailOutbox()
@@ -1500,12 +1526,10 @@ async def test_volunteer_applications_service_rejects_duplicate_email_before_cre
         pending_count_cache_ttl_seconds=60,
     )
 
-    with pytest.raises(VolunteerAlreadyExistsError) as exc_info:
-        await service.create_volunteer_application_invitation("existing@example.test")
-
-    assert exc_info.value.volunteer_id == 42
-    assert repository.created_invites == []
-    assert email_outbox.requests == []
+    invite = await service.create_volunteer_application_invitation("existing@example.test")
+    assert invite.email == "existing@example.test"
+    assert len(repository.created_invites) == 1
+    assert len(email_outbox.requests) == 1
 
 
 @pytest.mark.asyncio
@@ -1568,7 +1592,8 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
 
 
 @pytest.mark.asyncio
-async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
+@pytest.mark.parametrize("photo_path", ["trial.jpg", None])
+async def test_trial_applicant_can_log_in_and_receives_temporary_card(photo_path) -> None:
     trial_ends_at = datetime.now(UTC) + timedelta(days=21)
     snapshot = TrialApplicantCardSnapshot(
         application_id=77,
@@ -1577,7 +1602,7 @@ async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
         birth_date=None,
         created_at=datetime(2026, 8, 1, tzinfo=UTC),
         trial_ends_at=trial_ends_at,
-        photo_path="trial.jpg",
+        photo_path=photo_path,
         group_name="Bar",
         role_name="Prøvefrivillig",
         discount_level=1,
@@ -1599,7 +1624,9 @@ async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
     assert repository.stored_trial_access_codes[0][0] == 77
     assert session.card.person_id == 12
     assert session.card.valid_until == trial_ends_at
-    assert session.card.photo_url == "/media/photos/trial.jpg?token=test"
+    assert session.card.photo_url == ("/media/photos/trial.jpg?token=test" if photo_path else None)
+    assert session.card.active_roles[0].name == "Prøvefrivillig (Prøvetid)"
+    assert session.card.active_roles[0].discount_level == 1
     assert session.card.active_roles[0].signed_contract is False
 
 
@@ -1960,3 +1987,125 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
 )
 def test_mobile_card_word_of_the_day_is_stable_for_the_effective_day(now: datetime, expected_word: str) -> None:
     assert _word_of_the_day(now) == expected_word
+
+
+@pytest.mark.asyncio
+async def test_rejected_trial_cannot_be_restored_as_permanent_volunteer() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "not_volunteer"
+    repository.promoted_volunteer_id = 12
+    repository.application_submitted = False
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+    with pytest.raises(VolunteerApplicationConflictError, match="Only previously promoted"):
+        await service.restore_volunteer_application(7)
+    assert repository.detail_status == "not_volunteer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("complete", [False, True])
+async def test_restoring_previously_approved_volunteer_requires_complete_profile(complete) -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "not_volunteer"
+    repository.promoted_volunteer_id = 12
+    repository.promoted_at = datetime.now(UTC)
+    repository.application_submitted = complete
+    repository.application_photo_sha1 = "photo"
+    repository.application_photo_filetype = "jpg"
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+    if complete:
+        detail = await service.restore_volunteer_application(7)
+        assert detail.status == "volunteer"
+    else:
+        with pytest.raises(VolunteerApplicationConflictError, match="full profile"):
+            await service.restore_volunteer_application(7)
+        assert repository.detail_status == "not_volunteer"
+
+
+@pytest.mark.asyncio
+async def test_admin_invitation_reuses_existing_same_target() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.active_targets = {("existing@example.com", None, None): 7}
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(), settings=Settings(app_secret_key="test"),
+        repository=repository, email_outbox=FakeEmailOutbox(),
+    )
+    invite = await service.create_volunteer_application_invitation(" Existing@Example.com ")
+    assert invite.registration_id == 7
+    assert repository.created_invites == []
+    assert repository.locked_emails == [["existing@example.com"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate_type", ["volunteer", "application"])
+async def test_start_trial_allows_existing_person_or_other_target(duplicate_type):
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "contacted"
+    creator = FakeVolunteerCreator()
+    if duplicate_type == "volunteer":
+        repository.existing_volunteer_ids_by_email["registrant@example.com"] = 55
+    else:
+        repository.active_registration_ids_by_email["registrant@example.com"] = 8
+    service = VolunteerApplicationsService(
+        volunteer_creator=creator, settings=Settings(app_secret_key="test"),
+        repository=repository, email_outbox=FakeEmailOutbox(),
+    )
+    detail = await service.start_trial(7)
+    assert detail.status == "trial"
+    assert len(creator.created) == 1
+    if duplicate_type == "volunteer":
+        assert creator.created[0]["volunteer_id"] == 55
+        assert "first_name" not in creator.created[0]
+        assert detail.owns_volunteer_profile is False
+    else:
+        assert detail.owns_volunteer_profile is True
+
+
+@pytest.mark.asyncio
+async def test_approval_requires_a_role_on_server() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "trial"
+    repository.initial_role_id = None
+    repository.application_photo_sha1 = "photo"
+    repository.application_photo_filetype = "jpg"
+    creator = FakeVolunteerCreator()
+    service = VolunteerApplicationsService(
+        volunteer_creator=creator, settings=Settings(app_secret_key="test"),
+        repository=repository, email_outbox=FakeEmailOutbox(),
+    )
+    with pytest.raises(VolunteerApplicationConflictError, match="Choose a role"):
+        await service.approve_volunteer_application(7)
+    assert creator.created == []
+    assert repository.approved_registration_ids == []
+
+
+@pytest.mark.asyncio
+async def test_trial_session_is_exchanged_for_permanent_session_after_approval() -> None:
+    provider = FakeTrialApplicantProvider(None)
+    provider.approved_volunteer_id = 12
+    service = MobileCardService(
+        Settings(app_secret_key="test"),
+        repository=FakeMobileCardRepository(card_snapshot=_build_mobile_card_snapshot()),
+        email_sender=FakeEmailSender(), rate_limiter=InMemoryRateLimiter(),
+        trial_applicant_provider=provider,
+    )
+    token = service.sessions.build_token({"trial_application_id": 77})
+    result = await service.get_current_card(token, include_role_history=True)
+    assert result.card.person_id == 12
+    assert result.card.active_roles[0].signed_contract is True
+    assert result.card.role_history
+    assert result.renewed_session_token
+    decoded = service.sessions.decode_token(result.renewed_session_token)
+    assert decoded.person_id == 12
+    assert decoded.trial_application_id is None
+    permanent = await service.get_current_card(result.renewed_session_token)
+    assert permanent.card.person_id == 12

@@ -8,7 +8,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import Settings
-from app.db.metadata import public_metadata
+from app.db.tables import public_metadata
 from app.db.session import reset_request_session, set_request_session
 from app.domain.volunteer_applications.tables import (
     domain_events,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.auth.roles import UserRole
 from app.dependencies import (
@@ -727,3 +728,17 @@ def test_group_role_delete_returns_error_when_role_has_members() -> None:
 
     assert delete_response.status_code == 400
     assert delete_response.json() == {"detail": "Vervet har medlemmer og kan ikke slettes."}
+
+
+@pytest.mark.parametrize("method,path", [("post", "/groups/7/roles"), ("patch", "/groups/7/roles/14")])
+@pytest.mark.parametrize("points", [str(2**31), str(-(2**31)-1)])
+def test_out_of_range_role_points_do_not_reach_service(method, path, points):
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeGroupsService()
+    app.dependency_overrides[get_groups_service] = lambda: service
+    response = getattr(TestClient(app), method)(path, data={"role_name": "Role", "pingvin_points": points})
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "pingvin_points"]
+    assert service.created_role is None
+    assert service.updated_role is None

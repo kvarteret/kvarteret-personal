@@ -5,11 +5,27 @@ from __future__ import annotations
 import json
 import logging
 import os
+from contextvars import ContextVar
 
 from posthog import Posthog
 
 from app.config import Settings
 from app.observability import JsonLogFormatter
+from app.exception_diagnostics import exception_chain
+
+# A mutable request-local list is shared by middleware child tasks. Holding
+# the objects also prevents recycled object IDs from hiding a later failure.
+_captured_exceptions: ContextVar[list[BaseException] | None] = ContextVar(
+    "captured_exceptions", default=None
+)
+
+
+def begin_error_tracking_request():
+    return _captured_exceptions.set([])
+
+
+def end_error_tracking_request(token) -> None:
+    _captured_exceptions.reset(token)
 
 
 def sanitize_exception_event(event: dict) -> dict | None:
@@ -66,6 +82,13 @@ def sanitize_exception_event(event: dict) -> dict | None:
             "validation_codes",
             "error_source",
             "status_code",
+            "error_category",
+            "error_chain",
+            "db_sqlstate",
+            "failure_stage",
+            "smtp_status_class",
+            "retryable",
+            "delivery_uncertain",
         )
         if key in properties
     }
@@ -92,6 +115,12 @@ class ExceptionLoggingHandler(logging.Handler):
         if not record.name.startswith("app.") or not record.exc_info:
             return
         try:
+            chain = exception_chain(record.exc_info[1])
+            captured = _captured_exceptions.get()
+            if captured is not None and any(
+                item is previous for item in chain for previous in captured
+            ):
+                return
             properties = json.loads(JsonLogFormatter().format(record))
             properties.update(
                 {
@@ -101,6 +130,8 @@ class ExceptionLoggingHandler(logging.Handler):
                 }
             )
             self.client.capture_exception(record.exc_info, properties=properties)
+            if captured is not None:
+                captured.extend(chain)
         except Exception:
             # Reporting failure cannot change application behavior.
             pass

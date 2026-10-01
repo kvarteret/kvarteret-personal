@@ -286,6 +286,8 @@
       "Body_group_roles_create_groups__group_id__roles_post": {
         "properties": {
           "pingvin_points": {
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Pingvin Points",
             "type": "integer"
           },
@@ -304,6 +306,8 @@
       "Body_group_roles_update_groups__group_id__roles__role_id__patch": {
         "properties": {
           "pingvin_points": {
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Pingvin Points",
             "type": "integer"
           },
@@ -1609,6 +1613,13 @@
           "registrationId": {
             "title": "Registrationid",
             "type": "integer"
+          },
+          "registrationIds": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Registrationids",
+            "type": "array"
           }
         },
         "required": [
@@ -2158,6 +2169,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Email delivery is temporarily unavailable. Check your inbox before retrying."
           }
         },
         "summary": "Request Access Code",
@@ -2495,6 +2509,7 @@
                         "type": "null"
                       }
                     ],
+                    "description": "Additional recruitment target; creates an independent application, not a fallback choice.",
                     "title": "Second Choice Group Slug"
                   },
                   "study_institution": {
@@ -3546,6 +3561,8 @@
             "name": "group_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Group Id",
               "type": "integer"
             }
@@ -3637,6 +3654,8 @@
             "name": "group_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Group Id",
               "type": "integer"
             }
@@ -3646,6 +3665,8 @@
             "name": "role_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Role Id",
               "type": "integer"
             }

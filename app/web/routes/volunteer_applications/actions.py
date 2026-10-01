@@ -14,6 +14,7 @@ from app.dependencies import (
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.infrastructure.media.photo_processing import InvalidPhotoError, PhotoUploadTooLargeError
+from app.domain.volunteer_applications.models import ActiveVolunteerRegistrationExistsError
 from app.domain.volunteer_applications.service import (
     VolunteerApplicationConflictError,
     VolunteerAlreadyExistsError,
@@ -69,6 +70,8 @@ async def volunteer_applications_create_invite(
         )
     except VolunteerAlreadyExistsError as exc:
         return RedirectResponse(url=f"/volunteers/{exc.volunteer_id}", status_code=status.HTTP_303_SEE_OTHER)
+    except ActiveVolunteerRegistrationExistsError as exc:
+        return RedirectResponse(url=f"{_VOLUNTEER_APPS_PATH}/{exc.registration_id}", status_code=status.HTTP_303_SEE_OTHER)
     log_admin_activity(
         request=request,
         user=current_user,

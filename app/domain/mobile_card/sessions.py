@@ -93,7 +93,7 @@ class MobileCardSessionManager:
         else:
             payload = {"person_id": decoded.person_id or 0}
         renewed_token = self.build_token(payload)
-        logger.info(
+        logger.debug(
             "mobile-card session renewed",
             extra={
                 "event": "mobile_card.session.renewed",
@@ -118,7 +118,7 @@ class MobileCardSessionManager:
     def _log_invalid(
         self, reason: Literal["bad_signature", "expired", "malformed"]
     ) -> None:
-        logger.warning(
+        logger.debug(
             "mobile-card session invalid",
             extra={
                 "event": "mobile_card.session.invalid",

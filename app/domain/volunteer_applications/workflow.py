@@ -66,6 +66,7 @@ class VolunteerApplicationWorkflowOperations(Protocol):
         *,
         request_hash: str,
         registration_id: int,
+        registration_ids: tuple[int, ...] = (),
     ) -> None: ...
     async def create_public_prospect_registration_record(
         self,
@@ -212,6 +213,7 @@ class VolunteerApplicationWorkflow:
                 source_domain_event_id=event_id,
             )
             await commit_request_session()
+            self._record_lifecycle(invite, status="application_invited")
             await self.side_effects.after_invited(invite, base_url=base_url)
             await self._dispatch_best_effort()
             return invite
@@ -246,67 +248,84 @@ class VolunteerApplicationWorkflow:
                         raise RuntimeError(
                             "Idempotent volunteer prospect result no longer exists."
                         )
+                    detail.registration_ids = claim.registration_ids or (
+                        detail.registration_id,
+                    )
                     await commit_request_session()
                     return detail
 
             result = await self.operations.create_public_prospect_registration_record(
                 registration, base_url=base_url
             )
-            registration_event_id = await self.operations.append_domain_event(
-                DomainEventRecord(
-                    event_type="prospect_registered",
-                    actor_user_account_id=None,
-                    subject_type="application",
-                    subject_id=result.detail.registration_id,
-                    payload={
-                        "email": result.detail.email,
-                        "friend_invites": [
-                            invite.registration_id for invite in result.friend_invites
-                        ],
-                    },
-                ),
-                subject_id=result.detail.registration_id,
+            applications = [result, *result.additional_results]
+            result.detail.registration_ids = tuple(
+                item.detail.registration_id for item in applications
             )
-            await self._enqueue_volunteer_email(
-                template_key=APPLICANT_APPLICATION_RECEIVED,
-                invite=result.detail,
-                source_domain_event_id=registration_event_id,
-            )
-            for invite in result.friend_invites:
-                event_id = await self.operations.append_domain_event(
+            for application in applications:
+                registration_event_id = await self.operations.append_domain_event(
                     DomainEventRecord(
-                        event_type="application_invited",
+                        event_type="prospect_registered"
+                        if application.created
+                        else "application_invitation_resent",
                         actor_user_account_id=None,
                         subject_type="application",
-                        subject_id=invite.registration_id,
+                        subject_id=application.detail.registration_id,
                         payload={
-                            "email": invite.email,
-                            "invited_by_registration_id": result.detail.registration_id,
-                            "inviter_name": invite.inviter_name,
-                            "inviter_email": result.detail.email,
-                            "invitee_email": invite.email,
+                            "email": application.detail.email,
+                            "friend_invites": [
+                                invite.registration_id
+                                for invite in application.friend_invites
+                            ],
                         },
                     ),
-                    subject_id=invite.registration_id,
+                    subject_id=application.detail.registration_id,
                 )
                 await self._enqueue_volunteer_email(
-                    template_key=APPLICANT_FRIEND_INVITATION,
-                    invite=invite,
-                    source_domain_event_id=event_id,
+                    template_key=APPLICANT_APPLICATION_RECEIVED
+                    if application.created
+                    else APPLICANT_INVITATION,
+                    invite=application.detail,
+                    source_domain_event_id=registration_event_id,
                 )
+                for invite in application.friend_invites:
+                    event_id = await self.operations.append_domain_event(
+                        DomainEventRecord(
+                            event_type="application_invited",
+                            actor_user_account_id=None,
+                            subject_type="application",
+                            subject_id=invite.registration_id,
+                            payload={
+                                "email": invite.email,
+                                "invited_by_registration_id": application.detail.registration_id,
+                                "inviter_name": invite.inviter_name,
+                                "inviter_email": application.detail.email,
+                                "invitee_email": invite.email,
+                            },
+                        ),
+                        subject_id=invite.registration_id,
+                    )
+                    await self._enqueue_volunteer_email(
+                        template_key=APPLICANT_FRIEND_INVITATION,
+                        invite=invite,
+                        source_domain_event_id=event_id,
+                    )
             if request_hash is not None:
                 await self.operations.complete_public_prospect_request(
                     request_hash=request_hash,
                     registration_id=result.detail.registration_id,
+                    registration_ids=result.detail.registration_ids,
                 )
             await commit_request_session()
         except Exception:
             await rollback_request_session()
             raise
+        for application in applications:
+            self._record_lifecycle(application.detail, status=(
+                "prospect_registered" if application.created else "application_invitation_resent"
+            ))
         await self.side_effects.after_public_prospect_registered(
             result, base_url=base_url
         )
-        self._record_lifecycle(result.detail, status="prospect_registered")
         await self._dispatch_best_effort()
         return result.detail
 
@@ -342,8 +361,8 @@ class VolunteerApplicationWorkflow:
                     subject_id=detail.registration_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_submitted(detail)
             self._record_lifecycle(detail, status="application_submitted")
+            await self.side_effects.after_submitted(detail)
             return detail
 
     async def contact(
@@ -458,6 +477,8 @@ class VolunteerApplicationWorkflow:
                 source_domain_event_id=event_id,
             )
         await commit_request_session()
+        if result is not None and result.event is not None:
+            self._record_lifecycle(detail, status=result.event.event_type)
         if email_template_key is not None:
             await self._dispatch_best_effort()
         return detail
@@ -485,11 +506,11 @@ class VolunteerApplicationWorkflow:
                 actor_user_account_id=actor_user_account_id,
             )
             await commit_request_session()
-            await self.side_effects.after_approved(
-                detail, volunteer_id=volunteer_id, base_url=base_url
-            )
             self._record_lifecycle(
                 detail, status="application_approved", volunteer_id=volunteer_id
+            )
+            await self.side_effects.after_approved(
+                detail, volunteer_id=volunteer_id, base_url=base_url
             )
             return volunteer_id
 
@@ -574,8 +595,8 @@ class VolunteerApplicationWorkflow:
                     subject_id=registration_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_deleted(detail)
             self._record_lifecycle(detail, status="application_deleted")
+            await self.side_effects.after_deleted(detail)
 
     async def resend_invitation(
         self,
@@ -609,8 +630,8 @@ class VolunteerApplicationWorkflow:
                     source_domain_event_id=event_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_invitation_resent(detail, base_url=base_url)
             self._record_lifecycle(detail, status="invitation_resent")
+            await self.side_effects.after_invitation_resent(detail, base_url=base_url)
             await self._dispatch_best_effort()
             return detail
 

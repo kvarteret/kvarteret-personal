@@ -73,7 +73,7 @@ class FakeVolunteerApplicationsService:
         self.request_hashes.append(request_hash)
         if self.error is not None:
             raise self.error
-        return SimpleNamespace(registration_id=42)
+        return SimpleNamespace(registration_id=42, registration_ids=(42,))
 
 
 def _build_app(
@@ -175,7 +175,7 @@ def test_signed_prospect_request_is_accepted() -> None:
     )
 
     assert response.status_code == 201
-    assert response.json() == {"registrationId": 42}
+    assert response.json() == {"registrationId": 42, "registrationIds": [42]}
     assert service.calls == 1
     assert len(service.idempotency_keys) == 1
     assert service.idempotency_keys[0] is not None
@@ -506,3 +506,19 @@ def test_same_email_is_not_rate_limited() -> None:
     assert first.status_code == 201
     assert second.status_code == 201
     assert service.calls == 2
+
+
+def test_field_validation_has_safe_code_and_specific_feedback(caplog):
+    from app.domain.volunteer_applications.service import VolunteerApplicationFieldValidationError
+    app, service = _build_app()
+    service.error = VolunteerApplicationFieldValidationError("Sjekk venneadressene.", {"friendEmails": {"0": "E-postadressene må være ulike."}})
+    body = json.dumps(VALID_PAYLOAD).encode()
+    with caplog.at_level(logging.WARNING):
+        response = TestClient(app).post(VOLUNTEER_PROSPECT_PATH, content=body, headers=_signed_headers(body))
+    assert response.status_code == 400
+    assert response.headers["X-Kvarteret-Rejection-Code"] == "field_validation"
+    assert response.json()["detail"]["fieldErrors"]["friendEmails"]["0"] == "E-postadressene må være ulike."
+    record = next(record for record in caplog.records if getattr(record, "event", None) == "volunteer.prospect.validation_failed")
+    assert record.event_data["validation_fields"] == "friendEmails"
+    assert record.event_data["validation_codes"] == "field_validation"
+    assert "kari@example.com" not in json.dumps(record.event_data)

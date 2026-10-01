@@ -51,7 +51,7 @@ async def _best_effort_delete_auth_user(
     try:
         await auth_gateway.delete_user(auth_user_id)
     except Exception:
-        logger.exception("Failed to clean up auth user after %s.", context)
+        logger.exception("admin.auth_user.cleanup_failed", extra={"event": "admin.auth_user.cleanup_failed"})
 
 
 async def _best_effort_delete_admin_account(
@@ -63,7 +63,7 @@ async def _best_effort_delete_admin_account(
             auth_user_id=auth_user_id,
         )
     except Exception:
-        logger.exception("Failed to clean up admin account after %s.", context)
+        logger.exception("admin.account.cleanup_failed", extra={"event": "admin.account.cleanup_failed"})
 
 
 async def _cleanup_failed_admin_creation(
@@ -187,7 +187,7 @@ async def my_account_change_password(
             current_user.email, current_password
         )
     except Exception:
-        logger.exception("Failed to verify admin password change request.")
+        logger.exception("admin.password.verification_failed", extra={"event": "admin.password.verification_failed"})
         return _redirect_with_password_error(
             "Kunne ikke oppdatere passordet akkurat nå."
         )
@@ -198,7 +198,7 @@ async def my_account_change_password(
             current_user.auth_user_id, new_password
         )
     except Exception:
-        logger.exception("Failed to update admin password.")
+        logger.exception("admin.password.update_failed", extra={"event": "admin.password.update_failed"})
         return _redirect_with_password_error(
             "Kunne ikke oppdatere passordet akkurat nå."
         )
@@ -342,7 +342,7 @@ async def admin_account_create(
                 auth_user_id,
                 context="admin-account creation failure",
             )
-        logger.exception("Failed to create admin account.")
+        logger.exception("admin.account.creation_failed", extra={"event": "admin.account.creation_failed"})
         return _redirect_with_error(
             _ADMIN_ACCOUNTS_NEW_PATH,
             "Kunne ikke opprette admin-kontoen akkurat nå.",
@@ -399,7 +399,7 @@ async def admin_account_resend_onboarding(
             role_name=admin_account.role.value,
         )
     except Exception:
-        logger.exception("Failed to resend admin onboarding email %s.", account_id)
+        logger.exception("admin.onboarding.delivery_failed", extra={"event": "admin.onboarding.delivery_failed"})
         return _redirect_with_error(
             f"/admin-accounts/{account_id}",
             "Kunne ikke sende oppsettslenken akkurat nå.",
@@ -569,7 +569,7 @@ async def admin_account_delete(
             auth_user_id=admin_account.auth_user_id,
         )
     except Exception:
-        logger.exception("Failed to delete admin account %s.", account_id)
+        logger.exception("admin.account.deletion_failed", extra={"event": "admin.account.deletion_failed"})
         return _redirect_with_error(
             f"/admin-accounts/{account_id}",
             "Kunne ikke slette admin-kontoen akkurat nå.",

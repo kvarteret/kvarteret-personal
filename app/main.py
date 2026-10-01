@@ -8,14 +8,15 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 import re
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature
 
 from starlette.types import Message
 
 from app.api.router import api_router
-from app.db.session import reset_request_session, set_request_session
+from app.db.session import reset_request_session, rollback_request_session, set_request_session
+from app.error_tracking import begin_error_tracking_request, end_error_tracking_request
 from app.errors import NotConfiguredError
 from app.media.router import router as media_router
 from app.internal.router import router as internal_router
@@ -164,10 +165,15 @@ def _install_auth_context_middleware(app: FastAPI, container) -> None:
                 request.state.session = None
                 request.state.impersonator_user = None
             except Exception:
-                logger.exception("Failed to hydrate auth context from session cookie.")
+                logger.exception("auth.context.unavailable", extra={"event": "auth.context.unavailable", "event_data": {"failure_stage": "auth_session_load"}})
                 request.state.current_user = None
                 request.state.session = None
                 request.state.impersonator_user = None
+                await rollback_request_session()
+                message = "Innlogging er midlertidig utilgjengelig. Prøv igjen om litt."
+                if request.url.path.startswith("/api/"):
+                    return JSONResponse({"detail": message}, status_code=503, headers={"Retry-After": "30"})
+                return Response(message, status_code=503, media_type="text/plain", headers={"Retry-After": "30"})
         return await call_next(request)
 
 
@@ -181,6 +187,7 @@ def _install_request_context_middleware(app: FastAPI) -> None:
             http_method=request.method,
         )
         response = None
+        error_tracking_token = begin_error_tracking_request()
         try:
             response = await call_next(request)
         except Exception:
@@ -198,6 +205,7 @@ def _install_request_context_middleware(app: FastAPI) -> None:
                 )
             reset_request_context(token)
             clear_request_context()
+            end_error_tracking_request(error_tracking_token)
         return response
 
 

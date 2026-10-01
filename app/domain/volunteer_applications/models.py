@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from math import ceil
 from typing import Protocol
@@ -14,7 +14,10 @@ from app.domain.volunteer_applications.state_machine import (
 
 
 def build_full_name(first_name: str | None, last_name: str) -> str:
-    return " ".join(part for part in [first_name or "", last_name] if part.strip()).strip() or last_name
+    return (
+        " ".join(part for part in [first_name or "", last_name] if part.strip()).strip()
+        or last_name
+    )
 
 
 class VolunteerApplicationsError(RuntimeError):
@@ -41,7 +44,9 @@ class VolunteerAlreadyExistsError(VolunteerApplicationConflictError):
     def __init__(self, volunteer_id: int, email: str) -> None:
         self.volunteer_id = volunteer_id
         self.email = email
-        super().__init__(f"A volunteer with this email already exists (id={volunteer_id}).")
+        super().__init__(
+            f"A volunteer with this email already exists (id={volunteer_id})."
+        )
 
 
 class VolunteerApplicationFieldValidationError(VolunteerApplicationValidationError):
@@ -71,7 +76,9 @@ class ActiveVolunteerRegistrationExistsError(VolunteerApplicationConflictError):
     def __init__(self, registration_id: int, email: str) -> None:
         self.registration_id = registration_id
         self.email = email
-        super().__init__(f"An active volunteer application with this email already exists (id={registration_id}).")
+        super().__init__(
+            f"An active volunteer application with this email already exists (id={registration_id})."
+        )
 
 
 @dataclass(slots=True)
@@ -98,12 +105,17 @@ class VolunteerApplicationFriendInvite:
 class PublicProspectRegistrationResult:
     detail: "VolunteerApplicationDetail"
     friend_invites: list[VolunteerApplicationFriendInvite]
+    created: bool = True
+    additional_results: list["PublicProspectRegistrationResult"] = field(
+        default_factory=list
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class PublicProspectRequestClaim:
     created: bool
     registration_id: int | None = None
+    registration_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,7 +192,10 @@ class VolunteerApplicationListItem:
 
     @property
     def trial_expired(self) -> bool:
-        return self.trial_ends_at is not None and trial_days_remaining(self.trial_ends_at) == 0
+        return (
+            self.trial_ends_at is not None
+            and trial_days_remaining(self.trial_ends_at) == 0
+        )
 
 
 @dataclass(slots=True)
@@ -217,12 +232,15 @@ class VolunteerApplicationDetail:
     trial_shift_marked_at: datetime | None = None
     promoted_volunteer_id: int | None = None
     promoted_at: datetime | None = None
+    trial_assignment_id: int | None = None
     invited_by: VolunteerApplicationFriendRelationship | None = None
     friend_invitees: list[VolunteerApplicationFriendRelationship] | None = None
     trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
     status_history: list["VolunteerApplicationStatusEvent"] | None = None
     origin_trace_id: str | None = None
+    owns_volunteer_profile: bool = False
+    registration_ids: tuple[int, ...] = ()
 
     @property
     def profile_complete(self) -> bool:
@@ -256,7 +274,12 @@ class VolunteerApplicationDetail:
 
     @property
     def trial_expired(self) -> bool:
-        return self.status == "trial" and self.trial_ends_at is not None and not self.trial_active
+        return (
+            self.status == "trial"
+            and self.trial_ends_at is not None
+            and not self.trial_active
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class VolunteerApplicationStatusEvent:
@@ -275,7 +298,7 @@ class TrialApplicantCardSnapshot:
     birth_date: date | None
     created_at: datetime
     trial_ends_at: datetime
-    photo_path: str
+    photo_path: str | None
     group_name: str
     role_name: str
     discount_level: int | None
@@ -367,8 +390,12 @@ class VolunteerApplicationsServiceProtocol(Protocol):
         cursor: str | None = None,
     ) -> RecentVolunteerRegistrationPage: ...
     async def count_pending_volunteer_applications(self) -> int: ...
-    async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
-    async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
+    async def get_volunteer_application_detail(
+        self, registration_id: int
+    ) -> VolunteerApplicationDetail | None: ...
+    async def get_volunteer_application_by_token(
+        self, token: str
+    ) -> VolunteerApplicationDetail | None: ...
     async def submit_volunteer_application(
         self,
         token: str,
@@ -418,6 +445,20 @@ class VolunteerCreatorProtocol(Protocol):
     the applications module never imports another module's service.
     """
 
+    async def add_application_assignment(
+        self,
+        *,
+        volunteer_id: int,
+        group_id: int | None,
+        role_id: int | None,
+        semester_code: int,
+        contract_signed: bool,
+        assignment_id: int | None = None,
+    ) -> tuple[int, int | None]: ...
+    async def remove_trial_assignment(
+        self, *, volunteer_id: int, assignment_id: int
+    ) -> None: ...
+
     async def create_from_application(
         self,
         *,
@@ -436,7 +477,8 @@ class VolunteerCreatorProtocol(Protocol):
         semester_code: int,
         contract_signed: bool,
         volunteer_id: int | None = None,
-    ) -> int: ...
+        assignment_id: int | None = None,
+    ) -> tuple[int, int | None]: ...
 
 
 _APPLICATION_STATUS_LABELS = {
@@ -452,11 +494,17 @@ def application_status_label(status: str) -> str:
     return _APPLICATION_STATUS_LABELS.get(status, status)
 
 
-def trial_days_remaining(trial_ends_at: datetime | None, *, now: datetime | None = None) -> int | None:
+def trial_days_remaining(
+    trial_ends_at: datetime | None, *, now: datetime | None = None
+) -> int | None:
     if trial_ends_at is None:
         return None
     current = now or datetime.now(UTC)
-    end = trial_ends_at if trial_ends_at.tzinfo is not None else trial_ends_at.replace(tzinfo=UTC)
+    end = (
+        trial_ends_at
+        if trial_ends_at.tzinfo is not None
+        else trial_ends_at.replace(tzinfo=UTC)
+    )
     return max(0, ceil((end - current).total_seconds() / 86_400))
 
 
@@ -474,6 +522,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         request_hash: str,
         registration_id: int,
         now: datetime,
+        registration_ids: tuple[int, ...] = (),
     ) -> None: ...
     async def create_public_prospect_registration(
         self,
@@ -504,10 +553,18 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         initial_role_id: int | None = None,
     ) -> VolunteerApplicationInvite: ...
     async def count_pending_volunteer_applications(self) -> int: ...
-    async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None: ...
-    async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None: ...
-    async def find_public_prospect_groups_by_slugs(self, slugs: list[str]) -> dict[str, PublicProspectGroup]: ...
-    async def find_public_prospect_role_id(self, *, group_id: int, role_name: str) -> int | None: ...
+    async def get_volunteer_application_detail(
+        self, registration_id: int
+    ) -> VolunteerApplicationDetail | None: ...
+    async def get_volunteer_application_by_token(
+        self, token: str
+    ) -> VolunteerApplicationDetail | None: ...
+    async def find_public_prospect_groups_by_slugs(
+        self, slugs: list[str]
+    ) -> dict[str, PublicProspectGroup]: ...
+    async def find_public_prospect_role_id(
+        self, *, group_id: int, role_name: str
+    ) -> int | None: ...
     async def save_submission(
         self,
         *,
@@ -524,6 +581,8 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         status: ApplicationState,
         start_trial: bool = False,
         volunteer_id: int | None = None,
+        trial_assignment_id: int | None = None,
+        owns_volunteer_profile: bool | None = None,
     ) -> None: ...
     async def find_active_trial_applicant_by_email(
         self, email: str
@@ -531,8 +590,22 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
     async def get_active_trial_applicant(
         self, application_id: int
     ) -> TrialApplicantCardSnapshot | None: ...
+    async def photo_in_use(self, sha1: str) -> bool: ...
+    async def lock_registration_emails(self, emails: list[str]) -> None: ...
+    async def get_approved_volunteer_id(self, application_id: int) -> int | None: ...
     async def find_volunteer_id_by_email(self, email: str) -> int | None: ...
     async def find_active_registration_id_by_email(self, email: str) -> int | None: ...
+    async def find_active_registration_for_target(
+        self,
+        email: str,
+        *,
+        group_id: int | None,
+        role_id: int | None,
+        exclude_id: int | None = None,
+    ) -> int | None: ...
+    async def has_target_membership(
+        self, email: str, *, group_id: int, role_id: int | None, semester_code: int
+    ) -> bool: ...
     async def get_friend_inviter(
         self, invitee_application_id: int
     ) -> VolunteerApplicationFriendRelationship | None: ...
@@ -549,5 +622,7 @@ class VolunteerApplicationsRepositoryProtocol(Protocol):
         ],
     ]: ...
     async def role_matches_group(self, *, role_id: int, group_id: int) -> bool: ...
-    async def mark_promoted(self, *, registration_id: int, volunteer_id: int, accepted_group_id: int) -> None: ...
+    async def mark_promoted(
+        self, *, registration_id: int, volunteer_id: int, accepted_group_id: int
+    ) -> None: ...
     async def delete_volunteer_application(self, registration_id: int) -> None: ...
