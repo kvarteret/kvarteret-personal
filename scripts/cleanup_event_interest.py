@@ -15,7 +15,14 @@ async def main() -> None:
             result = await session.execute(
                 text("DELETE FROM public.event_interest WHERE expires_at <= now()")
             )
-            print(f"Removed {result.rowcount} expired event responses")
+            batches = await session.execute(
+                text(
+                    "DELETE FROM public.event_interest_clicks WHERE expires_at <= now()"
+                )
+            )
+            print(
+                f"Removed {result.rowcount} legacy responses and {batches.rowcount} click batches"
+            )
     finally:
         await runtime.aclose()
 

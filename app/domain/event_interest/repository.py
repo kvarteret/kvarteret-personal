@@ -6,48 +6,49 @@ from app.db.repository import SqlAlchemyRepository
 
 
 class EventInterestRepository(SqlAlchemyRepository):
-    async def read(
-        self, event_id: str, source_hash: str | None
-    ) -> dict[str, float | int]:
+    async def read(self, event_id: str, source_hash: str | None) -> dict[str, int]:
         row = await self.fetch_one_mapping(
             text("""
-            SELECT COALESCE(MAX(taps) FILTER (WHERE source_hash = :source), 0)::int AS taps,
-              COALESCE(SUM(CASE WHEN taps >= 8 THEN 1 WHEN taps >= 4 THEN 0.75 ELSE 0.25 END), 0)::float8 AS score
-            FROM public.event_interest WHERE event_id = :event AND expires_at > now()
-        """).bindparams(event=event_id, source=source_hash)
+            SELECT COALESCE(SUM(clicks) FILTER (WHERE source_hash = :source), 0)::bigint AS taps,
+              COALESCE(SUM(clicks), 0)::bigint AS count
+            FROM public.event_interest_clicks
+            WHERE event_id = :event AND expires_at > now()
+            """).bindparams(event=event_id, source=source_hash)
         )
-        return {"taps": row["taps"], "score": row["score"]}
+        return {"taps": row["taps"], "count": row["count"]}
 
     async def save(
-        self, event_id: str, source_hash: str, taps: int
-    ) -> dict[str, float | int]:
+        self, event_id: str, source_hash: str, clicks: int, batch_id: str
+    ) -> dict[str, int]:
         await self.session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:event, 0))"),
             {"event": event_id},
         )
-        # Prune only this event's expired rows using the primary-key prefix.
-        # A daily cleanup job removes all other expired records.
         await self.session.execute(
-            text(
-                "DELETE FROM public.event_interest WHERE event_id = :event AND expires_at <= now()"
-            ),
+            text("""
+                DELETE FROM public.event_interest_clicks
+                WHERE event_id = :event AND expires_at <= now()
+            """),
             {"event": event_id},
         )
-        if taps == 0:
-            await self.session.execute(
-                text(
-                    "DELETE FROM public.event_interest WHERE event_id = :event AND source_hash = :source"
-                ),
-                {"event": event_id, "source": source_hash},
-            )
-        else:
-            await self.session.execute(
-                text("""
-                INSERT INTO public.event_interest (event_id, source_hash, taps)
-                VALUES (:event, :source, :taps)
-                ON CONFLICT (event_id, source_hash) DO UPDATE
-                SET taps = GREATEST(event_interest.taps, EXCLUDED.taps)
+        # The lock also makes the full-heart limit atomic across tabs sharing a
+        # cookie. Retrying an earlier batch remains a no-op below.
+        current = await self.read(event_id, source_hash)
+        accepted = min(clicks, max(0, 12 - current["taps"]))
+        if accepted == 0:
+            return current
+        await self.session.execute(
+            text("""
+                INSERT INTO public.event_interest_clicks
+                    (event_id, source_hash, batch_id, clicks)
+                VALUES (:event, :source, CAST(:batch AS uuid), :clicks)
+                ON CONFLICT (event_id, batch_id) DO NOTHING
             """),
-                {"event": event_id, "source": source_hash, "taps": taps},
-            )
+            {
+                "event": event_id,
+                "source": source_hash,
+                "batch": batch_id,
+                "clicks": accepted,
+            },
+        )
         return await self.read(event_id, source_hash)

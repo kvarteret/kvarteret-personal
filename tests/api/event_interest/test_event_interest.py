@@ -21,11 +21,11 @@ class Service:
 
     async def read(self, event_id, source_hash):
         self.calls.append((event_id, source_hash))
-        return {"taps": 0, "score": 0}
+        return {"taps": 0, "count": 0}
 
-    async def save(self, event_id, source_hash, taps):
-        self.calls.append((event_id, source_hash, taps))
-        return {"taps": taps, "score": 1}
+    async def save(self, event_id, source_hash, clicks, batch_id):
+        self.calls.append((event_id, source_hash, clicks, batch_id))
+        return {"taps": clicks, "count": clicks}
 
 
 def client_and_service():
@@ -67,13 +67,18 @@ def signed(payload, path="/api/v1/event-interest/response", timestamp=None):
 def test_valid_and_replayed_signed_write():
     client, service = client_and_service()
     body, headers = signed(
-        {"event_id": "sanity-event", "source_hash": "a" * 64, "taps": 12}
+        {
+            "event_id": "sanity-event",
+            "source_hash": "a" * 64,
+            "clicks": 13,
+            "batch_id": str(uuid4()),
+        }
     )
     response = client.post(
         "/api/v1/event-interest/response", content=body, headers=headers
     )
     assert response.status_code == 200
-    assert response.json() == {"taps": 12, "score": 1}
+    assert response.json() == {"taps": 13, "count": 13}
     assert response.headers["Cache-Control"] == "private, no-store"
     assert (
         client.post(
@@ -86,7 +91,12 @@ def test_valid_and_replayed_signed_write():
 
 def test_invalid_stale_and_tampered_auth():
     client, service = client_and_service()
-    payload = {"event_id": "event", "source_hash": "a" * 64, "taps": 4}
+    payload = {
+        "event_id": "event",
+        "source_hash": "a" * 64,
+        "clicks": 4,
+        "batch_id": str(uuid4()),
+    }
     assert (
         client.post("/api/v1/event-interest/response", json=payload).status_code == 401
     )
@@ -101,7 +111,7 @@ def test_invalid_stale_and_tampered_auth():
     assert (
         client.post(
             "/api/v1/event-interest/response",
-            content=body.replace(b'"taps": 4', b'"taps": 8'),
+            content=body.replace(b'"clicks": 4', b'"clicks": 8'),
             headers=headers,
         ).status_code
         == 401
@@ -111,9 +121,14 @@ def test_invalid_stale_and_tampered_auth():
 
 def test_strict_bounds_and_private_read():
     client, service = client_and_service()
-    for taps in [13, -1, 1.5, True, "4"]:
+    for clicks in [0, 1001, -1, 1.5, True, "4"]:
         body, headers = signed(
-            {"event_id": "event", "source_hash": "a" * 64, "taps": taps}
+            {
+                "event_id": "event",
+                "source_hash": "a" * 64,
+                "clicks": clicks,
+                "batch_id": str(uuid4()),
+            }
         )
         assert (
             client.post(
@@ -125,6 +140,6 @@ def test_strict_bounds_and_private_read():
     body, headers = signed({"event_id": "event"}, path)
     assert client.post(path, content=body, headers=headers).json() == {
         "taps": 0,
-        "score": 0,
+        "count": 0,
     }
     assert service.calls == [("event", None)]

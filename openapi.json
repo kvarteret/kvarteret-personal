@@ -1161,13 +1161,12 @@
       },
       "InterestResponse": {
         "properties": {
-          "score": {
+          "count": {
             "minimum": 0.0,
-            "title": "Score",
-            "type": "number"
+            "title": "Count",
+            "type": "integer"
           },
           "taps": {
-            "maximum": 12.0,
             "minimum": 0.0,
             "title": "Taps",
             "type": "integer"
@@ -1175,7 +1174,7 @@
         },
         "required": [
           "taps",
-          "score"
+          "count"
         ],
         "title": "InterestResponse",
         "type": "object"
@@ -1183,6 +1182,17 @@
       "InterestWrite": {
         "additionalProperties": false,
         "properties": {
+          "batch_id": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "clicks": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Clicks",
+            "type": "integer"
+          },
           "event_id": {
             "maxLength": 200,
             "minLength": 1,
@@ -1194,18 +1204,13 @@
             "pattern": "^[a-f0-9]{64}$",
             "title": "Source Hash",
             "type": "string"
-          },
-          "taps": {
-            "maximum": 12.0,
-            "minimum": 0.0,
-            "title": "Taps",
-            "type": "integer"
           }
         },
         "required": [
           "event_id",
           "source_hash",
-          "taps"
+          "clicks",
+          "batch_id"
         ],
         "title": "InterestWrite",
         "type": "object"

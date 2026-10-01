@@ -88,12 +88,15 @@ class InterestRead(BaseModel):
 
 class InterestWrite(InterestRead):
     source_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
-    taps: int = Field(ge=0, le=12)
+    clicks: int = Field(ge=1, le=1000)
+    batch_id: str = Field(
+        pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    )
 
 
 class InterestResponse(BaseModel):
-    taps: int = Field(ge=0, le=12)
-    score: float = Field(ge=0)
+    taps: int = Field(ge=0)
+    count: int = Field(ge=0)
 
 
 @router.post(
@@ -123,4 +126,6 @@ async def save_interest(
     service: EventInterestService = Depends(get_event_interest_service),
 ):
     response.headers["Cache-Control"] = "private, no-store"
-    return await service.save(body.event_id, body.source_hash, body.taps)
+    return await service.save(
+        body.event_id, body.source_hash, body.clicks, body.batch_id
+    )
