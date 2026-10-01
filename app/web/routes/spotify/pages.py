@@ -69,7 +69,7 @@ async def spotify_login(
             user_account_id=current_user.user_account_id,
         )
     except NotConfiguredError:
-        logger.exception("Spotify OAuth login attempted without configuration.")
+        logger.exception("spotify.authorization.unconfigured", extra={"event": "spotify.authorization.unconfigured"})
         return _redirect_with_feedback(error="Spotify er ikke konfigurert.")
     log_admin_activity(
         request=request,
@@ -115,7 +115,7 @@ async def spotify_callback(
             code=code,
         )
     except (NotConfiguredError, SpotifyOAuthError) as exc:
-        logger.exception("Spotify OAuth callback failed.")
+        logger.exception("spotify.authorization.failed", extra={"event": "spotify.authorization.failed"})
         log_admin_activity(
             request=request,
             user=current_user,
@@ -150,7 +150,7 @@ async def spotify_logout(
     try:
         await now_playing_service.clear_shared_token()
     except SpotifyOAuthError:
-        logger.exception("Failed to clear Spotify connection.")
+        logger.exception("spotify.disconnection.failed", extra={"event": "spotify.disconnection.failed"})
         return _redirect_with_feedback(error="Kunne ikke koble fra Spotify akkurat nå.")
     log_admin_activity(
         request=request,

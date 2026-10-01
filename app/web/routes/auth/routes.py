@@ -334,7 +334,7 @@ async def forgot_password_submit(
     except Exception:
         # The response deliberately remains identical for unknown accounts and
         # delivery failures to prevent account enumeration.
-        logger.exception("Password reset email delivery failed.")
+        logger.exception("auth.password_reset.delivery_failed", extra={"event": "auth.password_reset.delivery_failed"})
     return RedirectResponse(
         url="/forgot-password?sent=1",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -355,9 +355,9 @@ async def logout(
             session_id = session_cookie_signer.unsign_session_id(signed_cookie)
             await session_store.delete_session(session_id)
         except BadSignature:
-            logger.warning("Discarded invalid session cookie during logout.")
+            logger.warning("auth.logout.invalid_cookie_discarded", extra={"event": "auth.logout.invalid_cookie_discarded"})
         except Exception:
-            logger.exception("Failed to revoke session during logout.")
+            logger.exception("auth.logout.revocation_failed", extra={"event": "auth.logout.revocation_failed"})
     if current_user is not None and current_user.role == UserRole.ADMIN:
         log_admin_activity(
             request=request,
@@ -434,13 +434,13 @@ async def set_password_submit(
             if auth_user_id is not None:
                 await admin_accounts_service.mark_onboarding_complete(auth_user_id)
         except RecoveryTokenError:
-            logger.info("Recovery token was invalid, expired, or already used.")
+            logger.info("auth.recovery.rejected", extra={"event": "auth.recovery.rejected"})
             error_message = (
                 "Denne lenken er utløpt eller allerede brukt. Be om en ny lenke "
                 "for å sette passordet på nytt."
             )
         except Exception:
-            logger.exception("Failed to set password from onboarding link.")
+            logger.exception("auth.onboarding.password_failed", extra={"event": "auth.onboarding.password_failed"})
             error_message = "Kunne ikke sette passordet akkurat nå."
     if error_message is not None:
         return templates.TemplateResponse(

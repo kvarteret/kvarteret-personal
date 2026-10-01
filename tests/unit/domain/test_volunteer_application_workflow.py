@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 import pytest
@@ -184,7 +185,8 @@ class FakeWorkflowSideEffects:
 
 
 @pytest.mark.asyncio
-async def test_public_prospect_idempotency_completes_with_registration() -> None:
+async def test_public_prospect_idempotency_completes_with_registration(caplog) -> None:
+    caplog.set_level(logging.INFO)
     operations = FakeWorkflowOperations()
     side_effects = FakeWorkflowSideEffects()
     email_outbox = FakeEmailOutbox()
@@ -212,10 +214,14 @@ async def test_public_prospect_idempotency_completes_with_registration() -> None
         ("after_register", "https://personal.example.test")
     ]
     assert len(email_outbox.requests) == 1
+    lifecycle = [r for r in caplog.records if getattr(r, "event", None) == "volunteer.lifecycle"]
+    assert len(lifecycle) == 1
+    assert lifecycle[0].event_data["status"] == "prospect_registered"
 
 
 @pytest.mark.asyncio
-async def test_public_prospect_idempotent_retry_returns_without_side_effects() -> None:
+async def test_public_prospect_idempotent_retry_returns_without_side_effects(caplog) -> None:
+    caplog.set_level(logging.INFO)
     operations = FakeWorkflowOperations()
     operations.public_prospect_claim = PublicProspectRequestClaim(
         created=False,
@@ -245,6 +251,7 @@ async def test_public_prospect_idempotent_retry_returns_without_side_effects() -
     assert side_effects.calls == []
     assert email_outbox.requests == []
     assert email_outbox.dispatch_count == 0
+    assert not [r for r in caplog.records if getattr(r, "event", None) == "volunteer.lifecycle"]
 
 
 @pytest.mark.asyncio

@@ -212,6 +212,7 @@ class VolunteerApplicationWorkflow:
                 source_domain_event_id=event_id,
             )
             await commit_request_session()
+            self._record_lifecycle(invite, status="application_invited")
             await self.side_effects.after_invited(invite, base_url=base_url)
             await self._dispatch_best_effort()
             return invite
@@ -303,10 +304,10 @@ class VolunteerApplicationWorkflow:
         except Exception:
             await rollback_request_session()
             raise
+        self._record_lifecycle(result.detail, status="prospect_registered")
         await self.side_effects.after_public_prospect_registered(
             result, base_url=base_url
         )
-        self._record_lifecycle(result.detail, status="prospect_registered")
         await self._dispatch_best_effort()
         return result.detail
 
@@ -342,8 +343,8 @@ class VolunteerApplicationWorkflow:
                     subject_id=detail.registration_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_submitted(detail)
             self._record_lifecycle(detail, status="application_submitted")
+            await self.side_effects.after_submitted(detail)
             return detail
 
     async def contact(
@@ -458,6 +459,8 @@ class VolunteerApplicationWorkflow:
                 source_domain_event_id=event_id,
             )
         await commit_request_session()
+        if result is not None and result.event is not None:
+            self._record_lifecycle(detail, status=result.event.event_type)
         if email_template_key is not None:
             await self._dispatch_best_effort()
         return detail
@@ -485,11 +488,11 @@ class VolunteerApplicationWorkflow:
                 actor_user_account_id=actor_user_account_id,
             )
             await commit_request_session()
-            await self.side_effects.after_approved(
-                detail, volunteer_id=volunteer_id, base_url=base_url
-            )
             self._record_lifecycle(
                 detail, status="application_approved", volunteer_id=volunteer_id
+            )
+            await self.side_effects.after_approved(
+                detail, volunteer_id=volunteer_id, base_url=base_url
             )
             return volunteer_id
 
@@ -574,8 +577,8 @@ class VolunteerApplicationWorkflow:
                     subject_id=registration_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_deleted(detail)
             self._record_lifecycle(detail, status="application_deleted")
+            await self.side_effects.after_deleted(detail)
 
     async def resend_invitation(
         self,
@@ -609,8 +612,8 @@ class VolunteerApplicationWorkflow:
                     source_domain_event_id=event_id,
                 )
             await commit_request_session()
-            await self.side_effects.after_invitation_resent(detail, base_url=base_url)
             self._record_lifecycle(detail, status="invitation_resent")
+            await self.side_effects.after_invitation_resent(detail, base_url=base_url)
             await self._dispatch_best_effort()
             return detail
 

@@ -39,7 +39,7 @@ from app.email_message_preparation import (
     EmailPreparationFailure,
 )
 from app.email_outbox_repository import EmailOutboxRepository
-from app.observability import current_trace_id, emit_event
+from app.observability import current_trace_id, emit_committed_event, emit_event
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -96,7 +96,7 @@ class EmailOutboxService:
             enqueued_trace_id=request.enqueued_trace_id or current_trace_id(),
         )
         if created:
-            emit_event(
+            emit_committed_event(
                 logger,
                 "email.delivery",
                 fields={

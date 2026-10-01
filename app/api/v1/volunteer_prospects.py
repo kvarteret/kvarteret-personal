@@ -30,7 +30,7 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
-from app.observability import current_trace_id, emit_event, with_named_span
+from app.observability import emit_event, with_named_span
 from app.shared.phone_numbers import normalize_phone_number
 
 router = APIRouter()
@@ -234,19 +234,9 @@ async def create_public_volunteer_prospect(
     except VolunteerApplicationConflictError as exc:
         _log_public_prospect_conflict(exc)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    trace_id = current_trace_id()
     span = trace.get_current_span()
     if span.is_recording():
         span.set_attribute("registration_id", detail.registration_id)
-    emit_event(
-        logger,
-        "volunteer.lifecycle",
-        fields={
-            "registration_id": detail.registration_id,
-            "origin_trace_id": trace_id,
-            "status": "prospect_registered",
-        },
-    )
     return PublicVolunteerProspectResponse(registrationId=detail.registration_id)
 
 
