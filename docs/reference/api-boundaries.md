@@ -157,12 +157,21 @@ with `503`.
 The idempotency UUID and an application-secret-keyed HMAC of the normalized
 payload are stored transactionally with prospect creation. Reusing a key with
 different normalized content returns `409`. Retrying identical content, even
-with a different key, returns the first registration and does not enqueue
+with a different key, returns the original `registrationId` and complete
+`registrationIds` batch and does not enqueue
 duplicate emails or create duplicate friend applications. The idempotency
 records, application, lifecycle events, and durable email rows commit atomically.
 Deleting the application also removes its normalized-payload claim, so a later
 genuine reapplication is not blocked by an orphaned deduplication result; the
 original idempotency key remains bound to the same content.
+
+New requests treat the optional second target as an independent application.
+Existing volunteers and prospects with another target's application are allowed.
+Active same-target applications are reused without overwriting the snapshot.
+A different normalized request body can therefore refer to an existing
+application and send an email continuation link. Public responses expose IDs
+only, never tokens or the existing person's canonical profile. See
+[The Volunteer Application Lifecycle](../explanation/volunteer-application-lifecycle.md).
 
 For the v2 cutover, provision the signing secret in both Vercel projects and the
 separate client-key secret only in `samfunnetibergen`. Apply the Personal

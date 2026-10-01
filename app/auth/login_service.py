@@ -82,7 +82,7 @@ class LoginService:
             except Exception:
                 # A status-write failure must not turn a valid Auth login into
                 # a failed login. The next successful login can repair it.
-                logger.exception("Failed to mark admin onboarding complete.")
+                logger.exception("admin.onboarding.completion_failed", extra={"event": "admin.onboarding.completion_failed"})
 
         session = await self.session_store.create_session(
             auth_user_id=auth_user_id,

@@ -26,19 +26,30 @@ function validId(value, length) {
 }
 export function transform(records) {
   if (!Array.isArray(records) || records.length > 10000) throw new Error("Invalid batch")
-  return { resourceLogs: records.map(record => {
+  return { resourceLogs: records.flatMap(record => {
     if (!record || typeof record !== "object" || !services[record.projectId]
       || !Number.isSafeInteger(record.timestamp) || record.timestamp < 0) {
       throw new Error("Invalid record")
     }
     const proxy = record.proxy || {}
     const status = proxy.statusCode ?? record.statusCode
-    const severity = status >= 500 ? "ERROR" : status >= 400 ? "WARN"
+    let severity = status >= 500 ? "ERROR" : status >= 400 ? "WARN"
       : ({fatal:"FATAL",error:"ERROR",warning:"WARN",warn:"WARN",debug:"DEBUG",trace:"TRACE"}[record.level] || "INFO")
     let parsed = {}
     try { const v = JSON.parse(record.message); if (v && typeof v === "object" && !Array.isArray(v)) parsed = v } catch {}
     const fields = Object.fromEntries(Object.entries(parsed).filter(([key, value]) =>
       safeFields.has(key) && ["string", "number", "boolean"].includes(typeof value)))
+    // Personal exports application events directly via OTLP. Its stdout copies
+    // must not be ingested again. Retain unstructured platform warnings/errors
+    // and request failures (including rejections before application execution).
+    // The sibling website policy is intentionally unchanged in this round.
+    if (record.projectId === "prj_vGMyB9GXNJZkwMCNEAJbzmxxCrZD") {
+      if (fields.event === "telemetry.configuration.failed") {
+        // The direct exporter may not exist when setup fails.
+        severity = "WARN"
+      } else if (typeof fields.event === "string") return []
+      if (!["WARN", "ERROR", "FATAL"].includes(severity)) return []
+    }
     // Never export arbitrary console text: it may include names, bodies or secrets.
     // Keep safe exception types/codes and application fields as searchable attributes.
     const message = typeof record.message === "string" ? record.message : ""

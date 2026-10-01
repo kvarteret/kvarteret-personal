@@ -223,11 +223,15 @@ class FakePendingVolunteerApplicationsService:
 
 def test_login_sets_cookie_and_protected_page_renders() -> None:
     app = create_app()
+    # Authentication middleware hydrates through the container, before FastAPI
+    # resolves route dependencies. Both must use the same fake session store.
+    session_store = FakeSessionStore()
+    app.state.container.session_store = session_store
     user = make_authenticated_user(UserRole.ADMIN)
     app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
     app.dependency_overrides[get_login_service] = lambda: FakeLoginService()
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
-    app.dependency_overrides[get_session_store] = lambda: FakeSessionStore()
+    app.dependency_overrides[get_session_store] = lambda: session_store
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[require_authenticated_user] = lambda: user
     client = TestClient(app)

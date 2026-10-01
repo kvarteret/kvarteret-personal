@@ -19,11 +19,15 @@ class SmtpDeliveryError(EmailDeliveryError):
         *,
         retryable: bool,
         smtp_status: int | None = None,
+        phase: str = "send",
+        delivery_uncertain: bool = False,
     ) -> None:
         super().__init__(category)
         self.category = category
         self.retryable = retryable
         self.smtp_status = smtp_status
+        self.phase = phase
+        self.delivery_uncertain = delivery_uncertain
 
 
 class SmtpEmailSender:
@@ -80,33 +84,51 @@ def _send_via_smtp(
     message["Subject"] = subject
     message.set_content(html_body, subtype="html")
 
-    with smtplib.SMTP(server, port, timeout=30) as smtp:
-        try:
+    phase = "connect"
+    try:
+        with smtplib.SMTP(server, port, timeout=30) as smtp:
+            phase = "greeting"
             smtp.ehlo()
             if use_starttls:
+                phase = "tls"
                 smtp.starttls()
                 smtp.ehlo()
+            phase = "authenticate"
             smtp.login(account, password)
+            phase = "send"
             smtp.send_message(message)
-        except smtplib.SMTPRecipientsRefused as exc:
-            statuses = [
-                value[0]
-                for value in exc.recipients.values()
-                if isinstance(value, tuple) and isinstance(value[0], int)
-            ]
-            status = statuses[0] if statuses else None
-            raise SmtpDeliveryError(
-                "recipient_rejected",
-                retryable=bool(status and 400 <= status < 500),
-                smtp_status=status,
-            ) from exc
-        except smtplib.SMTPResponseException as exc:
-            raise SmtpDeliveryError(
-                "smtp_temporary" if 400 <= exc.smtp_code < 500 else "smtp_permanent",
-                retryable=400 <= exc.smtp_code < 500,
-                smtp_status=exc.smtp_code,
-            ) from exc
-        except smtplib.SMTPException as exc:
-            raise SmtpDeliveryError("smtp_protocol", retryable=True) from exc
-        except (TimeoutError, ConnectionError, OSError) as exc:
-            raise SmtpDeliveryError("smtp_connection", retryable=True) from exc
+            phase = "quit"
+    except smtplib.SMTPRecipientsRefused as exc:
+        statuses = [
+            value[0]
+            for value in exc.recipients.values()
+            if isinstance(value, tuple) and isinstance(value[0], int)
+        ]
+        status = statuses[0] if statuses else None
+        raise SmtpDeliveryError(
+            "recipient_rejected",
+            retryable=bool(status and 400 <= status < 500),
+            smtp_status=status,
+            phase=phase,
+        ) from exc
+    except smtplib.SMTPResponseException as exc:
+        raise SmtpDeliveryError(
+            "smtp_temporary" if 400 <= exc.smtp_code < 500 else "smtp_permanent",
+            retryable=400 <= exc.smtp_code < 500,
+            smtp_status=exc.smtp_code,
+            phase=phase,
+        ) from exc
+    except (smtplib.SMTPException, TimeoutError, ConnectionError, OSError) as exc:
+        # DATA may have been accepted before the connection timed out. Retrying
+        # that request automatically could send the same message twice.
+        uncertain = phase in {"send", "quit"}
+        category = (
+            "smtp_timeout"
+            if isinstance(exc, TimeoutError)
+            else "smtp_connection"
+            if isinstance(exc, OSError)
+            else "smtp_protocol"
+        )
+        raise SmtpDeliveryError(
+            category, retryable=not uncertain, phase=phase, delivery_uncertain=uncertain
+        ) from exc

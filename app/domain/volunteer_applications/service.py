@@ -29,7 +29,7 @@ from app.domain.volunteer_applications.models import (
     PublicProspectRegistrationInput,
     PublicProspectRequestClaim,
     PublicProspectRegistrationResult,
-    VolunteerAlreadyExistsError,
+    VolunteerAlreadyExistsError as VolunteerAlreadyExistsError,
     VolunteerApplicationConflictError,
     VolunteerApplicationDetail,
     VolunteerApplicationFieldConflictError,
@@ -68,7 +68,9 @@ def _normalize_phone(phone: str) -> str:
 
 def _check_postal_code(postal_code: str | None) -> None:
     if postal_code is None or not re.fullmatch(r"\d{4}", postal_code):
-        raise VolunteerApplicationValidationError("Postal code must be exactly 4 digits (e.g. 5011).")
+        raise VolunteerApplicationValidationError(
+            "Postal code must be exactly 4 digits (e.g. 5011)."
+        )
 
 
 def _validate_required_profile_fields(
@@ -133,7 +135,9 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
     def _require_repository(self) -> VolunteerApplicationsRepositoryProtocol:
         if self.repository is None:
-            raise NotConfiguredError("Volunteer applications require a configured repository.")
+            raise NotConfiguredError(
+                "Volunteer applications require a configured repository."
+            )
         return self.repository
 
     async def claim_public_prospect_request(
@@ -153,10 +157,12 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         *,
         request_hash: str,
         registration_id: int,
+        registration_ids: tuple[int, ...] = (),
     ) -> None:
         await self.repository.complete_public_prospect_request(
             request_hash=request_hash,
             registration_id=registration_id,
+            registration_ids=registration_ids,
             now=datetime.now(UTC),
         )
 
@@ -171,24 +177,24 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         if not normalized_email:
             raise VolunteerApplicationValidationError("E-postadresse er påkrevd.")
         friend_emails = self._normalize_friend_emails(
-            registration.friend_emails, inviter_email=normalized_email,
+            registration.friend_emails,
+            inviter_email=normalized_email,
         )
         await repository.lock_registration_emails([normalized_email, *friend_emails])
-        duplicate_volunteer = await repository.find_volunteer_id_by_email(normalized_email)
-        if duplicate_volunteer is not None:
-            raise VolunteerAlreadyExistsError(duplicate_volunteer, normalized_email)
-        duplicate_registration = await repository.find_active_registration_id_by_email(normalized_email)
-        if duplicate_registration is not None:
-            raise ActiveVolunteerRegistrationExistsError(duplicate_registration, normalized_email)
-
         first_choice_slug = registration.first_choice_group_slug.strip().lower()
-        second_choice_slug = (registration.second_choice_group_slug or "").strip().lower()
+        second_choice_slug = (
+            (registration.second_choice_group_slug or "").strip().lower()
+        )
         if not first_choice_slug:
             raise VolunteerApplicationValidationError("Velg et førstevalg.")
         if second_choice_slug and first_choice_slug == second_choice_slug:
-            raise VolunteerApplicationValidationError("Førstevalg og andrevalg må være ulike grupper.")
+            raise VolunteerApplicationValidationError(
+                "Førstevalg og andrevalg må være ulike grupper."
+            )
 
-        choice_slugs = [slug for slug in [first_choice_slug, second_choice_slug] if slug]
+        choice_slugs = [
+            slug for slug in [first_choice_slug, second_choice_slug] if slug
+        ]
         resolved_choice_slugs = [
             _PUBLIC_PROSPECT_ROLE_ROUTES.get(slug, (slug, None, None))[0]
             for slug in choice_slugs
@@ -197,52 +203,113 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             list(dict.fromkeys(resolved_choice_slugs))
         )
         if any(slug not in groups_by_slug for slug in resolved_choice_slugs):
-            raise VolunteerApplicationValidationError("Én eller flere valgte grupper finnes ikke.")
-
-        first_choice_group = groups_by_slug[resolved_choice_slugs[0]]
-        second_choice_group = groups_by_slug[resolved_choice_slugs[1]] if second_choice_slug else None
-        first_choice_route = _PUBLIC_PROSPECT_ROLE_ROUTES.get(first_choice_slug)
-        second_choice_route = _PUBLIC_PROSPECT_ROLE_ROUTES.get(second_choice_slug)
-        first_choice_label = first_choice_route[2] if first_choice_route else first_choice_group.name
-        if second_choice_route:
-            second_choice_label = second_choice_route[2]
-        elif second_choice_group:
-            second_choice_label = second_choice_group.name
-        else:
-            second_choice_label = None
-
-        suggested_role_id = None
-        if first_choice_route is not None and first_choice_route[1] is not None:
-            suggested_role_id = await repository.find_public_prospect_role_id(
-                group_id=first_choice_group.group_id,
-                role_name=first_choice_route[1],
+            raise VolunteerApplicationValidationError(
+                "Én eller flere valgte grupper finnes ikke."
             )
-            if suggested_role_id is None:
-                raise VolunteerApplicationValidationError("Den foreslåtte vervtypen finnes ikke.")
+
+        # Resolve every target before creating anything, so the batch is atomic.
+        targets = []
+        for slug, resolved_slug in zip(
+            choice_slugs, resolved_choice_slugs, strict=True
+        ):
+            group = groups_by_slug[resolved_slug]
+            route = _PUBLIC_PROSPECT_ROLE_ROUTES.get(slug)
+            role_id = None
+            if route is not None and route[1] is not None:
+                role_id = await repository.find_public_prospect_role_id(
+                    group_id=group.group_id,
+                    role_name=route[1],
+                )
+                if role_id is None:
+                    raise VolunteerApplicationValidationError(
+                        "Den foreslåtte vervtypen finnes ikke."
+                    )
+            if await repository.has_target_membership(
+                normalized_email,
+                group_id=group.group_id,
+                role_id=role_id,
+                semester_code=get_current_semester_code(),
+            ):
+                raise VolunteerApplicationFieldConflictError(
+                    "Du er allerede frivillig i en av de valgte gruppene. Kontakt gruppen hvis du ønsker å endre verv.",
+                    {
+                        "secondChoiceGroupSlug"
+                        if targets
+                        else "firstChoiceGroupSlug": "Du har allerede et aktivt verv her."
+                    },
+                    conflict_type="existing_target_membership",
+                )
+            if any(
+                previous.group_id == group.group_id and previous_role == role_id
+                for previous, previous_role, _ in targets
+            ):
+                raise VolunteerApplicationFieldValidationError(
+                    "Velg ulike grupper eller verv.",
+                    {
+                        "secondChoiceGroupSlug": "Dette valget gjelder samme gruppe og verv."
+                    },
+                )
+            targets.append((group, role_id, route[2] if route else group.name))
 
         first_name, last_name = _split_full_name(registration.full_name)
-        await self._assert_friend_emails_available(friend_emails)
-
-        token = token_urlsafe(24)
-        result = await repository.create_public_prospect_registration(
-            token=token,
-            email=normalized_email,
-            first_name=first_name,
-            last_name=last_name,
-            phone=normalize_phone_number(registration.phone),
-            study_institution=_normalize_optional_text(registration.study_institution),
-            background_details=_normalize_optional_text(registration.background_details),
-            first_choice_label=first_choice_label,
-            second_choice_label=second_choice_label,
-            initial_group_id=(first_choice_group.group_id if suggested_role_id is not None else None),
-            initial_role_id=suggested_role_id,
-            first_choice_group_id=first_choice_group.group_id,
-            second_choice_group_id=(second_choice_group.group_id if second_choice_group else None),
-            friend_invites=[(friend_email, token_urlsafe(24)) for friend_email in friend_emails],
-            inviter_name=_build_full_name(first_name, last_name),
-            origin_trace_id=current_trace_id(),
-        )
-        return result
+        results = []
+        for group, role_id, label in targets:
+            existing_id = await repository.find_active_registration_for_target(
+                normalized_email,
+                group_id=group.group_id,
+                role_id=role_id,
+            )
+            if existing_id is not None:
+                detail = await repository.get_volunteer_application_detail(existing_id)
+                if detail is None:
+                    raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
+                # Do not return tokens or change the existing snapshot through the public API.
+                results.append(
+                    PublicProspectRegistrationResult(
+                        detail=detail,
+                        friend_invites=[],
+                        created=False,
+                    )
+                )
+                continue
+            target_friends = [
+                email
+                for email in friend_emails
+                if not await repository.has_target_membership(
+                    email,
+                    group_id=group.group_id,
+                    role_id=role_id,
+                    semester_code=get_current_semester_code(),
+                )
+            ]
+            result = await repository.create_public_prospect_registration(
+                token=token_urlsafe(24),
+                email=normalized_email,
+                first_name=first_name,
+                last_name=last_name,
+                phone=normalize_phone_number(registration.phone),
+                study_institution=_normalize_optional_text(
+                    registration.study_institution
+                ),
+                background_details=_normalize_optional_text(
+                    registration.background_details
+                ),
+                first_choice_label=label,
+                second_choice_label=None,
+                initial_group_id=group.group_id,
+                initial_role_id=role_id,
+                first_choice_group_id=group.group_id,
+                second_choice_group_id=None,
+                friend_invites=[
+                    (friend_email, token_urlsafe(24)) for friend_email in target_friends
+                ],
+                inviter_name=_build_full_name(first_name, last_name),
+                origin_trace_id=current_trace_id(),
+            )
+            results.append(result)
+        primary = results[0]
+        primary.additional_results = results[1:]
+        return primary
 
     async def create_volunteer_application_invitation(
         self,
@@ -273,14 +340,17 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         if not normalized_email:
             raise VolunteerApplicationConflictError("An email address is required.")
         if (initial_group_id is None) != (initial_role_id is None):
-            raise VolunteerApplicationConflictError("Choose both group and assignment_roles, or leave both empty.")
+            raise VolunteerApplicationConflictError(
+                "Choose both group and assignment_roles, or leave both empty."
+            )
         await repository.lock_registration_emails([normalized_email])
-        duplicate_registration = await repository.find_active_registration_id_by_email(normalized_email)
+        duplicate_registration = await repository.find_active_registration_for_target(
+            normalized_email,
+            group_id=initial_group_id,
+            role_id=initial_role_id,
+        )
         if duplicate_registration is not None:
-            raise ActiveVolunteerRegistrationExistsError(duplicate_registration, normalized_email)
-        duplicate_volunteer = await repository.find_volunteer_id_by_email(normalized_email)
-        if duplicate_volunteer is not None:
-            raise VolunteerAlreadyExistsError(duplicate_volunteer, normalized_email)
+            return await self.resend_invitation_record(duplicate_registration)
         token = token_urlsafe(24)
         invite = await repository.create_volunteer_application_invitation(
             email=normalized_email,
@@ -290,10 +360,14 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         )
         return invite
 
-    async def get_volunteer_application_detail(self, registration_id: int) -> VolunteerApplicationDetail | None:
+    async def get_volunteer_application_detail(
+        self, registration_id: int
+    ) -> VolunteerApplicationDetail | None:
         return await self.repository.get_volunteer_application_detail(registration_id)
 
-    async def get_volunteer_application_by_token(self, token: str) -> VolunteerApplicationDetail | None:
+    async def get_volunteer_application_by_token(
+        self, token: str
+    ) -> VolunteerApplicationDetail | None:
         return await self.repository.get_volunteer_application_by_token(token)
 
     async def submit_volunteer_application(
@@ -344,7 +418,9 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
         photo_sha1 = existing.photo_sha1
         photo_filetype = existing.photo_filetype
-        old_storage_path = _build_photo_storage_path(existing.photo_sha1, existing.photo_filetype)
+        old_storage_path = _build_photo_storage_path(
+            existing.photo_sha1, existing.photo_filetype
+        )
         new_storage_path = old_storage_path
         uploaded_new_photo = False
         storage_service: StorageProtocol | None = None
@@ -383,7 +459,9 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         safe_filename = _sanitize_filename(photo_filename)
         extension = _normalize_extension(safe_filename)
         if extension not in {"jpg", "jpeg", "png", "webp"}:
-            raise VolunteerApplicationConflictError("Photos must be jpg, jpeg, png, or webp.")
+            raise VolunteerApplicationConflictError(
+                "Photos must be jpg, jpeg, png, or webp."
+            )
         storage_service = self._require_storage_service()
         photo_sha1 = token_hex(20)
         processed = self._require_photo_processor()(
@@ -434,8 +512,14 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
                     pass
             raise
 
-        should_remove_old = uploaded_new_photo and old_storage_path is not None and old_storage_path != new_storage_path
-        if should_remove_old:
+        should_remove_old = (
+            uploaded_new_photo
+            and old_storage_path is not None
+            and old_storage_path != new_storage_path
+        )
+        if should_remove_old and not await self.repository.photo_in_use(
+            existing.photo_sha1
+        ):
             try:
                 await to_thread(
                     self._require_storage_service().remove_photo,
@@ -542,42 +626,83 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
-        if start_trial:
-            if detail.status != ApplicationState.CONTACTED:
-                raise VolunteerApplicationConflictError("Only contacted applications can start a trial.")
-            duplicate = await repository.find_volunteer_id_by_email(detail.email)
-            if duplicate is not None and duplicate != detail.promoted_volunteer_id:
-                raise VolunteerAlreadyExistsError(duplicate, detail.email)
-        if start_trial or (status == ApplicationState.CONTACTED and detail.status == ApplicationState.NOT_VOLUNTEER):
-            duplicate_registration = await repository.find_active_registration_id_by_email(detail.email)
-            if duplicate_registration is not None and duplicate_registration != registration_id:
-                raise ActiveVolunteerRegistrationExistsError(duplicate_registration, detail.email)
+        if start_trial and detail.status != ApplicationState.CONTACTED:
+            raise VolunteerApplicationConflictError(
+                "Only contacted applications can start a trial."
+            )
+        if start_trial or (
+            status == ApplicationState.CONTACTED
+            and detail.status == ApplicationState.NOT_VOLUNTEER
+        ):
+            duplicate_registration = (
+                await repository.find_active_registration_for_target(
+                    detail.email,
+                    group_id=detail.initial_group_id or detail.first_choice_group_id,
+                    role_id=detail.initial_role_id,
+                    exclude_id=registration_id,
+                )
+            )
+            if duplicate_registration is not None:
+                raise ActiveVolunteerRegistrationExistsError(
+                    duplicate_registration, detail.email
+                )
+        if (
+            status == ApplicationState.NOT_VOLUNTEER
+            and detail.trial_assignment_id is not None
+            and detail.promoted_volunteer_id is not None
+        ):
+            await self.volunteer_creator.remove_trial_assignment(
+                volunteer_id=detail.promoted_volunteer_id,
+                assignment_id=detail.trial_assignment_id,
+            )
         trial_volunteer_id = detail.promoted_volunteer_id
         trial_assignment_id = detail.trial_assignment_id
-        if start_trial and trial_volunteer_id is None:
+        owns_profile = detail.owns_volunteer_profile
+        if start_trial and trial_assignment_id is None:
             resolved_group_id = detail.initial_group_id or detail.first_choice_group_id
-            trial_volunteer_id, trial_assignment_id = await self.volunteer_creator.create_from_application(
-                first_name=detail.first_name,
-                last_name=detail.last_name or detail.email,
-                email=detail.email,
-                gender=detail.gender or "A",
-                birth_date=detail.birth_date,
-                street_address=detail.address,
-                postal_code=detail.postal_code,
-                phone=normalize_phone_number(detail.phone),
-                photo_sha1=detail.photo_sha1,
-                photo_filetype=detail.photo_filetype,
-                group_id=resolved_group_id,
-                role_id=detail.initial_role_id,
-                semester_code=get_current_semester_code(),
-                contract_signed=False,
+            trial_volunteer_id = (
+                trial_volunteer_id
+                or await repository.find_volunteer_id_by_email(detail.email)
             )
+            if trial_volunteer_id is not None:
+                (
+                    trial_volunteer_id,
+                    trial_assignment_id,
+                ) = await self.volunteer_creator.add_application_assignment(
+                    volunteer_id=trial_volunteer_id,
+                    group_id=resolved_group_id,
+                    role_id=detail.initial_role_id,
+                    semester_code=get_current_semester_code(),
+                    contract_signed=False,
+                )
+            else:
+                owns_profile = True
+                (
+                    trial_volunteer_id,
+                    trial_assignment_id,
+                ) = await self.volunteer_creator.create_from_application(
+                    first_name=detail.first_name,
+                    last_name=detail.last_name or detail.email,
+                    email=detail.email,
+                    gender=detail.gender or "A",
+                    birth_date=detail.birth_date,
+                    street_address=detail.address,
+                    postal_code=detail.postal_code,
+                    phone=normalize_phone_number(detail.phone),
+                    photo_sha1=detail.photo_sha1,
+                    photo_filetype=detail.photo_filetype,
+                    group_id=resolved_group_id,
+                    role_id=detail.initial_role_id,
+                    semester_code=get_current_semester_code(),
+                    contract_signed=False,
+                )
         await repository.set_application_status(
             registration_id,
             status=status,
             start_trial=start_trial,
             volunteer_id=trial_volunteer_id if start_trial else None,
             trial_assignment_id=trial_assignment_id if start_trial else None,
+            owns_volunteer_profile=owns_profile if start_trial else None,
         )
         refreshed = await self.get_volunteer_application_detail(registration_id)
         if refreshed is None:
@@ -629,15 +754,16 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         if detail.status != ApplicationState.TRIAL:
-            raise VolunteerApplicationConflictError("Only trial applications can be promoted.")
+            raise VolunteerApplicationConflictError(
+                "Only trial applications can be promoted."
+            )
         if not detail.profile_complete:
             raise VolunteerApplicationConflictError(
                 "The applicant must complete the full profile before promotion."
             )
-        duplicate_volunteer = await repository.find_volunteer_id_by_email(detail.email)
-        if duplicate_volunteer is not None and duplicate_volunteer != detail.promoted_volunteer_id:
-            raise VolunteerAlreadyExistsError(duplicate_volunteer, detail.email)
-        resolved_group_id = accepted_group_id or detail.initial_group_id or detail.first_choice_group_id
+        resolved_group_id = (
+            accepted_group_id or detail.initial_group_id or detail.first_choice_group_id
+        )
         allowed_group_ids = {
             group_id
             for group_id in [
@@ -647,20 +773,30 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             if group_id is not None
         }
         if resolved_group_id is None:
-            raise VolunteerApplicationConflictError("Choose a group before promoting this prospect.")
+            raise VolunteerApplicationConflictError(
+                "Choose a group before promoting this prospect."
+            )
         if allowed_group_ids and resolved_group_id not in allowed_group_ids:
-            raise VolunteerApplicationConflictError("The chosen group is not one of the registered committee choices.")
+            raise VolunteerApplicationConflictError(
+                "The chosen group is not one of the registered committee choices."
+            )
         resolved_role_id = accepted_role_id or detail.initial_role_id
         if resolved_role_id is None:
-            raise VolunteerApplicationConflictError("Choose a role before promoting this prospect.")
+            raise VolunteerApplicationConflictError(
+                "Choose a role before promoting this prospect."
+            )
         if not (
-            await repository.role_matches_group(role_id=resolved_role_id, group_id=resolved_group_id)
+            await repository.role_matches_group(
+                role_id=resolved_role_id, group_id=resolved_group_id
+            )
         ):
             raise VolunteerApplicationConflictError(
                 "The selected initial assignment_roles is no longer valid for the chosen group."
             )
         if assignment_year is not None and not 1900 <= assignment_year <= 3000:
-            raise VolunteerApplicationConflictError("Year must be between 1900 and 3000.")
+            raise VolunteerApplicationConflictError(
+                "Year must be between 1900 and 3000."
+            )
         if assignment_term is not None and assignment_term not in {1, 2}:
             raise VolunteerApplicationConflictError("Choose a valid semester.")
         if (assignment_year is None) != (assignment_term is None):
@@ -672,24 +808,38 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         )
         # The volunteers module owns onboarding; this module only flips
         # its own invite row once the owning service reports the new id.
-        volunteer_id, _ = await self.volunteer_creator.create_from_application(
-            first_name=detail.first_name,
-            last_name=detail.last_name or "",
-            email=detail.email,
-            gender=detail.gender or "A",
-            birth_date=detail.birth_date,
-            street_address=detail.address,
-            postal_code=detail.postal_code,
-            phone=normalize_phone_number(detail.phone),
-            photo_sha1=detail.photo_sha1,
-            photo_filetype=detail.photo_filetype,
-            group_id=resolved_group_id,
-            role_id=resolved_role_id,
-            semester_code=semester_code,
-            contract_signed=contract_signed,
-            volunteer_id=detail.promoted_volunteer_id,
-            assignment_id=detail.trial_assignment_id,
+        linked_id = (
+            detail.promoted_volunteer_id
+            or await repository.find_volunteer_id_by_email(detail.email)
         )
+        if linked_id is not None and not detail.owns_volunteer_profile:
+            volunteer_id, _ = await self.volunteer_creator.add_application_assignment(
+                volunteer_id=linked_id,
+                group_id=resolved_group_id,
+                role_id=resolved_role_id,
+                semester_code=semester_code,
+                contract_signed=contract_signed,
+                assignment_id=detail.trial_assignment_id,
+            )
+        else:
+            volunteer_id, _ = await self.volunteer_creator.create_from_application(
+                first_name=detail.first_name,
+                last_name=detail.last_name or "",
+                email=detail.email,
+                gender=detail.gender or "A",
+                birth_date=detail.birth_date,
+                street_address=detail.address,
+                postal_code=detail.postal_code,
+                phone=normalize_phone_number(detail.phone),
+                photo_sha1=detail.photo_sha1,
+                photo_filetype=detail.photo_filetype,
+                group_id=resolved_group_id,
+                role_id=resolved_role_id,
+                semester_code=semester_code,
+                contract_signed=contract_signed,
+                volunteer_id=linked_id,
+                assignment_id=detail.trial_assignment_id,
+            )
         await repository.mark_promoted(
             registration_id=detail.registration_id,
             volunteer_id=volunteer_id,
@@ -704,11 +854,15 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         actor_user_account_id: int | None = None,
     ) -> None:
         try:
-            await self.workflow.delete(registration_id, actor_user_account_id=actor_user_account_id)
+            await self.workflow.delete(
+                registration_id, actor_user_account_id=actor_user_account_id
+            )
         except IllegalTransition as exc:
             raise VolunteerApplicationConflictError(str(exc)) from exc
 
-    async def delete_application_record(self, registration_id: int) -> VolunteerApplicationDetail:
+    async def delete_application_record(
+        self, registration_id: int
+    ) -> VolunteerApplicationDetail:
         detail = await self.get_volunteer_application_detail(registration_id)
         if detail is None:
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
@@ -726,7 +880,9 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         return await self.repository.get_active_trial_applicant(application_id)
 
     async def get_approved_volunteer_id(self, application_id: int) -> int | None:
-        return await self._require_repository().get_approved_volunteer_id(application_id)
+        return await self._require_repository().get_approved_volunteer_id(
+            application_id
+        )
 
     async def resend_volunteer_application_invitation(
         self,
@@ -753,7 +909,9 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             raise VolunteerApplicationNotFoundError(_REGISTRATION_NOT_FOUND)
         return detail
 
-    async def append_domain_event(self, event: DomainEventRecord, *, subject_id: int) -> int:
+    async def append_domain_event(
+        self, event: DomainEventRecord, *, subject_id: int
+    ) -> int:
         return await self.repository.append_domain_event(event, subject_id=subject_id)
 
     def _normalize_friend_emails(
@@ -762,7 +920,11 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
         *,
         inviter_email: str,
     ) -> list[str]:
-        normalized = [email.strip().lower() for email in friend_emails or [] if email and email.strip()]
+        normalized = [
+            email.strip().lower()
+            for email in friend_emails or []
+            if email and email.strip()
+        ]
         if len(normalized) > 2:
             raise VolunteerApplicationFieldValidationError(
                 "Du kan legge til maks to venner.",
@@ -783,25 +945,6 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
             )
         return normalized
 
-    async def _assert_friend_emails_available(self, friend_emails: list[str]) -> None:
-        for index, friend_email in enumerate(friend_emails):
-            volunteer_id = await self.repository.find_volunteer_id_by_email(friend_email)
-            if volunteer_id is not None:
-                raise VolunteerApplicationFieldConflictError(
-                    "Én av vennene er allerede frivillig.",
-                    {"friendEmails": {str(index): "Denne e-postadressen tilhører allerede en frivillig."}},
-                    conflict_type="friend_email_existing_volunteer",
-                    volunteer_id=volunteer_id,
-                )
-            registration_id = await self.repository.find_active_registration_id_by_email(friend_email)
-            if registration_id is not None:
-                raise VolunteerApplicationFieldConflictError(
-                    "Én av vennene har allerede en is_active søknad.",
-                    {"friendEmails": {str(index): "Denne e-postadressen har allerede en is_active søknad."}},
-                    conflict_type="friend_email_active_application",
-                    registration_id=registration_id,
-                )
-
     def _require_photo_processor(self) -> PhotoProcessorProtocol:
         if self.photo_processor is None:
             raise NotConfiguredError("Photo processing is not configured yet.")
@@ -809,8 +952,11 @@ class VolunteerApplicationsService(VolunteerApplicationsQueries):
 
     def _require_storage_service(self) -> StorageProtocol:
         if self.storage_service is None:
-            raise NotConfiguredError("Supabase credentials are required for storage integration.")
+            raise NotConfiguredError(
+                "Supabase credentials are required for storage integration."
+            )
         return self.storage_service
+
 
 def _split_full_name(full_name: str) -> tuple[str | None, str]:
     parts = [part for part in full_name.strip().split() if part]
@@ -854,7 +1000,9 @@ def _resolve_content_type(filename: str, content_type: str | None) -> str:
     return "application/octet-stream"
 
 
-def _build_photo_storage_path(filename_hash: str | None, extension: str | None) -> str | None:
+def _build_photo_storage_path(
+    filename_hash: str | None, extension: str | None
+) -> str | None:
     if not filename_hash or not extension:
         return None
     return f"{filename_hash}.{extension}"

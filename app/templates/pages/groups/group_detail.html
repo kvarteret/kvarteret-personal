@@ -84,7 +84,7 @@
                       <input class="app-input" name="role_name" required type="text" value="{{ position.role_name or '' }}">
                     {% endcall %}
                     {% call form_field("Pingvinpoeng", "min-w-0") %}
-                      <input class="app-input" min="0" name="pingvin_points" required step="1" type="number" value="{{ position.pingvin_points }}">
+                      <input class="app-input" max="2147483647" min="0" name="pingvin_points" required step="1" type="number" value="{{ position.pingvin_points }}">
                     {% endcall %}
                     <div class="flex flex-wrap items-end gap-3 lg:col-span-2">
                       <button class="app-button" type="submit">Lagre verv</button>
@@ -109,7 +109,7 @@
               <input class="app-input" name="role_name" placeholder="For eksempel PR-ansvarlig" required type="text">
             {% endcall %}
             {% call form_field("Pingvinpoeng", "min-w-0") %}
-              <input class="app-input" min="0" name="pingvin_points" required step="1" type="number" value="0">
+              <input class="app-input" max="2147483647" min="0" name="pingvin_points" required step="1" type="number" value="0">
             {% endcall %}
             <div class="flex items-end lg:col-span-2">
               <button class="app-button" type="submit">Opprett verv</button>

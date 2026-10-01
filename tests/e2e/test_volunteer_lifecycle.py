@@ -233,15 +233,22 @@ async def test_public_prospect_resolves_both_group_choices(app, e2e_engine):
         e2e_engine,
         "SELECT first_choice_group_id, second_choice_group_id,"
         " first_choice_label, second_choice_label"
-        " FROM public.volunteer_application_invites",
+        " FROM public.volunteer_application_invites ORDER BY id",
     )
+    assert len(response.json()["registrationIds"]) == 2
     assert invites == [
         {
             "first_choice_group_id": first_group_id,
-            "second_choice_group_id": second_group_id,
+            "second_choice_group_id": None,
             "first_choice_label": "Debattkomiteen",
-            "second_choice_label": "Festkomiteen",
-        }
+            "second_choice_label": None,
+        },
+        {
+            "first_choice_group_id": second_group_id,
+            "second_choice_group_id": None,
+            "first_choice_label": "Festkomiteen",
+            "second_choice_label": None,
+        },
     ]
 
 
@@ -414,6 +421,17 @@ async def test_public_bar_choices_keep_distinct_metadata_and_route_primary_role(
             )
         ).scalar_one()
 
+        secondary_role_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO public.assignment_roles"
+                    " (name, group_id, penguin_points, created_at)"
+                    " VALUES ('Pubdyr', :group_id, 0, :now) RETURNING id"
+                ),
+                {"group_id": group_id, "now": datetime.now(timezone.utc)},
+            )
+        ).scalar_one()
+
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
@@ -436,17 +454,26 @@ async def test_public_bar_choices_keep_distinct_metadata_and_route_primary_role(
         e2e_engine,
         "SELECT initial_group_id, initial_role_id, first_choice_group_id,"
         " second_choice_group_id, first_choice_label, second_choice_label"
-        " FROM public.volunteer_application_invites",
+        " FROM public.volunteer_application_invites ORDER BY id",
     )
+    assert len(response.json()["registrationIds"]) == 2
     assert invites == [
         {
             "initial_group_id": group_id,
             "initial_role_id": role_id,
             "first_choice_group_id": group_id,
-            "second_choice_group_id": group_id,
+            "second_choice_group_id": None,
             "first_choice_label": "Halvtimen",
-            "second_choice_label": "Grøndahls",
-        }
+            "second_choice_label": None,
+        },
+        {
+            "initial_group_id": group_id,
+            "initial_role_id": secondary_role_id,
+            "first_choice_group_id": group_id,
+            "second_choice_group_id": None,
+            "first_choice_label": "Grøndahls",
+            "second_choice_label": None,
+        },
     ]
 
 
@@ -837,9 +864,12 @@ async def test_concurrent_admin_invitations_share_one_application(app, e2e_engin
     assert [response.status_code for response in responses] == [303, 303]
     applications = await _fetch_all(e2e_engine, "SELECT id FROM public.volunteer_application_invites")
     assert len(applications) == 1
-    assert len(email_outbox.sent) == 1
-    assert sorted(response.headers["location"] for response in responses) == [
-        "/volunteer-applications", f"/volunteer-applications/{applications[0]['id']}",
+    # An explicit repeat invitation sends the continuation link again.
+    assert len(email_outbox.sent) == 2
+    token = (await _fetch_all(e2e_engine, "SELECT token FROM public.volunteer_application_invites"))[0]["token"]
+    assert all(token in email.html_body for email in email_outbox.sent)
+    assert [response.headers["location"] for response in responses] == [
+        "/volunteer-applications", "/volunteer-applications",
     ]
 
 

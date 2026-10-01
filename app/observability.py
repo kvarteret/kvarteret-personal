@@ -17,6 +17,7 @@ from opentelemetry import trace
 
 from app.auth.models import AuthenticatedUser
 from app.config import Settings
+from app.exception_diagnostics import exception_diagnostics
 
 _request_context: ContextVar[dict[str, Any]] = ContextVar("request_context", default={})
 
@@ -30,6 +31,7 @@ _NOISY_LOGGER_LEVELS: dict[str, int] = {
     "azure.storage": logging.WARNING,
     "azure.core.pipeline.policies.http_logging_policy": logging.WARNING,
     "opentelemetry": logging.WARNING,
+    "uvicorn.access": logging.WARNING,
 }
 
 _COMMON_FIELDS = frozenset(
@@ -49,6 +51,10 @@ _COMMON_FIELDS = frozenset(
         "outcome",
         "failure_stage",
         "error_category",
+        "error_chain",
+        "db_sqlstate",
+        "retryable",
+        "delivery_uncertain",
         "smtp_status_class",
         "attempt_no",
         "duration_ms",
@@ -66,6 +72,9 @@ _COMMON_FIELDS = frozenset(
 
 # Every event-specific field is declared here. Callers cannot add arbitrary data.
 _EVENT_FIELDS: dict[str, frozenset[str]] = {
+    "auth.login.failed": frozenset({"reason"}),
+    "auth.login.succeeded": frozenset({"role"}),
+    "volunteer.prospect.auth.rejected": frozenset({"reason"}),
     "http.validation.failed": frozenset(
         {"validation_fields", "validation_codes", "validation_issue_count"}
     ),
@@ -96,7 +105,35 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
         {"operation", "limit", "semester_code", "query_present"}
     ),
     "email.delivery": frozenset({"lease_owner"}),
+    "mobile_card.access_code.sent": frozenset({"subject_type", "subject_id"}),
+    "mobile_card.session.created": frozenset({"subject_type", "subject_id"}),
+    "mobile_card.session.renewed": frozenset(
+        {
+            "age_seconds",
+            "is_review",
+            "remaining_seconds",
+            "ttl_seconds",
+            "renewal_threshold_seconds",
+        }
+    ),
+    "mobile_card.session.invalid": frozenset({"reason"}),
+    "mobile_card.client_session_logout": frozenset(
+        {
+            "event_name",
+            "platform",
+            "app_version",
+            "auth_error_code",
+            "auth_error_status",
+            "had_cached_user",
+            "had_login_marker",
+            "had_stored_credentials",
+        }
+    ),
+    "feedback.issue.created": frozenset({"feedback_source", "issue_identifier"}),
     "volunteer.prospect.conflict": frozenset({"conflict_type"}),
+    "volunteer.prospect.validation_failed": frozenset(
+        {"validation_codes", "validation_fields", "validation_issue_count"}
+    ),
     "web.client_error": frozenset(
         {
             "error_type",
@@ -160,7 +197,13 @@ def sanitize_fields(event: str, values: Mapping[str, object]) -> dict[str, objec
         normalized_key = key.strip()
         if normalized_key not in allowed or not _is_safe_scalar(value):
             continue
-        if any(part in normalized_key.lower() for part in _FORBIDDEN_KEY_PARTS):
+        # These explicitly declared fields contain an ID/boolean, not an email
+        # address or URL. Keep them usable for domain-event correlation.
+        if normalized_key == "setup_url_created" and not isinstance(value, bool):
+            continue
+        if normalized_key not in {"email_delivery_id", "setup_url_created"} and any(
+            part in normalized_key.lower() for part in _FORBIDDEN_KEY_PARTS
+        ):
             continue
         sanitized[normalized_key] = _sanitize_scalar(value)
     return sanitized
@@ -192,6 +235,90 @@ def emit_event(
     )
 
 
+_ADMIN_DIAGNOSTIC_ACTIONS = frozenset(
+    {
+        "volunteer_application.list",
+        "volunteer_application.view",
+        "email_delivery.list",
+        "email_delivery.view",
+        "admin_account.list",
+        "admin_account.view_detail",
+        "volunteer.view_detail",
+        "search.volunteers",
+        "group.preview_semester_transfer",
+        "spotify.now_playing.view",
+        "spotify.oauth.login.start",
+    }
+)
+
+
+def emit_committed_event(
+    logger: logging.Logger,
+    event: str,
+    *,
+    level: int = logging.INFO,
+    fields: Mapping[str, object] | None = None,
+) -> None:
+    """Announce database outcomes only after the active transaction commits."""
+    from sqlalchemy import event as sqlalchemy_event
+    from app.db.session import current_session
+
+    session = current_session()
+    if session is None or not session.in_transaction():
+        emit_event(logger, event, level=level, fields=fields)
+        return
+    sync_session = session.sync_session
+    key = "observability.committed_events"
+    if key not in sync_session.info:
+        sync_session.info[key] = []
+
+        def committed(session):
+            if session.in_nested_transaction():
+                return
+            pending, session.info[key] = session.info[key], []
+            for event_logger, name, severity, data, transaction in pending:
+                emit_event(event_logger, name, level=severity, fields=data)
+
+        def rolled_back(session, previous_transaction):
+            def belongs_to_rollback(item):
+                transaction = item[-1]
+                while transaction is not None:
+                    if transaction is previous_transaction:
+                        return True
+                    transaction = transaction.parent
+                return False
+
+            session.info[key] = [
+                item for item in session.info[key] if not belongs_to_rollback(item)
+            ]
+
+        def ended(session, transaction):
+            # Session.close() ends an uncommitted transaction without invoking
+            # after_rollback. Never carry its events into a reused session.
+            if transaction.parent is None:
+                session.info[key].clear()
+
+        sqlalchemy_event.listen(sync_session, "after_commit", committed)
+        sqlalchemy_event.listen(sync_session, "after_soft_rollback", rolled_back)
+        sqlalchemy_event.listen(sync_session, "after_transaction_end", ended)
+    sync_session.info[key].append(
+        (
+            logger,
+            event,
+            level,
+            sanitize_fields(
+                event,
+                {
+                    **_request_context.get({}),
+                    **current_trace_fields(),
+                    **(fields or {}),
+                },
+            ),
+            sync_session.get_nested_transaction() or sync_session.get_transaction(),
+        )
+    )
+
+
 class JsonLogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         event = str(getattr(record, "event", "log.message"))
@@ -212,7 +339,9 @@ class JsonLogFormatter(logging.Formatter):
             payload.update(sanitize_fields(event, event_data))
         payload.update(current_trace_fields())
         if record.exc_info:
-            payload["error_category"] = record.exc_info[0].__name__.lower()
+            payload.update(
+                sanitize_fields(event, exception_diagnostics(record.exc_info[1]))
+            )
         return json.dumps(payload, default=str, ensure_ascii=True)
 
 
@@ -269,14 +398,12 @@ def _route_template(request: Request) -> str:
 def log_request(
     logger: logging.Logger, *, request: Request, status_code: int, started_at: float
 ) -> None:
+    # Request traces carry routine traffic. Keep a fallback for handled server
+    # failures; expected client rejections have their own domain diagnostics.
     emit_event(
         logger,
-        "http.request.completed",
-        level=logging.ERROR
-        if status_code >= 500
-        else logging.WARNING
-        if status_code >= 400
-        else logging.INFO,
+        "http.request.failed" if status_code >= 500 else "http.request.completed",
+        level=logging.ERROR if status_code >= 500 else logging.DEBUG,
         fields={
             "status_code": status_code,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
@@ -315,9 +442,17 @@ def log_admin_activity(
     safe_details = dict(details or {})
     if "setup_url" in safe_details:
         safe_details["setup_url_created"] = bool(safe_details.pop("setup_url"))
-    emit_event(
+    # Reads and OAuth initiation are diagnostics, not business changes.
+    diagnostic = action in _ADMIN_DIAGNOSTIC_ACTIONS
+    emitter = emit_event if diagnostic or outcome != "success" else emit_committed_event
+    emitter(
         logging.getLogger("app.audit"),
         "admin.activity",
+        level=logging.DEBUG
+        if diagnostic
+        else logging.WARNING
+        if outcome != "success"
+        else logging.INFO,
         fields={
             "action": action,
             "outcome": outcome,
@@ -346,6 +481,7 @@ def log_operation_timing(
     emit_event(
         logger,
         "app.operation.timing",
+        level=logging.DEBUG,
         fields={
             "operation": operation,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),

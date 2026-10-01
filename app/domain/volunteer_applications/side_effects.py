@@ -43,16 +43,16 @@ class VolunteerApplicationSideEffects:
 
     async def after_deleted(self, detail: Any) -> None:
         self.invalidate_pending_count_cache()
+        if detail.promoted_volunteer_id is not None:
+            # The identity may still use the application photo.
+            return
         storage_path = _build_photo_storage_path(detail.photo_sha1, detail.photo_filetype)
         if storage_path is None or self.storage_service is None:
             return
         try:
             await to_thread(self.storage_service.remove_photo, storage_path)
         except Exception:
-            logger.exception(
-                "Failed to remove photo for deleted volunteer application %s",
-                detail.registration_id,
-            )
+            logger.exception("volunteer.application.photo_cleanup_failed", extra={"event": "volunteer.application.photo_cleanup_failed"})
 
     async def after_invitation_resent(
         self, detail: Any, *, base_url: str | None
