@@ -18,6 +18,7 @@ from app.domain.courses.service import (
 )
 from app.domain.groups.service import GroupsService
 from app.domain.volunteer_applications.models import (
+    ActiveVolunteerRegistrationExistsError,
     PublicProspectGroup,
     PublicProspectRegistrationInput,
     TrialApplicantCardSnapshot,
@@ -86,9 +87,9 @@ class FakeVolunteerCreator:
     def __init__(self) -> None:
         self.created: list[dict[str, object | None]] = []
 
-    async def create_from_application(self, **kwargs) -> int:
+    async def create_from_application(self, **kwargs) -> tuple[int, int | None]:
         self.created.append(kwargs)
-        return 12
+        return 12, kwargs.get("assignment_id") or 34
 
 
 class FakeVolunteerApplicationsRepository:
@@ -207,9 +208,11 @@ class FakeVolunteerApplicationsRepository:
             background_details=None,
             initial_group_id=3,
             initial_group_name="Bar",
-            initial_role_id=9,
+            initial_role_id=getattr(self, "initial_role_id", 9),
             initial_role_name="Skiftleder",
             promoted_volunteer_id=self.promoted_volunteer_id,
+            promoted_at=getattr(self, "promoted_at", None),
+            trial_assignment_id=getattr(self, "trial_assignment_id", None),
         )
 
     async def save_submission(
@@ -231,10 +234,16 @@ class FakeVolunteerApplicationsRepository:
         status,
         start_trial: bool = False,
         volunteer_id: int | None = None,
+        trial_assignment_id: int | None = None,
     ) -> None:
         self.detail_status = status.value
         if volunteer_id is not None:
             self.promoted_volunteer_id = volunteer_id
+        if start_trial:
+            self.trial_assignment_id = trial_assignment_id
+
+    async def lock_registration_emails(self, emails: list[str]) -> None:
+        self.locked_emails = getattr(self, "locked_emails", []) + [emails]
 
     async def find_volunteer_id_by_email(self, email: str) -> int | None:
         return self.existing_volunteer_ids_by_email.get(email.lower())
@@ -331,6 +340,7 @@ class FakeEmailSender:
 class FakeTrialApplicantProvider:
     def __init__(self, snapshot: TrialApplicantCardSnapshot | None) -> None:
         self.snapshot = snapshot
+        self.approved_volunteer_id = None
 
     async def find_active_trial_applicant_by_email(self, email: str):
         return self.snapshot
@@ -339,6 +349,9 @@ class FakeTrialApplicantProvider:
         if self.snapshot and self.snapshot.application_id == application_id:
             return self.snapshot
         return None
+
+    async def get_approved_volunteer_id(self, application_id: int) -> int | None:
+        return self.approved_volunteer_id
 
 
 class FakeEmailOutbox:
@@ -1358,6 +1371,8 @@ async def test_approving_trial_reuses_trial_volunteer_record() -> None:
     assert volunteer_id == 12
     assert len(creator.created) == 2
     assert creator.created[0]["contract_signed"] is False
+    assert repository.trial_assignment_id == 34
+    assert creator.created[1]["assignment_id"] == 34
     assert creator.created[1]["volunteer_id"] == 12
     assert creator.created[1]["contract_signed"] is True
 
@@ -1568,7 +1583,8 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
 
 
 @pytest.mark.asyncio
-async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
+@pytest.mark.parametrize("photo_path", ["trial.jpg", None])
+async def test_trial_applicant_can_log_in_and_receives_temporary_card(photo_path) -> None:
     trial_ends_at = datetime.now(UTC) + timedelta(days=21)
     snapshot = TrialApplicantCardSnapshot(
         application_id=77,
@@ -1577,7 +1593,7 @@ async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
         birth_date=None,
         created_at=datetime(2026, 8, 1, tzinfo=UTC),
         trial_ends_at=trial_ends_at,
-        photo_path="trial.jpg",
+        photo_path=photo_path,
         group_name="Bar",
         role_name="Prøvefrivillig",
         discount_level=1,
@@ -1599,7 +1615,9 @@ async def test_trial_applicant_can_log_in_and_receives_temporary_card() -> None:
     assert repository.stored_trial_access_codes[0][0] == 77
     assert session.card.person_id == 12
     assert session.card.valid_until == trial_ends_at
-    assert session.card.photo_url == "/media/photos/trial.jpg?token=test"
+    assert session.card.photo_url == ("/media/photos/trial.jpg?token=test" if photo_path else None)
+    assert session.card.active_roles[0].name == "Prøvefrivillig (Prøvetid)"
+    assert session.card.active_roles[0].discount_level == 1
     assert session.card.active_roles[0].signed_contract is False
 
 
@@ -1960,3 +1978,122 @@ async def test_mobile_card_service_reports_malformed_reason() -> None:
 )
 def test_mobile_card_word_of_the_day_is_stable_for_the_effective_day(now: datetime, expected_word: str) -> None:
     assert _word_of_the_day(now) == expected_word
+
+
+@pytest.mark.asyncio
+async def test_rejected_trial_cannot_be_restored_as_permanent_volunteer() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "not_volunteer"
+    repository.promoted_volunteer_id = 12
+    repository.application_submitted = False
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+    with pytest.raises(VolunteerApplicationConflictError, match="Only previously promoted"):
+        await service.restore_volunteer_application(7)
+    assert repository.detail_status == "not_volunteer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("complete", [False, True])
+async def test_restoring_previously_approved_volunteer_requires_complete_profile(complete) -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "not_volunteer"
+    repository.promoted_volunteer_id = 12
+    repository.promoted_at = datetime.now(UTC)
+    repository.application_submitted = complete
+    repository.application_photo_sha1 = "photo"
+    repository.application_photo_filetype = "jpg"
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(),
+        settings=Settings(app_secret_key="test-secret"),
+        repository=repository,
+        email_outbox=FakeEmailOutbox(),
+    )
+    if complete:
+        detail = await service.restore_volunteer_application(7)
+        assert detail.status == "volunteer"
+    else:
+        with pytest.raises(VolunteerApplicationConflictError, match="full profile"):
+            await service.restore_volunteer_application(7)
+        assert repository.detail_status == "not_volunteer"
+
+
+@pytest.mark.asyncio
+async def test_admin_invitation_rejects_existing_active_registration() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.active_registration_ids_by_email["existing@example.com"] = 8
+    service = VolunteerApplicationsService(
+        volunteer_creator=FakeVolunteerCreator(), settings=Settings(app_secret_key="test"),
+        repository=repository, email_outbox=FakeEmailOutbox(),
+    )
+    with pytest.raises(ActiveVolunteerRegistrationExistsError):
+        await service.create_volunteer_application_invitation(" Existing@Example.com ")
+    assert repository.created_invites == []
+    assert repository.locked_emails == [["existing@example.com"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate_type", ["volunteer", "application"])
+async def test_start_trial_rejects_existing_person_or_other_registration(duplicate_type):
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "contacted"
+    creator = FakeVolunteerCreator()
+    if duplicate_type == "volunteer":
+        repository.existing_volunteer_ids_by_email["registrant@example.com"] = 55
+        error = VolunteerAlreadyExistsError
+    else:
+        repository.active_registration_ids_by_email["registrant@example.com"] = 8
+        error = ActiveVolunteerRegistrationExistsError
+    service = VolunteerApplicationsService(
+        volunteer_creator=creator, settings=Settings(app_secret_key="test"),
+        repository=repository, email_outbox=FakeEmailOutbox(),
+    )
+    with pytest.raises(error):
+        await service.start_trial(7)
+    assert creator.created == []
+    assert repository.detail_status == "contacted"
+
+
+@pytest.mark.asyncio
+async def test_approval_requires_a_role_on_server() -> None:
+    repository = FakeVolunteerApplicationsRepository()
+    repository.detail_status = "trial"
+    repository.initial_role_id = None
+    repository.application_photo_sha1 = "photo"
+    repository.application_photo_filetype = "jpg"
+    creator = FakeVolunteerCreator()
+    service = VolunteerApplicationsService(
+        volunteer_creator=creator, settings=Settings(app_secret_key="test"),
+        repository=repository, email_outbox=FakeEmailOutbox(),
+    )
+    with pytest.raises(VolunteerApplicationConflictError, match="Choose a role"):
+        await service.approve_volunteer_application(7)
+    assert creator.created == []
+    assert repository.approved_registration_ids == []
+
+
+@pytest.mark.asyncio
+async def test_trial_session_is_exchanged_for_permanent_session_after_approval() -> None:
+    provider = FakeTrialApplicantProvider(None)
+    provider.approved_volunteer_id = 12
+    service = MobileCardService(
+        Settings(app_secret_key="test"),
+        repository=FakeMobileCardRepository(card_snapshot=_build_mobile_card_snapshot()),
+        email_sender=FakeEmailSender(), rate_limiter=InMemoryRateLimiter(),
+        trial_applicant_provider=provider,
+    )
+    token = service.sessions.build_token({"trial_application_id": 77})
+    result = await service.get_current_card(token, include_role_history=True)
+    assert result.card.person_id == 12
+    assert result.card.active_roles[0].signed_contract is True
+    assert result.card.role_history
+    assert result.renewed_session_token
+    decoded = service.sessions.decode_token(result.renewed_session_token)
+    assert decoded.person_id == 12
+    assert decoded.trial_application_id is None
+    permanent = await service.get_current_card(result.renewed_session_token)
+    assert permanent.card.person_id == 12

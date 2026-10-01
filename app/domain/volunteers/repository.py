@@ -156,12 +156,13 @@ class VolunteersRepository(SqlAlchemyRepository):
         semester_code: int,
         contract_signed: bool,
         volunteer_id: int | None = None,
-    ) -> int:
+        assignment_id: int | None = None,
+    ) -> tuple[int, int | None]:
         """Create or update a volunteer record from an application.
 
         Trial applications get their volunteer record before approval. Approval
         reuses that record and finalizes its assignment instead of creating a
-        second volunteer.
+        second volunteer. Returns the volunteer ID and assignment ID.
         """
         if volunteer_id is None:
             inserted = await self.execute_one_mapping(
@@ -217,12 +218,16 @@ class VolunteersRepository(SqlAlchemyRepository):
                 )
 
         if group_id is not None:
-            existing_assignment = await self.fetch_first_mapping(
-                select(role_assignments.c.id)
-                .where(role_assignments.c.volunteer_id == volunteer_id)
-                .order_by(role_assignments.c.id.desc())
-                .limit(1)
-            )
+            existing_assignment = None
+            if assignment_id is not None:
+                existing_assignment = await self.fetch_first_mapping(
+                    select(role_assignments.c.id).where(
+                        role_assignments.c.id == assignment_id,
+                        role_assignments.c.volunteer_id == volunteer_id,
+                    )
+                )
+                if existing_assignment is None:
+                    raise ValueError("The trial assignment no longer belongs to this volunteer.")
             assignment_values = {
                 "group_id": group_id,
                 "role_id": role_id,
@@ -236,14 +241,15 @@ class VolunteersRepository(SqlAlchemyRepository):
                     .values(**assignment_values)
                 )
             else:
-                await self.execute(
+                assignment = await self.execute_one_mapping(
                     insert(role_assignments).values(
                         volunteer_id=volunteer_id,
                         **assignment_values,
-                    )
+                    ).returning(role_assignments.c.id)
                 )
+                assignment_id = int(assignment["id"])
 
-        return volunteer_id
+        return volunteer_id, assignment_id
 
     async def delete_volunteer(self, volunteer_id: int) -> None:
         # Detach the application record instead of deleting it: the

@@ -41,6 +41,7 @@ volunteer_application_invites = Table(
     Column("full_profile_submitted_at", DateTime(timezone=True)),
     Column("promoted_volunteer_id", BigInteger, ForeignKey("public.volunteer_records.id")),
     Column("promoted_at", DateTime(timezone=True)),
+    Column("trial_assignment_id", BigInteger, ForeignKey("public.role_assignments.id", ondelete="SET NULL")),
     Column("origin_trace_id", Text),
     Column("created_at", DateTime(timezone=True), nullable=False),
     UniqueConstraint("token", name="uq_volunteer_application_invites_token"),
