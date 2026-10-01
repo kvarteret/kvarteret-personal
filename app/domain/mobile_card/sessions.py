@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from typing import Literal
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from app.config import Settings
-from app.domain.mobile_card.models import DecodedMobileCardSession
 from app.domain.mobile_card.errors import MobileCardInvalidSessionError
+from app.domain.mobile_card.models import DecodedMobileCardSession
+from app.observability import get_logger
 
 _UNKNOWN_SESSION_TOKEN = "Unknown session token."
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MobileCardSessionManager:
@@ -73,16 +73,12 @@ class MobileCardSessionManager:
             is_review=is_review,
             person_id=person_id if isinstance(person_id, int) else None,
             trial_application_id=(
-                trial_application_id
-                if isinstance(trial_application_id, int)
-                else None
+                trial_application_id if isinstance(trial_application_id, int) else None
             ),
             remaining_seconds=remaining_seconds,
         )
 
-    def maybe_renew(
-        self, decoded: DecodedMobileCardSession
-    ) -> str | None:
+    def maybe_renew(self, decoded: DecodedMobileCardSession) -> str | None:
         if decoded.remaining_seconds > self._renewal_threshold_seconds():
             return None
 
@@ -94,17 +90,14 @@ class MobileCardSessionManager:
             payload = {"person_id": decoded.person_id or 0}
         renewed_token = self.build_token(payload)
         logger.debug(
-            "mobile-card session renewed",
+            "mobile_card.session.renewed",
             extra={
-                "event": "mobile_card.session.renewed",
-                "event_data": {
-                    "age_seconds": decoded.age_seconds,
-                    "is_review": decoded.is_review,
-                    "person_id": decoded.person_id,
-                    "remaining_seconds": decoded.remaining_seconds,
-                    "renewal_threshold_seconds": self._renewal_threshold_seconds(),
-                    "ttl_seconds": self._ttl_seconds(),
-                },
+                "age_seconds": decoded.age_seconds,
+                "is_review": decoded.is_review,
+                "person_id": decoded.person_id,
+                "remaining_seconds": decoded.remaining_seconds,
+                "renewal_threshold_seconds": self._renewal_threshold_seconds(),
+                "ttl_seconds": self._ttl_seconds(),
             },
         )
         return renewed_token
@@ -119,9 +112,6 @@ class MobileCardSessionManager:
         self, reason: Literal["bad_signature", "expired", "malformed"]
     ) -> None:
         logger.debug(
-            "mobile-card session invalid",
-            extra={
-                "event": "mobile_card.session.invalid",
-                "event_data": {"reason": reason},
-            },
+            "mobile_card.session.invalid",
+            extra={"reason": reason},
         )

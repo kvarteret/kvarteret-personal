@@ -1,32 +1,32 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request, status
 
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginService
-from app.auth.password_reset_service import PasswordResetService
-from app.db.rate_limit import RateLimiter
 from app.auth.models import AuthenticatedUser, WebSession
+from app.auth.password_reset_service import PasswordResetService
 from app.auth.roles import UserRole
-from app.media_tokens import MediaTokenService
-from app.runtime import ApplicationContainer
-from app.domain.feedback.service import FeedbackService
-from app.domain.courses.service import CoursesService
-from app.domain.groups.service import GroupsService
-from app.domain.mobile_card.service import MobileCardService
-from app.domain.mobile_card.april_state import MobileCardAprilStateService
-from app.domain.spotify.now_playing import NowPlayingService
-from app.domain.role_assignments.service import RoleAssignmentsService
-from app.domain.volunteers.service import VolunteersService
-from app.domain.volunteer_applications.service import VolunteerApplicationsService
-from app.domain.search import VolunteerSearchService
-from app.domain.role_assignments.semester_transfer import SemesterTransferService
+from app.db.rate_limit import RateLimiter
 from app.domain.admin_accounts.service import AdminAccountsService
+from app.domain.courses.service import CoursesService
+from app.domain.feedback.service import FeedbackService
+from app.domain.groups.service import GroupsService
+from app.domain.mobile_card.april_state import MobileCardAprilStateService
+from app.domain.mobile_card.service import MobileCardService
+from app.domain.role_assignments.semester_transfer import SemesterTransferService
+from app.domain.role_assignments.service import RoleAssignmentsService
+from app.domain.search import VolunteerSearchService
+from app.domain.spotify.now_playing import NowPlayingService
+from app.domain.volunteer_applications.service import VolunteerApplicationsService
+from app.domain.volunteers.service import VolunteersService
+from app.media_tokens import MediaTokenService
+from app.observability import get_logger
+from app.runtime import ApplicationContainer
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -197,7 +197,7 @@ async def load_web_navigation_state(
             await volunteer_applications_service.count_pending_volunteer_applications()
         )
     except Exception:
-        logger.exception("volunteer.pending_count.failed", extra={"event": "volunteer.pending_count.failed"})
+        logger.exception("volunteer.pending_count.failed")
         request.state.volunteer_application_pending_count = 0
 
 

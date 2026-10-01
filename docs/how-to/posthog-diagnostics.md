@@ -11,7 +11,38 @@ Open [Logs](https://eu.posthog.com/project/202551/logs), choose service
 `kvarteret-personal`, and select the time range. Filter severity to error/warn.
 New log records expose sanitized fields such as `event`, `error_category`,
 `registration_id`, and `request_id` as attributes. OTLP bodies contain the event name; stdout retains JSON.
-Use `trace_id` or `registration_id` to correlate volunteer intake across apps.
+Use `request_id` to find events from one HTTP request, `trace_id` to follow an
+instrumented request across services, or `registration_id` to follow volunteer
+intake across requests. Request events include `http_method` and the matched
+`route_template` (for example `/feedback/{source}`), without raw query values.
+`span_id` identifies the active span; `code.filepath`, `code.function`, and
+`code.lineno` identify the logging call. Trace fields are present when a valid
+OpenTelemetry span is active; background work has no HTTP request ID unless one
+is explicitly bound.
+
+Application code uses the standard logging interface through the adapter in
+[`app/observability.py`](../../app/observability.py):
+
+```python
+from app.observability import get_logger
+
+logger = get_logger(__name__)
+logger.info(
+    "feedback.issue.created",
+    extra={"issue_identifier": issue.get("identifier"), "feedback_source": submission.source},
+)
+```
+
+Write the event name once. The adapter captures request and trace context at the
+call and allows only declared safe fields. For a database mutation, use
+`logger.info("admin.activity", extra={...}, after_commit=True)`: it retains the
+original caller/context, emits after the outer transaction commits, and discards
+records from rolled-back transactions or savepoints. The OTLP export uses the
+captured native trace/span context even if the span has ended before commit.
+Repeated form failures produce one log record; email attempt failures produce
+one outcome record. HTTP 5xx summaries are fallbacks when the request has no
+reported domain error. The collector drops stdout copies of OTLP application
+logs to avoid ingesting the same record twice.
 
 Open [Error Tracking](https://eu.posthog.com/project/202551/error_tracking) and
 filter event property `service` to `kvarteret-personal`. After deploying the
@@ -120,7 +151,7 @@ as absent values. Invalid nonempty identifiers still return 422. The fragment
 only submits group, role, year, and term; it excludes CSRF and other form fields
 from the GET query. The management authorization requirement remains enforced.
 FastAPI request validation emits `http.validation.failed` at WARN with field
-locations, error codes, and issue count, never rejected input. Routine request completion logs are DEBUG; handled 5xx fallbacks are ERROR.
+locations, error codes, and issue count, never rejected input. Routine request completion logs are DEBUG; otherwise unreported handled 5xx failures are ERROR.
 Domain validation warnings remain available without an additional 4xx request log. The admin browser reporter also captures
 HTMX response failures; dependent GET fragments do not count as submissions.
 

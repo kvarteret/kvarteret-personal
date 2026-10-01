@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from asyncio import to_thread
 from dataclasses import dataclass
@@ -10,11 +9,10 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from app.config import Settings
-from app.db.rate_limit import RateLimitExceeded, RateLimiter
+from app.db.rate_limit import RateLimiter, RateLimitExceeded
+from app.observability import get_logger
 
-from app.observability import emit_event
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 EMAIL_PATTERN = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
 MAX_EMAIL_LENGTH = 254
@@ -242,14 +240,11 @@ def _linear_graphql(
         with urllib_request.urlopen(req, timeout=10) as response:
             result = json.loads(response.read())
     except urllib_error.HTTPError as exc:
-        logger.exception(
-            "feedback.issue.http_failed", extra={"event": "feedback.issue.http_failed"}
-        )
+        logger.exception("feedback.issue.http_failed")
         raise FeedbackDeliveryError("Linear request failed.") from exc
     except Exception as exc:
         logger.exception(
             "feedback.issue.delivery_failed",
-            extra={"event": "feedback.issue.delivery_failed"},
         )
         raise FeedbackDeliveryError("Linear request failed.") from exc
 
@@ -257,7 +252,6 @@ def _linear_graphql(
     if errors:
         logger.error(
             "feedback.issue.graphql_failed",
-            extra={"event": "feedback.issue.graphql_failed"},
         )
         raise FeedbackDeliveryError("Linear returned GraphQL errors.")
     return result
@@ -300,16 +294,13 @@ def _create_linear_issue(submission: FeedbackSubmission, settings: Settings) -> 
 
     issue_create = result.get("data", {}).get("issueCreate", {})
     if not issue_create.get("success"):
-        logger.error(
-            "feedback.issue.rejected", extra={"event": "feedback.issue.rejected"}
-        )
+        logger.error("feedback.issue.rejected")
         raise FeedbackDeliveryError("Linear issueCreate returned success=false.")
 
     issue = issue_create.get("issue") or {}
-    emit_event(
-        logger,
+    logger.info(
         "feedback.issue.created",
-        fields={
+        extra={
             "issue_identifier": issue.get("identifier"),
             "feedback_source": submission.source,
         },

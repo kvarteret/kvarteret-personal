@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import logging
 from asyncio import to_thread
 from typing import Any, Callable
 
 from app.infrastructure.storage.protocols import StorageProtocol
+from app.observability import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VolunteerApplicationSideEffects:
@@ -30,9 +30,7 @@ class VolunteerApplicationSideEffects:
     async def after_submitted(self, detail: Any) -> None:
         self.invalidate_pending_count_cache()
 
-    async def after_trial_started(
-        self, detail: Any, *, base_url: str | None
-    ) -> None:
+    async def after_trial_started(self, detail: Any, *, base_url: str | None) -> None:
         self.invalidate_pending_count_cache()
 
     async def after_approved(
@@ -46,13 +44,15 @@ class VolunteerApplicationSideEffects:
         if detail.promoted_volunteer_id is not None:
             # The identity may still use the application photo.
             return
-        storage_path = _build_photo_storage_path(detail.photo_sha1, detail.photo_filetype)
+        storage_path = _build_photo_storage_path(
+            detail.photo_sha1, detail.photo_filetype
+        )
         if storage_path is None or self.storage_service is None:
             return
         try:
             await to_thread(self.storage_service.remove_photo, storage_path)
         except Exception:
-            logger.exception("volunteer.application.photo_cleanup_failed", extra={"event": "volunteer.application.photo_cleanup_failed"})
+            logger.exception("volunteer.application.photo_cleanup_failed")
 
     async def after_invitation_resent(
         self, detail: Any, *, base_url: str | None

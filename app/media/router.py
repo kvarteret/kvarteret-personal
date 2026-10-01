@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import mimetypes
 from asyncio import to_thread
 
@@ -17,19 +16,20 @@ from app.dependencies import (
     get_settings,
     get_volunteers_service,
 )
-from app.media_tokens import MediaTokenService
 from app.domain.mobile_card.service import (
     MobileCardInvalidAccessCodeError,
     MobileCardService,
 )
+from app.domain.volunteers.service import VolunteersService
 from app.infrastructure.media.photo_processing import (
     ProcessedPhoto,
     render_photo_variant,
 )
 from app.infrastructure.storage.protocols import StorageProtocol
-from app.domain.volunteers.service import VolunteersService
+from app.media_tokens import MediaTokenService
+from app.observability import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 _PHOTO_NOT_FOUND = "Photo not found."
 router = APIRouter()
 SECURE_MEDIA_HEADERS = {
@@ -157,7 +157,7 @@ def _load_photo_variant(
     try:
         rendered = render_photo_variant(source, max_dimension=size)
     except Exception:
-        logger.exception("media.photo.render_failed", extra={"event": "media.photo.render_failed"})
+        logger.exception("media.photo.render_failed")
         rendered = ProcessedPhoto(
             content=source,
             content_type=mimetypes.guess_type(photo_path)[0]

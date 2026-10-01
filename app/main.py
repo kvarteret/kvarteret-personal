@@ -1,4 +1,5 @@
 import logging
+import re
 from time import perf_counter
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -7,33 +8,31 @@ from fastapi.exception_handlers import (
     request_validation_exception_handler,
 )
 from fastapi.exceptions import RequestValidationError
-import re
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature
-
 from starlette.types import Message
 
 from app.api.router import api_router
 from app.db.session import reset_request_session, set_request_session
 from app.errors import NotConfiguredError
-from app.media.router import router as media_router
 from app.internal.router import router as internal_router
+from app.media.router import router as media_router
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.observability import (
     bind_request_context,
     build_request_id,
     clear_request_context,
     configure_logging,
-    emit_event,
+    get_logger,
     log_request,
     log_request_exception,
     request_context_for_user,
     reset_request_context,
 )
 from app.runtime import app_lifespan, build_application_container
-from app.telemetry import configure_telemetry
 from app.system.router import router as system_router
+from app.telemetry import configure_telemetry
 from app.web.csrf import (
     CSRF_COOKIE_NAME,
     CSRF_FIELD_NAME,
@@ -42,7 +41,7 @@ from app.web.csrf import (
 )
 from app.web.router import web_router
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_app(container=None) -> FastAPI:
@@ -164,7 +163,7 @@ def _install_auth_context_middleware(app: FastAPI, container) -> None:
                 request.state.session = None
                 request.state.impersonator_user = None
             except Exception:
-                logger.exception("Failed to hydrate auth context from session cookie.")
+                logger.exception("auth.session.hydration_failed")
                 request.state.current_user = None
                 request.state.session = None
                 request.state.impersonator_user = None
@@ -177,6 +176,7 @@ def _install_request_context_middleware(app: FastAPI) -> None:
         started_at = perf_counter()
         request_id = build_request_id(request)
         token = bind_request_context(
+            request=request,
             request_id=request_id,
             http_method=request.method,
         )
@@ -217,11 +217,10 @@ def _install_http_exception_handler(app: FastAPI) -> None:
                 for error in errors
             }
         )
-        emit_event(
-            logger,
+        logger.log(
+            logging.WARNING,
             "http.validation.failed",
-            level=logging.WARNING,
-            fields={
+            extra={
                 "status_code": 422,
                 "http_method": request.method,
                 "route_template": getattr(

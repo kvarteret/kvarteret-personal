@@ -27,6 +27,13 @@ from uuid import UUID
 from opentelemetry import trace
 
 from app.db.session import commit_request_session, rollback_request_session
+from app.domain.volunteer_applications.state_machine import (
+    ApplicationAction,
+    ApplicationState,
+    DomainEventRecord,
+    TransitionContext,
+    application_transition,
+)
 from app.email_delivery import (
     APPLICANT_APPLICATION_RECEIVED,
     APPLICANT_FRIEND_INVITATION,
@@ -35,14 +42,7 @@ from app.email_delivery import (
     EmailDeliveryOutboxProtocol,
     EmailDeliveryRequest,
 )
-from app.domain.volunteer_applications.state_machine import (
-    ApplicationAction,
-    ApplicationState,
-    DomainEventRecord,
-    TransitionContext,
-    application_transition,
-)
-from app.observability import current_trace_id, emit_event, with_named_span
+from app.observability import current_trace_id, get_logger, with_named_span
 
 if TYPE_CHECKING:
     from app.domain.volunteer_applications.service import (
@@ -645,11 +645,10 @@ class VolunteerApplicationWorkflow:
         try:
             await self.email_outbox.dispatch_due(batch_size=10)
         except Exception:
-            emit_event(
-                logging.getLogger(__name__),
+            get_logger(__name__).log(
+                logging.ERROR,
                 "email.delivery",
-                level=logging.ERROR,
-                fields={
+                extra={
                     "outcome": "dispatch_deferred",
                     "error_category": "unexpected",
                 },
@@ -671,10 +670,9 @@ class VolunteerApplicationWorkflow:
                 span.set_attribute("origin_trace_id", origin_trace_id)
             if volunteer_id is not None:
                 span.set_attribute("volunteer_id", volunteer_id)
-        emit_event(
-            logging.getLogger(__name__),
+        get_logger(__name__).info(
             "volunteer.lifecycle",
-            fields={
+            extra={
                 "registration_id": registration_id,
                 "origin_trace_id": origin_trace_id,
                 "volunteer_id": volunteer_id,

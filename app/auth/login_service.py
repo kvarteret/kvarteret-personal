@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.repository import AuthRepositoryProtocol
 from app.auth.session_store import SessionStoreProtocol
 from app.auth.supabase_auth import SupabaseAuthGatewayProtocol
+from app.observability import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LoginError(Exception):
@@ -46,13 +46,9 @@ class LoginService:
         )
         if account is None:
             logger.warning(
-                "login failed",
+                "auth.login.failed",
                 extra={
-                    "event": "auth.login.failed",
-                    "event_data": {
-                        "identifier": normalized_identifier,
-                        "reason": "account_not_found",
-                    },
+                    "reason": "account_not_found",
                 },
             )
             raise LoginError("Invalid credentials.")
@@ -62,13 +58,9 @@ class LoginService:
         )
         if auth_user_id is None:
             logger.warning(
-                "login failed",
+                "auth.login.failed",
                 extra={
-                    "event": "auth.login.failed",
-                    "event_data": {
-                        "identifier": normalized_identifier,
-                        "reason": "invalid_credentials",
-                    },
+                    "reason": "invalid_credentials",
                 },
             )
             raise LoginError("Invalid credentials.")
@@ -82,7 +74,7 @@ class LoginService:
             except Exception:
                 # A status-write failure must not turn a valid Auth login into
                 # a failed login. The next successful login can repair it.
-                logger.exception("admin.onboarding.completion_failed", extra={"event": "admin.onboarding.completion_failed"})
+                logger.exception("admin.onboarding.completion_failed")
 
         session = await self.session_store.create_session(
             auth_user_id=auth_user_id,
@@ -102,14 +94,10 @@ class LoginService:
             ),
         )
         logger.info(
-            "login succeeded",
+            "auth.login.succeeded",
             extra={
-                "event": "auth.login.succeeded",
-                "event_data": {
-                    "identifier": normalized_identifier,
-                    "user_account_id": account.id,
-                    "role": account.role.value,
-                },
+                "user_account_id": account.id,
+                "role": account.role.value,
             },
         )
         return result

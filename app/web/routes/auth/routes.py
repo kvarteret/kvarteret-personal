@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -8,22 +7,22 @@ from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 
-from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginError, LoginService
-from app.auth.supabase_auth import RecoveryTokenError
 from app.auth.password_reset_service import (
     PasswordResetRequest,
     PasswordResetServiceProtocol,
     password_reset_account_key,
     password_reset_ip_key,
 )
+from app.auth.roles import UserRole
+from app.auth.supabase_auth import RecoveryTokenError
 from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.dependencies import (
+    get_admin_accounts_service,
     get_current_user,
     get_login_service,
     get_mobile_card_april_state_service,
-    get_admin_accounts_service,
     get_password_reset_service,
     get_rate_limiter,
     get_session_cookie_signer,
@@ -32,10 +31,9 @@ from app.dependencies import (
     get_supabase_auth_gateway,
     require_authenticated_user,
 )
-from app.observability import client_ip_from_request
-from app.errors import NotConfiguredError
-from app.observability import log_admin_activity
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
+from app.errors import NotConfiguredError
+from app.observability import client_ip_from_request, get_logger, log_admin_activity
 from app.web.cookies import resolve_cookie_domain
 from app.web.templates import templates
 
@@ -48,7 +46,7 @@ _PASSWORD_RESET_SENT_MESSAGE = (
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 _ORAKEL_ORIGIN = "https://orakel.samfunnetibergen.no"
 _ORAKEL_HOST = urlsplit(_ORAKEL_ORIGIN).hostname
 
@@ -67,7 +65,13 @@ def _safe_login_redirect(next_url: str | None) -> str:
         ):
             return "/"
         return urlunsplit(
-            (parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, parsed.fragment)
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path or "/",
+                parsed.query,
+                parsed.fragment,
+            )
         )
     if not next_url.startswith("/") or next_url.startswith("//"):
         return "/"
@@ -187,11 +191,8 @@ async def login_submit(
             )
     except RateLimitExceeded:
         logger.warning(
-            "login throttled",
-            extra={
-                "event": "auth.login.throttled",
-                "event_data": {"identifier": normalized_identifier},
-            },
+            "auth.login.throttled",
+            extra={"identifier": normalized_identifier},
         )
         return templates.TemplateResponse(
             request,
@@ -334,7 +335,7 @@ async def forgot_password_submit(
     except Exception:
         # The response deliberately remains identical for unknown accounts and
         # delivery failures to prevent account enumeration.
-        logger.exception("auth.password_reset.delivery_failed", extra={"event": "auth.password_reset.delivery_failed"})
+        logger.exception("auth.password_reset.delivery_failed")
     return RedirectResponse(
         url="/forgot-password?sent=1",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -355,9 +356,9 @@ async def logout(
             session_id = session_cookie_signer.unsign_session_id(signed_cookie)
             await session_store.delete_session(session_id)
         except BadSignature:
-            logger.warning("auth.logout.invalid_cookie_discarded", extra={"event": "auth.logout.invalid_cookie_discarded"})
+            logger.warning("auth.logout.invalid_cookie_discarded")
         except Exception:
-            logger.exception("auth.logout.revocation_failed", extra={"event": "auth.logout.revocation_failed"})
+            logger.exception("auth.logout.revocation_failed")
     if current_user is not None and current_user.role == UserRole.ADMIN:
         log_admin_activity(
             request=request,
@@ -422,25 +423,29 @@ async def set_password_submit(
     else:
         try:
             if normalized_token_hash:
-                auth_user_id = await supabase_auth_gateway.update_password_with_token_hash(
-                    normalized_token_hash,
-                    normalized_verification_type,
-                    password,
+                auth_user_id = (
+                    await supabase_auth_gateway.update_password_with_token_hash(
+                        normalized_token_hash,
+                        normalized_verification_type,
+                        password,
+                    )
                 )
             else:
-                auth_user_id = await supabase_auth_gateway.update_password_with_access_token(
-                    normalized_access_token, password
+                auth_user_id = (
+                    await supabase_auth_gateway.update_password_with_access_token(
+                        normalized_access_token, password
+                    )
                 )
             if auth_user_id is not None:
                 await admin_accounts_service.mark_onboarding_complete(auth_user_id)
         except RecoveryTokenError:
-            logger.info("auth.recovery.rejected", extra={"event": "auth.recovery.rejected"})
+            logger.info("auth.recovery.rejected")
             error_message = (
                 "Denne lenken er utløpt eller allerede brukt. Be om en ny lenke "
                 "for å sette passordet på nytt."
             )
         except Exception:
-            logger.exception("auth.onboarding.password_failed", extra={"event": "auth.onboarding.password_failed"})
+            logger.exception("auth.onboarding.password_failed")
             error_message = "Kunne ikke sette passordet akkurat nå."
     if error_message is not None:
         return templates.TemplateResponse(

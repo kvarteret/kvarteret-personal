@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from secrets import token_urlsafe
@@ -14,12 +13,12 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import Settings
-from app.errors import NotConfiguredError
 from app.domain.spotify.repository import IntegrationTokensRepository
-
+from app.errors import NotConfiguredError
+from app.observability import get_logger
 
 _JSON_CONTENT_TYPE = "application/json"
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SPOTIFY_AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 _SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -173,7 +172,7 @@ class NowPlayingService:
         try:
             await self.repository.delete_token(_SPOTIFY_PROVIDER)
         except SQLAlchemyError as exc:
-            logger.warning("spotify.connection.delete_failed", exc_info=exc, extra={"event": "spotify.connection.delete_failed"})
+            logger.warning("spotify.connection.delete_failed", exc_info=exc)
             raise SpotifyOAuthError(
                 "Spotify token storage is unavailable. Apply the latest database migration."
             ) from exc
@@ -334,7 +333,7 @@ class NowPlayingService:
         try:
             stored_token = await self.repository.get_token(_SPOTIFY_PROVIDER)
         except SQLAlchemyError as exc:
-            logger.warning("spotify.connection.load_failed", exc_info=exc, extra={"event": "spotify.connection.load_failed"})
+            logger.warning("spotify.connection.load_failed", exc_info=exc)
             stored_token = None
         if stored_token is not None:
             self._refresh_token_cache = stored_token.refresh_token
@@ -357,7 +356,7 @@ class NowPlayingService:
                 updated_by_user_account_id=updated_by_user_account_id,
             )
         except SQLAlchemyError as exc:
-            logger.warning("spotify.connection.save_failed", exc_info=exc, extra={"event": "spotify.connection.save_failed"})
+            logger.warning("spotify.connection.save_failed", exc_info=exc)
             raise SpotifyOAuthError(
                 "Spotify token storage is unavailable. Apply the latest database migration."
             ) from exc
@@ -443,7 +442,7 @@ class NowPlayingService:
     def _record_fetch_failure(self) -> None:
         self._failure_backoff_until = self._now_fn() + _FAILURE_BACKOFF_SECONDS
         if not self._failure_logged:
-            logger.exception("spotify.now_playing.fetch_failed", extra={"event": "spotify.now_playing.fetch_failed"})
+            logger.exception("spotify.now_playing.fetch_failed")
             self._failure_logged = True
 
     def _clear_fetch_failure(self) -> None:

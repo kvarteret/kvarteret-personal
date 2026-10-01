@@ -8,7 +8,6 @@ deletion. Writes invalidate the inherited per-volunteer detail cache.
 
 from __future__ import annotations
 
-import logging
 from asyncio import to_thread
 from pathlib import Path
 from secrets import token_hex
@@ -28,12 +27,13 @@ from app.domain.volunteers.queries import (
 )
 from app.domain.volunteers.repository import VolunteersRepository
 from app.errors import NotConfiguredError
-from app.shared.phone_numbers import normalize_phone_number
 from app.infrastructure.media.protocols import PhotoProcessorProtocol
 from app.infrastructure.storage.protocols import StorageProtocol
 from app.media_tokens import MediaTokenService
+from app.observability import get_logger
+from app.shared.phone_numbers import normalize_phone_number
 
-cleanup_logger = logging.getLogger(__name__)
+cleanup_logger = get_logger(__name__)
 
 
 class VolunteersService(VolunteersQueries):
@@ -313,4 +313,4 @@ async def _best_effort_remove(remove_action) -> None:
     try:
         await to_thread(remove_action)
     except Exception:
-        cleanup_logger.warning("volunteer.photo.cleanup_failed", exc_info=True, extra={"event": "volunteer.photo.cleanup_failed"})
+        cleanup_logger.warning("volunteer.photo.cleanup_failed", exc_info=True)

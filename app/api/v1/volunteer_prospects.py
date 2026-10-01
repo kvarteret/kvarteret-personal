@@ -19,7 +19,9 @@ from app.dependencies import (
     get_settings,
     get_volunteer_applications_service,
 )
-from app.domain.volunteer_applications.models import VolunteerProspectIdempotencyConflictError
+from app.domain.volunteer_applications.models import (
+    VolunteerProspectIdempotencyConflictError,
+)
 from app.domain.volunteer_applications.service import (
     ActiveVolunteerRegistrationExistsError,
     PublicProspectRegistrationInput,
@@ -27,14 +29,14 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationConflictError,
     VolunteerApplicationFieldConflictError,
     VolunteerApplicationFieldValidationError,
-    VolunteerApplicationValidationError,
     VolunteerApplicationsService,
+    VolunteerApplicationValidationError,
 )
-from app.observability import emit_event, with_named_span
+from app.observability import get_logger, with_named_span
 from app.shared.phone_numbers import normalize_phone_number
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _log_public_prospect_conflict(exc: VolunteerApplicationConflictError) -> None:
@@ -57,7 +59,8 @@ def _log_public_prospect_conflict(exc: VolunteerApplicationConflictError) -> Non
             fields["registration_id"] = exc.registration_id
     elif isinstance(exc, VolunteerProspectIdempotencyConflictError):
         fields["conflict_type"] = "idempotency_key_content_mismatch"
-    emit_event(logger, "volunteer.prospect.conflict", level=logging.WARNING, fields=fields)
+    logger.log(logging.WARNING, "volunteer.prospect.conflict", extra=fields)
+
 
 EmailAddress = Annotated[EmailStr, Field(max_length=254)]
 
@@ -163,7 +166,7 @@ class PublicVolunteerProspectResponse(BaseModel):
                 ),
                 "schema": {"type": "string", "pattern": "^v1=[0-9a-f]{64}$"},
             },
-        ]
+        ],
     },
 )
 async def create_public_volunteer_prospect(
@@ -172,7 +175,9 @@ async def create_public_volunteer_prospect(
         require_signed_volunteer_prospect
     ),
     settings: Settings = Depends(get_settings),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
     try:
         payload = PublicVolunteerProspectRequest.model_validate_json(
@@ -230,10 +235,14 @@ async def create_public_volunteer_prospect(
             detail="En aktiv søknad med denne e-postadressen finnes allerede.",
         )
     except VolunteerApplicationValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     except VolunteerApplicationConflictError as exc:
         _log_public_prospect_conflict(exc)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     span = trace.get_current_span()
     if span.is_recording():
         span.set_attribute("registration_id", detail.registration_id)

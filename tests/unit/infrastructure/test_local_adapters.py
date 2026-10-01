@@ -15,7 +15,7 @@ async def test_console_email_sender_writes_html_without_logging_recipient_or_lin
 ) -> None:
     sender = ConsoleEmailSender(tmp_path)
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.DEBUG):
         await sender.send_email(
             recipient_email="applicant@example.com",
             subject="Complete your profile",
@@ -26,6 +26,8 @@ async def test_console_email_sender_writes_html_without_logging_recipient_or_lin
     assert len(messages) == 1
     assert "Apply" in messages[0].read_text(encoding="utf-8")
     assert "email.console.saved" in caplog.text
+    from app.telemetry import DomainLogFilter
+    assert not any(DomainLogFilter().filter(record) for record in caplog.records)
     assert "applicant@example.com" not in caplog.text
     assert "http://localhost:8000/apply/token" not in caplog.text
 

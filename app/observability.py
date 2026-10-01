@@ -215,19 +215,74 @@ def _sanitize_scalar(value: object) -> object:
     return _TOKEN_PATH_PATTERN.sub(r"\1[redacted]", redacted)
 
 
-def emit_event(
-    logger: logging.Logger,
-    event: str,
-    *,
-    level: int = logging.INFO,
-    fields: Mapping[str, object] | None = None,
-) -> None:
-    event_fields = {**current_trace_fields(), **(fields or {})}
-    logger.log(
-        level,
-        event,
-        extra={"event": event, "event_data": sanitize_fields(event, event_fields)},
-    )
+class EventLoggerAdapter(logging.LoggerAdapter):
+    """Standard logging methods with safe domain fields and captured context."""
+
+    def process(self, msg, kwargs):
+        extra = dict(kwargs.get("extra") or {})
+        event = extra.pop("event", None)
+        if event is None:
+            event = (
+                msg
+                if isinstance(msg, str)
+                and re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+", msg)
+                else "log.message"
+            )
+        fields = {**extra.pop("event_data", {}), **extra}
+        context = dict(_request_context.get({}))
+        request = context.pop("_request", None)
+        if request is not None:
+            context["route_template"] = _route_template(request)
+        kwargs["extra"] = {
+            "event": event,
+            "event_data": sanitize_fields(
+                event, {**fields, **context, **current_trace_fields()}
+            ),
+            "_otel_context": trace.set_span_in_context(trace.get_current_span()),
+        }
+        kwargs["stacklevel"] = kwargs.get("stacklevel", 1) + 1
+        return msg, kwargs
+
+    def log(self, level, msg, *args, after_commit=False, **kwargs):
+        if not self.isEnabledFor(level):
+            return
+        msg, kwargs = self.process(msg, kwargs)
+        request = _request_context.get({}).get("_request")
+        if (
+            request is not None
+            and level >= logging.ERROR
+            and kwargs["extra"]["event"] not in {"http.request.failed", "log.message"}
+        ):
+            request.state.domain_error_logged = True
+        if not after_commit:
+            self.logger.log(level, msg, *args, **kwargs)
+            return
+        # Build the record now so commits retain the original caller and trace.
+        filename, lineno, func, stack = self.logger.findCaller(
+            kwargs.get("stack_info", False), kwargs.get("stacklevel", 2)
+        )
+        exc_info = kwargs.get("exc_info")
+        if isinstance(exc_info, BaseException):
+            exc_info = (type(exc_info), exc_info, exc_info.__traceback__)
+        elif exc_info and not isinstance(exc_info, tuple):
+            exc_info = sys.exc_info()
+        record = self.logger.makeRecord(
+            self.logger.name,
+            level,
+            filename,
+            lineno,
+            msg,
+            args,
+            exc_info,
+            func,
+            kwargs["extra"],
+            stack,
+        )
+        _log_after_commit(self.logger, record)
+
+
+def get_logger(name: str) -> EventLoggerAdapter:
+    return EventLoggerAdapter(logging.getLogger(name), {})
 
 
 _ADMIN_DIAGNOSTIC_ACTIONS = frozenset(
@@ -247,20 +302,15 @@ _ADMIN_DIAGNOSTIC_ACTIONS = frozenset(
 )
 
 
-def emit_committed_event(
-    logger: logging.Logger,
-    event: str,
-    *,
-    level: int = logging.INFO,
-    fields: Mapping[str, object] | None = None,
-) -> None:
-    """Announce database outcomes only after the active transaction commits."""
+def _log_after_commit(logger: logging.Logger, record: logging.LogRecord) -> None:
+    """Publish a captured record only when its transaction succeeds."""
     from sqlalchemy import event as sqlalchemy_event
+
     from app.db.session import current_session
 
     session = current_session()
     if session is None or not session.in_transaction():
-        emit_event(logger, event, level=level, fields=fields)
+        logger.handle(record)
         return
     sync_session = session.sync_session
     key = "observability.committed_events"
@@ -271,8 +321,8 @@ def emit_committed_event(
             if session.in_nested_transaction():
                 return
             pending, session.info[key] = session.info[key], []
-            for event_logger, name, severity, data, transaction in pending:
-                emit_event(event_logger, name, level=severity, fields=data)
+            for event_logger, record, transaction in pending:
+                event_logger.handle(record)
 
         def rolled_back(session, previous_transaction):
             def belongs_to_rollback(item):
@@ -299,16 +349,7 @@ def emit_committed_event(
     sync_session.info[key].append(
         (
             logger,
-            event,
-            level,
-            sanitize_fields(
-                event,
-                {
-                    **_request_context.get({}),
-                    **current_trace_fields(),
-                    **(fields or {}),
-                },
-            ),
+            record,
             sync_session.get_nested_transaction() or sync_session.get_transaction(),
         )
     )
@@ -328,11 +369,16 @@ class JsonLogFormatter(logging.Formatter):
             # the allowlisted structured fields below.
             "message": event,
         }
-        payload.update(sanitize_fields(event, _request_context.get({})))
+        # Adapter records own their context; never mix in a later request/span.
+        if not hasattr(record, "_otel_context"):
+            payload.update(sanitize_fields(event, _request_context.get({})))
+            payload.update(current_trace_fields())
+        payload["code.filepath"] = record.pathname
+        payload["code.function"] = record.funcName
+        payload["code.lineno"] = record.lineno
         event_data = getattr(record, "event_data", None)
         if isinstance(event_data, dict):
             payload.update(sanitize_fields(event, event_data))
-        payload.update(current_trace_fields())
         if record.exc_info:
             payload["error_category"] = record.exc_info[0].__name__.lower()
         return json.dumps(payload, default=str, ensure_ascii=True)
@@ -349,9 +395,11 @@ def configure_logging(settings: Settings) -> None:
         logging.getLogger(logger_name).setLevel(level)
 
 
-def bind_request_context(**values: Any):
+def bind_request_context(*, request: Request | None = None, **values: Any):
     current = dict(_request_context.get({}))
     current.update(sanitize_fields("http.request.completed", values))
+    if request is not None:
+        current["_request"] = request
     return _request_context.set(current)
 
 
@@ -391,13 +439,14 @@ def _route_template(request: Request) -> str:
 def log_request(
     logger: logging.Logger, *, request: Request, status_code: int, started_at: float
 ) -> None:
+    if status_code >= 500 and getattr(request.state, "domain_error_logged", False):
+        return
     # Request traces carry routine traffic. Keep a fallback for handled server
     # failures; expected client rejections have their own domain diagnostics.
-    emit_event(
-        logger,
+    get_logger(logger.name).log(
+        logging.ERROR if status_code >= 500 else logging.DEBUG,
         "http.request.failed" if status_code >= 500 else "http.request.completed",
-        level=logging.ERROR if status_code >= 500 else logging.DEBUG,
-        fields={
+        extra={
             "status_code": status_code,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             "http_method": request.method,
@@ -409,15 +458,14 @@ def log_request(
 def log_request_exception(
     logger: logging.Logger, *, request: Request, started_at: float
 ) -> None:
-    logger.exception(
+    if getattr(request.state, "domain_error_logged", False):
+        return
+    get_logger(logger.name).exception(
         "http.request.failed",
         extra={
-            "event": "http.request.failed",
-            "event_data": {
-                "duration_ms": round((perf_counter() - started_at) * 1000, 2),
-                "http_method": request.method,
-                "route_template": _route_template(request),
-            },
+            "duration_ms": round((perf_counter() - started_at) * 1000, 2),
+            "http_method": request.method,
+            "route_template": _route_template(request),
         },
     )
 
@@ -437,16 +485,16 @@ def log_admin_activity(
         safe_details["setup_url_created"] = bool(safe_details.pop("setup_url"))
     # Reads and OAuth initiation are diagnostics, not business changes.
     diagnostic = action in _ADMIN_DIAGNOSTIC_ACTIONS
-    emitter = emit_event if diagnostic or outcome != "success" else emit_committed_event
-    emitter(
-        logging.getLogger("app.audit"),
-        "admin.activity",
-        level=logging.DEBUG
+    get_logger("app.audit").log(
+        logging.DEBUG
         if diagnostic
         else logging.WARNING
         if outcome != "success"
         else logging.INFO,
-        fields={
+        "admin.activity",
+        stacklevel=2,
+        after_commit=not diagnostic and outcome == "success",
+        extra={
             "action": action,
             "outcome": outcome,
             "subject_type": subject_type,
@@ -471,11 +519,10 @@ def log_operation_timing(
     started_at: float,
     details: dict[str, Any] | None = None,
 ) -> None:
-    emit_event(
-        logger,
+    get_logger(logger.name).log(
+        logging.DEBUG,
         "app.operation.timing",
-        level=logging.DEBUG,
-        fields={
+        extra={
             "operation": operation,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             **(details or {}),

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import logging
 import secrets
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 
-from app.auth.roles import UserRole
 from app.auth.cookies import SessionCookieSigner
+from app.auth.roles import UserRole
 from app.db.session import commit_request_session
 from app.dependencies import (
     get_admin_accounts_service,
@@ -19,10 +18,10 @@ from app.dependencies import (
     require_admin_user,
     require_authenticated_user,
 )
-from app.observability import log_admin_activity
 from app.domain.admin_accounts.service import AdminAccountsService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
 from app.errors import NotConfiguredError
+from app.observability import get_logger, log_admin_activity
 from app.web.cookies import resolve_cookie_domain
 from app.web.route_helpers import redirect_to
 
@@ -33,7 +32,7 @@ _ADMIN_ACCOUNTS_NEW_PATH = "/admin-accounts/new"
 
 router = APIRouter()
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _redirect_with_error(path: str, message: str):
@@ -51,7 +50,7 @@ async def _best_effort_delete_auth_user(
     try:
         await auth_gateway.delete_user(auth_user_id)
     except Exception:
-        logger.exception("admin.auth_user.cleanup_failed", extra={"event": "admin.auth_user.cleanup_failed"})
+        logger.exception("admin.auth_user.cleanup_failed")
 
 
 async def _best_effort_delete_admin_account(
@@ -63,7 +62,7 @@ async def _best_effort_delete_admin_account(
             auth_user_id=auth_user_id,
         )
     except Exception:
-        logger.exception("admin.account.cleanup_failed", extra={"event": "admin.account.cleanup_failed"})
+        logger.exception("admin.account.cleanup_failed")
 
 
 async def _cleanup_failed_admin_creation(
@@ -187,7 +186,7 @@ async def my_account_change_password(
             current_user.email, current_password
         )
     except Exception:
-        logger.exception("admin.password.verification_failed", extra={"event": "admin.password.verification_failed"})
+        logger.exception("admin.password.verification_failed")
         return _redirect_with_password_error(
             "Kunne ikke oppdatere passordet akkurat nå."
         )
@@ -198,7 +197,7 @@ async def my_account_change_password(
             current_user.auth_user_id, new_password
         )
     except Exception:
-        logger.exception("admin.password.update_failed", extra={"event": "admin.password.update_failed"})
+        logger.exception("admin.password.update_failed")
         return _redirect_with_password_error(
             "Kunne ikke oppdatere passordet akkurat nå."
         )
@@ -342,7 +341,7 @@ async def admin_account_create(
                 auth_user_id,
                 context="admin-account creation failure",
             )
-        logger.exception("admin.account.creation_failed", extra={"event": "admin.account.creation_failed"})
+        logger.exception("admin.account.creation_failed")
         return _redirect_with_error(
             _ADMIN_ACCOUNTS_NEW_PATH,
             "Kunne ikke opprette admin-kontoen akkurat nå.",
@@ -399,7 +398,7 @@ async def admin_account_resend_onboarding(
             role_name=admin_account.role.value,
         )
     except Exception:
-        logger.exception("admin.onboarding.delivery_failed", extra={"event": "admin.onboarding.delivery_failed"})
+        logger.exception("admin.onboarding.delivery_failed")
         return _redirect_with_error(
             f"/admin-accounts/{account_id}",
             "Kunne ikke sende oppsettslenken akkurat nå.",
@@ -442,7 +441,9 @@ async def admin_account_update(
             role=role_value,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     if admin_account is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_ADMIN_ACCOUNT_NOT_FOUND
@@ -569,7 +570,7 @@ async def admin_account_delete(
             auth_user_id=admin_account.auth_user_id,
         )
     except Exception:
-        logger.exception("admin.account.deletion_failed", extra={"event": "admin.account.deletion_failed"})
+        logger.exception("admin.account.deletion_failed")
         return _redirect_with_error(
             f"/admin-accounts/{account_id}",
             "Kunne ikke slette admin-kontoen akkurat nå.",

@@ -13,6 +13,7 @@ from sqlalchemy import func, insert, select, update
 
 from app.config import Settings
 from app.db.session import commit_request_session
+from app.db.table_defs.email_delivery import email_deliveries
 from app.domain.volunteer_applications.tables import (
     domain_events,
     volunteer_application_friend_invitations,
@@ -28,20 +29,19 @@ from app.email_delivery import (
     EmailDeliveryListItem,
     EmailDeliveryRequest,
 )
-from app.infrastructure.email.applicant_templates import (
-    ApplicantEmailTemplateRendererProtocol,
-)
-from app.infrastructure.email.protocols import EmailSenderProtocol
-from app.infrastructure.email.smtp import SmtpDeliveryError
-from app.db.table_defs.email_delivery import email_deliveries
 from app.email_message_preparation import (
     EmailMessagePreparer,
     EmailPreparationFailure,
 )
 from app.email_outbox_repository import EmailOutboxRepository
-from app.observability import current_trace_id, emit_committed_event, emit_event
+from app.infrastructure.email.applicant_templates import (
+    ApplicantEmailTemplateRendererProtocol,
+)
+from app.infrastructure.email.protocols import EmailSenderProtocol
+from app.infrastructure.email.smtp import SmtpDeliveryError
+from app.observability import current_trace_id, get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
 _LEASE_DURATION = timedelta(minutes=5)
@@ -96,15 +96,15 @@ class EmailOutboxService:
             enqueued_trace_id=request.enqueued_trace_id or current_trace_id(),
         )
         if created:
-            emit_committed_event(
-                logger,
+            logger.info(
                 "email.delivery",
-                fields={
+                extra={
                     "email_delivery_id": delivery_id,
                     "registration_id": request.registration_id,
                     "template_key": request.template_key,
                     "status": "pending",
                 },
+                after_commit=True,
             )
         return delivery_id
 
@@ -213,17 +213,6 @@ class EmailOutboxService:
                 duration_ms=_duration_ms(started),
             )
         except Exception:
-            logger.exception(
-                "email.delivery.unexpected",
-                extra={
-                    "event": "email.delivery",
-                    "event_data": {
-                        "email_delivery_id": delivery_id,
-                        "failure_stage": stage,
-                        "error_category": "unexpected",
-                    },
-                },
-            )
             return await self._finish_failure(
                 delivery_id,
                 attempt_id,
@@ -244,10 +233,9 @@ class EmailOutboxService:
             duration_ms=duration_ms,
         )
         await commit_request_session()
-        emit_event(
-            logger,
+        logger.info(
             "email.delivery",
-            fields={
+            extra={
                 "email_delivery_id": delivery_id,
                 "registration_id": registration_id,
                 "status": "sent",
@@ -258,12 +246,8 @@ class EmailOutboxService:
         )
         return "sent"
 
-    async def _start_attempt(
-        self, delivery_id: UUID
-    ) -> tuple[int, int, int | None]:
-        result = await self.repository.start_attempt(
-            delivery_id, now=self._now()
-        )
+    async def _start_attempt(self, delivery_id: UUID) -> tuple[int, int, int | None]:
+        result = await self.repository.start_attempt(delivery_id, now=self._now())
         await commit_request_session()
         return result
 
@@ -312,11 +296,10 @@ class EmailOutboxService:
             now=now,
         )
         await commit_request_session()
-        emit_event(
-            logger,
+        logger.log(
+            logging.WARNING if should_retry else logging.ERROR,
             "email.delivery",
-            level=logging.WARNING if should_retry else logging.ERROR,
-            fields={
+            extra={
                 "email_delivery_id": delivery_id,
                 "registration_id": registration_id,
                 "status": status,

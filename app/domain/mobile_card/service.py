@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hmac
-import logging
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from secrets import choice
@@ -35,7 +34,7 @@ from app.infrastructure.email.mobile_card_templates import (
 )
 from app.infrastructure.email.protocols import EmailDeliveryError, EmailSenderProtocol
 from app.media_tokens import MediaTokenService
-from app.observability import emit_committed_event, emit_event
+from app.observability import get_logger
 from app.shared.semester import get_current_semester_code
 
 # Re-export for backward compatibility
@@ -55,7 +54,7 @@ __all__ = [
     "MobileCardSession",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TrialApplicantProviderProtocol(Protocol):
@@ -64,6 +63,7 @@ class TrialApplicantProviderProtocol(Protocol):
     async def get_active_trial_applicant(self, application_id: int) -> Any | None: ...
 
     async def get_approved_volunteer_id(self, application_id: int) -> int | None: ...
+
 
 _LEGACY_PENGUIN_WORD_PREFIXES = [
     "bug",
@@ -175,7 +175,9 @@ class MobileCardService:
                 "More than one person uses this email address. Contact an administrator."
             )
         if not volunteers and trial_applicant is None:
-            raise MobileCardPersonNotFoundError("Email not found in the personnel database.")
+            raise MobileCardPersonNotFoundError(
+                "Email not found in the personnel database."
+            )
 
         now = datetime.now(UTC)
         access_code = _generate_access_code()
@@ -212,14 +214,17 @@ class MobileCardService:
         except EmailDeliveryError:
             logger.exception(
                 "mobile_card.access_code.delivery_failed",
-                extra={"event": "mobile_card.access_code.delivery_failed"},
             )
             raise MobileCardError(
                 "Could not send access code email. Please try again later."
             )
-        emit_event(logger, "mobile_card.access_code.sent", fields={
-            "subject_type": subject_type, "subject_id": subject_id,
-        })
+        logger.info(
+            "mobile_card.access_code.sent",
+            extra={
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+            },
+        )
         return None
 
     async def create_session(
@@ -284,10 +289,9 @@ class MobileCardService:
                 {"trial_application_id": trial_applicant.application_id}
             )
             card = self._build_trial_card(trial_applicant)
-        emit_committed_event(
-            logger,
+        logger.info(
             "mobile_card.session.created",
-            fields={
+            extra={
                 "subject_type": "volunteer"
                 if volunteer_row is not None
                 else "trial_application",
@@ -295,6 +299,7 @@ class MobileCardService:
                 if volunteer_row is not None
                 else trial_applicant.application_id,
             },
+            after_commit=True,
         )
         return MobileCardSession(session_token=token, card=card)
 
@@ -309,17 +314,25 @@ class MobileCardService:
         elif decoded.trial_application_id is not None:
             if self.trial_applicant_provider is None:
                 raise MobileCardInvalidAccessCodeError("Trial access has expired.")
-            trial_applicant = await self.trial_applicant_provider.get_active_trial_applicant(
-                decoded.trial_application_id
+            trial_applicant = (
+                await self.trial_applicant_provider.get_active_trial_applicant(
+                    decoded.trial_application_id
+                )
             )
             if trial_applicant is None:
-                volunteer_id = await self.trial_applicant_provider.get_approved_volunteer_id(
-                    decoded.trial_application_id
+                volunteer_id = (
+                    await self.trial_applicant_provider.get_approved_volunteer_id(
+                        decoded.trial_application_id
+                    )
                 )
                 if volunteer_id is None:
                     raise MobileCardInvalidAccessCodeError("Trial access has expired.")
-                card = await self._build_card(volunteer_id, include_role_history=include_role_history)
-                promoted_session_token = self.sessions.build_token({"person_id": volunteer_id})
+                card = await self._build_card(
+                    volunteer_id, include_role_history=include_role_history
+                )
+                promoted_session_token = self.sessions.build_token(
+                    {"person_id": volunteer_id}
+                )
             else:
                 card = self._build_trial_card(trial_applicant)
         else:
@@ -327,7 +340,9 @@ class MobileCardService:
                 decoded.person_id or 0, include_role_history=include_role_history
             )
 
-        renewed_session_token = promoted_session_token or self.sessions.maybe_renew(decoded)
+        renewed_session_token = promoted_session_token or self.sessions.maybe_renew(
+            decoded
+        )
         return MobileCardCurrentCardResult(
             card=card,
             renewed_session_token=renewed_session_token,

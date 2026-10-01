@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
-import json
 
 from fastapi import FastAPI
 from opentelemetry import trace
+from opentelemetry.context import attach, detach
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -21,9 +22,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
 from app.error_tracking import configure_error_tracking
-from app.observability import JsonLogFormatter
+from app.observability import JsonLogFormatter, get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 _httpx_instrumented = False
 
 
@@ -67,7 +68,9 @@ class DomainLogFilter(logging.Filter):
             return False
         if record.levelno >= logging.WARNING:
             return True
-        return record.name.startswith("app.") and bool(getattr(record, "event", None))
+        return record.name.startswith("app.") and getattr(
+            record, "event", None
+        ) not in {None, "log.message"}
 
 
 class _SanitizedLoggingHandler(LoggingHandler):
@@ -89,7 +92,15 @@ class _SanitizedLoggingHandler(LoggingHandler):
         for key, value in payload.items():
             if key not in safe_record.__dict__ and key not in {"message", "timestamp"}:
                 safe_record.__dict__[key] = value
-        super().emit(safe_record)
+        context = getattr(record, "_otel_context", None)
+        if context is None:
+            super().emit(safe_record)
+        else:
+            token = attach(context)
+            try:
+                super().emit(safe_record)
+            finally:
+                detach(token)
 
 
 def _build_trace_provider(resource: Resource) -> TracerProvider:
@@ -156,8 +167,5 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
         # Telemetry is never authoritative and must not prevent app startup.
         logger.warning(
             "telemetry.configuration.failed",
-            extra={
-                "event": "telemetry.configuration.failed",
-                "event_data": {"error_category": "configuration"},
-            },
+            extra={"error_category": "configuration"},
         )

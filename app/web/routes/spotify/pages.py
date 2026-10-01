@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
@@ -8,15 +7,15 @@ from fastapi.responses import RedirectResponse
 
 from app.auth.models import AuthenticatedUser, WebSession
 from app.dependencies import get_now_playing_service, require_admin_user
-from app.errors import NotConfiguredError
-from app.observability import log_admin_activity
 from app.domain.spotify.now_playing import NowPlayingService, SpotifyOAuthError
+from app.errors import NotConfiguredError
+from app.observability import get_logger, log_admin_activity
 from app.web.templates import templates
 
 _SPOTIFY_OAUTH_LOGIN_CALLBACK = "spotify.oauth.login.callback"
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @router.get("/spotify/now-playing")
@@ -69,7 +68,7 @@ async def spotify_login(
             user_account_id=current_user.user_account_id,
         )
     except NotConfiguredError:
-        logger.exception("spotify.authorization.unconfigured", extra={"event": "spotify.authorization.unconfigured"})
+        logger.exception("spotify.authorization.unconfigured")
         return _redirect_with_feedback(error="Spotify er ikke konfigurert.")
     log_admin_activity(
         request=request,
@@ -115,7 +114,7 @@ async def spotify_callback(
             code=code,
         )
     except (NotConfiguredError, SpotifyOAuthError) as exc:
-        logger.exception("spotify.authorization.failed", extra={"event": "spotify.authorization.failed"})
+        logger.exception("spotify.authorization.failed")
         log_admin_activity(
             request=request,
             user=current_user,
@@ -150,7 +149,7 @@ async def spotify_logout(
     try:
         await now_playing_service.clear_shared_token()
     except SpotifyOAuthError:
-        logger.exception("spotify.disconnection.failed", extra={"event": "spotify.disconnection.failed"})
+        logger.exception("spotify.disconnection.failed")
         return _redirect_with_feedback(error="Kunne ikke koble fra Spotify akkurat nå.")
     log_admin_activity(
         request=request,
