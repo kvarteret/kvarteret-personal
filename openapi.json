@@ -1130,6 +1130,86 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "InterestRead": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "source_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Hash"
+          }
+        },
+        "required": [
+          "event_id"
+        ],
+        "title": "InterestRead",
+        "type": "object"
+      },
+      "InterestResponse": {
+        "properties": {
+          "score": {
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          },
+          "taps": {
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Taps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "taps",
+          "score"
+        ],
+        "title": "InterestResponse",
+        "type": "object"
+      },
+      "InterestWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "source_hash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Hash",
+            "type": "string"
+          },
+          "taps": {
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Taps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "event_id",
+          "source_hash",
+          "taps"
+        ],
+        "title": "InterestWrite",
+        "type": "object"
+      },
       "MobileCardResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1689,6 +1769,11 @@
       }
     },
     "securitySchemes": {
+      "EventInterestHmac": {
+        "in": "header",
+        "name": "X-Kvarteret-Signature",
+        "type": "apiKey"
+      },
       "VolunteerProspectHmac": {
         "description": "HMAC-SHA256 signature over the versioned request canonical form. Only the samfunnetibergen server holds the signing secret.",
         "in": "header",
@@ -2094,6 +2179,122 @@
         "summary": "Get Now Playing",
         "tags": [
           "now-playing"
+        ]
+      }
+    },
+    "/api/v1/event-interest/read": {
+      "post": {
+        "operationId": "readEventInterest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestRead"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid or stale server signature"
+          },
+          "413": {
+            "description": "Request exceeds the bounded payload size"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Replayed nonce or request limit exceeded"
+          },
+          "503": {
+            "description": "Event response signing is not configured"
+          }
+        },
+        "security": [
+          {
+            "EventInterestHmac": []
+          }
+        ],
+        "summary": "Read Interest",
+        "tags": [
+          "event-interest"
+        ]
+      }
+    },
+    "/api/v1/event-interest/response": {
+      "post": {
+        "operationId": "saveEventInterest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid or stale server signature"
+          },
+          "413": {
+            "description": "Request exceeds the bounded payload size"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Replayed nonce or request limit exceeded"
+          },
+          "503": {
+            "description": "Event response signing is not configured"
+          }
+        },
+        "security": [
+          {
+            "EventInterestHmac": []
+          }
+        ],
+        "summary": "Save Interest",
+        "tags": [
+          "event-interest"
         ]
       }
     },
