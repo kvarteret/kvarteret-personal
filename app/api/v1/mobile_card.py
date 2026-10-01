@@ -16,7 +16,7 @@ from app.domain.mobile_card.service import (
     MobileCardResponse,
     MobileCardService,
 )
-from app.observability import client_ip_from_request, with_named_span
+from app.observability import client_ip_from_request, emit_event, with_named_span
 
 logger = logging.getLogger("app.audit")
 
@@ -183,15 +183,14 @@ async def log_client_session_logout_event(
     request: Request,
     payload: MobileCardSessionLogoutEventRequest,
 ) -> AcceptedStatusResponse:
-    logger.info(
-        "mobile-card client session logout event",
-        extra={
-            "event": "mobile_card.client_session_logout",
-            "event_data": {
-                **payload.model_dump(),
-                "client_ip": client_ip_from_request(request),
-                "user_agent": request.headers.get("user-agent"),
-            },
-        },
-    )
+    emit_event(logger, "mobile_card.client_session_logout", fields={
+        "event_name": payload.event_name,
+        "platform": payload.platform,
+        "app_version": payload.app_version,
+        "auth_error_code": payload.auth_error_code,
+        "auth_error_status": payload.auth_error_status,
+        "had_cached_user": payload.had_cached_user,
+        "had_login_marker": payload.had_login_marker,
+        "had_stored_credentials": payload.had_stored_credentials,
+    })
     return AcceptedStatusResponse(status="accepted")

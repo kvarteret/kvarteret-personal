@@ -35,6 +35,7 @@ from app.infrastructure.email.mobile_card_templates import (
 )
 from app.infrastructure.email.protocols import EmailDeliveryError, EmailSenderProtocol
 from app.media_tokens import MediaTokenService
+from app.observability import emit_committed_event, emit_event
 from app.shared.semester import get_current_semester_code
 
 # Re-export for backward compatibility
@@ -194,7 +195,6 @@ class MobileCardService:
             )
             subject_id = trial_applicant.application_id
             subject_type = "trial_application"
-        logger.info("Generated mobile-card access code for %s %s", subject_type, subject_id)
 
         # The code must be durably stored before the email announces it.
         await commit_request_session()
@@ -211,15 +211,15 @@ class MobileCardService:
             )
         except EmailDeliveryError:
             logger.exception(
-                "Failed to deliver access code email for volunteer %s",
-                subject_id,
+                "mobile_card.access_code.delivery_failed",
+                extra={"event": "mobile_card.access_code.delivery_failed"},
             )
             raise MobileCardError(
                 "Could not send access code email. Please try again later."
             )
-        logger.info(
-            "Sent mobile-card access code email for %s %s", subject_type, subject_id
-        )
+        emit_event(logger, "mobile_card.access_code.sent", fields={
+            "subject_type": subject_type, "subject_id": subject_id,
+        })
         return None
 
     async def create_session(
@@ -284,6 +284,18 @@ class MobileCardService:
                 {"trial_application_id": trial_applicant.application_id}
             )
             card = self._build_trial_card(trial_applicant)
+        emit_committed_event(
+            logger,
+            "mobile_card.session.created",
+            fields={
+                "subject_type": "volunteer"
+                if volunteer_row is not None
+                else "trial_application",
+                "subject_id": volunteer_row["id"]
+                if volunteer_row is not None
+                else trial_applicant.application_id,
+            },
+        )
         return MobileCardSession(session_token=token, card=card)
 
     async def get_current_card(

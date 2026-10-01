@@ -59,6 +59,17 @@ def install_telemetry_flush(app: FastAPI, providers: tuple) -> None:
     app.build_middleware_stack = build_flushing_stack
 
 
+class DomainLogFilter(logging.Filter):
+    """Ship named application outcomes and warnings/errors, never routine reads."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.INFO:
+            return False
+        if record.levelno >= logging.WARNING:
+            return True
+        return record.name.startswith("app.") and bool(getattr(record, "event", None))
+
+
 class _SanitizedLoggingHandler(LoggingHandler):
     """Export only the already-sanitized JSON body, never raw log extras."""
 
@@ -129,11 +140,11 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
                 schedule_delay_millis=1000,
             )
         )
-        logging.getLogger().addHandler(
-            _SanitizedLoggingHandler(
-                level=logging.NOTSET, logger_provider=logger_provider
-            )
+        log_handler = _SanitizedLoggingHandler(
+            level=logging.INFO, logger_provider=logger_provider
         )
+        log_handler.addFilter(DomainLogFilter())
+        logging.getLogger().addHandler(log_handler)
 
         configure_error_tracking(settings)
         FastAPIInstrumentor.instrument_app(app, tracer_provider=trace_provider)

@@ -313,4 +313,4 @@ async def _best_effort_remove(remove_action) -> None:
     try:
         await to_thread(remove_action)
     except Exception:
-        cleanup_logger.warning("storage cleanup failed", exc_info=True)
+        cleanup_logger.warning("volunteer.photo.cleanup_failed", exc_info=True, extra={"event": "volunteer.photo.cleanup_failed"})

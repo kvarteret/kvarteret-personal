@@ -197,7 +197,7 @@ async def load_web_navigation_state(
             await volunteer_applications_service.count_pending_volunteer_applications()
         )
     except Exception:
-        logger.exception("Failed to load pending volunteer-application count.")
+        logger.exception("volunteer.pending_count.failed", extra={"event": "volunteer.pending_count.failed"})
         request.state.volunteer_application_pending_count = 0
 
 
