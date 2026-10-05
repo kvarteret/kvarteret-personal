@@ -17,6 +17,8 @@ for (const entry of await readdir(sourceDir, { withFileTypes: true })) {
   const template = await readFile(sourcePath, "utf8")
   const { html, errors } = await mjml2html(template, {
     filePath: sourcePath,
+    // Shared partials live under the trusted template source directory.
+    ignoreIncludes: false,
     minify: false,
     validationLevel: "strict",
   })

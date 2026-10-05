@@ -1,0 +1,28 @@
+<mjml lang="en" dir="ltr">
+  <mj-head>
+    <mj-title>Samfunnet i Bergen admin account</mj-title>
+    <mj-include path="./partials/attributes.mjml" />
+  </mj-head>
+  <mj-body>
+    <mj-include path="./partials/header.mjml" />
+    <mj-section padding="30px 24px 24px">
+      <mj-column>
+        <mj-text padding="0"><h1 style="margin-top:0;margin-right:0;margin-bottom:0;margin-left:0;font-family:Fraunces,Georgia,Times New Roman,serif;font-size:36px;font-weight:700;line-height:42px;letter-spacing:-1px;color:#26211e;">Samfunnet i Bergen admin</h1></mj-text>
+      </mj-column>
+    </mj-section>
+    <mj-section>
+      <mj-column>
+        <mj-text>A new admin account has been prepared for you.</mj-text>
+        <mj-text>Hei{% if display_name %} {{ display_name }}{% endif %},</mj-text>
+        <mj-text>Your Samfunnet i Bergen account is ready. Use the button below to set your password and activate access.</mj-text>
+        <mj-text>Kontoen din hos Samfunnet i Bergen er klar. Bruk knappen under for å sette passord og aktivere tilgangen.</mj-text>
+        <mj-button href="{{ setup_url }}">Set password / Sett passord</mj-button>
+        <mj-text>Username: <strong>{{ username }}</strong><br/>
+                  Role: <strong>{{ role_name }}</strong></mj-text>
+        <mj-text>If the button does not work, open this link directly:</mj-text>
+        <mj-text><a href="{{ setup_url }}" style="color:#b9252b;word-break:break-word;">{{ setup_url }}</a></mj-text>
+      </mj-column>
+    </mj-section>
+    <mj-include path="./partials/footer.mjml" />
+  </mj-body>
+</mjml>

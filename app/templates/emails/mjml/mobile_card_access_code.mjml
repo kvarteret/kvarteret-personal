@@ -1,53 +1,24 @@
-<mjml>
+<mjml lang="en" dir="ltr">
   <mj-head>
-    <mj-title>Kvarteret Internkort</mj-title>
-    <mj-preview>Your Kvarteret verification code is ready.</mj-preview>
-    <mj-attributes>
-      <mj-all font-family="Helvetica, Arial, sans-serif" color="#111111" />
-      <mj-text font-size="16px" line-height="24px" />
-      <mj-button
-        background-color="#f54b4b"
-        border="0"
-        color="#ffffff"
-        font-size="16px"
-        font-weight="700"
-        inner-padding="16px 20px"
-      />
-      <mj-section background-color="#ffffff" padding="0" />
-      <mj-column padding="0" />
-    </mj-attributes>
+    <mj-title>Samfunnet i Bergen Internkort</mj-title>
+    <mj-preview>Your Samfunnet i Bergen verification code is ready.</mj-preview>
+    <mj-include path="./partials/attributes.mjml" />
   </mj-head>
-  <mj-body background-color="#ffffff">
-    <mj-section background-color="#f54b4b" padding="0">
+  <mj-body>
+    <mj-include path="./partials/header.mjml" />
+    <mj-section padding="30px 24px 24px">
       <mj-column>
-        <mj-text
-          color="#ffffff"
-          font-size="24px"
-          font-weight="700"
-          line-height="32px"
-          padding="20px 24px"
-        >
-          Your verification code
-        </mj-text>
+        <mj-text padding="0"><h1 style="margin-top:0;margin-right:0;margin-bottom:0;margin-left:0;font-family:Fraunces,Georgia,Times New Roman,serif;font-size:36px;font-weight:700;line-height:42px;letter-spacing:-1px;color:#26211e;">Your verification code</h1></mj-text>
       </mj-column>
     </mj-section>
-    <mj-section background-color="#ffffff" padding="0">
+    <mj-section>
       <mj-column>
-        <mj-text padding="24px 24px 16px">
-          Use this code to sign in to Kvarteret Internkort.
-        </mj-text>
-        <mj-raw>
-          <div style="margin:0 24px;background-color:#f54b4b;color:#ffffff;font-family:Helvetica, Arial, sans-serif;font-size:30px;font-weight:700;line-height:38px;text-align:center;padding:18px 12px;">
-            {{ access_code }}
-          </div>
-        </mj-raw>
-        <mj-text padding="16px 24px 0">
-          This code expires in {{ expires_in_minutes }} minutes.
-        </mj-text>
-        <mj-text color="#555555" font-size="14px" padding="8px 24px 24px">
-          If you did not request this code, you can ignore this email.
-        </mj-text>
+        <mj-text>Use this code to sign in to Samfunnet i Bergen Internkort.</mj-text>
+        <mj-text font-family="DM Mono, Courier New, Courier, monospace" padding="8px 0 24px"><p style="margin-top:0;margin-right:0;margin-bottom:0;margin-left:0;background-color:#fff0d9;border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;border-style:solid;border-color:#ebd4ae;padding-top:24px;padding-right:12px;padding-bottom:24px;padding-left:12px;color:#754315;font-family:DM Mono,Courier New,Courier,monospace;font-size:36px;line-height:44px;font-weight:700;letter-spacing:8px;text-align:center;">{{ access_code }}</p></mj-text>
+        <mj-text>This code expires in {{ expires_in_minutes }} minutes.</mj-text>
+        <mj-text color="#6f655e" font-size="14px" line-height="22px">If you did not request this code, you can ignore this email.</mj-text>
       </mj-column>
     </mj-section>
+    <mj-include path="./partials/footer.mjml" />
   </mj-body>
 </mjml>

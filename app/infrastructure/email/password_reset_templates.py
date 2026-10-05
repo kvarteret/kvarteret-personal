@@ -30,6 +30,6 @@ class PasswordResetEmailTemplateRenderer:
     def render_password_reset_email(self, *, setup_url: str) -> PasswordResetEmail:
         template = self._environment.get_template("password_reset.html")
         return PasswordResetEmail(
-            subject="Tilbakestill passordet ditt hos Kvarteret",
+            subject="Tilbakestill passordet ditt hos Samfunnet i Bergen",
             html_body=template.render(setup_url=setup_url),
         )

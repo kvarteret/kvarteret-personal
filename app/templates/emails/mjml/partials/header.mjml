@@ -1,0 +1,6 @@
+<mj-section padding="32px 24px 0">
+  <mj-column>
+    <mj-image src="https://cdn.sanity.io/images/mkjoahvv/production/3df5dc7f63b8e5217851afbbe044f7304d476f52-857x311.svg?w=480&amp;fm=png" alt="Studentersamfunnet i Bergen" width="200px" height="73px" align="left" padding="0 0 26px" />
+    <mj-divider border-color="#e4ddd5" border-width="1px" padding="0" />
+  </mj-column>
+</mj-section>
