@@ -425,6 +425,7 @@ async def test_retry_reuses_provider_key_and_stops_before_deduplication_expires(
 
 async def test_stale_ambiguous_send_expires_without_replaying_after_provider_window(
     session,
+    monkeypatch,
 ):
     await _seed_application(session)
     clock = Clock()
@@ -438,5 +439,12 @@ async def test_stale_ambiguous_send_expires_without_replaying_after_provider_win
     assert len(sender.keys) == 1
     detail = await service.get_delivery(delivery_id)
     assert detail.delivery.last_error_category == "idempotency_window_expired"
+
+    async def skip_audit(*args, **kwargs):
+        # Domain-event BigInteger sequences are PostgreSQL-specific; exercise
+        # recovery and its new provider key independently of that audit seam.
+        pass
+
+    monkeypatch.setattr(service, "_record_admin_recovery_event", skip_audit)
     successor_id = await service.retry_failed(delivery_id, actor_user_account_id=1)
     assert successor_id != delivery_id
