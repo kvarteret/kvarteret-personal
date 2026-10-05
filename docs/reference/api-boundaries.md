@@ -29,8 +29,8 @@ Consumers that generate typed clients should regenerate from `openapi.json`, pre
 
 The React Native app defaults to:
 
-    EXPO_PUBLIC_KVARTERET_PERSONAL_API_BASE_URL=https://personal.kvarteret.no/api/v1
-    EXPO_PUBLIC_INTERNKORT_BASE_URL=https://personal.kvarteret.no/api/v1/mobile-card
+    EXPO_PUBLIC_KVARTERET_PERSONAL_API_BASE_URL=https://personal.samfunnetibergen.no/api/v1
+    EXPO_PUBLIC_INTERNKORT_BASE_URL=https://personal.samfunnetibergen.no/api/v1/mobile-card
 
 It generates a client from `openapi.json` into `src/core/api/kvarteret-personal`. The generator first prefers a sibling `../kvarteret-personal/openapi.json`, then falls back to the remote `develop` artifact.
 
@@ -70,7 +70,7 @@ The app derives the personal base URL from the configured mobile-card base URL a
 
 The site defaults to:
 
-    PERSONAL_APP_BASE_URL=https://personal.kvarteret.no
+    PERSONAL_APP_BASE_URL=https://personal.samfunnetibergen.no
 
 Current public arrangement pages and feeds read from Sanity, not from
 `kvarteret-personal`. Verified sibling paths include

@@ -30,7 +30,7 @@ The docs are organized by purpose:
 
 `kvarteret-personal` owns:
 
-- the FastAPI application at `personal.kvarteret.no`
+- the FastAPI application at `personal.samfunnetibergen.no`
 - the checked-in OpenAPI contract in `openapi.json`
 - Supabase Postgres migrations under `migrations/`
 - the personnel admin UI

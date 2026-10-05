@@ -43,14 +43,14 @@ def build_previews() -> list[EmailPreview]:
     password_reset_renderer = PasswordResetEmailTemplateRenderer()
 
     applicant_invitation_email = applicant_renderer.render_invitation_email(
-        invitation_url="https://personal.kvarteret.no/apply/invite-token-preview",
+        invitation_url="https://personal.samfunnetibergen.no/apply/invite-token-preview",
     )
     applicant_received_email = applicant_renderer.render_application_received_email()
     applicant_profile_email = applicant_renderer.render_profile_completion_email(
-        invitation_url="https://personal.kvarteret.no/apply/profile-token-preview",
+        invitation_url="https://personal.samfunnetibergen.no/apply/profile-token-preview",
     )
     applicant_friend_email = applicant_renderer.render_friend_invitation_email(
-        invitation_url="https://personal.kvarteret.no/apply/friend-token-preview",
+        invitation_url="https://personal.samfunnetibergen.no/apply/friend-token-preview",
         inviter_name="Inga Inviter",
     )
     mobile_card_email = mobile_card_renderer.render_access_code_email(
@@ -58,13 +58,13 @@ def build_previews() -> list[EmailPreview]:
         expires_in_minutes=10,
     )
     admin_account_email = admin_account_renderer.render_onboarding_email(
-        setup_url="https://personal.kvarteret.no/set-password#access_token=preview-token",
+        setup_url="https://personal.samfunnetibergen.no/set-password#access_token=preview-token",
         display_name="New Admin",
         username="new.admin",
         role_name="Admin",
     )
     password_reset_email = password_reset_renderer.render_password_reset_email(
-        setup_url="https://personal.kvarteret.no/set-password#token_hash=preview-token&type=recovery",
+        setup_url="https://personal.samfunnetibergen.no/set-password#token_hash=preview-token&type=recovery",
     )
 
     return [
