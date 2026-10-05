@@ -92,7 +92,10 @@ greeting. React is used only during the asset build, not by the Python service.
 
 The shared layout uses a fluid table with a 600px maximum width, wrapping text
 and buttons, and safe font fallbacks. Brand font declarations are embedded from
-`app/templates/emails/react/fonts.ts`; the logo URL serves a PNG through Sanity. Templates remain borderless. Imported
+`app/templates/emails/react/fonts.ts`. The logo PNG and font files are bundled
+under `app/static/email` and served from `personal.samfunnetibergen.no`, alongside
+their font licenses and source manifest, so email resources align with the
+sending domain. Templates remain borderless. Imported
 Resend template drafts are previews and are not required or published by the
 delivery adapter.
 

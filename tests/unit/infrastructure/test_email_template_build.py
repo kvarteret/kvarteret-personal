@@ -1,5 +1,7 @@
 from html.parser import HTMLParser
 from pathlib import Path
+import re
+from urllib.parse import urlparse
 
 import pytest
 from jinja2 import Environment, meta
@@ -67,3 +69,21 @@ def test_react_build_preserves_optional_admin_greeting(display_name):
         assert "Hei &lt;script&gt;Alex&lt;/script&gt;," in email.html_body
     else:
         assert "Hei," in email.html_body
+
+
+@pytest.mark.parametrize("name", [
+    "applicant_application_received", "applicant_invitation",
+    "applicant_profile_completion", "applicant_friend_invitation",
+    "admin_account_onboarding", "mobile_card_access_code", "password_reset",
+])
+def test_email_resources_are_bundled_on_sending_domain(name):
+    root = Path(__file__).resolve().parents[3]
+    html = (root / "app/templates/emails/compiled" / f"{name}.html").read_text()
+    resources = re.findall(r'url\((https://[^)]+)\)|src="(https://[^"]+)"', html)
+    assert len(resources) == 9  # Brand logo and eight font faces.
+    for css_url, image_url in resources:
+        url = urlparse(css_url or image_url)
+        assert url.hostname == "personal.samfunnetibergen.no"
+        assert url.path.startswith("/static/email/")
+        assert not url.query
+        assert (root / "app" / url.path.lstrip("/")).is_file()
