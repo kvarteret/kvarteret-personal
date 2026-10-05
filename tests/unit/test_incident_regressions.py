@@ -15,7 +15,7 @@ from app.error_tracking import (
     sanitize_exception_event,
 )
 from app.exception_diagnostics import exception_diagnostics
-from app.infrastructure.email.smtp import SmtpDeliveryError, _send_via_smtp
+from app.infrastructure.email.resend import ResendDeliveryError
 from app.main import (
     _install_auth_context_middleware,
     _install_request_context_middleware,
@@ -30,57 +30,6 @@ async def test_group_role_overflow_is_rejected_before_database_access(points):
         await service.update_group_role(7, 14, role_name="Role", pingvin_points=points)
     with pytest.raises(ValueError, match="Pingvinpoeng"):
         await service.create_group_role(7, role_name="Role", pingvin_points=points)
-
-
-@pytest.mark.parametrize("phase,uncertain", [("connect", False), ("send", True)])
-def test_smtp_timeout_classifies_phase_and_avoids_unsafe_retry(
-    monkeypatch, phase, uncertain
-):
-    calls = []
-
-    class SMTP:
-        def __init__(self, *args, **kwargs):
-            calls.append("connect")
-            if phase == "connect":
-                raise TimeoutError("private-host password=secret")
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def ehlo(self):
-            pass
-
-        def login(self, *args):
-            pass
-
-        def send_message(self, message):
-            calls.append("send")
-            raise TimeoutError("private-recipient@example.com")
-
-    monkeypatch.setattr("app.infrastructure.email.smtp.smtplib.SMTP", SMTP)
-    with pytest.raises(SmtpDeliveryError) as raised:
-        _send_via_smtp(
-            server="host",
-            port=587,
-            sender_name="Sender",
-            sender_email="sender@example.com",
-            account="account",
-            password="secret",
-            recipient_email="recipient@example.com",
-            subject="Code",
-            html_body="code",
-            use_starttls=False,
-        )
-    error = raised.value
-    assert error.phase == phase
-    assert error.delivery_uncertain is uncertain
-    assert error.retryable is (not uncertain)
-    assert calls.count("connect") == 1
-    wire = json.dumps(exception_diagnostics(error))
-    assert "private" not in wire and "secret" not in wire
 
 
 def test_database_diagnostics_keep_sqlstate_but_no_query_or_message():
@@ -104,7 +53,7 @@ def test_exception_chain_is_captured_once_per_request_but_next_request_still_rep
         capture_exception=lambda *args, **kwargs: captures.append((args, kwargs))
     )
     handler = ExceptionLoggingHandler(client, Settings(_env_file=None, app_env="test"))
-    root = SmtpDeliveryError("smtp_timeout", retryable=False, delivery_uncertain=True)
+    root = ResendDeliveryError("resend_connection", retryable=True, delivery_uncertain=True)
     wrapper = RuntimeError("private")
     wrapper.__cause__ = root
     for _ in range(2):

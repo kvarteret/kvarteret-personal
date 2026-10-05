@@ -23,7 +23,7 @@ Consumers that generate typed clients should regenerate from `openapi.json`, pre
 | `kvarteret-internbevis-rn` | `kvarteret-personal` and Sanity | Mobile-card, now-playing, generated personal API client, Sanity dashboard events | Mobile-card and now-playing are runtime API calls; current dashboard event reads are Sanity-backed; generated event operations are retired |
 | `samfunnetibergen` | `kvarteret-personal` and Sanity | Volunteer prospects, Sanity public arrangements | Server-side volunteer prospect proxy; public arrangement pages and feeds are Sanity-backed |
 | `frontend-eventside` | Retired Supabase event tables | Retired event editing | Retired repo; stale source references are historical and not a live dependency |
-| `kvarteret-personal` | Supabase, Azure, Spotify, SMTP, Slack | Third-party services | Runtime adapters documented in [External systems](external-systems.md) |
+| `kvarteret-personal` | Supabase, Azure, Spotify, Resend, Slack | Third-party services | Runtime adapters documented in [External systems](external-systems.md) |
 
 ## `kvarteret-internbevis-rn`
 

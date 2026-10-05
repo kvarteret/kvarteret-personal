@@ -92,7 +92,7 @@ sequenceDiagram
     participant Repo as Repository
     participant V as VolunteersService (via VolunteerCreatorProtocol)
     participant DB as Request transaction
-    participant SMTP as SMTP
+    participant Resend as Resend
 
     R->>W: start_trial(application_id)
     W->>SM: application_transition(state, START_TRIAL, context)
@@ -102,7 +102,7 @@ sequenceDiagram
     W->>Repo: set trial status and promoted_volunteer_id
     W->>Repo: append_domain_event(...)
     W->>DB: commit_request_session()
-    W->>SMTP: profile-completion email for this applicant
+    W->>Resend: profile-completion email for this applicant
 
     R->>W: approve(application_id, group)
     W->>SM: application_transition(state, PROMOTE, context)

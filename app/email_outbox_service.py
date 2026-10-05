@@ -32,7 +32,7 @@ from app.infrastructure.email.applicant_templates import (
     ApplicantEmailTemplateRendererProtocol,
 )
 from app.infrastructure.email.protocols import EmailSenderProtocol
-from app.infrastructure.email.smtp import SmtpDeliveryError
+from app.infrastructure.email.resend import ResendDeliveryError
 from app.db.table_defs.email_delivery import email_deliveries
 from app.email_message_preparation import (
     EmailMessagePreparer,
@@ -158,13 +158,14 @@ class EmailOutboxService:
                 stage = "render"
                 await self._set_attempt_stage(attempt_id, stage)
                 # Rendering happens as part of preparation. The explicit stage
-                # remains useful if the process disappears before SMTP finishes.
+                # remains useful if the process disappears before Resend accepts the message.
                 stage = "smtp"
                 await self._set_attempt_stage(attempt_id, stage)
                 await self.email_sender.send_email(
                     recipient_email=prepared.recipient_email,
                     subject=prepared.subject,
                     html_body=prepared.html_body,
+                    idempotency_key=f"email-delivery/{delivery_id}",
                 )
         except EmailPreparationFailure as exc:
             return await self._finish_failure(
@@ -178,7 +179,7 @@ class EmailOutboxService:
                 expired=exc.expired,
                 duration_ms=_duration_ms(started),
             )
-        except SmtpDeliveryError as exc:
+        except ResendDeliveryError as exc:
             return await self._finish_failure(
                 delivery_id,
                 attempt_id,
@@ -187,7 +188,7 @@ class EmailOutboxService:
                 category=exc.category,
                 registration_id=registration_id,
                 retryable=exc.retryable,
-                smtp_status=exc.smtp_status,
+                smtp_status=None,
                 duration_ms=_duration_ms(started),
             )
         except TimeoutError:
@@ -258,12 +259,8 @@ class EmailOutboxService:
         )
         return "sent"
 
-    async def _start_attempt(
-        self, delivery_id: UUID
-    ) -> tuple[int, int, int | None]:
-        result = await self.repository.start_attempt(
-            delivery_id, now=self._now()
-        )
+    async def _start_attempt(self, delivery_id: UUID) -> tuple[int, int, int | None]:
+        result = await self.repository.start_attempt(delivery_id, now=self._now())
         await commit_request_session()
         return result
 
@@ -332,6 +329,14 @@ class EmailOutboxService:
 
     async def _prepare_email(self, delivery_id: UUID):
         row = await self.repository.get_delivery_row(delivery_id)
+        first_attempt = await self.repository.first_attempt_at(delivery_id)
+        if first_attempt is not None:
+            if first_attempt.tzinfo is None:
+                first_attempt = first_attempt.replace(tzinfo=UTC)
+            if self._now() - first_attempt >= timedelta(hours=23):
+                raise EmailPreparationFailure(
+                    "idempotency_window_expired", expired=True
+                )
         return await self.message_preparer.prepare(row)
 
     async def list_deliveries(
@@ -483,7 +488,10 @@ class EmailOutboxService:
         )
         if row is None:
             raise EmailDeliveryNotFoundError("Email delivery was not found.")
-        if row["status"] != "failed":
+        if row["status"] != "failed" and not (
+            row["status"] == "expired"
+            and row["last_error_category"] == "idempotency_window_expired"
+        ):
             raise EmailDeliveryConflictError("Only failed deliveries can be retried.")
         return row
 

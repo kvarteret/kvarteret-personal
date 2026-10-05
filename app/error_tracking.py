@@ -87,6 +87,7 @@ def sanitize_exception_event(event: dict) -> dict | None:
             "db_sqlstate",
             "failure_stage",
             "smtp_status_class",
+            "http_status_class",
             "retryable",
             "delivery_uncertain",
         )

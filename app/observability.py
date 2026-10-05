@@ -56,6 +56,7 @@ _COMMON_FIELDS = frozenset(
         "retryable",
         "delivery_uncertain",
         "smtp_status_class",
+        "http_status_class",
         "attempt_no",
         "duration_ms",
         "http_method",
