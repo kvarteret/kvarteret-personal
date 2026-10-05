@@ -27,7 +27,7 @@ export function EmailLayout({ title, heading, preview, lang = "en", children }: 
           {preview && <Preview useTitleTag={false}>{preview}</Preview>}
           <Container style={{ width: "100%", maxWidth: "600px", tableLayout: "fixed", padding: "32px 24px 24px" }}>
             <Img
-              src="https://cdn.sanity.io/images/mkjoahvv/production/3df5dc7f63b8e5217851afbbe044f7304d476f52-857x311.svg?w=480&fm=png"
+              src="https://personal.samfunnetibergen.no/static/email/samfunnet-logo-ce8e4542d858.png"
               alt="Studentersamfunnet i Bergen" width="200" height="73"
               style={{ display: "block", border: 0, marginBottom: "56px", maxWidth: "100%", height: "auto" }}
             />
