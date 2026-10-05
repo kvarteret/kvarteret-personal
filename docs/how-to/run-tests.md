@@ -53,7 +53,7 @@ Tear down when done:
 
 ## Production Smoke Checks
 
-    curl -sI https://personal.kvarteret.no/health   # security headers + 200
+    curl -sI https://personal.samfunnetibergen.no/health   # security headers + 200
     kv smoke-auth                                  # live create-login-cleanup roundtrip
     DATABASE_URL=<prod url> kv schema-drift        # prod schema matches metadata
 
