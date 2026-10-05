@@ -28,11 +28,11 @@ def exception_diagnostics(error: BaseException) -> dict[str, object]:
         sqlstate = getattr(item, "sqlstate", None)
         if isinstance(sqlstate, str) and re.fullmatch(r"[A-Z0-9]{5}", sqlstate):
             fields["db_sqlstate"] = sqlstate
-        if type(item).__name__ == "SmtpDeliveryError":
+        if type(item).__name__ == "ResendDeliveryError":
             fields["error_category"] = item.category
             fields["retryable"] = item.retryable
             fields["failure_stage"] = item.phase
             fields["delivery_uncertain"] = item.delivery_uncertain
-            if item.smtp_status is not None:
-                fields["smtp_status_class"] = item.smtp_status // 100
+            if item.http_status is not None:
+                fields["http_status_class"] = item.http_status // 100
     return fields

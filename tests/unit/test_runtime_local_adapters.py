@@ -4,7 +4,7 @@ from app.auth.dev_auth import DevAuthGateway
 from app.auth.supabase_auth import SupabaseAuthGateway
 from app.config import Settings
 from app.infrastructure.email.console import ConsoleEmailSender
-from app.infrastructure.email.smtp import SmtpEmailSender
+from app.infrastructure.email.resend import ResendEmailSender
 from app.infrastructure.storage.local_dir import LocalDirectoryStorage
 from app.infrastructure.storage.service import StorageService
 from app.runtime import (
@@ -37,11 +37,11 @@ def test_configured_external_adapters_take_precedence() -> None:
             "AccountKey=ZmFrZQ==;"
             "EndpointSuffix=core.windows.net"
         ),
-        SMTP_SERVER="smtp.example.com",
+        resend_api_key="test-resend-key",
         supabase_url="https://example.supabase.co",
         supabase_secret_key="service-key",
     )
 
     assert isinstance(_build_storage_service(settings), StorageService)
-    assert isinstance(_build_email_sender(settings), SmtpEmailSender)
+    assert isinstance(_build_email_sender(settings), ResendEmailSender)
     assert isinstance(_build_supabase_auth_gateway(settings), SupabaseAuthGateway)

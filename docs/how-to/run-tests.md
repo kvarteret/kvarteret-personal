@@ -23,7 +23,7 @@ What it covers:
 
 ## E2E (real stack on migrated Postgres)
 
-Only SMTP and Azure storage are faked; migrations, the unit of work, repositories, the Postgres rate limiter, CHECK constraints, and the audit table are all real.
+Only Resend and Azure storage are faked; migrations, the unit of work, repositories, the Postgres rate limiter, CHECK constraints, and the audit table are all real.
 
 Set up a disposable database once:
 

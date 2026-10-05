@@ -80,7 +80,7 @@ See [Kvarteret system map](docs/explanation/kvarteret-system-map.md) for the ful
 
 ## External Systems
 
-Direct runtime dependencies include Supabase Postgres, Supabase Auth, Azure Blob Storage, Spotify, SMTP, Slack Incoming Webhooks, Linear, and Vercel.
+Direct runtime dependencies include Supabase Postgres, Supabase Auth, Azure Blob Storage, Spotify, Resend, Slack Incoming Webhooks, Linear, and Vercel.
 
 See [External systems](docs/reference/external-systems.md) and [Configuration](docs/reference/configuration.md).
 

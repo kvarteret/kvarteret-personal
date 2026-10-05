@@ -48,7 +48,7 @@ class ApplicantEmailTemplateRenderer:
 
     def render_invitation_email(self, *, invitation_url: str) -> ApplicantEmail:
         return ApplicantEmail(
-            subject="Complete your Kvarteret registration / Fullfør registreringen din hos Kvarteret",
+            subject="Complete your Samfunnet i Bergen registration / Fullfør registreringen din hos Samfunnet i Bergen",
             html_body=self._render(
                 "applicant_invitation.html",
                 invitation_url=invitation_url,

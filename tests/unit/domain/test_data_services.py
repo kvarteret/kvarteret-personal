@@ -1582,7 +1582,7 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
     assert created_at.tzinfo == UTC
     assert len(code_hash) == 64  # SHA-256 hex digest
     assert email_sender.sent_emails[0]["recipient_email"] == "person@example.com"
-    assert email_sender.sent_emails[0]["subject"] == "Kvarteret Internkort is ready for you"
+    assert email_sender.sent_emails[0]["subject"] == "Samfunnet i Bergen Internkort is ready for you"
     assert "Your verification code" in email_sender.sent_emails[0]["html_body"]
     import re
 

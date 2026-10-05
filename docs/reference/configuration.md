@@ -52,20 +52,49 @@ stores photos under `.devdata/photos/`.
 
 ## Email
 
-The app accepts both current `SMTP_*` names and legacy `EMAIL_*` or `Email__*` aliases for several settings.
+Outbound email uses Resend's HTTPS API through `app/infrastructure/email/resend.py`.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `SMTP_SERVER` | unset | SMTP host. |
-| `SMTP_PORT` | `587` | SMTP port. |
-| `SMTP_SENDER_NAME` | `Det Akademiske Kvarter` | Display name in outbound email. |
-| `SMTP_SENDER_EMAIL` | unset | Sender email address. |
-| `SMTP_ACCOUNT` | unset | SMTP username/account. |
-| `SMTP_PASSWORD` | unset | SMTP password. |
-| `SMTP_USE_STARTTLS` | `true` | Whether to start TLS before login. |
+| `RESEND_API_KEY` | unset | Server-only Resend sending key, scoped to the sender domain. |
+| `EMAIL_SENDER_NAME` | `Samfunnet i Bergen` | Display name in outbound email. |
+| `EMAIL_SENDER_EMAIL` | `hallaien@samfunnetibergen.no` | Verified sender address. |
 
-When `APP_ENV=development` and `SMTP_SERVER` is unset, outbound HTML is written
-to `.devdata/outbox/` and links are logged.
+Store `RESEND_API_KEY` in the deployment's secret environment, never in Git or
+public frontend variables. Old `SMTP_*` and `Email__*` transport settings are no
+longer used. Supabase Auth's SMTP settings are separate from this application's
+HTTPS transport.
+
+When `APP_ENV=development` and `RESEND_API_KEY` is unset, outbound HTML is written
+to `.devdata/outbox/`. Other environments require a Resend key.
+
+The volunteer transactional retry queue remains enabled: domain changes and
+email requests commit together, and the existing dispatch cron submits them to
+Resend. `EmailOutboxService` sends a stable `email-delivery/<uuid>` idempotency key
+for each delivery; API errors and rate limits retain the existing retry schedule.
+Automatic replays stop 23 hours after the first attempt, conservatively within
+[Resend's 24-hour deduplication window](https://resend.com/docs/dashboard/emails/idempotency-keys).
+Resend acceptance means queued by the provider, not delivery to the recipient.
+The database's historical `smtp` stage and nullable SMTP status columns remain
+for compatibility with existing delivery history; new HTTP errors use Resend
+categories and leave SMTP status empty. A changed recipient or inviter name can
+change a retry payload; Resend rejects that key/payload mismatch permanently,
+requiring explicit admin recovery. A manual retry creates a successor delivery
+with a new key and can send another message if an earlier acceptance was uncertain.
+
+Email authors use typed React Email components under `app/templates/emails/react/`.
+`bun run build:emails` type-checks them, runs
+`scripts/compile_react_email_templates.tsx`, and rebuilds the preview gallery.
+The build adapter restores Jinja variables in the generated HTML; Python's
+existing renderers still autoescape runtime values and handle the optional admin
+greeting. React is used only during the asset build, not by the Python service.
+`bun run preview:emails` opens the React Email authoring preview on port 3001.
+
+The shared layout uses a fluid table with a 600px maximum width, wrapping text
+and buttons, and safe font fallbacks. Brand font declarations are embedded from
+`app/templates/emails/react/fonts.ts`; the logo URL serves a PNG through Sanity. Templates remain borderless. Imported
+Resend template drafts are previews and are not required or published by the
+delivery adapter.
 
 ## PostHog Observability
 
