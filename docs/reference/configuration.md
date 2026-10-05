@@ -82,8 +82,19 @@ change a retry payload; Resend rejects that key/payload mismatch permanently,
 requiring explicit admin recovery. A manual retry creates a successor delivery
 with a new key and can send another message if an earlier acceptance was uncertain.
 
-Templates continue to render from checked-in compiled HTML. Imported Resend
-template drafts are previews and are not required or published by this adapter.
+Email authors use typed React Email components under `app/templates/emails/react/`.
+`bun run build:emails` type-checks them, runs
+`scripts/compile_react_email_templates.tsx`, and rebuilds the preview gallery.
+The build adapter restores Jinja variables in the generated HTML; Python's
+existing renderers still autoescape runtime values and handle the optional admin
+greeting. React is used only during the asset build, not by the Python service.
+`bun run preview:emails` opens the React Email authoring preview on port 3001.
+
+The shared layout uses a fluid table with a 600px maximum width, wrapping text
+and buttons, and safe font fallbacks. Brand font declarations are embedded from
+`app/templates/emails/react/fonts.ts`; the logo URL serves a PNG through Sanity. Templates remain borderless. Imported
+Resend template drafts are previews and are not required or published by the
+delivery adapter.
 
 ## PostHog Observability
 
