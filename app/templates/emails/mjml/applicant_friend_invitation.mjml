@@ -22,6 +22,5 @@
         <mj-text color="#6f655e" font-size="14px" line-height="22px"><a href="{{ invitation_url }}" style="color:#b9252b; word-break:break-word;">{{ invitation_url }}</a></mj-text>
       </mj-column>
     </mj-section>
-    <mj-include path="./partials/footer.mjml" />
   </mj-body>
 </mjml>

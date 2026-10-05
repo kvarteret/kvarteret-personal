@@ -14,11 +14,10 @@
     <mj-section>
       <mj-column>
         <mj-text>Use this code to sign in to Samfunnet i Bergen Internkort.</mj-text>
-        <mj-text font-family="DM Mono, Courier New, Courier, monospace" padding="8px 0 24px"><p style="margin-top:0;margin-right:0;margin-bottom:0;margin-left:0;background-color:#fff0d9;border-top-width:1px;border-right-width:1px;border-bottom-width:1px;border-left-width:1px;border-style:solid;border-color:#ebd4ae;padding-top:24px;padding-right:12px;padding-bottom:24px;padding-left:12px;color:#754315;font-family:DM Mono,Courier New,Courier,monospace;font-size:36px;line-height:44px;font-weight:700;letter-spacing:8px;text-align:center;">{{ access_code }}</p></mj-text>
+        <mj-text font-family="DM Mono, Courier New, Courier, monospace" padding="8px 0 24px"><p style="margin-top:0;margin-right:0;margin-bottom:0;margin-left:0;padding-top:24px;padding-right:12px;padding-bottom:24px;padding-left:12px;color:#754315;font-family:DM Mono,Courier New,Courier,monospace;font-size:36px;line-height:44px;font-weight:700;letter-spacing:8px;text-align:center;">{{ access_code }}</p></mj-text>
         <mj-text>This code expires in {{ expires_in_minutes }} minutes.</mj-text>
         <mj-text color="#6f655e" font-size="14px" line-height="22px">If you did not request this code, you can ignore this email.</mj-text>
       </mj-column>
     </mj-section>
-    <mj-include path="./partials/footer.mjml" />
   </mj-body>
 </mjml>

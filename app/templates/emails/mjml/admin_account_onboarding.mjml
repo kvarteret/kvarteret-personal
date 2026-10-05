@@ -23,6 +23,5 @@
         <mj-text><a href="{{ setup_url }}" style="color:#b9252b;word-break:break-word;">{{ setup_url }}</a></mj-text>
       </mj-column>
     </mj-section>
-    <mj-include path="./partials/footer.mjml" />
   </mj-body>
 </mjml>
