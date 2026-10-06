@@ -26,6 +26,7 @@ from app.db.table_defs.auth import (
 )
 from app.db.table_defs.storage import storage_metadata, storage_objects
 from app.db.table_defs.email_delivery import email_deliveries, email_delivery_attempts
+from app.db.table_defs.warehouse import warehouse_volunteer_counts
 from app.domain.admin_accounts.tables import (
     group_admin_memberships,
     user_accounts,
@@ -100,4 +101,5 @@ __all__ = [
     "volunteer_photos",
     "volunteer_records",
     "web_sessions",
+    "warehouse_volunteer_counts",
 ]
