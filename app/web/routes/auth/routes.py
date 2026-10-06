@@ -84,7 +84,11 @@ async def app_login(
     service=Depends(get_mobile_card_service), admin_accounts_service=Depends(get_admin_accounts_service),
     session_store=Depends(get_session_store), settings=Depends(get_settings),
     session_cookie_signer=Depends(get_session_cookie_signer),
+    current_user=Depends(get_current_user),
 ):
+    # A retried form must not turn a successful login into a used-code error.
+    if current_user is not None and current_user.email.strip().casefold() == email.strip().casefold():
+        return RedirectResponse(_safe_login_redirect(next), status_code=303)
     try:
         mobile_session = await service.create_session(email, access_code, source_key=client_ip_from_request(request))
         subject = service.sessions.decode_token(mobile_session.session_token)
