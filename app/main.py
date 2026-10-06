@@ -21,6 +21,7 @@ from app.errors import NotConfiguredError
 from app.media.router import router as media_router
 from app.internal.router import router as internal_router
 from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.canonical_web import CanonicalWebMiddleware
 from app.observability import (
     get_logger,
     bind_request_context,
@@ -62,6 +63,7 @@ def create_app(container=None) -> FastAPI:
     _install_request_context_middleware(app)
     _install_http_exception_handler(app)
     _include_routers(app)
+    app.add_middleware(CanonicalWebMiddleware)
     configure_telemetry(app, resolved_container.settings)
     return app
 
