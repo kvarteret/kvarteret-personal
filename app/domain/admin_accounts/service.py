@@ -89,6 +89,9 @@ class AdminAccountsService:
     async def access_groups(self):
         return await self.repository.access_groups()
 
+    async def group_admin_groups(self, auth_user_id: UUID):
+        return await self.repository.group_admin_groups(auth_user_id)
+
     async def get_volunteer_identity(self, volunteer_id: int):
         return await self.repository.volunteer_identity(volunteer_id)
 

@@ -43,6 +43,14 @@
           <h2 class="text-4xl font-light tracking-tight">Kurs</h2>
         </div>
       </a>
+      {% if current_user.role in ["Admin", "Gruppeadmin"] %}
+        <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-kvarteret-surface no-underline shadow-[0_24px_48px_-28px_rgba(245,75,75,0.45)] transition hover:bg-kvarteret-red-dark" href="/statistikk" hx-boost="false">
+          <div>
+            <h2 class="text-4xl font-light tracking-tight">Arrangementstatistikk</h2>
+            <p class="mt-2 text-sm opacity-80">Visninger og klikk på samfunnetibergen.no</p>
+          </div>
+        </a>
+      {% endif %}
       {% if request.state.show_admin_tools %}
         <a class="grid min-h-40 place-items-center bg-kvarteret-red p-6 text-center text-kvarteret-surface no-underline shadow-[0_24px_48px_-28px_rgba(245,75,75,0.45)] transition hover:bg-kvarteret-red-dark" href="/admin-accounts">
           <div>

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     legacy_admin_login_enabled: bool = Field(default=True)
     app_public_base_url: str | None = Field(default=None)
     event_interest_secret: str | None = Field(default=None)
+    website_base_url: str = Field(default="https://www.samfunnetibergen.no")
     volunteer_prospect_hmac_secret: str | None = Field(default=None)
     volunteer_prospect_hmac_previous_secret: str | None = Field(default=None)
     volunteer_prospect_max_body_bytes: int = Field(default=16 * 1024, gt=0)
