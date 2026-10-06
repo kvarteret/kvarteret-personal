@@ -3,6 +3,8 @@ from __future__ import annotations
 from app.observability import get_logger
 
 from dataclasses import dataclass
+from contextlib import contextmanager
+from app.observability import with_named_span
 
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.repository import AuthRepositoryProtocol
@@ -10,6 +12,23 @@ from app.auth.session_store import SessionStoreProtocol
 from app.auth.supabase_auth import SupabaseAuthGatewayProtocol
 
 logger = get_logger(__name__)
+
+
+@contextmanager
+def login_stage(stage: str, account_id: int | None = None):
+    with with_named_span(f"auth.login.{stage}"):
+        try:
+            yield
+        except Exception:
+            logger.exception(
+                "auth.login.failed",
+                extra={
+                    "failure_stage": stage,
+                    "user_account_id": account_id,
+                    "outcome": "failed",
+                },
+            )
+            raise
 
 
 class LoginError(Exception):
@@ -42,9 +61,10 @@ class LoginService:
         user_agent: str | None,
     ) -> LoginResult:
         normalized_identifier = identifier.strip().lower()
-        account = await self.repository.get_user_account_by_identifier(
-            normalized_identifier
-        )
+        with login_stage("account_lookup"):
+            account = await self.repository.get_user_account_by_identifier(
+                normalized_identifier
+            )
         if account is None:
             logger.warning(
                 "login failed",
@@ -58,9 +78,10 @@ class LoginService:
             )
             raise LoginError("Invalid credentials.")
 
-        auth_user_id = await self.supabase_auth.sign_in_with_password(
-            account.email, password
-        )
+        with login_stage("password_verification", account.id):
+            auth_user_id = await self.supabase_auth.sign_in_with_password(
+                account.email, password
+            )
         if auth_user_id is None:
             logger.warning(
                 "login failed",
@@ -83,14 +104,18 @@ class LoginService:
             except Exception:
                 # A status-write failure must not turn a valid Auth login into
                 # a failed login. The next successful login can repair it.
-                logger.exception("admin.onboarding.completion_failed", extra={"event": "admin.onboarding.completion_failed"})
+                logger.exception(
+                    "admin.onboarding.completion_failed",
+                    extra={"event": "admin.onboarding.completion_failed"},
+                )
 
-        session = await self.session_store.create_session(
-            auth_user_id=auth_user_id,
-            user_account_id=account.id,
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
+        with login_stage("session_creation", account.id):
+            session = await self.session_store.create_session(
+                auth_user_id=auth_user_id,
+                user_account_id=account.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
         result = LoginResult(
             session=session,
             user=AuthenticatedUser(
@@ -104,6 +129,7 @@ class LoginService:
         )
         logger.info(
             "login succeeded",
+            after_commit=True,
             extra={
                 "event": "auth.login.succeeded",
                 "event_data": {

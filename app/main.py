@@ -13,9 +13,14 @@ from fastapi.staticfiles import StaticFiles
 from itsdangerous import BadSignature
 
 from starlette.types import Message
+from opentelemetry import trace
 
 from app.api.router import api_router
-from app.db.session import reset_request_session, rollback_request_session, set_request_session
+from app.db.session import (
+    reset_request_session,
+    rollback_request_session,
+    set_request_session,
+)
 from app.error_tracking import begin_error_tracking_request, end_error_tracking_request
 from app.errors import NotConfiguredError
 from app.media.router import router as media_router
@@ -28,12 +33,14 @@ from app.observability import (
     build_request_id,
     clear_request_context,
     configure_logging,
+    diagnostic_session_id,
     emit_event,
     log_request,
     log_request_exception,
     request_context_for_user,
     reset_request_context,
 )
+from app.config import Settings
 from app.runtime import app_lifespan, build_application_container
 from app.telemetry import configure_telemetry
 from app.system.router import router as system_router
@@ -168,25 +175,51 @@ def _install_auth_context_middleware(app: FastAPI, container) -> None:
                 request.state.session = None
                 request.state.impersonator_user = None
             except Exception:
-                logger.exception("auth.context.unavailable", extra={"event": "auth.context.unavailable", "event_data": {"failure_stage": "auth_session_load"}})
+                logger.exception(
+                    "auth.context.unavailable",
+                    extra={
+                        "event": "auth.context.unavailable",
+                        "event_data": {"failure_stage": "auth_session_load"},
+                    },
+                )
                 request.state.current_user = None
                 request.state.session = None
                 request.state.impersonator_user = None
                 await rollback_request_session()
                 message = "Innlogging er midlertidig utilgjengelig. Prøv igjen om litt."
                 if request.url.path.startswith("/api/"):
-                    return JSONResponse({"detail": message}, status_code=503, headers={"Retry-After": "30"})
-                return Response(message, status_code=503, media_type="text/plain", headers={"Retry-After": "30"})
+                    return JSONResponse(
+                        {"detail": message},
+                        status_code=503,
+                        headers={"Retry-After": "30"},
+                    )
+                return Response(
+                    message,
+                    status_code=503,
+                    media_type="text/plain",
+                    headers={"Retry-After": "30"},
+                )
         return await call_next(request)
 
 
 def _install_request_context_middleware(app: FastAPI) -> None:
+    settings = (
+        app.state.container.settings
+        if hasattr(app.state, "container")
+        else Settings(_env_file=None)
+    )
+
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
         started_at = perf_counter()
         request_id = build_request_id(request)
+        session_id = diagnostic_session_id(request, settings)
+        span = trace.get_current_span()
+        span.set_attribute("session.id", session_id)
+        span.set_attribute("request_id", request_id)
         token = bind_request_context(
             request_id=request_id,
+            session_id=session_id,
             http_method=request.method,
         )
         response = None
@@ -294,7 +327,7 @@ def _requires_csrf_validation(request: Request) -> bool:
         return False
     if request.url.path.startswith("/api/"):
         return False
-    if request.url.path in {'/login/app', '/login/app/code'}:
+    if request.url.path in {"/login/app", "/login/app/code"}:
         return True
     session_cookie_name = request.app.state.container.settings.session_cookie_name
     return bool(request.cookies.get(session_cookie_name))

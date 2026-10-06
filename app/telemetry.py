@@ -23,7 +23,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
 from app.error_tracking import configure_error_tracking
-from app.observability import JsonLogFormatter
+from app.observability import (
+    DOMAIN_OUTCOME_EVENTS,
+    JsonLogFormatter,
+    _ADMIN_DIAGNOSTIC_ACTIONS,
+)
 
 logger = get_logger(__name__)
 _httpx_instrumented = False
@@ -69,7 +73,14 @@ class DomainLogFilter(logging.Filter):
             return False
         if record.levelno >= logging.WARNING:
             return True
-        return record.name.startswith("app.") and bool(getattr(record, "event", None))
+        event = getattr(record, "event", None)
+        if not record.name.startswith("app.") or event not in DOMAIN_OUTCOME_EVENTS:
+            return False
+        return (
+            event != "admin.activity"
+            or getattr(record, "event_data", {}).get("action")
+            not in _ADMIN_DIAGNOSTIC_ACTIONS
+        )
 
 
 class _SanitizedLoggingHandler(LoggingHandler):
@@ -146,10 +157,12 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
             level=logging.INFO, logger_provider=logger_provider
         )
         log_handler.addFilter(DomainLogFilter())
-        get_logger().addHandler(log_handler)
+        logging.getLogger().addHandler(log_handler)
 
         configure_error_tracking(settings)
-        FastAPIInstrumentor.instrument_app(app, tracer_provider=trace_provider)
+        FastAPIInstrumentor.instrument_app(
+            app, tracer_provider=trace_provider, exclude_spans=["send", "receive"]
+        )
         install_telemetry_flush(app, (trace_provider, logger_provider))
         if not _httpx_instrumented:
             HTTPXClientInstrumentor().instrument(tracer_provider=trace_provider)

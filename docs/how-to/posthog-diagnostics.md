@@ -37,9 +37,9 @@ redeploy. Production already had these variables when inspected. Preview must
 be configured separately. Never use a personal PostHog API key for ingestion.
 
 `app/telemetry.py` exports named application events at INFO and warnings/errors.
-Routine HTTP responses below 500, query timings, page views, searches, and
+Successful HTTP responses, query timings, page views, searches, and
 mobile-card renewal/invalid-session diagnostics are DEBUG and are excluded from
-PostHog even when `LOG_LEVEL=DEBUG`. Handled 5xx responses retain a generic
+PostHog even when `LOG_LEVEL=DEBUG`. All 4xx/5xx responses retain a generic
 `http.request.failed` fallback; unhandled exceptions retain sanitized diagnostics
 and Error Tracking. Request traces carry routine HTTP activity.
 
@@ -120,8 +120,8 @@ as absent values. Invalid nonempty identifiers still return 422. The fragment
 only submits group, role, year, and term; it excludes CSRF and other form fields
 from the GET query. The management authorization requirement remains enforced.
 FastAPI request validation emits `http.validation.failed` at WARN with field
-locations, error codes, and issue count, never rejected input. Routine request completion logs are DEBUG; handled 5xx fallbacks are ERROR.
-Domain validation warnings remain available without an additional 4xx request log. The admin browser reporter also captures
+locations, error codes, and issue count, never rejected input. Successful request logs are DEBUG; 4xx fallbacks are WARN and 5xx fallbacks are ERROR.
+Domain validation warnings remain available alongside a request failure fallback. The admin browser reporter also captures
 HTMX response failures; dependent GET fragments do not count as submissions.
 
 The four public forms (volunteer, event, room booking, karaoke) each keep a
@@ -148,3 +148,55 @@ services for Vercel failures and request IDs. Personal now filters these routine
 sampling domain events. This policy takes effect after deploying both Personal
 and the separate collector; changing source alone does not change production
 volume. The shared drain subscription and website logging are unchanged.
+
+
+## Mobile logout diagnostics and correlation
+
+Personal uses the standard Python `logging.LoggerAdapter`, JSON formatter and
+an INFO export allowlist (`DOMAIN_OUTCOME_EVENTS` in `app/observability.py`).
+Domain outcomes and all WARN/ERROR records are exported. Reads, visits, query
+timings, session renewal, and cache fallback/recovery are DEBUG. Records have
+`schema_version=1` and `domain`; admin records use the action's domain. Database
+outcomes publish after commit, with captured request and trace context.
+
+The app calls `POST /api/v1/mobile-card/client-events/diagnostics`. Signed-out
+clients can report here; payloads are bounded and the existing Postgres limiter
+allows 60 requests per minute per source IP. The original
+`/client-events/session-logout` endpoint remains available to older installs.
+The new route accepts only named diagnostics and declared fields:
+
+| App event | Exported event | Level |
+| --- | --- | --- |
+| `logout_succeeded` | `mobile_card.logout.succeeded` | INFO |
+| `logout_failed` | `mobile_card.client_diagnostic` | WARN |
+| `session_invalidated` | `mobile_card.client_diagnostic` | WARN |
+| `credentials_missing_after_login` | `mobile_card.client_diagnostic` | WARN |
+| `response_invalid`, `session_token_persist_failed` | `mobile_card.client_diagnostic` | WARN |
+| `cache_fallback_started`, `cache_fallback_recovered` | `mobile_card.client_diagnostic` | DEBUG (excluded) |
+
+Filter `event_name=session_invalidated` to investigate a forced logout. It has
+`failure_stage=reauthorization`, auth code/status and credential/cache/marker
+presence flags. Raw error messages, account names, email addresses and session
+tokens are excluded. Client event/operation/attempt IDs, occurrence time,
+platform, app/runtime version and update ID connect retries and releases.
+Delivery is best-effort with a bounded 100-record, 24-hour client queue; retries
+can produce duplicate log records, identifiable by `event_id` and `attempt_id`.
+
+The app attaches a random `X-Session-ID` to auth requests and diagnostics for the
+current app process; queued diagnostics preserve their original session ID.
+Personal writes `session_id` on logs and `session.id` on OTel server spans. Each
+request has its own trace; `session_id` connects requests, including a rejected
+`/me` request followed by forced logout. The diagnostic ID grants no access.
+Browser correlation uses a purpose-specific keyed digest of the existing valid
+CSRF cookie. Cookie changes start a new diagnostic session. Requests without a
+cookie or valid diagnostic header receive a fresh ID.
+
+`X-Request-ID` in the response identifies a request. Follow its OTel trace for
+dependencies or filter `session_id` for surrounding domain outcomes. ASGI
+send/receive spans are disabled; server, domain and HTTPX spans remain
+unsampled. Named domain spans suppress raw exception events. Error logs retain
+exception types, final frame file/function/line, dependency status and SQLSTATE;
+Error Tracking retains sanitized stack metadata. Exporter failure or abrupt
+termination can still lose telemetry.
+
+Policy reference: https://posthog.com/docs/logs/best-practices
