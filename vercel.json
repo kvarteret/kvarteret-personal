@@ -10,6 +10,10 @@
   },
   "crons": [
     {
+      "path": "/internal/cron/refresh-warehouse-volunteer-counts",
+      "schedule": "17 * * * *"
+    },
+    {
       "path": "/internal/cron/dispatch-email-deliveries",
       "schedule": "*/5 * * * *"
     }
