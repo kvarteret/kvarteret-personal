@@ -43,6 +43,7 @@ _COMMON_FIELDS = frozenset(
         "environment",
         "request_id",
         "session_id",
+        "synthetic",
         "trace_id",
         "span_id",
         "registration_id",
@@ -190,6 +191,21 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
 }
+
+# Client payload names remain compatible; exported bodies describe domain outcomes.
+MOBILE_DIAGNOSTIC_EVENTS = {
+    "logout_succeeded": "mobile_card.logout.succeeded",
+    "logout_failed": "mobile_card.logout.failed",
+    "session_invalidated": "mobile_card.session.invalidated",
+    "credentials_missing_after_login": "mobile_card.credentials.missing_after_login",
+    "response_invalid": "mobile_card.response.invalid",
+    "session_token_persist_failed": "mobile_card.session.persistence.failed",
+    "cache_fallback_started": "mobile_card.cache.fallback.started",
+    "cache_fallback_recovered": "mobile_card.cache.fallback.recovered",
+}
+for _diagnostic_event in MOBILE_DIAGNOSTIC_EVENTS.values():
+    _EVENT_FIELDS[_diagnostic_event] = _EVENT_FIELDS["mobile_card.client_diagnostic"]
+
 
 # INFO is an explicit contract: adding a named visit/read event cannot increase
 # ingestion by accident. Warnings and errors remain unconditional.

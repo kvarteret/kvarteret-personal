@@ -215,9 +215,12 @@ def _install_request_context_middleware(app: FastAPI) -> None:
         span = trace.get_current_span()
         span.set_attribute("session.id", session_id)
         span.set_attribute("request_id", request_id)
+        synthetic = request.headers.get("x-telemetry-synthetic", "").lower() == "true"
+        span.set_attribute("synthetic", synthetic)
         token = bind_request_context(
             request_id=request_id,
             session_id=session_id,
+            synthetic=synthetic,
             http_method=request.method,
         )
         response = None

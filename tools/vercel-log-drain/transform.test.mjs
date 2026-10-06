@@ -70,7 +70,7 @@ test("filtered batches are acknowledged without an ingestion request", async () 
  const original=globalThis.fetch
  try {
   globalThis.fetch=async()=>{throw new Error("unexpected export")}
-  await handler({method:"POST",headers:{authorization:"Bearer test-secret"},body:[{...record,proxy:{statusCode:200}}]},response)
+  await handler({method:"POST",headers:{authorization:"Bearer test-secret"},body:[{...record,proxy:{statusCode:200}}, {...record,source:"firewall",proxy:{statusCode:429}}]},response)
   assert.equal(response.code,204)
  } finally {globalThis.fetch=original;delete process.env.VERCEL_DRAIN_SECRET;delete process.env.POSTHOG_PROJECT_TOKEN}
 })
@@ -83,20 +83,22 @@ test("telemetry setup failure retains a platform fallback", () => {
 
 test("platform failures have actionable event names", () => {
  for (const [input,event] of [
-  [{...record,source:"firewall",proxy:{statusCode:429}},"http.request.blocked"],
   [{...record,proxy:{statusCode:404}},"http.request.failed"],
   [{...record,proxy:{statusCode:200},level:"error",message:"TypeError"},"platform.runtime.failed"],
  ]) assert.equal(transform([input]).resourceLogs[0].scopeLogs[0].logRecords[0].body.stringValue,event)
 })
 
-test("known blocked probes are excluded while user-facing failures remain", () => {
- for (const path of ["/.git/config", "/%2egit/config", "/.env", "/wp-admin/admin-ajax.php", "/wp-json/wp/v2/media", "/wp-login.php", "/xmlrpc.php", "/wine-menu", "/menu/wine-list"]) {
-  assert.deepEqual(transform([{...record,source:"firewall",path,proxy:{statusCode:429,method:"HEAD"}}]),{resourceLogs:[]})
+test("all firewall records stay in Vercel while application failures remain", () => {
+ for (const projectId of [record.projectId, "prj_OHYAWhiMGYIYvZ2UaBqnVSLRRQQi"]) {
+  for (const statusCode of [200, 403, 429, 500]) {
+   for (const path of ["/", "/login", "/api/v1/mobile-card/me", "/.git/config", "/wine-menu"]) {
+    assert.deepEqual(transform([{...record,projectId,source:"firewall",path,level:"error",proxy:{statusCode,method:"GET"}}]),{resourceLogs:[]})
+   }
+  }
  }
- for (const path of ["/", "/nb/rom/book", "/api/v1/mobile-card/me", "/login", "/wine-menu"]) {
-  assert.equal(transform([{...record,source:"firewall",path,proxy:{statusCode:429,method:"GET"}}]).resourceLogs.length,1)
+ for (const statusCode of [401, 429, 500]) {
+  assert.equal(transform([{...record,source:"lambda",path:"/api/v1/mobile-card/me",proxy:{statusCode}}]).resourceLogs.length,1)
  }
- assert.equal(transform([{...record,source:"lambda",path:"/.git/config",proxy:{statusCode:500}}]).resourceLogs.length,1)
 })
 test("runtime dependency failures retain safe dependency identity", () => {
  const output=transform([{...record,proxy:{statusCode:200},level:"error",message:"TypeError: fetch failed ECONNRESET host: 'mkjoahvv.apicdn.sanity.io' arbitrary person@example.com"}])

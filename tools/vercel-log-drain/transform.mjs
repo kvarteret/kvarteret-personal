@@ -24,15 +24,6 @@ function validId(value, length) {
   return typeof value === "string" && new RegExp(`^[a-f0-9]{${length}}$`, "i").test(value)
     && !/^0+$/.test(value) ? value.toLowerCase() : undefined
 }
-function isBlockedProbe(record, proxy, status) {
-  if (record.source !== "firewall" || status < 400) return false
-  let path
-  try { path = decodeURIComponent(String(record.path ?? proxy.path ?? "").split("?")[0]).toLowerCase() } catch { return false }
-  if (/^\/(?:\.git(?:\/|$)|\.env(?:\.|\/|$)|wp-admin(?:\/|$)|wp-login\.php(?:\/|$)|wp-json(?:\/|$)|xmlrpc\.php(?:\/|$))/.test(path)) return true
-  // Observed HEAD scan tried six nonexistent wine-menu variants in one burst.
-  return (proxy.method ?? record.method) === "HEAD"
-    && /^\/(?:wine-menu|winelist|wine_list|wine-list|menus?\/wine-list)\/?$/.test(path)
-}
 export function transform(records) {
   if (!Array.isArray(records) || records.length > 10000) throw new Error("Invalid batch")
   return { resourceLogs: records.flatMap(record => {
@@ -42,7 +33,8 @@ export function transform(records) {
     }
     const proxy = record.proxy || {}
     const status = proxy.statusCode ?? record.statusCode
-    if (isBlockedProbe(record, proxy, status)) return []
+    // Firewall diagnostics belong in Vercel, before application execution.
+    if (record.source === "firewall") return []
     let severity = status >= 500 ? "ERROR" : status >= 400 ? "WARN"
       : ({fatal:"FATAL",error:"ERROR",warning:"WARN",warn:"WARN",debug:"DEBUG",trace:"TRACE"}[record.level] || "INFO")
     let parsed = {}
@@ -74,7 +66,6 @@ export function transform(records) {
     const dependency = /\bmkjoahvv\.(?:apicdn|api)\.sanity\.io\b/.test(message) ? "sanity" : undefined
     const errorType = message.match(/\b(?:TypeError|ReferenceError|SyntaxError|TimeoutError|RuntimeError)\b/)?.[0]
     const event = typeof fields.event === "string" ? fields.event
-      : record.source === "firewall" ? "http.request.blocked"
       : status >= 400 ? "http.request.failed"
       : "platform.runtime.failed"
     const log = {
