@@ -1262,6 +1262,39 @@
         "title": "ClientErrorReport",
         "type": "object"
       },
+      "EventStatisticsAccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "groups": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StatisticsGroup"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groups"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "groups"
+        ],
+        "title": "EventStatisticsAccessResponse",
+        "type": "object"
+      },
       "FeedbackRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2118,6 +2151,35 @@
         ],
         "title": "PublicVolunteerProspectResponse",
         "type": "object"
+      },
+      "StatisticsGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "StatisticsGroup",
+        "type": "object"
+      },
+      "UserRole": {
+        "enum": [
+          "Admin",
+          "Gruppeadmin",
+          "Frivillig",
+          "Tilskuer"
+        ],
+        "title": "UserRole",
+        "type": "string"
       },
       "ValidationError": {
         "properties": {
@@ -3058,6 +3120,33 @@
         "summary": "Submit Feedback",
         "tags": [
           "feedback"
+        ]
+      }
+    },
+    "/api/v1/me/statistikk-tilgang": {
+      "get": {
+        "operationId": "getEventStatisticsAccess",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventStatisticsAccessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "No Personal session."
+          },
+          "403": {
+            "description": "Not Admin or Gruppeadmin."
+          }
+        },
+        "summary": "Get Event Statistics Access",
+        "tags": [
+          "event-statistics"
         ]
       }
     },
@@ -5584,6 +5673,22 @@
           }
         },
         "summary": "Spotify Now Playing Page"
+      }
+    },
+    "/statistikk": {
+      "get": {
+        "operationId": "event_statistics_statistikk_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Event Statistics"
       }
     },
     "/volunteer-applications": {

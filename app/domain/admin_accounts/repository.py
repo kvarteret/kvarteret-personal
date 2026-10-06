@@ -43,6 +43,14 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             return None
         return group_ids
 
+    async def group_admin_groups(self, auth_user_id: UUID):
+        return await self.fetch_all_mappings(
+            select(groups.c.slug, groups.c.name)
+            .join(group_admin_memberships, group_admin_memberships.c.group_id == groups.c.id)
+            .where(group_admin_memberships.c.auth_user_id == auth_user_id, groups.c.is_active.is_(True))
+            .order_by(groups.c.name)
+        )
+
     async def access_groups(self):
         return await self.fetch_all_mappings(select(groups.c.id, groups.c.name).where(groups.c.is_active.is_(True)).order_by(groups.c.name))
 

@@ -7,6 +7,7 @@ from app.web.routes.admin_accounts.pages import router as admin_account_pages_ro
 from app.web.routes.auth.routes import router as auth_router
 from app.web.routes.courses.actions import router as course_actions_router
 from app.web.routes.courses.pages import router as course_pages_router
+from app.web.routes.event_statistics.routes import router as event_statistics_router
 from app.web.routes.feedback.routes import router as feedback_router
 from app.web.routes.email_deliveries.actions import (
     router as email_delivery_actions_router,
@@ -43,6 +44,7 @@ web_router.include_router(group_pages_router)
 web_router.include_router(group_actions_router)
 web_router.include_router(course_pages_router)
 web_router.include_router(course_actions_router)
+web_router.include_router(event_statistics_router)
 web_router.include_router(spotify_pages_router)
 web_router.include_router(admin_account_pages_router)
 web_router.include_router(admin_account_actions_router)
