@@ -18,6 +18,8 @@ class AdminAccountListItem:
     last_login: datetime | None
     group_admin_group_ids: list[int]
     group_admin_group_count: int
+    volunteer_id: int | None = None
+    is_legacy_account: bool = False
 
 
 @dataclass(slots=True)

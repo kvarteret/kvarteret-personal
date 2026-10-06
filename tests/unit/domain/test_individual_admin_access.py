@@ -44,3 +44,18 @@ async def test_group_admin_update_replaces_groups_and_invalidates_sessions(repos
     assert sum('INSERT INTO public.group_admin_memberships' in statement for statement in statements) == 1
     assert any('DELETE FROM public.group_admin_memberships' in statement for statement in statements)
     assert any('DELETE FROM public.web_sessions' in statement for statement in statements)
+
+
+async def test_personal_account_role_cannot_bypass_access_configuration(monkeypatch):
+    from app.domain.admin_accounts.service import AdminAccountsService
+
+    monkeypatch.setattr("app.domain.admin_accounts.service._normalize_email", lambda value: value)
+    repository = AdminAccountsRepository()
+    repository.get_admin_account_detail = AsyncMock(return_value=SimpleNamespace(
+        email="same", volunteer_id=10, is_legacy_account=False, role=UserRole.ADMIN))
+    repository.update_admin_account = AsyncMock()
+    service = AdminAccountsService(repository)
+    with pytest.raises(ValueError, match="Tilgang i personaldatabasen"):
+        await service.update_admin_account(user_account_id=10, username="person", email="same",
+            display_name="Person", role=UserRole.GROUP_ADMIN)
+    repository.update_admin_account.assert_not_awaited()

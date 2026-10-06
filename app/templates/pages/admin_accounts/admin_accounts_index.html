@@ -3,7 +3,8 @@
 {% block page_content %}
   <section class="grid gap-7">
     <header class="grid justify-items-center gap-3 pt-3 text-center">
-      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Admin-kontoer</h1>
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Administrer tilgang</h1>
+      <p class="text-stone-600">Gi frivillige Admin- eller Gruppeadmin-tilgang. De logger inn med sin personlige app-innlogging.</p>
     </header>
 
     <form class="app-panel" method="get">
@@ -18,9 +19,10 @@
             placeholder="Sir Nils Olav III"
           >
         </label>
+        <label class="grid gap-1"><span class="text-sm text-stone-500">Kontotype</span><select class="app-input" name="account_type">{% for value, label in [("personal", "Personlige kontoer"), ("legacy", "Gamle innlogginger"), ("unlinked", "Mangler frivilligprofil"), ("all", "Alle kontoer")] %}<option value="{{ value }}" {% if account_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
         <div class="flex flex-wrap gap-3">
           <button class="app-button" type="submit">Søk</button>
-          <a class="app-button-secondary" href="/admin-accounts/new">Opprett admin-konto</a>
+          <a class="app-button-secondary" href="/admin-accounts/new">Gi en frivillig tilgang</a>
         </div>
       </div>
     </form>
@@ -31,8 +33,8 @@
           <tr class="border-b border-stone-300 text-left text-sm text-stone-500">
             <th class="px-3 py-4 font-medium">Bruker</th>
             <th class="px-3 py-4 font-medium">Rolle</th>
-            <th class="px-3 py-4 font-medium">Gammel ID</th>
-            <th class="px-3 py-4 font-medium">Gruppeadmin</th>
+            <th class="px-3 py-4 font-medium">Kontotype</th>
+            <th class="px-3 py-4 font-medium">Grupper</th>
             <th class="px-3 py-4 font-medium">Siste innlogging</th>
           </tr>
         </thead>
@@ -47,13 +49,15 @@
               </td>
               <td class="px-3 py-4 text-sm text-stone-700">{{ admin_account.role }}</td>
               <td class="px-3 py-4 text-sm text-stone-700">
-                {% if admin_account.legacy_user_id %}
-                  #{{ admin_account.legacy_user_id }}
+                {% if admin_account.is_legacy_account %}
+                  Gammel innlogging
+                {% elif admin_account.volunteer_id %}
+                  <a class="hover:text-kvarteret-red" href="/volunteers/{{ admin_account.volunteer_id }}">Personlig · Frivilligprofil</a>
                 {% else %}
-                  Direkte
+                  Mangler frivilligprofil
                 {% endif %}
               </td>
-              <td class="px-3 py-4 text-sm text-stone-700">{{ admin_account.group_admin_group_count }}</td>
+              <td class="px-3 py-4 text-sm text-stone-700">{% if admin_account.role == 'Admin' %}Alle grupper{% else %}{% for group_id in admin_account.group_admin_group_ids %}{{ group_names.get(group_id, group_id) }}{% if not loop.last %}, {% endif %}{% else %}Ingen{% endfor %}{% endif %}</td>
               <td class="px-3 py-4 text-sm text-stone-700">{{ admin_account.last_login.strftime('%Y-%m-%d %H:%M') if admin_account.last_login else 'Aldri' }}</td>
             </tr>
           {% else %}

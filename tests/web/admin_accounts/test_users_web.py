@@ -55,7 +55,7 @@ class FakeAdminAccountsService:
         }
 
     async def list_admin_accounts(
-        self, query: str | None = None, limit: int = 100
+        self, query: str | None = None, limit: int = 100, account_type: str = "all"
     ) -> list[AdminAccountListItem]:
         return [
             AdminAccountListItem(
@@ -325,11 +325,12 @@ def test_admin_account_pages_render_for_admins() -> None:
 
     assert list_response.status_code == 200
     assert "Sample Admin" in list_response.text
-    assert "Opprett admin-konto" in list_response.text
+    assert "Gi en frivillig tilgang" in list_response.text
     assert "Filtrer på brukernavn, e-post eller visningsnavn" in list_response.text
     assert new_response.status_code == 200
-    assert "Opprett admin-konto" in new_response.text
-    assert "setter sitt eget passord" in new_response.text
+    assert "Gi en frivillig tilgang" in new_response.text
+    assert "personlige app-innlogging" in new_response.text
+    assert 'action="/admin-accounts"' not in new_response.text
     assert detail_response.status_code == 200
     assert "Lagre endringer" in detail_response.text
     assert 'name="email"' in detail_response.text
@@ -782,3 +783,32 @@ def test_admin_account_delete_uses_safe_error_message_on_local_failure() -> None
         response.headers["location"]
         == "/admin-accounts/7?error=Kunne+ikke+slette+admin-kontoen+akkurat+n%C3%A5."
     )
+
+
+def test_account_type_filter_reaches_service() -> None:
+    from unittest.mock import AsyncMock
+
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.ADMIN))
+    service = FakeAdminAccountsService()
+    service.list_admin_accounts = AsyncMock(return_value=[])
+    app.dependency_overrides[get_admin_accounts_service] = lambda: service
+    client = TestClient(app)
+    response = client.get("/admin-accounts?account_type=legacy&q=leader")
+    assert response.status_code == 200
+    service.list_admin_accounts.assert_awaited_once_with(query="leader", limit=200, account_type="legacy")
+    assert client.get("/admin-accounts?account_type=invalid").status_code == 422
+
+
+def test_personal_account_has_one_role_editor_and_app_login() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.ADMIN))
+    service = FakeAdminAccountsService()
+    service._details[7].volunteer_id = 100
+    app.dependency_overrides[get_admin_accounts_service] = lambda: service
+    response = TestClient(app).get("/admin-accounts/7")
+    assert response.status_code == 200
+    assert response.text.count('<select class="app-input" name="role"') == 1
+    assert 'action="/admin-accounts/7/access"' in response.text
+    assert 'href="/volunteers/100"' in response.text
+    assert 'formaction="/admin-accounts/7/onboarding"' not in response.text

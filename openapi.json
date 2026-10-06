@@ -1955,6 +1955,22 @@
               ],
               "title": "Q"
             }
+          },
+          {
+            "in": "query",
+            "name": "account_type",
+            "required": false,
+            "schema": {
+              "default": "personal",
+              "enum": [
+                "personal",
+                "legacy",
+                "unlinked",
+                "all"
+              ],
+              "title": "Account Type",
+              "type": "string"
+            }
           }
         ],
         "responses": {

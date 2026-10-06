@@ -3,7 +3,7 @@
 
 {% block page_content %}
   <section class="grid gap-7">
-    {% call page_header("Admin-konto", "Opprett admin-konto") %}
+    {% call page_header("Admin-konto", "Gi en frivillig tilgang") %}
       <a class="app-button-secondary" href="/admin-accounts">Tilbake til admin-kontoer</a>
     {% endcall %}
 
@@ -14,31 +14,7 @@
         <label class="grid gap-1"><span>Tilgang</span><select class="app-input" name="role"><option value="Gruppeadmin">Gruppeadmin</option><option value="Admin">Admin</option><option value="Frivillig">Frivillig</option><option value="Tilskuer">Tilskuer</option></select></label>
         <fieldset><legend>Grupper (for gruppeadmin)</legend><div class="grid gap-2 md:grid-cols-2">{% for group in access_groups %}<label><input type="checkbox" name="group_ids" value="{{ group.id }}"> {{ group.name }}</label>{% endfor %}</div></fieldset>
       {% endcall %}
-      <p class="mb-5 text-sm text-stone-500">Det sendes en oppsettslenke på e-post. Brukeren setter sitt eget passord med lenken.</p>
-      <form action="/admin-accounts" class="grid gap-6" method="post">
-        <div class="grid gap-5 md:grid-cols-2">
-          {% call form_field("Brukernavn") %}
-            <input class="app-input" name="username" required type="text">
-          {% endcall %}
-          {% call form_field("E-post") %}
-            <input class="app-input" name="email" required type="email">
-          {% endcall %}
-          {% call form_field("Navn") %}
-            <input class="app-input" name="display_name" type="text">
-          {% endcall %}
-          {% call form_field("Rolle") %}
-            <select class="app-input" name="role">
-              {% for role_option in ["Admin", "Gruppeadmin", "Frivillig", "Tilskuer"] %}
-                <option value="{{ role_option }}" {% if role_option == "Admin" %}selected{% endif %}>{{ role_option }}</option>
-              {% endfor %}
-            </select>
-          {% endcall %}
-        </div>
-
-        <div>
-          <button class="app-button" type="submit">Send oppsettslenke</button>
-        </div>
-      </form>
+      <p class="text-sm text-stone-600">Velg en eksisterende frivilligprofil. Personen bruker sin personlige app-innlogging. Admin gir tilgang til alle grupper; Gruppeadmin gir tilgang til gruppene du velger. Det sendes ingen oppsettslenke.</p>
     </section>
   </section>
 {% endblock %}

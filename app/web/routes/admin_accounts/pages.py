@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.roles import UserRole
@@ -68,12 +70,13 @@ async def my_account_detail(
 async def admin_accounts_index(
     request: Request,
     q: str | None = None,
+    account_type: Literal["personal", "legacy", "unlinked", "all"] = "personal",
     current_user=Depends(require_admin_user),
     admin_accounts_service: AdminAccountsService = Depends(get_admin_accounts_service),
 ):
     try:
         admin_accounts = await admin_accounts_service.list_admin_accounts(
-            query=q, limit=100
+            query=q, limit=200, account_type=account_type
         )
     except NotConfiguredError:
         raise not_configured_http_exception(_ADMIN_PAGES_NOT_CONFIGURED)
@@ -82,17 +85,21 @@ async def admin_accounts_index(
         user=current_user,
         action="admin_account.list",
         subject_type="admin_account",
-        details={"query": q or "", "result_count": len(admin_accounts)},
+        details={"query": q or "",
+            "account_type": account_type,
+            "group_names": {g["id"]: g["name"] for g in await admin_accounts_service.access_groups()}, "result_count": len(admin_accounts)},
     )
     return templates.TemplateResponse(
         request,
         "pages/admin_accounts/admin_accounts_index.html",
         {
-            "title": "Admin Accounts",
+            "title": "Administrer tilgang",
             "section": "admin-accounts",
             "current_user": current_user,
             "admin_accounts": admin_accounts,
             "query": q or "",
+            "account_type": account_type,
+            "group_names": {g["id"]: g["name"] for g in await admin_accounts_service.access_groups()},
         },
     )
 

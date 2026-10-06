@@ -59,7 +59,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         )))
 
     async def list_admin_accounts(
-        self, query: str | None = None, limit: int = 100
+        self, query: str | None = None, limit: int = 100, account_type: str = "all"
     ) -> list[AdminAccountListItem]:
         stmt = (
             select(
@@ -70,6 +70,8 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.display_name,
                 user_accounts.c.role,
                 user_accounts.c.last_login,
+                user_accounts.c.volunteer_id,
+                user_accounts.c.is_legacy_account,
                 func.count(group_admin_memberships.c.group_id).label(
                     "group_admin_group_count"
                 ),
@@ -89,10 +91,18 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.display_name,
                 user_accounts.c.role,
                 user_accounts.c.last_login,
+                user_accounts.c.volunteer_id,
+                user_accounts.c.is_legacy_account,
             )
             .order_by(user_accounts.c.role.asc(), user_accounts.c.username.asc())
             .limit(limit)
         )
+        if account_type == "personal":
+            stmt = stmt.where(user_accounts.c.volunteer_id.is_not(None), user_accounts.c.is_legacy_account.is_(False))
+        elif account_type == "legacy":
+            stmt = stmt.where(user_accounts.c.is_legacy_account.is_(True))
+        elif account_type == "unlinked":
+            stmt = stmt.where(user_accounts.c.volunteer_id.is_(None), user_accounts.c.is_legacy_account.is_(False))
         if query and query.strip():
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(
@@ -103,6 +113,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 )
             )
         rows = await self.fetch_all_mappings(stmt)
+        memberships = await self._load_group_admin_ids([row["auth_user_id"] for row in rows])
         return [
             AdminAccountListItem(
                 user_account_id=row["id"],
@@ -112,7 +123,9 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 display_name=row.get("display_name"),
                 role=UserRole(row["role"]),
                 last_login=coerce_datetime(row.get("last_login")),
-                group_admin_group_ids=[],
+                group_admin_group_ids=memberships.get(row["auth_user_id"], []),
+                volunteer_id=row["volunteer_id"],
+                is_legacy_account=row["is_legacy_account"],
                 group_admin_group_count=row["group_admin_group_count"] or 0,
             )
             for row in rows
