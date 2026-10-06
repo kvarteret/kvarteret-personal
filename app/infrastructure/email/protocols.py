@@ -9,5 +9,10 @@ class EmailDeliveryError(RuntimeError):
 
 class EmailSenderProtocol(Protocol):
     async def send_email(
-        self, *, recipient_email: str, subject: str, html_body: str
+        self,
+        *,
+        recipient_email: str,
+        subject: str,
+        html_body: str,
+        idempotency_key: str | None = None,
     ) -> None: ...

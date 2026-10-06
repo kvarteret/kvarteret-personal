@@ -60,6 +60,9 @@ USER_ACCOUNT_COLUMNS = (
 
 
 class DatabaseAuthRepository(SqlAlchemyRepository):
+    def __init__(self, *, legacy_login_enabled: bool = True):
+        self.legacy_login_enabled = legacy_login_enabled
+
     async def get_user_account_by_identifier(
         self, identifier: str
     ) -> UserAccount | None:
@@ -74,6 +77,8 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
             )
             .limit(1)
         )
+        if not self.legacy_login_enabled:
+            stmt = stmt.where(user_accounts.c.is_legacy_account.is_(False))
         row = await self.fetch_first_mapping(stmt)
         return _map_user_account(row) if row else None
 
@@ -153,9 +158,14 @@ class DatabaseAuthRepository(SqlAlchemyRepository):
         self, session_id: str
     ) -> tuple[WebSession, AuthenticatedUser] | None:
         started_at = perf_counter()
-        row = await self.fetch_first_mapping(
-            _build_session_load_stmt(session_id=session_id)
-        )
+        stmt = _build_session_load_stmt(session_id=session_id)
+        if not self.legacy_login_enabled:
+            stmt = stmt.where(user_accounts.c.is_legacy_account.is_(False))
+            stmt = stmt.where(or_(
+                web_sessions.c.impersonator_user_account_id.is_(None),
+                stmt.selected_columns.impersonator_is_legacy_account.is_(False),
+            ))
+        row = await self.fetch_first_mapping(stmt)
         try:
             if not row or row["user_account_id"] is None:
                 return None
@@ -233,6 +243,7 @@ def _build_session_load_stmt(*, session_id: str):
             impersonator_accounts.c.email.label("impersonator_email"),
             impersonator_accounts.c.display_name.label("impersonator_display_name"),
             impersonator_accounts.c.role.label("impersonator_role"),
+            impersonator_accounts.c.is_legacy_account.label("impersonator_is_legacy_account"),
         )
         .select_from(
             web_sessions.outerjoin(

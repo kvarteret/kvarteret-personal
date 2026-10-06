@@ -23,14 +23,14 @@ Consumers that generate typed clients should regenerate from `openapi.json`, pre
 | `kvarteret-internbevis-rn` | `kvarteret-personal` and Sanity | Mobile-card, now-playing, generated personal API client, Sanity dashboard events | Mobile-card and now-playing are runtime API calls; current dashboard event reads are Sanity-backed; generated event operations are retired |
 | `samfunnetibergen` | `kvarteret-personal` and Sanity | Volunteer prospects, Sanity public arrangements | Server-side volunteer prospect proxy; public arrangement pages and feeds are Sanity-backed |
 | `frontend-eventside` | Retired Supabase event tables | Retired event editing | Retired repo; stale source references are historical and not a live dependency |
-| `kvarteret-personal` | Supabase, Azure, Spotify, SMTP, Slack | Third-party services | Runtime adapters documented in [External systems](external-systems.md) |
+| `kvarteret-personal` | Supabase, Azure, Spotify, Resend, Slack | Third-party services | Runtime adapters documented in [External systems](external-systems.md) |
 
 ## `kvarteret-internbevis-rn`
 
 The React Native app defaults to:
 
-    EXPO_PUBLIC_KVARTERET_PERSONAL_API_BASE_URL=https://personal.kvarteret.no/api/v1
-    EXPO_PUBLIC_INTERNKORT_BASE_URL=https://personal.kvarteret.no/api/v1/mobile-card
+    EXPO_PUBLIC_KVARTERET_PERSONAL_API_BASE_URL=https://personal.samfunnetibergen.no/api/v1
+    EXPO_PUBLIC_INTERNKORT_BASE_URL=https://personal.samfunnetibergen.no/api/v1/mobile-card
 
 It generates a client from `openapi.json` into `src/core/api/kvarteret-personal`. The generator first prefers a sibling `../kvarteret-personal/openapi.json`, then falls back to the remote `develop` artifact.
 
@@ -70,7 +70,7 @@ The app derives the personal base URL from the configured mobile-card base URL a
 
 The site defaults to:
 
-    PERSONAL_APP_BASE_URL=https://personal.kvarteret.no
+    PERSONAL_APP_BASE_URL=https://personal.samfunnetibergen.no
 
 Current public arrangement pages and feeds read from Sanity, not from
 `kvarteret-personal`. Verified sibling paths include
@@ -157,12 +157,21 @@ with `503`.
 The idempotency UUID and an application-secret-keyed HMAC of the normalized
 payload are stored transactionally with prospect creation. Reusing a key with
 different normalized content returns `409`. Retrying identical content, even
-with a different key, returns the first registration and does not enqueue
+with a different key, returns the original `registrationId` and complete
+`registrationIds` batch and does not enqueue
 duplicate emails or create duplicate friend applications. The idempotency
 records, application, lifecycle events, and durable email rows commit atomically.
 Deleting the application also removes its normalized-payload claim, so a later
 genuine reapplication is not blocked by an orphaned deduplication result; the
 original idempotency key remains bound to the same content.
+
+New requests treat the optional second target as an independent application.
+Existing volunteers and prospects with another target's application are allowed.
+Active same-target applications are reused without overwriting the snapshot.
+A different normalized request body can therefore refer to an existing
+application and send an email continuation link. Public responses expose IDs
+only, never tokens or the existing person's canonical profile. See
+[The Volunteer Application Lifecycle](../explanation/volunteer-application-lifecycle.md).
 
 For the v2 cutover, provision the signing secret in both Vercel projects and the
 separate client-key secret only in `samfunnetibergen`. Apply the Personal

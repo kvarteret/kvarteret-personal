@@ -80,7 +80,7 @@ See [Kvarteret system map](docs/explanation/kvarteret-system-map.md) for the ful
 
 ## External Systems
 
-Direct runtime dependencies include Supabase Postgres, Supabase Auth, Azure Blob Storage, Spotify, SMTP, Slack Incoming Webhooks, Linear, and Vercel.
+Direct runtime dependencies include Supabase Postgres, Supabase Auth, Azure Blob Storage, Spotify, Resend, Slack Incoming Webhooks, Linear, and Vercel.
 
 See [External systems](docs/reference/external-systems.md) and [Configuration](docs/reference/configuration.md).
 
@@ -91,9 +91,5 @@ Vercel loads `api/index.py`, which exposes a module-level ASGI app from `app.mai
 The Vercel build runs the CSS/static preparation steps so `/static/...` assets are served from `public/static`, while non-static routes are rewritten to FastAPI.
 
 Operational checks are documented in [Deploy and runtime checks](docs/how-to/deploy-and-runtime-checks.md).
-
-## Historical Migration Notes
-
-The old one-time rewrite and migration plan is preserved in [plans/fastapi-rewrite.md](plans/fastapi-rewrite.md). Treat it as history and implementation evidence, not as the current architecture entry point.
 
 Current documentation issues are tracked in [docs/issues/current-documentation-issues.md](docs/issues/current-documentation-issues.md).

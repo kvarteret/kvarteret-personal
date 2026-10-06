@@ -36,7 +36,24 @@ Set `POSTHOG_OBSERVABILITY_ENABLED=true`, the shared project's
 redeploy. Production already had these variables when inspected. Preview must
 be configured separately. Never use a personal PostHog API key for ingestion.
 
-`app/telemetry.py` exports sanitized logs and every produced trace (AlwaysOn), including spans
+`app/telemetry.py` exports named application events at INFO and warnings/errors.
+Routine HTTP responses below 500, query timings, page views, searches, and
+mobile-card renewal/invalid-session diagnostics are DEBUG and are excluded from
+PostHog even when `LOG_LEVEL=DEBUG`. Handled 5xx responses retain a generic
+`http.request.failed` fallback; unhandled exceptions retain sanitized diagnostics
+and Error Tracking. Request traces carry routine HTTP activity.
+
+Successful database-backed admin mutations and email enqueue events are exported
+only after their transaction commits; rolled-back events are discarded. Lifecycle
+logs are emitted by the workflow after commit, before optional side effects, so
+an email or cleanup failure cannot hide a completed transition. An idempotent
+public prospect replay does not emit another registration event. Mobile-card
+access-code delivery/session creation and feedback issue creation have named
+outcome events. Request/trace IDs, domain IDs, status, and categorical errors are
+allowlisted; credentials, personal data, raw exception text, and arbitrary
+messages are excluded by `app/observability.py`.
+
+Traces still record every produced span (AlwaysOn), including spans
 with an incoming unsampled parent. Incoming trace IDs are preserved. Its ASGI middleware
 awaits provider flushes when each request finishes, including failures, rather
 than relying only on background timers. Exports remain best-effort: abrupt
@@ -52,8 +69,13 @@ and trace propagation). Its setup report links the same PostHog project.
 
 ## Vercel drains are a separate integration
 
-The current connection sends application telemetry directly to PostHog. The separate platform drain forwards Vercel runtime, firewall, static, redirect,
-and external request logs for both applications. Build logs are outside its scope. Vercel log drains send
+The application sends telemetry directly to PostHog. The separate platform drain
+accepts Vercel runtime, firewall, static, redirect, and external records. For
+Personal, `tools/vercel-log-drain/transform.mjs` drops successful request records,
+routine runtime output, and structured application logs already exported by OTLP.
+It retains unstructured WARN/ERROR/FATAL records and HTTP 4xx/5xx platform failures,
+including failures before application execution. The website's forwarding policy
+is unchanged in this round. Build logs are outside its scope. Vercel log drains send
 JSON/NDJSON, while PostHog Logs accepts OTLP; do not point a Vercel log drain at
 `/i/v1/logs` directly. PostHog's Vercel source webhook instead captures events,
 which is distinct from the Logs product.
@@ -71,8 +93,8 @@ redacts query values and credential paths, and exports safe diagnostic fields.
 Arbitrary console bodies and personal data are not exported. It acknowledges
 only accepted PostHog batches; failure returns 502 for Vercel to retry. Delivery
 is at least once: retries can duplicate records; `vercel.log.id` identifies the
-original record. Runtime records also sent directly by the application remain
-separate under the platform services.
+original record. Personal application records sent directly by OTLP are filtered out of the
+platform stream. Website runtime copies remain under its platform service.
 
 Search services `kvarteret-personal-platform` or `samfunnetibergen-platform`,
 then filter `vercel.request.id` using the request ID from Vercel. HTTP 4xx and
@@ -98,8 +120,8 @@ as absent values. Invalid nonempty identifiers still return 422. The fragment
 only submits group, role, year, and term; it excludes CSRF and other form fields
 from the GET query. The management authorization requirement remains enforced.
 FastAPI request validation emits `http.validation.failed` at WARN with field
-locations, error codes, and issue count, never rejected input. Request completion
-logs use WARN for 4xx and ERROR for 5xx. The admin browser reporter also captures
+locations, error codes, and issue count, never rejected input. Routine request completion logs are DEBUG; handled 5xx fallbacks are ERROR.
+Domain validation warnings remain available without an additional 4xx request log. The admin browser reporter also captures
 HTMX response failures; dependent GET fragments do not count as submissions.
 
 The four public forms (volunteer, event, room booking, karaoke) each keep a
@@ -122,5 +144,7 @@ The Logs severity facet named Trace is unrelated to the Tracing product.
 Platform counts include static assets, middleware, redirects, and the analytics
 proxy. One page visit therefore produces many more platform records than server
 request logs. Use application services for business diagnostics and platform
-services for Vercel failures and request IDs. No sampling is used to reduce this
-volume.
+services for Vercel failures and request IDs. Personal now filters these routine records at the collector rather than
+sampling domain events. This policy takes effect after deploying both Personal
+and the separate collector; changing source alone does not change production
+volume. The shared drain subscription and website logging are unchanged.

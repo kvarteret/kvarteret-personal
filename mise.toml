@@ -6,6 +6,9 @@
 experimental = true
 
 [tools]
+fnox = "1.35.1"
+infisical = "0.43.138"
+age = "1.3.2"
 python = "3.13.14"
 uv = "0.11.21"
 bun = "1.3.14"
@@ -37,28 +40,37 @@ run = [
 description = "Start Postgres, migrate and seed, then run the app and CSS watcher"
 run = [
   "docker compose -f docker-compose.dev.yml up -d db",
-  "uv run python scripts/dev/bootstrap.py",
+  "mise -C ../infra exec -- python scripts/task.py personal uv run python scripts/dev/bootstrap.py",
   "mise run --output prefix dev:css ::: dev:server",
 ]
 
 [tasks."dev:css"]
 description = "Watch and rebuild Tailwind CSS"
-run = "bun run watch:css"
+run = "bun --no-env-file run watch:css"
+
+[tasks."local"]
+description = "Run locally; --db local (default) or prod, optionally --integrations"
+run = "mise -C ../infra run personal:local --"
 
 [tasks."dev:server"]
 description = "Run the FastAPI development server with reload"
-run = "DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/kvarteret_personal_dev APP_ENV=development DEV_ADMIN_EMAIL=dev@kvarteret.dev DEV_ADMIN_PASSWORD=dev-password APP_SECRET_KEY=local-dev-secret uv run uvicorn app.main:create_app --factory --reload --host 127.0.0.1 --port 8000"
+run = "mise -C ../infra exec -- python scripts/task.py personal uv run uvicorn app.main:create_app --factory --reload --host 127.0.0.1 --port 8000"
 
 [tasks.prod]
-description = "Run Personal and the CSS watcher with settings from .env"
+description = "Run Personal with explicit Infisical production credentials"
 run = """
-if [ ! -f .env ]; then
-  echo 'Missing .env; refusing to start the production-configured server.' >&2
-  exit 1
-fi
-bun run build:css
-bun run watch:css &
+mise -C ../infra run secrets:check -- personal prod
+bun --no-env-file run build:css
+bun --no-env-file run watch:css &
 css_pid=$!
 trap 'kill "$css_pid" 2>/dev/null || true' EXIT INT TERM
-exec uv run --no-sync uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+mise -C ../infra run secrets:exec -- --cwd "{{config_root}}" personal prod -- uv run --no-sync uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 """
+
+[tasks."secrets:check"]
+description = "Check Infisical production access without displaying values"
+run = "mise -C ../infra run secrets:check -- --local-runtime personal prod"
+
+[tasks."secrets:exec"]
+description = "Run COMMAND with Infisical production configuration from Infisical"
+run = "mise -C ../infra run secrets:exec -- --local-runtime --cwd \"{{config_root}}\" personal prod"

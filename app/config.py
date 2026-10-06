@@ -2,7 +2,7 @@ import os
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     dev_admin_email: str | None = Field(default=None)
     dev_admin_password: str | None = Field(default=None)
     app_secret_key: str = Field(default="change-me")
+    legacy_admin_login_enabled: bool = Field(default=True)
     app_public_base_url: str | None = Field(default=None)
+    event_interest_secret: str | None = Field(default=None)
     volunteer_prospect_hmac_secret: str | None = Field(default=None)
     volunteer_prospect_hmac_previous_secret: str | None = Field(default=None)
     volunteer_prospect_max_body_bytes: int = Field(default=16 * 1024, gt=0)
@@ -54,44 +56,9 @@ class Settings(BaseSettings):
     linear_project_id_nettside: str | None = Field(default=None)
     linear_state_id_triage: str | None = Field(default=None)
     # slack_feedback_webhook_url: str | None = Field(default=None)
-    smtp_server: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("SMTP_SERVER", "EMAIL_SERVER", "Email__Server"),
-    )
-    smtp_port: int = Field(
-        default=587,
-        validation_alias=AliasChoices("SMTP_PORT", "EMAIL_PORT", "Email__Port"),
-    )
-    smtp_sender_name: str | None = Field(
-        default="Det Akademiske Kvarter",
-        validation_alias=AliasChoices(
-            "SMTP_SENDER_NAME", "EMAIL_SENDER_NAME", "Email__SenderName"
-        ),
-    )
-    smtp_sender_email: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "SMTP_SENDER_EMAIL", "EMAIL_SENDER_EMAIL", "Email__SenderEmail"
-        ),
-    )
-    smtp_account: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "SMTP_ACCOUNT", "EMAIL_ACCOUNT", "Email__Account"
-        ),
-    )
-    smtp_password: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "SMTP_PASSWORD", "EMAIL_PASSWORD", "Email__Password"
-        ),
-    )
-    smtp_use_starttls: bool = Field(
-        default=True,
-        validation_alias=AliasChoices(
-            "SMTP_USE_STARTTLS", "EMAIL_USE_STARTTLS", "Email__UseStartTls"
-        ),
-    )
+    resend_api_key: str | None = Field(default=None, repr=False)
+    email_sender_name: str = Field(default="Samfunnet i Bergen")
+    email_sender_email: str = Field(default="hallaien@samfunnetibergen.no")
     spotify_client_id: str | None = Field(default=None)
     spotify_client_secret: str | None = Field(default=None)
     spotify_refresh_token: str | None = Field(default=None)
@@ -154,11 +121,9 @@ class Settings(BaseSettings):
         "linear_project_id_internbevis",
         "linear_project_id_nettside",
         "linear_state_id_triage",
-        "smtp_server",
-        "smtp_sender_name",
-        "smtp_sender_email",
-        "smtp_account",
-        "smtp_password",
+        "resend_api_key",
+        "email_sender_name",
+        "email_sender_email",
         "spotify_client_id",
         "spotify_client_secret",
         "spotify_refresh_token",

@@ -11,7 +11,7 @@ test("platform rejection is structured and token paths are redacted", () => {
  assert.equal(log.traceId,undefined)
 })
 test("preserves valid context and safe application fields, never arbitrary extras", () => {
- const output = transform([{...record,traceId:"1234567890abcdef1234567890abcdef",spanId:"1234567890abcdef",message:JSON.stringify({event:"booking.failed",registration_id:4,password:"secret"})}])
+ const output = transform([{...record,projectId:"prj_OHYAWhiMGYIYvZ2UaBqnVSLRRQQi",traceId:"1234567890abcdef1234567890abcdef",spanId:"1234567890abcdef",message:JSON.stringify({event:"booking.failed",registration_id:4,password:"secret"})}])
  const log=output.resourceLogs[0].scopeLogs[0].logRecords[0]
  assert.equal(log.traceId,"1234567890abcdef1234567890abcdef"); assert.equal(log.body.stringValue,"booking.failed")
  assert.ok(!JSON.stringify(output).includes("secret"))
@@ -31,4 +31,40 @@ test("authentication and upstream failures are not acknowledged", async()=> {
    assert.equal(response.code,expected)
   }
  } finally {globalThis.fetch=original;delete process.env.VERCEL_DRAIN_SECRET;delete process.env.POSTHOG_PROJECT_TOKEN}
+})
+test("Personal drops routine requests, runtime noise and duplicate OTLP events", () => {
+ const inputs = [
+  {...record, proxy:{statusCode:200}},
+  {...record, proxy:{statusCode:303}},
+  {...record, proxy:{statusCode:200}, message:"HTTP Request GET /health"},
+  {...record, proxy:{statusCode:500}, message:JSON.stringify({event:"http.request.failed",level:"ERROR"})},
+  {...record, proxy:{statusCode:200}, message:JSON.stringify({event:"volunteer.lifecycle",level:"INFO"})},
+ ]
+ assert.deepEqual(transform(inputs),{resourceLogs:[]})
+})
+test("Personal preserves platform failures and unstructured runtime warnings", () => {
+ for (const input of [record, {...record,proxy:{statusCode:500}},
+  {...record,proxy:{statusCode:200},level:"error",message:"FUNCTION_INVOCATION_FAILED"}]) {
+  assert.equal(transform([input]).resourceLogs.length,1)
+ }
+})
+test("website forwarding policy is unchanged", () => {
+ const website={...record,projectId:"prj_OHYAWhiMGYIYvZ2UaBqnVSLRRQQi",proxy:{statusCode:200},message:JSON.stringify({event:"booking.completed"})}
+ assert.equal(transform([website]).resourceLogs.length,1)
+})
+test("filtered batches are acknowledged without an ingestion request", async () => {
+ process.env.VERCEL_DRAIN_SECRET="test-secret";process.env.POSTHOG_PROJECT_TOKEN="test-token"
+ const response={status(code){this.code=code;return this},end(){return this}}
+ const original=globalThis.fetch
+ try {
+  globalThis.fetch=async()=>{throw new Error("unexpected export")}
+  await handler({method:"POST",headers:{authorization:"Bearer test-secret"},body:[{...record,proxy:{statusCode:200}}]},response)
+  assert.equal(response.code,204)
+ } finally {globalThis.fetch=original;delete process.env.VERCEL_DRAIN_SECRET;delete process.env.POSTHOG_PROJECT_TOKEN}
+})
+test("telemetry setup failure retains a platform fallback", () => {
+ const output=transform([{...record,proxy:{statusCode:200},message:JSON.stringify({event:"telemetry.configuration.failed",level:"WARNING"})}])
+ const log=output.resourceLogs[0].scopeLogs[0].logRecords[0]
+ assert.equal(log.body.stringValue,"telemetry.configuration.failed")
+ assert.equal(log.severityText,"WARN")
 })

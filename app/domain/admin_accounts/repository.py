@@ -13,6 +13,9 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.admin_accounts.tables import group_admin_memberships, user_accounts, web_sessions
 from app.domain.spotify.tables import integration_tokens
 from app.shared.coercion import coerce_datetime, require_datetime
+from app.domain.volunteers.tables import volunteer_records
+from app.domain.groups.tables import groups
+from app.domain.role_assignments.tables import role_assignments
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem
 
@@ -20,8 +23,63 @@ logger = logging.getLogger("app.performance")
 
 
 class AdminAccountsRepository(SqlAlchemyRepository):
+    async def application_group_filter(self, account_id: int, semester: int) -> list[int] | None:
+        account = await self.get_admin_account_detail(account_id)
+        if account is None:
+            return []
+        associations = []
+        if account.volunteer_id:
+            associations = await self.fetch_all_mappings(
+                select(groups.c.id, groups.c.name).join(role_assignments, role_assignments.c.group_id == groups.c.id)
+                .where(role_assignments.c.volunteer_id == account.volunteer_id, role_assignments.c.semester == semester, groups.c.is_active.is_(True))
+            )
+        if any(row["name"].strip().casefold() in {"administrasjonen", "hovedstyret"} for row in associations):
+            return None
+        active_ids = {row["id"] for row in await self.access_groups()}
+        group_ids = sorted(({row["id"] for row in associations} | set(account.group_admin_group_ids)) & active_ids)
+        # Old shared admin logins can remain unlinked during the transition.
+        if not account.volunteer_id and account.role == UserRole.ADMIN and not group_ids:
+            return None
+        return group_ids
+
+    async def access_groups(self):
+        return await self.fetch_all_mappings(select(groups.c.id, groups.c.name).where(groups.c.is_active.is_(True)).order_by(groups.c.name))
+
+    async def volunteer_identity(self, volunteer_id: int):
+        return await self.fetch_first_mapping(select(volunteer_records).where(volunteer_records.c.id == volunteer_id))
+
+    async def account_for_volunteer(self, volunteer_id: int):
+        return await self.fetch_scalar(select(user_accounts.c.id).where(user_accounts.c.volunteer_id == volunteer_id))
+
+    async def configure_access(self, account_id: int, volunteer_id: int, role: UserRole, group_ids: list[int]):
+        account = await self.get_admin_account_detail(account_id)
+        volunteer = await self.volunteer_identity(volunteer_id)
+        if account is None or volunteer is None:
+            raise ValueError('Konto eller frivillig finnes ikke.')
+        if account.is_legacy_account:
+            raise ValueError('Velg den frivilliges individuelle konto. Gammel innlogging beholdes under overgangen.')
+        if (volunteer['email'] or '').strip().lower() != account.email.strip().lower():
+            raise ValueError('Kontoens e-post må samsvare med den frivilliges personlige e-post.')
+        linked = await self.account_for_volunteer(volunteer_id)
+        if linked is not None and linked != account_id:
+            raise ValueError('Den frivillige er allerede koblet til en annen konto.')
+        valid_groups = {g['id'] for g in await self.access_groups()}
+        if set(group_ids) - valid_groups or (role == UserRole.GROUP_ADMIN and not group_ids):
+            raise ValueError('Velg minst én gyldig gruppe for gruppeadmin.')
+        await self.execute(update(user_accounts).where(user_accounts.c.id == account_id).values(volunteer_id=volunteer_id, role=role.value, updated_at=func.current_timestamp()))
+        await self.execute(delete(group_admin_memberships).where(group_admin_memberships.c.auth_user_id == account.auth_user_id))
+        if role == UserRole.GROUP_ADMIN:
+            for gid in sorted(set(group_ids)):
+                await self.execute(insert(group_admin_memberships).values(auth_user_id=account.auth_user_id, group_id=gid, created_at=func.current_timestamp()))
+        # Re-authenticate after permission changes so cached sessions cannot
+        # retain the previous role or impersonation privileges.
+        await self.execute(delete(web_sessions).where(or_(
+            web_sessions.c.user_account_id == account_id,
+            web_sessions.c.impersonator_user_account_id == account_id,
+        )))
+
     async def list_admin_accounts(
-        self, query: str | None = None, limit: int = 100
+        self, query: str | None = None, limit: int = 100, account_type: str = "all"
     ) -> list[AdminAccountListItem]:
         stmt = (
             select(
@@ -32,6 +90,8 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.display_name,
                 user_accounts.c.role,
                 user_accounts.c.last_login,
+                user_accounts.c.volunteer_id,
+                user_accounts.c.is_legacy_account,
                 func.count(group_admin_memberships.c.group_id).label(
                     "group_admin_group_count"
                 ),
@@ -51,10 +111,18 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.display_name,
                 user_accounts.c.role,
                 user_accounts.c.last_login,
+                user_accounts.c.volunteer_id,
+                user_accounts.c.is_legacy_account,
             )
             .order_by(user_accounts.c.role.asc(), user_accounts.c.username.asc())
             .limit(limit)
         )
+        if account_type == "personal":
+            stmt = stmt.where(user_accounts.c.volunteer_id.is_not(None), user_accounts.c.is_legacy_account.is_(False))
+        elif account_type == "legacy":
+            stmt = stmt.where(user_accounts.c.is_legacy_account.is_(True))
+        elif account_type == "unlinked":
+            stmt = stmt.where(user_accounts.c.volunteer_id.is_(None), user_accounts.c.is_legacy_account.is_(False))
         if query and query.strip():
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(
@@ -65,6 +133,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 )
             )
         rows = await self.fetch_all_mappings(stmt)
+        memberships = await self._load_group_admin_ids([row["auth_user_id"] for row in rows])
         return [
             AdminAccountListItem(
                 user_account_id=row["id"],
@@ -74,7 +143,9 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 display_name=row.get("display_name"),
                 role=UserRole(row["role"]),
                 last_login=coerce_datetime(row.get("last_login")),
-                group_admin_group_ids=[],
+                group_admin_group_ids=memberships.get(row["auth_user_id"], []),
+                volunteer_id=row["volunteer_id"],
+                is_legacy_account=row["is_legacy_account"],
                 group_admin_group_count=row["group_admin_group_count"] or 0,
             )
             for row in rows
@@ -97,6 +168,8 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.onboarding_status,
                 user_accounts.c.onboarding_last_sent_at,
                 user_accounts.c.activated_at,
+                user_accounts.c.volunteer_id,
+                user_accounts.c.is_legacy_account,
             )
             .where(user_accounts.c.id == user_account_id)
             .limit(1)
@@ -119,6 +192,8 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             onboarding_status=row.get("onboarding_status") or "active",
             onboarding_last_sent_at=coerce_datetime(row.get("onboarding_last_sent_at")),
             activated_at=coerce_datetime(row.get("activated_at")),
+            volunteer_id=row.get('volunteer_id'),
+            is_legacy_account=row.get('is_legacy_account', False),
         )
 
     async def find_user_account_id_by_auth_user_id(

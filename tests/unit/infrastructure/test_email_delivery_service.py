@@ -8,7 +8,7 @@ from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import Settings
-from app.db.metadata import public_metadata
+from app.db.tables import public_metadata
 from app.db.session import reset_request_session, set_request_session
 from app.domain.volunteer_applications.tables import (
     domain_events,
@@ -24,7 +24,7 @@ from app.email_delivery import (
     EmailDeliveryRequest,
 )
 from app.email_outbox_service import EmailOutboxService
-from app.infrastructure.email.smtp import SmtpDeliveryError
+from app.infrastructure.email.resend import ResendDeliveryError
 from app.db.table_defs.email_delivery import email_deliveries, email_delivery_attempts
 
 
@@ -32,8 +32,10 @@ class FakeSender:
     def __init__(self, errors: list[Exception | None] | None = None) -> None:
         self.errors = list(errors or [])
         self.sent = 0
+        self.keys = []
 
     async def send_email(self, **_kwargs) -> None:
+        self.keys.append(_kwargs.get("idempotency_key"))
         error = self.errors.pop(0) if self.errors else None
         if error is not None:
             raise error
@@ -265,7 +267,9 @@ async def test_application_receipt_uses_existing_renderer_without_public_base_ur
 
 
 @pytest.mark.asyncio
-async def test_friend_invitation_uses_inviter_application_and_snapshot_fallback(session) -> None:
+async def test_friend_invitation_uses_inviter_application_and_snapshot_fallback(
+    session,
+) -> None:
     await _seed_friend_applications(session)
     clock = Clock()
     sender = FakeSender()
@@ -309,7 +313,7 @@ async def test_retryable_smtp_failure_schedules_one_minute_retry(session) -> Non
     clock = Clock()
     service = _service(
         FakeSender(
-            [SmtpDeliveryError("smtp_temporary", retryable=True, smtp_status=451)]
+            [ResendDeliveryError("resend_temporary", retryable=True, http_status=503)]
         ),
         clock,
     )
@@ -332,7 +336,7 @@ async def test_retryable_smtp_failure_schedules_one_minute_retry(session) -> Non
     assert delivery["next_attempt_at"].replace(tzinfo=UTC) == clock.value + timedelta(
         minutes=1
     )
-    assert delivery["last_error_category"] == "smtp_temporary"
+    assert delivery["last_error_category"] == "resend_temporary"
 
 
 @pytest.mark.asyncio
@@ -341,7 +345,7 @@ async def test_permanent_smtp_failure_is_visible_as_failed(session) -> None:
     clock = Clock()
     service = _service(
         FakeSender(
-            [SmtpDeliveryError("smtp_permanent", retryable=False, smtp_status=550)]
+            [ResendDeliveryError("resend_permanent", retryable=False, http_status=422)]
         ),
         clock,
     )
@@ -355,7 +359,7 @@ async def test_permanent_smtp_failure_is_visible_as_failed(session) -> None:
     assert detail is not None
     assert detail.delivery.status == "failed"
     assert detail.delivery.masked_recipient == "s********@example.test"
-    assert detail.attempts[0].smtp_status_class == 5
+    assert detail.attempts[0].smtp_status_class is None
 
 
 @pytest.mark.asyncio
@@ -402,3 +406,45 @@ async def test_expired_lease_marks_started_attempt_interrupted_before_reclaim(
         ).scalars()
     )
     assert outcomes == ["interrupted", "succeeded"]
+
+
+async def test_retry_reuses_provider_key_and_stops_before_deduplication_expires(
+    session,
+):
+    await _seed_application(session)
+    clock = Clock()
+    sender = FakeSender([ResendDeliveryError("resend_connection", retryable=True)])
+    service = _service(sender, clock)
+    delivery_id = await _enqueue(service)
+    await session.commit()
+    assert (await service.dispatch_due()).retrying_count == 1
+    clock.value += timedelta(minutes=1)
+    assert (await service.dispatch_due()).sent_count == 1
+    assert sender.keys == [f"email-delivery/{delivery_id}"] * 2
+
+
+async def test_stale_ambiguous_send_expires_without_replaying_after_provider_window(
+    session,
+    monkeypatch,
+):
+    await _seed_application(session)
+    clock = Clock()
+    sender = FakeSender([ResendDeliveryError("resend_connection", retryable=True)])
+    service = _service(sender, clock)
+    delivery_id = await _enqueue(service)
+    await session.commit()
+    assert (await service.dispatch_due()).retrying_count == 1
+    clock.value += timedelta(hours=23)
+    assert (await service.dispatch_due()).expired_count == 1
+    assert len(sender.keys) == 1
+    detail = await service.get_delivery(delivery_id)
+    assert detail.delivery.last_error_category == "idempotency_window_expired"
+
+    async def skip_audit(*args, **kwargs):
+        # Domain-event BigInteger sequences are PostgreSQL-specific; exercise
+        # recovery and its new provider key independently of that audit seam.
+        pass
+
+    monkeypatch.setattr(service, "_record_admin_recovery_event", skip_audit)
+    successor_id = await service.retry_failed(delivery_id, actor_user_account_id=1)
+    assert successor_id != delivery_id

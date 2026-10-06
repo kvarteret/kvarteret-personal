@@ -2,7 +2,7 @@
 
 Logs every email and writes the HTML body to ``.devdata/outbox/`` so
 apply links and access codes can be opened locally. Selected by
-``app/runtime.py`` only in development when SMTP is not configured.
+``app/runtime.py`` only in development when Resend is not configured.
 """
 
 from __future__ import annotations
@@ -20,7 +20,12 @@ class ConsoleEmailSender:
         self.outbox_dir = Path(outbox_dir)
 
     async def send_email(
-        self, *, recipient_email: str, subject: str, html_body: str
+        self,
+        *,
+        recipient_email: str,
+        subject: str,
+        html_body: str,
+        idempotency_key: str | None = None,
     ) -> None:
         self.outbox_dir.mkdir(parents=True, exist_ok=True)
         filename = f"{time.strftime('%Y%m%d-%H%M%S')}-{_slug(subject)}.html"

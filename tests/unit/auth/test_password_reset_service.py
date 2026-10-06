@@ -135,7 +135,7 @@ def test_password_reset_email_template_contains_setup_link() -> None:
         )
     )
 
-    assert rendered.subject == "Tilbakestill passordet ditt hos Kvarteret"
+    assert rendered.subject == "Tilbakestill passordet ditt hos Samfunnet i Bergen"
     assert "Velg nytt passord" in rendered.html_body
     assert "#token_hash=hashed-token&amp;type=recovery" in rendered.html_body
 
