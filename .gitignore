@@ -30,3 +30,6 @@ public/static/css/output.css
 .devdata/
 seeds/
 .env*
+
+# Machine-private fnox overrides
+fnox.local.toml
