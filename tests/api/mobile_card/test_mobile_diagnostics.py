@@ -149,6 +149,7 @@ def test_legacy_logout_uses_domain_event(caplog, event):
         if key
         in {
             "event_name",
+            "occurred_at",
             "platform",
             "app_version",
             "auth_error_code",
