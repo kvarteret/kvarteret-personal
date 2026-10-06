@@ -812,3 +812,23 @@ def test_personal_account_has_one_role_editor_and_app_login() -> None:
     assert 'action="/admin-accounts/7/access"' in response.text
     assert 'href="/volunteers/100"' in response.text
     assert 'formaction="/admin-accounts/7/onboarding"' not in response.text
+
+
+def test_admin_groups_show_permission_sources_in_bold():
+    from unittest.mock import AsyncMock
+
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.ADMIN))
+    service = FakeAdminAccountsService()
+    items = __import__("asyncio").run(service.list_admin_accounts())
+    items[0].volunteer_id = 100
+    items[0].associated_groups = [(2, "Hovedstyret", True), (3, "Other Group", False)]
+    service.list_admin_accounts = AsyncMock(return_value=items)
+    app.dependency_overrides[get_admin_accounts_service] = lambda: service
+    response = TestClient(app).get("/admin-accounts")
+    assert response.status_code == 200
+    assert '<strong>Hovedstyret</strong>' in response.text
+    assert '>Other Group</a>' in response.text
+    assert '<strong>Other Group</strong>' not in response.text
+    assert 'Kontotype' not in response.text
+    assert 'href="/volunteers/100"' in response.text

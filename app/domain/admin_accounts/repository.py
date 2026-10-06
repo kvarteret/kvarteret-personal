@@ -13,9 +13,10 @@ from app.db.repository import SqlAlchemyRepository
 from app.domain.admin_accounts.tables import group_admin_memberships, user_accounts, web_sessions
 from app.domain.spotify.tables import integration_tokens
 from app.shared.coercion import coerce_datetime, require_datetime
-from app.domain.volunteers.tables import volunteer_records
+from app.domain.volunteers.tables import volunteer_records, volunteer_photos
 from app.domain.groups.tables import groups
 from app.domain.role_assignments.tables import role_assignments
+from app.shared.semester import get_current_semester_code
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem
 
@@ -135,6 +136,26 @@ class AdminAccountsRepository(SqlAlchemyRepository):
             )
         rows = await self.fetch_all_mappings(stmt)
         memberships = await self._load_group_admin_ids([row["auth_user_id"] for row in rows])
+        volunteer_ids = [row["volunteer_id"] for row in rows if row["volunteer_id"]]
+        photos = await self.fetch_all_mappings(select(volunteer_photos).where(volunteer_photos.c.volunteer_id.in_(volunteer_ids))) if volunteer_ids else []
+        photo_paths = {photo["volunteer_id"]: f"{photo['sha1']}.{photo['filetype']}" for photo in photos}
+        associations = await self.fetch_all_mappings(
+            select(role_assignments.c.volunteer_id, groups.c.id, groups.c.name)
+            .join(groups, groups.c.id == role_assignments.c.group_id)
+            .where(role_assignments.c.volunteer_id.in_(volunteer_ids),
+                   role_assignments.c.semester == get_current_semester_code(), groups.c.is_active.is_(True))
+        ) if volunteer_ids else []
+        current_groups = {}
+        for association in associations:
+            current_groups.setdefault(association["volunteer_id"], {})[association["id"]] = association["name"]
+        active_groups = {group["id"]: group["name"] for group in await self.access_groups()}
+        associated_groups = {}
+        for row in rows:
+            grants = set(memberships.get(row["auth_user_id"], [])) & active_groups.keys()
+            names = {**current_groups.get(row["volunteer_id"], {}), **{gid: active_groups[gid] for gid in grants}}
+            if row["role"] == UserRole.ADMIN:
+                grants |= {gid for gid, name in names.items() if name.strip().casefold() in {"administrasjonen", "hovedstyret"}}
+            associated_groups[row["id"]] = [(gid, name, gid in grants) for gid, name in sorted(names.items(), key=lambda item: item[1].casefold())]
         return [
             AdminAccountListItem(
                 user_account_id=row["id"],
@@ -145,6 +166,8 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 role=UserRole(row["role"]),
                 last_login=coerce_datetime(row.get("last_login")),
                 group_admin_group_ids=memberships.get(row["auth_user_id"], []),
+                associated_groups=associated_groups[row["id"]],
+                photo_path=photo_paths.get(row["volunteer_id"]),
                 volunteer_id=row["volunteer_id"],
                 is_legacy_account=row["is_legacy_account"],
                 group_admin_group_count=row["group_admin_group_count"] or 0,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -20,6 +20,9 @@ class AdminAccountListItem:
     group_admin_group_count: int
     volunteer_id: int | None = None
     is_legacy_account: bool = False
+    associated_groups: list[tuple[int, str, bool]] = field(default_factory=list)
+    photo_path: str | None = None
+    photo_url: str | None = None
 
 
 @dataclass(slots=True)

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.auth.roles import UserRole
 from app.dependencies import (
     get_admin_accounts_service,
+    get_media_token_service,
     require_admin_user,
     require_authenticated_user,
 )
@@ -69,6 +70,7 @@ async def my_account_detail(
 @router.get("/admin-accounts")
 async def admin_accounts_index(
     request: Request,
+    media_token_service=Depends(get_media_token_service),
     q: str | None = None,
     account_type: Literal["personal", "legacy", "unlinked", "all"] = "personal",
     current_user=Depends(require_admin_user),
@@ -80,6 +82,8 @@ async def admin_accounts_index(
         )
     except NotConfiguredError:
         raise not_configured_http_exception(_ADMIN_PAGES_NOT_CONFIGURED)
+    for account in admin_accounts:
+        account.photo_url = media_token_service.build_photo_media_url(account.photo_path) if account.photo_path else None
     log_admin_activity(
         request=request,
         user=current_user,
