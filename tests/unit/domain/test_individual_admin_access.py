@@ -72,6 +72,24 @@ async def test_application_group_defaults_follow_current_associations(names, mem
     repository.get_admin_account_detail = AsyncMock(return_value=SimpleNamespace(
         volunteer_id=10, role=UserRole.ADMIN, group_admin_group_ids=memberships))
     repository.fetch_all_mappings = AsyncMock(return_value=[{"id": 300 + i, "name": name} for i, name in enumerate(names)])
+    repository.access_groups = AsyncMock(return_value=[{"id": i} for i in [298, 300, 301]])
     assert await repository.application_group_filter(10, 20262) == expected
     statement = str(repository.fetch_all_mappings.call_args.args[0])
     assert "role_assignments.semester =" in statement
+
+
+async def test_archived_groups_are_excluded_from_application_defaults():
+    repository = AdminAccountsRepository()
+    repository.get_admin_account_detail = AsyncMock(return_value=SimpleNamespace(
+        volunteer_id=10, role=UserRole.GROUP_ADMIN, group_admin_group_ids=[100, 200]))
+    repository.fetch_all_mappings = AsyncMock(return_value=[])
+    repository.access_groups = AsyncMock(return_value=[{"id": 100}])
+    assert await repository.application_group_filter(10, 20262) == [100]
+    assert "groups.is_active IS true" in str(repository.fetch_all_mappings.call_args.args[0])
+
+
+async def test_access_group_selector_queries_only_active_groups():
+    repository = AdminAccountsRepository()
+    repository.fetch_all_mappings = AsyncMock(return_value=[])
+    await repository.access_groups()
+    assert "groups.is_active IS true" in str(repository.fetch_all_mappings.call_args.args[0])

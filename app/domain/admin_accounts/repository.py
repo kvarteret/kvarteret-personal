@@ -31,18 +31,19 @@ class AdminAccountsRepository(SqlAlchemyRepository):
         if account.volunteer_id:
             associations = await self.fetch_all_mappings(
                 select(groups.c.id, groups.c.name).join(role_assignments, role_assignments.c.group_id == groups.c.id)
-                .where(role_assignments.c.volunteer_id == account.volunteer_id, role_assignments.c.semester == semester)
+                .where(role_assignments.c.volunteer_id == account.volunteer_id, role_assignments.c.semester == semester, groups.c.is_active.is_(True))
             )
         if any(row["name"].strip().casefold() in {"administrasjonen", "hovedstyret"} for row in associations):
             return None
-        group_ids = sorted({row["id"] for row in associations} | set(account.group_admin_group_ids))
+        active_ids = {row["id"] for row in await self.access_groups()}
+        group_ids = sorted(({row["id"] for row in associations} | set(account.group_admin_group_ids)) & active_ids)
         # Old shared admin logins can remain unlinked during the transition.
         if not account.volunteer_id and account.role == UserRole.ADMIN and not group_ids:
             return None
         return group_ids
 
     async def access_groups(self):
-        return await self.fetch_all_mappings(select(groups.c.id, groups.c.name).order_by(groups.c.name))
+        return await self.fetch_all_mappings(select(groups.c.id, groups.c.name).where(groups.c.is_active.is_(True)).order_by(groups.c.name))
 
     async def volunteer_identity(self, volunteer_id: int):
         return await self.fetch_first_mapping(select(volunteer_records).where(volunteer_records.c.id == volunteer_id))
