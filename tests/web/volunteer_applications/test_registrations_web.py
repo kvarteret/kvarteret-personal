@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.domain.admin_accounts.service import AdminAccountsService
 
 from fastapi import Request
 from fastapi.testclient import TestClient
@@ -1479,3 +1484,41 @@ def test_cancel_invitation_redirects_back_to_board() -> None:
     assert service.deleted_registration_ids == [7]
     assert calls == []
     assert response.headers["HX-Redirect"] == "/volunteer-applications"
+
+
+@pytest.fixture(autouse=True)
+def application_groups(monkeypatch):
+    resolver = AsyncMock(return_value=None)
+    monkeypatch.setattr(AdminAccountsService, "application_group_filter", resolver)
+    return resolver
+
+
+@pytest.mark.parametrize("association", [[3, 4], None, []])
+def test_applications_default_to_user_associations(application_groups, association):
+    application_groups.return_value = association
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    service.list_volunteer_applications = AsyncMock(return_value=[])
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    response = TestClient(app).get("/volunteer-applications", headers={"HX-Target": "section#volunteer-application-list-panel"})
+    assert response.status_code == 200
+    application_groups.assert_awaited_once()
+    if association == []:
+        service.list_volunteer_applications.assert_not_awaited()
+    else:
+        assert service.list_volunteer_applications.call_args.kwargs["group_ids"] == association
+
+
+@pytest.mark.parametrize("query, expected", [("group_ids=4", [4]), ("groups_selected=true", None)])
+def test_application_group_selection_overrides_default(application_groups, query, expected):
+    application_groups.return_value = [3]
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    service.list_volunteer_applications = AsyncMock(return_value=[])
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    response = TestClient(app).get("/volunteer-applications?" + query, headers={"HX-Target": "section#volunteer-application-list-panel"})
+    assert response.status_code == 200
+    application_groups.assert_not_awaited()
+    assert service.list_volunteer_applications.call_args.kwargs["group_ids"] == expected

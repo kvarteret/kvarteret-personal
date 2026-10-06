@@ -10,6 +10,7 @@ from email_validator import EmailNotValidError, validate_email
 from app.auth.roles import UserRole
 from app.cache import TTLCache
 from app.errors import NotConfiguredError
+from app.shared.semester import get_current_semester_code
 from app.observability import log_operation_timing
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem
@@ -80,6 +81,11 @@ class AdminAccountsServiceProtocol(Protocol):
 
 
 class AdminAccountsService:
+    async def application_group_filter(self, account_id: int | None) -> list[int] | None:
+        if account_id is None:
+            return []
+        return await self.repository.application_group_filter(account_id, get_current_semester_code())
+
     async def access_groups(self):
         return await self.repository.access_groups()
 

@@ -5094,6 +5094,16 @@
               ],
               "title": "Group Ids"
             }
+          },
+          {
+            "in": "query",
+            "name": "groups_selected",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Groups Selected",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

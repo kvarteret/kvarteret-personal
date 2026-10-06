@@ -15,6 +15,7 @@ from app.domain.spotify.tables import integration_tokens
 from app.shared.coercion import coerce_datetime, require_datetime
 from app.domain.volunteers.tables import volunteer_records
 from app.domain.groups.tables import groups
+from app.domain.role_assignments.tables import role_assignments
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem
 
@@ -22,6 +23,24 @@ logger = logging.getLogger("app.performance")
 
 
 class AdminAccountsRepository(SqlAlchemyRepository):
+    async def application_group_filter(self, account_id: int, semester: int) -> list[int] | None:
+        account = await self.get_admin_account_detail(account_id)
+        if account is None:
+            return []
+        associations = []
+        if account.volunteer_id:
+            associations = await self.fetch_all_mappings(
+                select(groups.c.id, groups.c.name).join(role_assignments, role_assignments.c.group_id == groups.c.id)
+                .where(role_assignments.c.volunteer_id == account.volunteer_id, role_assignments.c.semester == semester)
+            )
+        if any(row["name"].strip().casefold() in {"administrasjonen", "hovedstyret"} for row in associations):
+            return None
+        group_ids = sorted({row["id"] for row in associations} | set(account.group_admin_group_ids))
+        # Old shared admin logins can remain unlinked during the transition.
+        if not account.volunteer_id and account.role == UserRole.ADMIN and not group_ids:
+            return None
+        return group_ids
+
     async def access_groups(self):
         return await self.fetch_all_mappings(select(groups.c.id, groups.c.name).order_by(groups.c.name))
 

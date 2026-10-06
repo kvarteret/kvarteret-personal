@@ -59,3 +59,19 @@ async def test_personal_account_role_cannot_bypass_access_configuration(monkeypa
         await service.update_admin_account(user_account_id=10, username="person", email="same",
             display_name="Person", role=UserRole.GROUP_ADMIN)
     repository.update_admin_account.assert_not_awaited()
+
+
+@pytest.mark.parametrize("names, memberships, expected", [
+    (["Quiz"], [298], [298, 300]),
+    (["Administrasjonen", "Quiz"], [], None),
+    (["Hovedstyret"], [], None),
+    ([], [], []),
+])
+async def test_application_group_defaults_follow_current_associations(names, memberships, expected):
+    repository = AdminAccountsRepository()
+    repository.get_admin_account_detail = AsyncMock(return_value=SimpleNamespace(
+        volunteer_id=10, role=UserRole.ADMIN, group_admin_group_ids=memberships))
+    repository.fetch_all_mappings = AsyncMock(return_value=[{"id": 300 + i, "name": name} for i, name in enumerate(names)])
+    assert await repository.application_group_filter(10, 20262) == expected
+    statement = str(repository.fetch_all_mappings.call_args.args[0])
+    assert "role_assignments.semester =" in statement
