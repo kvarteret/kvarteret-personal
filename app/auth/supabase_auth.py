@@ -5,9 +5,12 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 import httpx
+import logging
 
 from app.config import Settings
 from app.errors import NotConfiguredError
+
+logger = logging.getLogger(__name__)
 
 _API_VERSION_HEADER = "X-Supabase-Api-Version"
 _API_VERSION = "2024-01-01"
@@ -78,8 +81,26 @@ class SupabaseAuthGateway:
                     "gotrue_meta_security": {"captcha_token": None},
                 },
             )
-        except httpx.HTTPError:
-            return None
+        except httpx.HTTPStatusError as exc:
+            try:
+                code = exc.response.json().get("error_code")
+            except (ValueError, AttributeError):
+                code = None
+            if exc.response.status_code == 400 and code == "invalid_credentials":
+                return None
+            logger.warning(
+                "auth.provider.failed",
+                extra={"event": "auth.provider.failed", "event_data": {
+                    "reason": "http_error", "status_code": exc.response.status_code,
+                }},
+            )
+            raise NotConfiguredError("Authentication service is temporarily unavailable.") from None
+        except httpx.RequestError:
+            logger.warning(
+                "auth.provider.failed",
+                extra={"event": "auth.provider.failed", "event_data": {"reason": "transport_error"}},
+            )
+            raise NotConfiguredError("Authentication service is temporarily unavailable.") from None
         return _extract_user_id(response.json())
 
     async def find_user_id_by_email(self, email: str) -> UUID | None:
