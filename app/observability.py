@@ -209,6 +209,16 @@ DOMAIN_OUTCOME_EVENTS = frozenset(
 
 def diagnostic_session_id(request: Request, settings: Settings) -> str:
     """Correlate browser requests without exporting a credential or adding a cookie."""
+    supplied = request.headers.get("x-session-id", "")
+    valid_supplied = (
+        bool(re.fullmatch(r"[a-f0-9]{32}", supplied)) and supplied != "0" * 32
+    )
+    # Mobile clients carry their own diagnostic context; browser CSRF cookies
+    # must not split API requests from the client's queued logout diagnostics.
+    if valid_supplied and request.scope.get("path", "").startswith(
+        "/api/v1/mobile-card/"
+    ):
+        return supplied
     cookie = request.cookies.get("kvarteret_csrf")
     valid_cookie = False
     if cookie:
@@ -230,8 +240,7 @@ def diagnostic_session_id(request: Request, settings: Settings) -> str:
             hashlib.sha256,
         ).hexdigest()[:32]
     # Cookie-less callers may supply a random diagnostic ID. It grants no access.
-    supplied = request.headers.get("x-session-id", "")
-    if re.fullmatch(r"[a-f0-9]{32}", supplied) and supplied != "0" * 32:
+    if valid_supplied:
         return supplied
     return uuid4().hex
 
