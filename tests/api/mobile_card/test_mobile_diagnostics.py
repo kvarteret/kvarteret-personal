@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.dependencies import get_rate_limiter
 from app.db.rate_limit import InMemoryRateLimiter
-from app.observability import JsonLogFormatter
+from app.observability import JsonLogFormatter, MOBILE_DIAGNOSTIC_EVENTS
 from app.telemetry import DomainLogFilter
 
 
@@ -44,6 +44,8 @@ def client():
         ("credentials_missing_after_login", logging.WARNING),
         ("logout_succeeded", logging.INFO),
         ("logout_failed", logging.WARNING),
+        ("response_invalid", logging.WARNING),
+        ("session_token_persist_failed", logging.WARNING),
         ("cache_fallback_started", logging.DEBUG),
         ("cache_fallback_recovered", logging.DEBUG),
     ],
@@ -55,7 +57,11 @@ def test_signed_out_diagnostics_preserve_safe_context(caplog, event, severity):
         response = c.post(
             "/api/v1/mobile-card/client-events/diagnostics",
             json=payload(event),
-            headers={"X-Session-ID": "a" * 32, "X-Request-ID": "test-request"},
+            headers={
+                "X-Session-ID": "a" * 32,
+                "X-Request-ID": "test-request",
+                "X-Telemetry-Synthetic": "true",
+            },
         )
     assert response.status_code == 202
     record = next(
@@ -63,6 +69,9 @@ def test_signed_out_diagnostics_preserve_safe_context(caplog, event, severity):
     )
     data = json.loads(JsonLogFormatter().format(record))
     assert record.levelno == severity
+    assert data["event"] == MOBILE_DIAGNOSTIC_EVENTS[event]
+    assert data["synthetic"] is True
+    assert record.funcName == "log_client_diagnostic"
     assert DomainLogFilter().filter(record) == (severity >= logging.INFO)
     assert data["session_id"] == "a" * 32
     assert data["request_id"] == "test-request"
@@ -108,3 +117,59 @@ def test_rate_limit_bounds_public_ingestion():
         ).status_code
         == 429
     )
+
+
+def test_ordinary_diagnostics_are_not_marked_synthetic(caplog):
+    c = client()
+    logging.getLogger().addHandler(caplog.handler)
+    with caplog.at_level(logging.WARNING):
+        assert (
+            c.post(
+                "/api/v1/mobile-card/client-events/diagnostics", json=payload()
+            ).status_code
+            == 202
+        )
+    record = next(
+        r
+        for r in caplog.records
+        if getattr(r, "event", "") == "mobile_card.session.invalidated"
+    )
+    assert record.event_data["synthetic"] is False
+
+
+@pytest.mark.parametrize(
+    "event", ["session_invalidated", "credentials_missing_after_login"]
+)
+def test_legacy_logout_uses_domain_event(caplog, event):
+    c = client()
+    logging.getLogger().addHandler(caplog.handler)
+    data = {
+        key: value
+        for key, value in payload(event).items()
+        if key
+        in {
+            "event_name",
+            "occurred_at",
+            "platform",
+            "app_version",
+            "auth_error_code",
+            "auth_error_status",
+            "had_cached_user",
+            "had_login_marker",
+            "had_stored_credentials",
+        }
+    }
+    with caplog.at_level(logging.WARNING):
+        assert (
+            c.post(
+                "/api/v1/mobile-card/client-events/session-logout", json=data
+            ).status_code
+            == 202
+        )
+    record = next(
+        r
+        for r in caplog.records
+        if getattr(r, "event", "") == MOBILE_DIAGNOSTIC_EVENTS[event]
+    )
+    assert record.funcName == "log_client_session_logout_event"
+    assert record.event_data["auth_error_status"] == 401

@@ -75,7 +75,7 @@ accepts Vercel runtime, firewall, static, redirect, and external records. For
 Personal, `tools/vercel-log-drain/transform.mjs` drops successful request records,
 routine runtime output, and structured application logs already exported by OTLP.
 It retains unstructured WARN/ERROR/FATAL records and HTTP 4xx/5xx platform failures,
-including failures before application execution. Website generic successful requests
+including non-firewall failures before application execution. Website generic successful requests
 and runtime records are also dropped. Structured website domain events remain as
 a fallback while direct delivery is verified. Build logs are outside its scope. Vercel log drains send
 JSON/NDJSON, while PostHog Logs accepts OTLP; do not point a Vercel log drain at
@@ -91,7 +91,7 @@ would create a feedback loop.
 
 The collector requires `VERCEL_DRAIN_SECRET` and `POSTHOG_PROJECT_TOKEN` in
 Vercel. It authenticates the Authorization header, maps Vercel JSON to OTLP,
-redacts query values and credential paths, and exports safe diagnostic fields.
+redacts query values and credential paths, drops firewall records, and exports safe diagnostic fields.
 Arbitrary console bodies and personal data are not exported. It acknowledges
 only accepted PostHog batches; failure returns 502 for Vercel to retry. Delivery
 is at least once: retries can duplicate records; `vercel.log.id` identifies the
@@ -101,13 +101,14 @@ platform stream. Website runtime copies remain under its platform service.
 Search services `kvarteret-personal-platform` or `samfunnetibergen-platform`,
 then filter `vercel.request.id` using the request ID from Vercel. HTTP 4xx and
 5xx responses receive WARN and ERROR severity even when Vercel labels them INFO.
-Their event names are `http.request.failed`; firewall rejections are
-`http.request.blocked`; unstructured runtime errors are `platform.runtime.failed`.
-Known blocked firewall probes (`.git`, `.env`, WordPress/XML-RPC paths, and the
-observed HEAD wine-menu variants) are excluded from PostHog. Ambiguous GET wine
-paths, real app/API failures, and runtime errors remain. Original records remain
-in Vercel. Sanity API/CDN connection errors carry `dependency=sanity` plus safe
-error type/code, without exporting arbitrary messages.
+Their event names are `http.request.failed`; unstructured runtime errors are
+`platform.runtime.failed`. All `source=firewall` records are excluded from
+PostHog, regardless of path, status or severity. Investigate challenges and
+blocks in Vercel using the Vercel request ID. A 429 challenge is not proof of a
+bot. Application auth/API errors and non-firewall platform failures remain.
+No firewall summary or alert is configured by this change.
+Sanity API/CDN connection errors carry `dependency=sanity` plus safe error
+type/code, without exporting arbitrary messages.
 A platform rejection before application execution has no application span;
 the drain preserves that fact rather than inventing a trace ID.
 
@@ -187,11 +188,16 @@ The new route accepts only named diagnostics and declared fields:
 | App event | Exported event | Level |
 | --- | --- | --- |
 | `logout_succeeded` | `mobile_card.logout.succeeded` | INFO |
-| `logout_failed` | `mobile_card.client_diagnostic` | WARN |
-| `session_invalidated` | `mobile_card.client_diagnostic` | WARN |
-| `credentials_missing_after_login` | `mobile_card.client_diagnostic` | WARN |
-| `response_invalid`, `session_token_persist_failed` | `mobile_card.client_diagnostic` | WARN |
-| `cache_fallback_started`, `cache_fallback_recovered` | `mobile_card.client_diagnostic` | DEBUG (excluded) |
+| `logout_failed` | `mobile_card.logout.failed` | WARN |
+| `session_invalidated` | `mobile_card.session.invalidated` | WARN |
+| `credentials_missing_after_login` | `mobile_card.credentials.missing_after_login` | WARN |
+| `response_invalid` | `mobile_card.response.invalid` | WARN |
+| `session_token_persist_failed` | `mobile_card.session.persistence.failed` | WARN |
+| `cache_fallback_started` | `mobile_card.cache.fallback.started` | DEBUG (excluded) |
+| `cache_fallback_recovered` | `mobile_card.cache.fallback.recovered` | DEBUG (excluded) |
+
+The legacy logout endpoint also maps its accepted failure names to these domain
+events; existing app payloads need no update. Historical generic event names remain.
 
 Filter `event_name=session_invalidated` to investigate a forced logout. It has
 `failure_stage=reauthorization`, auth code/status and credential/cache/marker
@@ -221,3 +227,14 @@ Error Tracking retains sanitized stack metadata. Exporter failure or abrupt
 termination can still lose telemetry.
 
 Policy reference: https://posthog.com/docs/logs/best-practices
+
+
+## Controlled verification traffic
+
+Personal requests with `X-Telemetry-Synthetic: true` set `synthetic=true` on
+application logs and OTel server spans. Ordinary requests have `synthetic=false`.
+Exclude true records when reviewing real user failures. This is a diagnostic
+label declared by the caller; it grants no privileges and does not suppress
+logging or bypass rate limiting. Previous proof records can be identified by
+`logging-proof` / `prod-proof` request IDs; they cannot be retroactively marked
+by changing the application. Use the header on future controlled probes.

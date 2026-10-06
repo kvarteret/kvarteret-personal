@@ -21,7 +21,11 @@ from app.domain.mobile_card.service import (
     MobileCardResponse,
     MobileCardService,
 )
-from app.observability import client_ip_from_request, with_named_span
+from app.observability import (
+    MOBILE_DIAGNOSTIC_EVENTS,
+    client_ip_from_request,
+    with_named_span,
+)
 
 logger = get_logger("app.audit")
 
@@ -132,11 +136,7 @@ async def log_client_diagnostic(
     except RateLimitExceeded:
         raise HTTPException(429, "Too many diagnostics.") from None
     cache_event = payload.event_name.startswith("cache_fallback_")
-    event = (
-        "mobile_card.logout.succeeded"
-        if payload.event_name == "logout_succeeded"
-        else "mobile_card.client_diagnostic"
-    )
+    event = MOBILE_DIAGNOSTIC_EVENTS[payload.event_name]
     logger.log(
         logging.DEBUG
         if cache_event
@@ -283,7 +283,7 @@ async def log_client_session_logout_event(
     payload: MobileCardSessionLogoutEventRequest,
 ) -> AcceptedStatusResponse:
     logger.warning(
-        "mobile_card.client_session_logout",
+        MOBILE_DIAGNOSTIC_EVENTS[payload.event_name],
         extra={
             "event_name": payload.event_name,
             "platform": payload.platform,
