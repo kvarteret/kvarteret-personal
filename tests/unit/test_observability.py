@@ -32,11 +32,19 @@ def test_all_valid_traces_are_recorded(parent_sampled) -> None:
     provider = _build_trace_provider(Resource.create({}))
     parent = None
     if parent_sampled is not None:
-        parent = trace.set_span_in_context(trace.NonRecordingSpan(trace.SpanContext(
-            trace_id=1, span_id=2, is_remote=True,
-            trace_flags=trace.TraceFlags(1 if parent_sampled else 0),
-        )))
-    with provider.get_tracer(__name__).start_as_current_span("request", context=parent) as span:
+        parent = trace.set_span_in_context(
+            trace.NonRecordingSpan(
+                trace.SpanContext(
+                    trace_id=1,
+                    span_id=2,
+                    is_remote=True,
+                    trace_flags=trace.TraceFlags(1 if parent_sampled else 0),
+                )
+            )
+        )
+    with provider.get_tracer(__name__).start_as_current_span(
+        "request", context=parent
+    ) as span:
         assert span.is_recording()
         assert span.get_span_context().trace_flags.sampled
         if parent is not None:
@@ -177,9 +185,7 @@ def test_otlp_handler_exports_only_sanitized_record() -> None:
         "registration_id": 42,
         "recipient_email": "sentinel@example.com",
     }
-    handler = _SanitizedLoggingHandler(
-        logger_provider=cast(Any, CapturingProvider())
-    )
+    handler = _SanitizedLoggingHandler(logger_provider=cast(Any, CapturingProvider()))
 
     handler.emit(record)
 
@@ -242,6 +248,73 @@ def test_with_named_span_marks_error_status_on_exception(
     assert len(spans) == 1
     assert spans[0].name == "feedback.submit"
     assert spans[0].status.status_code == trace.StatusCode.ERROR
+    assert not spans[0].events  # raw exception messages must not leak via spans
+
+
+def test_session_context_connects_failed_requests_and_otel_spans(caplog):
+    from types import SimpleNamespace
+    from app.config import Settings
+    from app.main import _install_request_context_middleware
+    from app.web.csrf import CSRF_COOKIE_NAME, CsrfTokenService
+
+    settings = Settings(_env_file=None, app_env="test", app_secret_key="test-key")
+    cookie = CsrfTokenService(settings).issue_token()
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    app = FastAPI()
+    app.state.container = SimpleNamespace(settings=settings)
+    _install_request_context_middleware(app)
+
+    @app.get("/failed")
+    def failed():
+        from fastapi.responses import Response
+
+        return Response(status_code=403)
+
+    FastAPIInstrumentor.instrument_app(
+        app, tracer_provider=provider, exclude_spans=["send", "receive"]
+    )
+    client = TestClient(app)
+    client.cookies.set(CSRF_COOKIE_NAME, cookie)
+    with caplog.at_level(logging.WARNING):
+        responses = [client.get("/failed") for _ in range(2)]
+    records = [
+        json.loads(JsonLogFormatter().format(r))
+        for r in caplog.records
+        if getattr(r, "event", None) == "http.request.failed"
+    ]
+    spans = exporter.get_finished_spans()
+    assert len(spans) == len(records) == 2
+    assert records[0]["session_id"] == records[1]["session_id"]
+    assert records[0]["trace_id"] != records[1]["trace_id"]
+    for record, response, span in zip(records, responses, spans):
+        assert record["request_id"] == response.headers["X-Request-ID"]
+        assert record["schema_version"] == 1
+        assert record["domain"] == "http"
+        assert record["session_id"] == span.attributes["session.id"]
+        assert record["trace_id"] == format(span.context.trace_id, "032x")
+    assert cookie not in json.dumps(records)
+    provider.shutdown()
+
+
+def test_diagnostic_context_rejects_arbitrary_header_values():
+    from starlette.requests import Request
+    from app.config import Settings
+    from app.observability import diagnostic_session_id, build_request_id
+
+    settings = Settings(_env_file=None)
+    request = Request(
+        {
+            "type": "http",
+            "headers": [
+                (b"x-session-id", b"person@example.com"),
+                (b"x-request-id", b"person@example.com"),
+            ],
+        }
+    )
+    assert len(diagnostic_session_id(request, settings)) == 32
+    assert len(build_request_id(request)) == 32
 
 
 def test_fastapi_instrumentation_joins_incoming_traceparent() -> None:
@@ -268,9 +341,7 @@ def test_fastapi_instrumentation_joins_incoming_traceparent() -> None:
     client.get(
         "/hello",
         headers={
-            "traceparent": (
-                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-            )
+            "traceparent": ("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         },
     )
 

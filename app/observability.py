@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import logging
 import re
 import sys
@@ -13,6 +15,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import Request
+from itsdangerous import BadSignature, URLSafeSerializer
 from opentelemetry import trace
 
 from app.auth.models import AuthenticatedUser
@@ -39,6 +42,7 @@ _COMMON_FIELDS = frozenset(
         "service",
         "environment",
         "request_id",
+        "session_id",
         "trace_id",
         "span_id",
         "registration_id",
@@ -51,6 +55,10 @@ _COMMON_FIELDS = frozenset(
         "outcome",
         "failure_stage",
         "error_category",
+        "dependency_status_code",
+        "error_file",
+        "error_function",
+        "error_line",
         "error_chain",
         "db_sqlstate",
         "retryable",
@@ -130,6 +138,41 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
             "had_stored_credentials",
         }
     ),
+    "mobile_card.client_diagnostic": frozenset(
+        {
+            "event_name",
+            "event_id",
+            "operation_id",
+            "attempt_id",
+            "source",
+            "occurred_at",
+            "platform",
+            "app_version",
+            "runtime_version",
+            "update_channel",
+            "update_id",
+            "auth_error_code",
+            "auth_error_status",
+            "had_cached_user",
+            "had_login_marker",
+            "had_stored_credentials",
+        }
+    ),
+    "mobile_card.logout.succeeded": frozenset(
+        {
+            "event_name",
+            "event_id",
+            "operation_id",
+            "attempt_id",
+            "source",
+            "occurred_at",
+            "platform",
+            "app_version",
+            "runtime_version",
+            "update_channel",
+            "update_id",
+        }
+    ),
     "feedback.issue.created": frozenset({"feedback_source", "issue_identifier"}),
     "volunteer.prospect.conflict": frozenset({"conflict_type"}),
     "volunteer.prospect.validation_failed": frozenset(
@@ -147,6 +190,51 @@ _EVENT_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
 }
+
+# INFO is an explicit contract: adding a named visit/read event cannot increase
+# ingestion by accident. Warnings and errors remain unconditional.
+DOMAIN_OUTCOME_EVENTS = frozenset(
+    {
+        "auth.login.succeeded",
+        "volunteer.lifecycle",
+        "admin.activity",
+        "email.delivery",
+        "mobile_card.access_code.sent",
+        "mobile_card.session.created",
+        "mobile_card.logout.succeeded",
+        "feedback.issue.created",
+    }
+)
+
+
+def diagnostic_session_id(request: Request, settings: Settings) -> str:
+    """Correlate browser requests without exporting a credential or adding a cookie."""
+    cookie = request.cookies.get("kvarteret_csrf")
+    valid_cookie = False
+    if cookie:
+        try:
+            payload = URLSafeSerializer(
+                settings.app_secret_key, salt="kvarteret-csrf"
+            ).loads(cookie)
+            valid_cookie = (
+                isinstance(payload, dict)
+                and isinstance(payload.get("nonce"), str)
+                and bool(payload["nonce"])
+            )
+        except BadSignature:
+            pass
+    if valid_cookie:
+        return hmac.new(
+            settings.app_secret_key.encode(),
+            ("logging-session:" + cookie).encode(),
+            hashlib.sha256,
+        ).hexdigest()[:32]
+    # Cookie-less callers may supply a random diagnostic ID. It grants no access.
+    supplied = request.headers.get("x-session-id", "")
+    if re.fullmatch(r"[a-f0-9]{32}", supplied) and supplied != "0" * 32:
+        return supplied
+    return uuid4().hex
+
 
 _FORBIDDEN_KEY_PARTS = (
     "authorization",
@@ -344,8 +432,6 @@ def _log_after_commit(logger: logging.Logger, record: logging.LogRecord) -> None
     )
 
 
-
-
 def emit_event(
     logger: logging.Logger,
     event: str,
@@ -353,7 +439,11 @@ def emit_event(
     level: int = logging.INFO,
     fields: Mapping[str, object] | None = None,
 ) -> None:
-    event_fields = {**current_trace_fields(), **(fields or {})}
+    event_fields = {
+        **_request_context.get({}),
+        **current_trace_fields(),
+        **(fields or {}),
+    }
     logger.log(
         level,
         event,
@@ -385,70 +475,18 @@ def emit_committed_event(
     level: int = logging.INFO,
     fields: Mapping[str, object] | None = None,
 ) -> None:
-    """Announce database outcomes only after the active transaction commits."""
-    from sqlalchemy import event as sqlalchemy_event
-    from app.db.session import current_session
-
-    session = current_session()
-    if session is None or not session.in_transaction():
-        emit_event(logger, event, level=level, fields=fields)
-        return
-    sync_session = session.sync_session
-    key = "observability.committed_events"
-    if key not in sync_session.info:
-        sync_session.info[key] = []
-
-        def committed(session):
-            if session.in_nested_transaction():
-                return
-            pending, session.info[key] = session.info[key], []
-            for event_logger, name, severity, data, transaction in pending:
-                emit_event(event_logger, name, level=severity, fields=data)
-
-        def rolled_back(session, previous_transaction):
-            def belongs_to_rollback(item):
-                transaction = item[-1]
-                while transaction is not None:
-                    if transaction is previous_transaction:
-                        return True
-                    transaction = transaction.parent
-                return False
-
-            session.info[key] = [
-                item for item in session.info[key] if not belongs_to_rollback(item)
-            ]
-
-        def ended(session, transaction):
-            # Session.close() ends an uncommitted transaction without invoking
-            # after_rollback. Never carry its events into a reused session.
-            if transaction.parent is None:
-                session.info[key].clear()
-
-        sqlalchemy_event.listen(sync_session, "after_commit", committed)
-        sqlalchemy_event.listen(sync_session, "after_soft_rollback", rolled_back)
-        sqlalchemy_event.listen(sync_session, "after_transaction_end", ended)
-    sync_session.info[key].append(
-        (
-            logger,
-            event,
-            level,
-            sanitize_fields(
-                event,
-                {
-                    **_request_context.get({}),
-                    **current_trace_fields(),
-                    **(fields or {}),
-                },
-            ),
-            sync_session.get_nested_transaction() or sync_session.get_transaction(),
-        )
+    """Use the built-in LoggerAdapter's transaction-aware logging path."""
+    adapter = (
+        logger if isinstance(logger, EventLoggerAdapter) else get_logger(logger.name)
     )
+    adapter.log(level, event, after_commit=True, extra=dict(fields or {}))
 
 
 class JsonLogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         event = str(getattr(record, "event", "log.message"))
         payload: dict[str, Any] = {
+            "schema_version": 1,
             "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
@@ -468,6 +506,8 @@ class JsonLogFormatter(logging.Formatter):
             payload.update(
                 sanitize_fields(event, exception_diagnostics(record.exc_info[1]))
             )
+        action = payload.get("action") if event == "admin.activity" else None
+        payload["domain"] = str(action or event).split(".", 1)[0]
         return json.dumps(payload, default=str, ensure_ascii=True)
 
 
@@ -497,7 +537,8 @@ def clear_request_context() -> None:
 
 
 def build_request_id(request: Request) -> str:
-    return request.headers.get("x-request-id") or uuid4().hex
+    supplied = request.headers.get("x-request-id", "")
+    return supplied if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", supplied) else uuid4().hex
 
 
 def client_ip_from_request(request: Request) -> str | None:
@@ -524,17 +565,22 @@ def _route_template(request: Request) -> str:
 def log_request(
     logger: logging.Logger, *, request: Request, status_code: int, started_at: float
 ) -> None:
-    # Request traces carry routine traffic. Keep a fallback for handled server
-    # failures; expected client rejections have their own domain diagnostics.
+    # Request traces carry routine traffic. All failed responses need a fallback
+    # even when a route has no domain-specific rejection diagnostic.
     emit_event(
         logger,
-        "http.request.failed" if status_code >= 500 else "http.request.completed",
-        level=logging.ERROR if status_code >= 500 else logging.DEBUG,
+        "http.request.failed" if status_code >= 400 else "http.request.completed",
+        level=logging.ERROR
+        if status_code >= 500
+        else logging.WARNING
+        if status_code >= 400
+        else logging.DEBUG,
         fields={
             "status_code": status_code,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             "http_method": request.method,
             "route_template": _route_template(request),
+            "outcome": "failed" if status_code >= 400 else "succeeded",
         },
     )
 
@@ -547,6 +593,8 @@ def log_request_exception(
         extra={
             "event": "http.request.failed",
             "event_data": {
+                "status_code": 500,
+                "outcome": "failed",
                 "duration_ms": round((perf_counter() - started_at) * 1000, 2),
                 "http_method": request.method,
                 "route_template": _route_template(request),
@@ -574,10 +622,10 @@ def log_admin_activity(
     emitter(
         logging.getLogger("app.audit"),
         "admin.activity",
-        level=logging.DEBUG
-        if diagnostic
-        else logging.WARNING
+        level=logging.WARNING
         if outcome != "success"
+        else logging.DEBUG
+        if diagnostic
         else logging.INFO,
         fields={
             "action": action,
@@ -627,7 +675,9 @@ def with_named_span(name: str, attributes: Mapping[str, object] | None = None):
     disabled the tracer yields a non-recording span and all calls are no-ops,
     so this helper is safe to use unconditionally.
     """
-    with _tracer.start_as_current_span(name) as span:
+    with _tracer.start_as_current_span(
+        name, record_exception=False, set_status_on_exception=False
+    ) as span:
         for key, value in (attributes or {}).items():
             span.set_attribute(key, value)
         try:

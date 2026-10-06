@@ -12,7 +12,7 @@ from app.observability import emit_committed_event, log_operation_timing, log_re
 from app.telemetry import DomainLogFilter
 
 
-@pytest.mark.parametrize("status", [200, 202, 303, 400, 401, 404, 422, 429])
+@pytest.mark.parametrize("status", [200, 202, 303])
 def test_routine_http_responses_are_debug_only(caplog, status):
     logger = logging.getLogger("app.test")
     with caplog.at_level(logging.DEBUG):
@@ -25,6 +25,22 @@ def test_routine_http_responses_are_debug_only(caplog, status):
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.DEBUG
     assert not DomainLogFilter().filter(caplog.records[0])
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 409, 422, 429])
+def test_failed_requests_always_have_fallback_diagnostics(caplog, status):
+    with caplog.at_level(logging.DEBUG):
+        log_request(
+            logging.getLogger("app.test"),
+            request=Request({"type": "http", "method": "POST"}),
+            status_code=status,
+            started_at=perf_counter(),
+        )
+    record = caplog.records[0]
+    assert record.event == "http.request.failed"
+    assert record.event_data["status_code"] == status
+    assert record.event_data["outcome"] == "failed"
+    assert DomainLogFilter().filter(record)
 
 
 def test_handled_server_failure_remains_searchable(caplog):
@@ -56,6 +72,9 @@ def test_operation_timing_is_debug_only(caplog):
     [
         ("app.workflow", logging.INFO, "volunteer.lifecycle", True),
         ("app.workflow", logging.DEBUG, "volunteer.lifecycle", False),
+        ("app.test", logging.INFO, "page.visited", False),
+        ("app.test", logging.INFO, "http.request.completed", False),
+        ("app.test", logging.INFO, "mobile_card.session.renewed", False),
         ("app.test", logging.INFO, None, False),
         ("httpx", logging.INFO, None, False),
         ("uvicorn.access", logging.INFO, None, False),
@@ -147,6 +166,7 @@ async def test_savepoint_rollback_discards_only_its_events(caplog):
         ("spotify.oauth.login.start", "success", logging.DEBUG),
         ("volunteer.delete", "success", logging.INFO),
         ("volunteer.delete", "failure", logging.WARNING),
+        ("search.volunteers", "failure", logging.WARNING),
     ],
 )
 def test_admin_reads_are_diagnostics_and_mutations_are_outcomes(
@@ -209,3 +229,10 @@ def test_safe_email_delivery_id_and_url_presence_remain_filterable():
         )
         == {}
     )
+
+
+def test_export_filter_blocks_successful_admin_reads_at_info():
+    record = logging.LogRecord("app.audit", logging.INFO, __file__, 1, "read", (), None)
+    record.event = "admin.activity"
+    record.event_data = {"action": "search.volunteers"}
+    assert not DomainLogFilter().filter(record)

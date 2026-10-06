@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
+from datetime import datetime
 from app.observability import get_logger
 
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.dependencies import get_mobile_card_service
+from app.dependencies import get_mobile_card_service, get_rate_limiter
+from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.domain.mobile_card.errors import MobileCardDeliveryError
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
@@ -72,12 +75,99 @@ class AcceptedStatusResponse(BaseModel):
 router = APIRouter()
 
 
+class MobileDiagnosticRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_name: Literal[
+        "cache_fallback_started",
+        "cache_fallback_recovered",
+        "credentials_missing_after_login",
+        "logout_failed",
+        "logout_succeeded",
+        "response_invalid",
+        "session_invalidated",
+        "session_token_persist_failed",
+    ]
+    event_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    operation_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    attempt_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_:-]+$")
+    attempt_no: int = Field(ge=1, le=100)
+    source: Literal["client"]
+    occurred_at: datetime
+    platform: Literal["ios", "android", "web"]
+    app_version: str | None = Field(default=None, max_length=64)
+    runtime_version: str | None = Field(default=None, max_length=64)
+    update_channel: str | None = Field(default=None, max_length=64)
+    update_id: str | None = Field(default=None, max_length=128)
+    auth_error_code: str | None = Field(
+        default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
+    )
+    auth_error_status: int | None = Field(default=None, ge=400, le=599)
+    had_cached_user: bool | None = None
+    had_login_marker: bool | None = None
+    had_stored_credentials: bool | None = None
+
+
+@router.post(
+    "/client-events/diagnostics",
+    status_code=202,
+    response_model=AcceptedStatusResponse,
+    operation_id="logMobileCardDiagnostic",
+)
+async def log_client_diagnostic(
+    request: Request,
+    payload: MobileDiagnosticRequest,
+    limiter: RateLimiter = Depends(get_rate_limiter),
+) -> AcceptedStatusResponse:
+    # Signed-out clients must be able to report losing their credentials.
+    # Bound this public ingestion path using the existing shared rate limiter.
+    if len(await request.body()) > 8192:
+        raise HTTPException(413, "Diagnostic payload too large.")
+    try:
+        await limiter.hit(
+            f"mobile-diagnostics:{client_ip_from_request(request) or 'unknown'}",
+            limit=60,
+            window_seconds=60,
+        )
+    except RateLimitExceeded:
+        raise HTTPException(429, "Too many diagnostics.") from None
+    cache_event = payload.event_name.startswith("cache_fallback_")
+    event = (
+        "mobile_card.logout.succeeded"
+        if payload.event_name == "logout_succeeded"
+        else "mobile_card.client_diagnostic"
+    )
+    logger.log(
+        logging.DEBUG
+        if cache_event
+        else logging.INFO
+        if payload.event_name == "logout_succeeded"
+        else logging.WARNING,
+        event,
+        extra={
+            **payload.model_dump(exclude_none=True),
+            "occurred_at": payload.occurred_at.isoformat(),
+            "outcome": "succeeded"
+            if payload.event_name == "logout_succeeded"
+            else "failed",
+            "failure_stage": "reauthorization"
+            if payload.event_name == "session_invalidated"
+            else payload.event_name,
+        },
+    )
+    return AcceptedStatusResponse(status="accepted")
+
+
 @router.post(
     "/access-codes",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=AcceptedStatusResponse,
     operation_id="requestMobileCardAccessCode",
-    responses={503: {"description": "Email delivery is temporarily unavailable. Check your inbox before retrying."}},
+    responses={
+        503: {
+            "description": "Email delivery is temporarily unavailable. Check your inbox before retrying."
+        }
+    },
 )
 async def request_access_code(
     request: Request,
@@ -192,14 +282,19 @@ async def log_client_session_logout_event(
     request: Request,
     payload: MobileCardSessionLogoutEventRequest,
 ) -> AcceptedStatusResponse:
-    emit_event(logger, "mobile_card.client_session_logout", fields={
-        "event_name": payload.event_name,
-        "platform": payload.platform,
-        "app_version": payload.app_version,
-        "auth_error_code": payload.auth_error_code,
-        "auth_error_status": payload.auth_error_status,
-        "had_cached_user": payload.had_cached_user,
-        "had_login_marker": payload.had_login_marker,
-        "had_stored_credentials": payload.had_stored_credentials,
-    })
+    emit_event(
+        logger,
+        "mobile_card.client_session_logout",
+        level=logging.WARNING,
+        fields={
+            "event_name": payload.event_name,
+            "platform": payload.platform,
+            "app_version": payload.app_version,
+            "auth_error_code": payload.auth_error_code,
+            "auth_error_status": payload.auth_error_status,
+            "had_cached_user": payload.had_cached_user,
+            "had_login_marker": payload.had_login_marker,
+            "had_stored_credentials": payload.had_stored_credentials,
+        },
+    )
     return AcceptedStatusResponse(status="accepted")

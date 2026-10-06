@@ -75,6 +75,8 @@ def test_request_exception_captured_and_flush_runs_on_success_and_failure(
     )
     monkeypatch.setattr(log, "propagate", False)
     app = FastAPI()
+    from types import SimpleNamespace
+    app.state.container = SimpleNamespace(settings=Settings(_env_file=None))
     _install_request_context_middleware(app)
     app.add_middleware(TelemetryFlushMiddleware, providers=(Provider(),))
 
