@@ -35,7 +35,7 @@ from app.infrastructure.email.password_reset_templates import (
 )
 from app.infrastructure.email.console import ConsoleEmailSender
 from app.infrastructure.media.photo_processing import process_uploaded_photo
-from app.infrastructure.email.smtp import SmtpEmailSender
+from app.infrastructure.email.resend import ResendEmailSender
 from app.infrastructure.email.protocols import EmailSenderProtocol
 from app.domain.feedback.service import FeedbackService
 from app.domain.mobile_card.repository import MobileCardRepository
@@ -165,7 +165,9 @@ def build_application_container(
     session_factory = database_runtime_manager.get_session_factory()
     session_cookie_signer = SessionCookieSigner(resolved_settings)
     media_token_service = MediaTokenService(resolved_settings)
-    auth_repository = DatabaseAuthRepository()
+    auth_repository = DatabaseAuthRepository(
+        legacy_login_enabled=resolved_settings.legacy_admin_login_enabled
+    )
     session_store = SessionStore(
         cast(SessionRepositoryProtocol, auth_repository), resolved_settings
     )
@@ -289,12 +291,9 @@ def _build_storage_service(settings: Settings):
 
 
 def _build_email_sender(settings: Settings) -> EmailSenderProtocol:
-    smtp_sender = SmtpEmailSender(settings)
-    if settings.app_env == "development" and not settings.smtp_server:
-        # Local harness: emails are logged and written to .devdata/outbox
-        # so apply links and access codes are usable without SMTP.
+    if settings.app_env == "development" and not settings.resend_api_key:
         return ConsoleEmailSender()
-    return smtp_sender
+    return ResendEmailSender(settings)
 
 
 def _build_supabase_auth_gateway(settings: Settings) -> SupabaseAuthGatewayProtocol:

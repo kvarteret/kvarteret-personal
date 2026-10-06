@@ -99,6 +99,58 @@
         "title": "Body_admin_account_update_admin_accounts__account_id__patch",
         "type": "object"
       },
+      "Body_app_login_login_app_post": {
+        "properties": {
+          "access_code": {
+            "title": "Access Code",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "next": {
+            "default": "/",
+            "title": "Next",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "access_code"
+        ],
+        "title": "Body_app_login_login_app_post",
+        "type": "object"
+      },
+      "Body_configure_individual_access_admin_accounts__account_id__access_post": {
+        "properties": {
+          "group_ids": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Group Ids",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "volunteer_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Volunteer Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "volunteer_ids",
+          "role"
+        ],
+        "title": "Body_configure_individual_access_admin_accounts__account_id__access_post",
+        "type": "object"
+      },
       "Body_courses_add_completion_courses__course_id__completions_post": {
         "properties": {
           "term": {
@@ -171,6 +223,35 @@
           "name"
         ],
         "title": "Body_courses_update_courses__course_id__patch",
+        "type": "object"
+      },
+      "Body_create_individual_access_admin_accounts_from_volunteer_post": {
+        "properties": {
+          "group_ids": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Group Ids",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "volunteer_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Volunteer Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "volunteer_ids",
+          "role"
+        ],
+        "title": "Body_create_individual_access_admin_accounts_from_volunteer_post",
         "type": "object"
       },
       "Body_feedback_submit_feedback_post": {
@@ -286,6 +367,8 @@
       "Body_group_roles_create_groups__group_id__roles_post": {
         "properties": {
           "pingvin_points": {
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Pingvin Points",
             "type": "integer"
           },
@@ -304,6 +387,8 @@
       "Body_group_roles_update_groups__group_id__roles__role_id__patch": {
         "properties": {
           "pingvin_points": {
+            "maximum": 2147483647.0,
+            "minimum": -2147483648.0,
             "title": "Pingvin Points",
             "type": "integer"
           },
@@ -575,6 +660,24 @@
           "role"
         ],
         "title": "Body_my_account_update_my_account_patch",
+        "type": "object"
+      },
+      "Body_request_app_login_code_login_app_code_post": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "next": {
+            "default": "/",
+            "title": "Next",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "Body_request_app_login_code_login_app_code_post",
         "type": "object"
       },
       "Body_set_password_submit_set_password_post": {
@@ -1126,6 +1229,91 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "InterestRead": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "source_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Hash"
+          }
+        },
+        "required": [
+          "event_id"
+        ],
+        "title": "InterestRead",
+        "type": "object"
+      },
+      "InterestResponse": {
+        "properties": {
+          "count": {
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "taps": {
+            "minimum": 0.0,
+            "title": "Taps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "taps",
+          "count"
+        ],
+        "title": "InterestResponse",
+        "type": "object"
+      },
+      "InterestWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_id": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "clicks": {
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Clicks",
+            "type": "integer"
+          },
+          "event_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_.-]+$",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "source_hash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "source_hash",
+          "clicks",
+          "batch_id"
+        ],
+        "title": "InterestWrite",
+        "type": "object"
+      },
       "MobileCardResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1609,6 +1797,13 @@
           "registrationId": {
             "title": "Registrationid",
             "type": "integer"
+          },
+          "registrationIds": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Registrationids",
+            "type": "array"
           }
         },
         "required": [
@@ -1678,6 +1873,11 @@
       }
     },
     "securitySchemes": {
+      "EventInterestHmac": {
+        "in": "header",
+        "name": "X-Kvarteret-Signature",
+        "type": "apiKey"
+      },
       "VolunteerProspectHmac": {
         "description": "HMAC-SHA256 signature over the versioned request canonical form. Only the samfunnetibergen server holds the signing secret.",
         "in": "header",
@@ -1755,6 +1955,22 @@
               ],
               "title": "Q"
             }
+          },
+          {
+            "in": "query",
+            "name": "account_type",
+            "required": false,
+            "schema": {
+              "default": "personal",
+              "enum": [
+                "personal",
+                "legacy",
+                "unlinked",
+                "all"
+              ],
+              "title": "Account Type",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1812,6 +2028,42 @@
           }
         },
         "summary": "Admin Account Create"
+      }
+    },
+    "/admin-accounts/from-volunteer": {
+      "post": {
+        "operationId": "create_individual_access_admin_accounts_from_volunteer_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_individual_access_admin_accounts_from_volunteer_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Individual Access"
       }
     },
     "/admin-accounts/new": {
@@ -1991,6 +2243,53 @@
         "summary": "Admin Account Update"
       }
     },
+    "/admin-accounts/{account_id}/access": {
+      "post": {
+        "operationId": "configure_individual_access_admin_accounts__account_id__access_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_configure_individual_access_admin_accounts__account_id__access_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Individual Access"
+      }
+    },
     "/admin-accounts/{account_id}/impersonate": {
       "post": {
         "operationId": "admin_account_impersonate_admin_accounts__account_id__impersonate_post",
@@ -2086,6 +2385,122 @@
         ]
       }
     },
+    "/api/v1/event-interest/read": {
+      "post": {
+        "operationId": "readEventInterest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestRead"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid or stale server signature"
+          },
+          "413": {
+            "description": "Request exceeds the bounded payload size"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Replayed nonce or request limit exceeded"
+          },
+          "503": {
+            "description": "Event response signing is not configured"
+          }
+        },
+        "security": [
+          {
+            "EventInterestHmac": []
+          }
+        ],
+        "summary": "Read Interest",
+        "tags": [
+          "event-interest"
+        ]
+      }
+    },
+    "/api/v1/event-interest/response": {
+      "post": {
+        "operationId": "saveEventInterest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterestWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Missing, invalid or stale server signature"
+          },
+          "413": {
+            "description": "Request exceeds the bounded payload size"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Replayed nonce or request limit exceeded"
+          },
+          "503": {
+            "description": "Event response signing is not configured"
+          }
+        },
+        "security": [
+          {
+            "EventInterestHmac": []
+          }
+        ],
+        "summary": "Save Interest",
+        "tags": [
+          "event-interest"
+        ]
+      }
+    },
     "/api/v1/feedback/": {
       "post": {
         "operationId": "submit_feedback_api_v1_feedback__post",
@@ -2158,6 +2573,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Email delivery is temporarily unavailable. Check your inbox before retrying."
           }
         },
         "summary": "Request Access Code",
@@ -2495,6 +2913,7 @@
                         "type": "null"
                       }
                     ],
+                    "description": "Additional recruitment target; creates an independent application, not a fallback choice.",
                     "title": "Second Choice Group Slug"
                   },
                   "study_institution": {
@@ -3546,6 +3965,8 @@
             "name": "group_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Group Id",
               "type": "integer"
             }
@@ -3637,6 +4058,8 @@
             "name": "group_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Group Id",
               "type": "integer"
             }
@@ -3646,6 +4069,8 @@
             "name": "role_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Role Id",
               "type": "integer"
             }
@@ -4032,6 +4457,78 @@
           }
         },
         "summary": "Login Submit"
+      }
+    },
+    "/login/app": {
+      "post": {
+        "operationId": "app_login_login_app_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_app_login_login_app_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Login"
+      }
+    },
+    "/login/app/code": {
+      "post": {
+        "operationId": "request_app_login_code_login_app_code_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_request_app_login_code_login_app_code_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request App Login Code"
       }
     },
     "/logout": {
@@ -4596,6 +5093,16 @@
                 }
               ],
               "title": "Group Ids"
+            }
+          },
+          {
+            "in": "query",
+            "name": "groups_selected",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Groups Selected",
+              "type": "boolean"
             }
           }
         ],

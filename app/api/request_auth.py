@@ -123,7 +123,7 @@ async def require_signed_volunteer_prospect(
         if secret
     )
     if not secrets:
-        logger.error("Volunteer prospect HMAC authentication is not configured.")
+        logger.error("volunteer.prospect.auth.unconfigured", extra={"event": "volunteer.prospect.auth.unconfigured"})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service unavailable.",
@@ -216,7 +216,7 @@ async def require_signed_volunteer_prospect(
     except RateLimitExceeded:
         _raise_authentication_failed("replayed_nonce")
     except Exception as exc:
-        logger.exception("Volunteer prospect replay protection failed.")
+        logger.exception("volunteer.prospect.replay_check.failed", extra={"event": "volunteer.prospect.replay_check.failed"})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service unavailable.",
@@ -291,7 +291,7 @@ async def _hit_rate_limit(
             headers={"Retry-After": str(window_seconds)},
         ) from exc
     except Exception as exc:
-        logger.exception("Volunteer prospect rate limiting failed.")
+        logger.exception("volunteer.prospect.rate_limit.failed", extra={"event": "volunteer.prospect.rate_limit.failed"})
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service unavailable.",
@@ -301,7 +301,7 @@ async def _hit_rate_limit(
 def _raise_authentication_failed(reason: str) -> NoReturn:
     logger.warning(
         "Rejected volunteer prospect request authentication.",
-        extra={"authentication_failure_reason": reason},
+        extra={"event": "volunteer.prospect.auth.rejected", "event_data": {"reason": reason}},
     )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

@@ -10,7 +10,7 @@ This page documents third-party systems used by `kvarteret-personal` and related
 | Supabase Auth | Admin account lifecycle, login bridge, password setup | `app/auth/supabase_auth.py` | read/write over HTTP |
 | Azure Blob Storage | Personnel photo storage | `app/infrastructure/storage/service.py` | read/write and signed read URLs |
 | Spotify Web API | Shared now-playing state and OAuth refresh token exchange | `app/domain/spotify/now_playing.py` | OAuth and read |
-| SMTP provider | Mobile-card access codes and onboarding/application email | `app/infrastructure/email/smtp.py` | outbound email |
+| Resend | Mobile-card access codes and onboarding/application email | `app/infrastructure/email/resend.py` | outbound email |
 | Linear | Feedback submissions from the admin UI and public feedback API | `app/domain/feedback/service.py` | outbound GraphQL API |
 | Vercel | Runtime for the FastAPI ASGI app and static asset serving | `api/index.py`, `vercel.json` | deployment/runtime |
 
@@ -32,15 +32,15 @@ The public endpoint is `GET /api/now-playing`. It never exposes Spotify tokens.
 
 Polling is gated by `SPOTIFY_NOW_PLAYING_ENABLED` (default `false`). While disabled the service makes no repository or Spotify calls and the endpoint reports an authorized-but-idle state. The switch is off by default because a recurring upstream `HTTPStatusError`/`413` retry loop was observed; re-enable with `SPOTIFY_NOW_PLAYING_ENABLED=true` after the root cause is resolved.
 
-## SMTP
+## Resend
 
-SMTP is required for flows that send email:
+Resend is required for flows that send email:
 
 - mobile-card access codes
 - volunteer application invitations and profile completion email
 - admin account onboarding/password setup
 
-If SMTP is not configured, email-sending paths fail with a configuration error. The access-code API still avoids email enumeration by returning accepted for unknown or duplicate people.
+If Resend is not configured, email-sending paths fail with a configuration error. The access-code API still avoids email enumeration by returning accepted for unknown or duplicate people.
 
 ## Linear
 

@@ -43,7 +43,7 @@ class AdminAccountEmailTemplateRenderer:
         role_name: str,
     ) -> AdminAccountEmail:
         return AdminAccountEmail(
-            subject="Set up your Kvarteret admin account / Sett opp admin-kontoen din hos Kvarteret",
+            subject="Set up your Samfunnet i Bergen admin account / Sett opp admin-kontoen din hos Samfunnet i Bergen",
             html_body=self._render(
                 "admin_account_onboarding.html",
                 setup_url=setup_url,

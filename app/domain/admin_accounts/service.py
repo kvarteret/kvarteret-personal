@@ -10,6 +10,7 @@ from email_validator import EmailNotValidError, validate_email
 from app.auth.roles import UserRole
 from app.cache import TTLCache
 from app.errors import NotConfiguredError
+from app.shared.semester import get_current_semester_code
 from app.observability import log_operation_timing
 
 from app.domain.admin_accounts.models import AdminAccountDetail, AdminAccountListItem
@@ -32,7 +33,7 @@ logger = logging.getLogger("app.performance")
 
 class AdminAccountsServiceProtocol(Protocol):
     async def list_admin_accounts(
-        self, query: str | None = None, limit: int = 100
+        self, query: str | None = None, limit: int = 100, account_type: str = "all"
     ) -> list[AdminAccountListItem]: ...
     async def get_admin_account_detail(
         self, user_account_id: int
@@ -80,6 +81,26 @@ class AdminAccountsServiceProtocol(Protocol):
 
 
 class AdminAccountsService:
+    async def application_group_filter(self, account_id: int | None) -> list[int] | None:
+        if account_id is None:
+            return []
+        return await self.repository.application_group_filter(account_id, get_current_semester_code())
+
+    async def access_groups(self):
+        return await self.repository.access_groups()
+
+    async def get_volunteer_identity(self, volunteer_id: int):
+        return await self.repository.volunteer_identity(volunteer_id)
+
+    async def get_individual_account(self, volunteer_id: int):
+        account_id = await self.repository.account_for_volunteer(volunteer_id)
+        return await self.repository.get_admin_account_detail(account_id) if account_id else None
+
+    async def configure_access(self, *, account_id: int, volunteer_id: int, role: UserRole, group_ids: list[int]):
+        await self.repository.configure_access(account_id, volunteer_id, role, group_ids)
+        self._detail_cache.pop(account_id)
+        self._list_cache.clear()
+
     def __init__(
         self,
         repository: AdminAccountsRepository,
@@ -92,25 +113,25 @@ class AdminAccountsService:
         self.email_sender = email_sender
         self.onboarding_email_renderer = onboarding_email_renderer
         self._list_cache: TTLCache[
-            tuple[str | None, int], list[AdminAccountListItem]
+            tuple[str | None, int, str], list[AdminAccountListItem]
         ] = TTLCache(ttl_seconds=cache_ttl_seconds, max_entries=128)
         self._detail_cache: TTLCache[int, AdminAccountDetail] = TTLCache(
             ttl_seconds=cache_ttl_seconds, max_entries=256
         )
 
     async def list_admin_accounts(
-        self, query: str | None = None, limit: int = 100
+        self, query: str | None = None, limit: int = 100, account_type: str = "all"
     ) -> list[AdminAccountListItem]:
         started_at = perf_counter()
         safe_limit = max(1, min(limit, 200))
         normalized_query = _normalize_query(query)
-        cache_key = (normalized_query, safe_limit)
+        cache_key = (normalized_query, safe_limit, account_type)
         cached = self._list_cache.get(cache_key)
         if cached is not None:
             return cached
         try:
             admin_accounts = await self.repository.list_admin_accounts(
-                query=normalized_query, limit=safe_limit
+                query=normalized_query, limit=safe_limit, account_type=account_type
             )
             self._list_cache.set(cache_key, admin_accounts)
             return admin_accounts
@@ -167,6 +188,8 @@ class AdminAccountsService:
         existing = await self.get_admin_account_detail(user_account_id)
         if existing is None:
             return None
+        if existing.volunteer_id and not existing.is_legacy_account and role != existing.role:
+            raise ValueError("Endre rollen under Tilgang i personaldatabasen.")
         if normalized_email != _normalize_email(existing.email):
             raise ValueError(
                 "E-postadressen kan ikke endres etter at admin-kontoen er opprettet."

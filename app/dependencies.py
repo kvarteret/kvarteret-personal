@@ -13,6 +13,8 @@ from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
 from app.media_tokens import MediaTokenService
 from app.runtime import ApplicationContainer
+from app.domain.event_interest.repository import EventInterestRepository
+from app.domain.event_interest.service import EventInterestService
 from app.domain.feedback.service import FeedbackService
 from app.domain.courses.service import CoursesService
 from app.domain.groups.service import GroupsService
@@ -197,7 +199,7 @@ async def load_web_navigation_state(
             await volunteer_applications_service.count_pending_volunteer_applications()
         )
     except Exception:
-        logger.exception("Failed to load pending volunteer-application count.")
+        logger.exception("volunteer.pending_count.failed", extra={"event": "volunteer.pending_count.failed"})
         request.state.volunteer_application_pending_count = 0
 
 
@@ -206,3 +208,7 @@ def _is_fragment_request(request: Request) -> bool:
         request.headers.get("HX-Request") == "true"
         and request.headers.get("HX-Boosted") != "true"
     )
+
+
+def get_event_interest_service() -> EventInterestService:
+    return EventInterestService(EventInterestRepository())

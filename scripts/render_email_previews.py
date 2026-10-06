@@ -20,6 +20,9 @@ from app.infrastructure.email.admin_account_templates import (
 from app.infrastructure.email.mobile_card_templates import (
     MobileCardEmailTemplateRenderer,
 )
+from app.infrastructure.email.password_reset_templates import (
+    PasswordResetEmailTemplateRenderer,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,16 +40,17 @@ def build_previews() -> list[EmailPreview]:
     applicant_renderer = ApplicantEmailTemplateRenderer()
     admin_account_renderer = AdminAccountEmailTemplateRenderer()
     mobile_card_renderer = MobileCardEmailTemplateRenderer()
+    password_reset_renderer = PasswordResetEmailTemplateRenderer()
 
     applicant_invitation_email = applicant_renderer.render_invitation_email(
-        invitation_url="https://personal.kvarteret.no/apply/invite-token-preview",
+        invitation_url="https://personal.samfunnetibergen.no/apply/invite-token-preview",
     )
     applicant_received_email = applicant_renderer.render_application_received_email()
     applicant_profile_email = applicant_renderer.render_profile_completion_email(
-        invitation_url="https://personal.kvarteret.no/apply/profile-token-preview",
+        invitation_url="https://personal.samfunnetibergen.no/apply/profile-token-preview",
     )
     applicant_friend_email = applicant_renderer.render_friend_invitation_email(
-        invitation_url="https://personal.kvarteret.no/apply/friend-token-preview",
+        invitation_url="https://personal.samfunnetibergen.no/apply/friend-token-preview",
         inviter_name="Inga Inviter",
     )
     mobile_card_email = mobile_card_renderer.render_access_code_email(
@@ -54,10 +58,13 @@ def build_previews() -> list[EmailPreview]:
         expires_in_minutes=10,
     )
     admin_account_email = admin_account_renderer.render_onboarding_email(
-        setup_url="https://personal.kvarteret.no/set-password#access_token=preview-token",
+        setup_url="https://personal.samfunnetibergen.no/set-password#access_token=preview-token",
         display_name="New Admin",
         username="new.admin",
         role_name="Admin",
+    )
+    password_reset_email = password_reset_renderer.render_password_reset_email(
+        setup_url="https://personal.samfunnetibergen.no/set-password#token_hash=preview-token&type=recovery",
     )
 
     return [
@@ -97,6 +104,12 @@ def build_previews() -> list[EmailPreview]:
             subject=mobile_card_email.subject,
             html_body=mobile_card_email.html_body,
         ),
+        EmailPreview(
+            slug="password_reset",
+            title="Password Reset",
+            subject=password_reset_email.subject,
+            html_body=password_reset_email.html_body,
+        ),
     ]
 
 
@@ -129,13 +142,14 @@ def _build_index(previews: list[EmailPreview]) -> str:
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Email Previews</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700&amp;family=Fraunces:wght@650;700&amp;display=swap">
     <style>
       body {{
         margin: 0;
         padding: 40px 24px;
-        background: #ffffff;
-        color: #111111;
-        font-family: Helvetica, Arial, sans-serif;
+        background: #faf7f2;
+        color: #26211e;
+        font-family: 'DM Sans', Helvetica, Arial, sans-serif;
       }}
       main {{
         margin: 0 auto;
@@ -145,6 +159,7 @@ def _build_index(previews: list[EmailPreview]) -> str:
         margin: 0 0 24px;
         font-size: 40px;
         line-height: 1.1;
+        font-family: Fraunces, Georgia, 'Times New Roman', serif;
       }}
       ul {{
         list-style: none;
@@ -154,19 +169,19 @@ def _build_index(previews: list[EmailPreview]) -> str:
         gap: 16px;
       }}
       .card {{
-        border-left: 8px solid #f54b4b;
-        background: #ffffff;
+        border-left: 6px solid #db242a;
+        background: #fff0d9;
         padding: 20px 22px;
       }}
       a {{
-        color: #111111;
+        color: #26211e;
         font-size: 22px;
         font-weight: 700;
         text-decoration: none;
       }}
       p {{
         margin: 10px 0 0;
-        color: #555555;
+        color: #6f655e;
         font-size: 15px;
       }}
     </style>

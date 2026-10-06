@@ -102,6 +102,15 @@ msgstr "Skriv inn et gyldig telefonnummer."
 msgid "Profile photo is required."
 msgstr "Profilbilde er påkrevd."
 
+msgid "Birth date is required."
+msgstr "Fødselsdato er påkrevd."
+
+msgid "Address is required."
+msgstr "Adresse er påkrevd."
+
+msgid "Postal code must be exactly 4 digits (e.g. 5011)."
+msgstr "Postnummer må være nøyaktig fire sifre (for eksempel 5011)."
+
 msgid "Registration token was not found."
 msgstr "Registreringstokenet ble ikke funnet."
 

@@ -328,7 +328,7 @@ async def test_now_playing_service_backs_off_and_logs_once_per_outage(caplog) ->
 
     assert request_count == 2
     assert sum(
-        record.message == "Failed to fetch now playing track"
+        getattr(record, "event", None) == "spotify.now_playing.fetch_failed"
         for record in caplog.records
     ) == 1
 

@@ -90,7 +90,10 @@
                 <button class="app-button-secondary min-h-20 flex-col leading-tight" type="submit"><span>Start prøvetid</span><span class="text-sm">(30 dager)</span></button>
               </form>
             {% elif volunteer_application.status == "trial" %}
-                <button class="app-button-secondary h-full min-h-20 w-full" type="button" onclick="document.getElementById('promotion-dialog').showModal()" {% if not promotion_group_options %}disabled{% endif %}>Oppgrader til frivillig</button>
+                <button class="app-button-secondary h-full min-h-20 w-full" type="button" onclick="document.getElementById('promotion-dialog').showModal()" {% if not promotion_group_options or not volunteer_application.profile_complete %}disabled{% endif %}>Oppgrader til frivillig</button>
+                {% if not volunteer_application.profile_complete %}
+                  <p class="mt-2 text-sm text-stone-600">Profilen må fullføres før personen kan oppgraderes til frivillig.</p>
+                {% endif %}
                 <dialog aria-labelledby="promotion-dialog-title" class="m-auto w-[min(94vw,52rem)] border-2 border-kvarteret-ink bg-kvarteret-background p-0 text-left text-kvarteret-ink backdrop:bg-stone-950/60" id="promotion-dialog" {% if request.query_params.get("promote") == "1" %}data-open-promotion{% endif %} onclick="if (event.target === this) this.close()">
                   <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/approval" class="grid gap-6 p-6 md:p-8" method="post">
                   <div class="flex items-start justify-between gap-4">
@@ -131,8 +134,8 @@
                   </form>
                 </dialog>
             {% elif volunteer_application.status == "not_volunteer" %}
-              <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/{% if volunteer_application.promoted_volunteer_id %}restore-volunteer{% else %}reopen{% endif %}" class="grid" method="post">
-                <button class="app-button-secondary min-h-20" type="submit">{% if volunteer_application.promoted_volunteer_id %}Gjenopprett frivillig{% else %}Gjenåpne som kontaktet{% endif %}</button>
+              <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/{% if volunteer_application.promoted_volunteer_id and volunteer_application.promoted_at %}restore-volunteer{% else %}reopen{% endif %}" class="grid" method="post">
+                <button class="app-button-secondary min-h-20" type="submit">{% if volunteer_application.promoted_volunteer_id and volunteer_application.promoted_at %}Gjenopprett frivillig{% else %}Gjenåpne som kontaktet{% endif %}</button>
               </form>
             {% endif %}
           </div>

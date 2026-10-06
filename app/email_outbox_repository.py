@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Any, Mapping
 from uuid import UUID, uuid4
 
-from sqlalchemy import insert, or_, select, update
+from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import current_session
@@ -156,6 +156,13 @@ class EmailOutboxRepository:
         )
         return int(attempt_id), attempt_no, delivery["registration_id"]
 
+    async def first_attempt_at(self, delivery_id: UUID) -> datetime | None:
+        return await _session().scalar(
+            select(func.min(email_delivery_attempts.c.started_at)).where(
+                email_delivery_attempts.c.delivery_id == delivery_id
+            )
+        )
+
     async def set_attempt_stage(self, attempt_id: int, stage: str) -> None:
         await _session().execute(
             update(email_delivery_attempts)
@@ -243,12 +250,10 @@ class EmailOutboxRepository:
     async def get_delivery_row_or_none(
         self, delivery_id: UUID, *, for_update: bool = False
     ) -> Mapping[str, Any] | None:
-        statement = select(email_deliveries).where(
-            email_deliveries.c.id == delivery_id
-        )
+        statement = select(email_deliveries).where(email_deliveries.c.id == delivery_id)
         if for_update:
             statement = statement.with_for_update()
-        return ((await _session().execute(statement)).mappings().first())
+        return (await _session().execute(statement)).mappings().first()
 
     async def list_delivery_rows(
         self,
@@ -264,26 +269,16 @@ class EmailOutboxRepository:
         if status:
             statement = statement.where(email_deliveries.c.status == status)
         if template_key:
-            statement = statement.where(
-                email_deliveries.c.template_key == template_key
-            )
+            statement = statement.where(email_deliveries.c.template_key == template_key)
         if created_after:
-            statement = statement.where(
-                email_deliveries.c.created_at >= created_after
-            )
+            statement = statement.where(email_deliveries.c.created_at >= created_after)
         return list(
-            (
-                await _session().execute(
-                    statement.limit(max(1, min(limit, 200)))
-                )
-            )
+            (await _session().execute(statement.limit(max(1, min(limit, 200)))))
             .mappings()
             .all()
         )
 
-    async def get_attempt_rows(
-        self, delivery_id: UUID
-    ) -> list[Mapping[str, Any]]:
+    async def get_attempt_rows(self, delivery_id: UUID) -> list[Mapping[str, Any]]:
         return list(
             (
                 await _session().execute(

@@ -18,7 +18,7 @@
       <div><p class="text-sm text-stone-500">Enqueue trace ID</p><code class="mt-1 block break-all text-sm">{{ detail.delivery.enqueued_trace_id or '—' }}</code></div>
     </section>
 
-    {% if detail.delivery.status == 'failed' %}
+    {% if detail.delivery.status == 'failed' or (detail.delivery.status == 'expired' and detail.delivery.last_error_category == 'idempotency_window_expired') %}
       <section class="app-panel grid gap-5">
         <h2 class="text-2xl font-medium">Gjenoppretting</h2>
         {% if detail.delivery.template_key == 'mobile_card_access_code' %}

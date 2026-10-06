@@ -128,7 +128,7 @@ database. CI runs it against a migrated disposable Postgres on every push.
 If Docker is unavailable, use `kv run` with a configured `.env`. If a local
 adapter is unexpectedly inactive, check `APP_ENV` and the external-service
 variables in [Configuration](../reference/configuration.md); configured
-Supabase, SMTP, and Azure adapters take precedence over local fallbacks.
+Supabase, Resend, and Azure adapters take precedence over local fallbacks.
 
 If `kv run` is blocked by frontend tooling, a direct Python fallback is:
 
