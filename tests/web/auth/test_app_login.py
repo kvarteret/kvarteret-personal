@@ -84,7 +84,7 @@ def test_request_code_uses_updated_confirmation(setup):
 def test_repeated_submit_preserves_matching_authenticated_session(setup, same_account):
     client, _, accounts, sessions = setup
     service = client.app.dependency_overrides[get_mobile_card_service]()
-    user = SimpleNamespace(email="example" if same_account else "different")
+    user = SimpleNamespace(email="example" if same_account else "different", role=UserRole.VIEWER)
     client.app.dependency_overrides[get_current_user] = lambda: user
     response = client.post('/login/app', data={'email': 'EXAMPLE', 'access_code': 'used', 'next': '/groups'},
         headers=csrf_headers(client), follow_redirects=False)
