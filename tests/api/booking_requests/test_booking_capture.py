@@ -210,3 +210,72 @@ def test_openapi_schedule_schema_has_no_unresolved_local_reference():
     schedule = schema["properties"]["schedule"]["items"]
     assert schedule["required"] == ["date", "doors_open", "doors_close"]
     assert "$ref" not in schedule
+
+
+def prefill_headers(body, submission_id):
+    auth = headers(body, submission_id)
+    auth["X-Kvarteret-Signature"] = booking_signature(
+        SECRET,
+        auth["X-Kvarteret-Timestamp"],
+        auth["X-Kvarteret-Nonce"],
+        submission_id,
+        body,
+        "/api/v1/booking-requests/prefill",
+    )
+    return auth
+
+
+def test_prefill_requires_path_bound_auth_and_omits_private_fields(monkeypatch):
+    from app.domain.booking_requests.repository import BookingRequestsRepository
+
+    data = snapshot()
+    data["form"]["invoiceAddress"] = "Private address"
+    receipt_id = str(uuid4())
+    lookup = json.dumps({"booking_request_id": receipt_id}).encode()
+    repo = AsyncMock(return_value=data)
+    monkeypatch.setattr(BookingRequestsRepository, "get_snapshot", repo)
+    client = TestClient(app())
+    assert (
+        client.post("/api/v1/booking-requests/prefill", content=lookup).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/v1/booking-requests/prefill",
+            content=lookup,
+            headers=headers(lookup, data["submission_id"]),
+        ).status_code
+        == 401
+    )
+    response = client.post(
+        "/api/v1/booking-requests/prefill",
+        content=lookup,
+        headers=prefill_headers(lookup, data["submission_id"]),
+    )
+    assert response.status_code == 200
+    assert response.json()["description"] == "Test"
+    assert "Private address" not in response.text
+    assert "crescat_payload" not in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert str(repo.call_args.args[0]) == receipt_id
+    assert str(repo.call_args.args[1]) == data["submission_id"]
+
+
+def test_prefill_missing_or_karaoke_snapshot_returns_not_found(monkeypatch):
+    from app.domain.booking_requests.repository import BookingRequestsRepository
+
+    data = snapshot()
+    lookup = json.dumps({"booking_request_id": str(uuid4())}).encode()
+    client = TestClient(app())
+    for stored in (None, dict(data, kind="karaoke")):
+        monkeypatch.setattr(
+            BookingRequestsRepository, "get_snapshot", AsyncMock(return_value=stored)
+        )
+        assert (
+            client.post(
+                "/api/v1/booking-requests/prefill",
+                content=lookup,
+                headers=prefill_headers(lookup, data["submission_id"]),
+            ).status_code
+            == 404
+        )

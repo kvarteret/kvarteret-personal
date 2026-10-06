@@ -33,3 +33,21 @@ class BookingReceipt(BaseModel):
     booking_request_id: UUID
     submission_id: UUID
     content_hash: str
+
+
+class BookingPrefillLookup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    booking_request_id: UUID
+
+
+class BookingEventPrefill(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_name: str
+    contact_name: str
+    contact_email: EmailStr
+    room_ids: list[int]
+    schedule: list[BookingSchedule]
+    description: str = ""
+    student_org_name: str = ""
+    free_or_paid: Literal["Gratis", "Betalt"] = "Gratis"
+    ticket_types: list[dict[str, str]] = Field(default_factory=list)

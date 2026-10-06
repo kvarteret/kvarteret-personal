@@ -20,7 +20,12 @@ signature_header = APIKeyHeader(
 
 
 def booking_signature(
-    secret: str, timestamp: str, nonce: str, submission_id: str, body: bytes
+    secret: str,
+    timestamp: str,
+    nonce: str,
+    submission_id: str,
+    body: bytes,
+    path: str = "/api/v1/booking-requests",
 ) -> str:
     message = "\n".join(
         (
@@ -29,7 +34,7 @@ def booking_signature(
             nonce,
             submission_id,
             "POST",
-            "/api/v1/booking-requests",
+            path,
             hashlib.sha256(body).hexdigest(),
         )
     )
@@ -76,7 +81,10 @@ async def require_signed_booking(
     raw = bytes(body)
     if not signature or not any(
         hmac.compare_digest(
-            signature, booking_signature(s, timestamp, nonce, submission_id, raw)
+            signature,
+            booking_signature(
+                s, timestamp, nonce, submission_id, raw, request.url.path
+            ),
         )
         for s in secrets
     ):
