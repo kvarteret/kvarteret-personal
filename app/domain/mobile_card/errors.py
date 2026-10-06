@@ -7,6 +7,10 @@ class MobileCardError(RuntimeError):
     pass
 
 
+class MobileCardDeliveryError(MobileCardError):
+    """Access-code delivery failed; the request must not report success."""
+
+
 class MobileCardDuplicatePersonError(MobileCardError):
     pass
 

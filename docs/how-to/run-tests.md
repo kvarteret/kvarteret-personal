@@ -23,7 +23,7 @@ What it covers:
 
 ## E2E (real stack on migrated Postgres)
 
-Only SMTP and Azure storage are faked; migrations, the unit of work, repositories, the Postgres rate limiter, CHECK constraints, and the audit table are all real.
+Only Resend and Azure storage are faked; migrations, the unit of work, repositories, the Postgres rate limiter, CHECK constraints, and the audit table are all real.
 
 Set up a disposable database once:
 
@@ -53,7 +53,7 @@ Tear down when done:
 
 ## Production Smoke Checks
 
-    curl -sI https://personal.kvarteret.no/health   # security headers + 200
+    curl -sI https://personal.samfunnetibergen.no/health   # security headers + 200
     kv smoke-auth                                  # live create-login-cleanup roundtrip
     DATABASE_URL=<prod url> kv schema-drift        # prod schema matches metadata
 

@@ -157,11 +157,7 @@ def _load_photo_variant(
     try:
         rendered = render_photo_variant(source, max_dimension=size)
     except Exception:
-        logger.exception(
-            "Failed to render photo variant for %s at size=%s; serving original bytes.",
-            photo_path,
-            size,
-        )
+        logger.exception("media.photo.render_failed", extra={"event": "media.photo.render_failed"})
         rendered = ProcessedPhoto(
             content=source,
             content_type=mimetypes.guess_type(photo_path)[0]

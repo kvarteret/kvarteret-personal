@@ -13,6 +13,12 @@ dist/
 data/
 coverage.xml
 htmlcov/
+# Private admin-to-volunteer migration inputs and review artifacts
+admin-volunteer-mapping/
+admin-volunteer-inventory*.json
+admin-volunteer-decisions*.json
+admin-volunteer-plan*.json
+ari-merge-*.json
 *.pyc
 *.pyo
 *.pyd
@@ -30,3 +36,6 @@ public/static/css/output.css
 .devdata/
 seeds/
 .env*
+
+# Machine-private fnox overrides
+fnox.local.toml

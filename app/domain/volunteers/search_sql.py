@@ -145,7 +145,10 @@ def current_discount_level_subquery():
     )
 
 
-def current_active_volunteers_subquery():
+def current_active_volunteers_subquery(*, semester_code: int | None = None):
+    semester_code = (
+        get_current_semester_code() if semester_code is None else semester_code
+    )
     active_trial = (
         select(volunteer_application_invites.c.id)
         .where(
@@ -158,7 +161,7 @@ def current_active_volunteers_subquery():
     )
     assigned_volunteers = (
         select(role_assignments.c.volunteer_id.label("volunteer_id"))
-        .where(role_assignments.c.semester == get_current_semester_code())
+        .where(role_assignments.c.semester == semester_code)
         .where(or_(role_assignments.c.contract_signed.is_(True), active_trial))
         .where(
             ~select(volunteer_application_invites.c.id)

@@ -12,6 +12,8 @@ from urllib import request as urllib_request
 from app.config import Settings
 from app.db.rate_limit import RateLimitExceeded, RateLimiter
 
+from app.observability import emit_event
+
 logger = logging.getLogger(__name__)
 
 EMAIL_PATTERN = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
@@ -240,16 +242,23 @@ def _linear_graphql(
         with urllib_request.urlopen(req, timeout=10) as response:
             result = json.loads(response.read())
     except urllib_error.HTTPError as exc:
-        response_body = exc.read().decode("utf-8", errors="replace")
-        logger.exception("[linear] HTTP error %s: %s", exc.code, response_body[:1000])
+        logger.exception(
+            "feedback.issue.http_failed", extra={"event": "feedback.issue.http_failed"}
+        )
         raise FeedbackDeliveryError("Linear request failed.") from exc
     except Exception as exc:
-        logger.exception("[linear] Failed to call Linear")
+        logger.exception(
+            "feedback.issue.delivery_failed",
+            extra={"event": "feedback.issue.delivery_failed"},
+        )
         raise FeedbackDeliveryError("Linear request failed.") from exc
 
     errors = result.get("errors")
     if errors:
-        logger.error("[linear] GraphQL errors: %s", errors)
+        logger.error(
+            "feedback.issue.graphql_failed",
+            extra={"event": "feedback.issue.graphql_failed"},
+        )
         raise FeedbackDeliveryError("Linear returned GraphQL errors.")
     return result
 
@@ -291,15 +300,17 @@ def _create_linear_issue(submission: FeedbackSubmission, settings: Settings) -> 
 
     issue_create = result.get("data", {}).get("issueCreate", {})
     if not issue_create.get("success"):
-        logger.error("[linear] issueCreate returned success=false")
+        logger.error(
+            "feedback.issue.rejected", extra={"event": "feedback.issue.rejected"}
+        )
         raise FeedbackDeliveryError("Linear issueCreate returned success=false.")
 
     issue = issue_create.get("issue") or {}
-    logger.info(
-        "[linear] Created feedback issue",
-        extra={
-            "linear_issue_identifier": issue.get("identifier"),
-            "linear_issue_url": issue.get("url"),
+    emit_event(
+        logger,
+        "feedback.issue.created",
+        fields={
+            "issue_identifier": issue.get("identifier"),
             "feedback_source": submission.source,
         },
     )

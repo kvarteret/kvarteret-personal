@@ -22,7 +22,7 @@ flowchart LR
     supabase["Supabase\nPostgres, Auth, Storage"]
     azure["Azure Blob Storage\nlegacy/personnel photos"]
     spotify["Spotify Web API\nnow playing"]
-    smtp["SMTP provider\ntransactional email"]
+    smtp["Resend provider\ntransactional email"]
     slack["Slack Incoming Webhook\nfeedback"]
     studentbergen["StudentBergen\nexternal event publication context"]
     posthog["PostHog\nshared analytics and diagnostics"]

@@ -158,9 +158,9 @@ class TransitionResult:
 @dataclass(frozen=True, slots=True)
 class TransitionContext:
     actor_user_account_id: int | None = None
-    # Whether a submission row (applicant details) exists. APPROVE
-    # requires one: there is nothing to promote without it.
-    has_submission: bool = True
+    # Promotion requires the applicant-facing profile step, not merely the
+    # partial submission row created during public signup.
+    has_complete_profile: bool = True
 
 
 # ── Public API ─────────────────────────────────────────────────────
@@ -194,9 +194,9 @@ def application_transition(
 
     # Promotion requires applicant details to create the volunteer.
     if action == ApplicationAction.PROMOTE:
-        if not ctx.has_submission:
+        if not ctx.has_complete_profile:
             raise IllegalTransition(
-                "Cannot approve an application without submitted details."
+                "Cannot approve an application before the full profile is complete."
             )
 
     # Standard transitions.

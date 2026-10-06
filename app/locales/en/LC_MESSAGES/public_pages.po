@@ -102,6 +102,15 @@ msgstr "Enter a valid phone number."
 msgid "Profile photo is required."
 msgstr "Profile photo is required."
 
+msgid "Birth date is required."
+msgstr "Birth date is required."
+
+msgid "Address is required."
+msgstr "Address is required."
+
+msgid "Postal code must be exactly 4 digits (e.g. 5011)."
+msgstr "Postal code must be exactly 4 digits (e.g. 5011)."
+
 msgid "Registration token was not found."
 msgstr "Registration token was not found."
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 from app.dependencies import get_mobile_card_service
+from app.domain.mobile_card.errors import MobileCardDeliveryError
 from app.domain.mobile_card.service import (
     MobileCardCurrentCardResult,
     MobileCardDuplicatePersonError,
@@ -16,7 +17,7 @@ from app.domain.mobile_card.service import (
     MobileCardResponse,
     MobileCardService,
 )
-from app.observability import client_ip_from_request, with_named_span
+from app.observability import client_ip_from_request, emit_event, with_named_span
 
 logger = logging.getLogger("app.audit")
 
@@ -75,6 +76,7 @@ router = APIRouter()
     status_code=status.HTTP_202_ACCEPTED,
     response_model=AcceptedStatusResponse,
     operation_id="requestMobileCardAccessCode",
+    responses={503: {"description": "Email delivery is temporarily unavailable. Check your inbox before retrying."}},
 )
 async def request_access_code(
     request: Request,
@@ -91,6 +93,12 @@ async def request_access_code(
     except MobileCardRateLimitedError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
+        ) from exc
+    except MobileCardDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not confirm access code email delivery. Check your inbox before requesting another code.",
+            headers={"Retry-After": "60"},
         ) from exc
     return AcceptedStatusResponse(status="accepted")
 
@@ -183,15 +191,14 @@ async def log_client_session_logout_event(
     request: Request,
     payload: MobileCardSessionLogoutEventRequest,
 ) -> AcceptedStatusResponse:
-    logger.info(
-        "mobile-card client session logout event",
-        extra={
-            "event": "mobile_card.client_session_logout",
-            "event_data": {
-                **payload.model_dump(),
-                "client_ip": client_ip_from_request(request),
-                "user_agent": request.headers.get("user-agent"),
-            },
-        },
-    )
+    emit_event(logger, "mobile_card.client_session_logout", fields={
+        "event_name": payload.event_name,
+        "platform": payload.platform,
+        "app_version": payload.app_version,
+        "auth_error_code": payload.auth_error_code,
+        "auth_error_status": payload.auth_error_status,
+        "had_cached_user": payload.had_cached_user,
+        "had_login_marker": payload.had_login_marker,
+        "had_stored_credentials": payload.had_stored_credentials,
+    })
     return AcceptedStatusResponse(status="accepted")

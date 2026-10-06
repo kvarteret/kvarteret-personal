@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.dependencies import (
     get_email_outbox_service,
+    get_admin_accounts_service,
     get_current_user,
     get_volunteer_applications_service,
     get_volunteers_service,
@@ -35,13 +36,19 @@ async def volunteer_applications_index(
     application_status: str | None = None,
     group_id: int | None = None,
     group_ids: list[int] | None = Query(default=None),
+    groups_selected: bool = False,
+    admin_accounts_service=Depends(get_admin_accounts_service),
     current_user=Depends(require_management_user),
     volunteer_applications_service: VolunteerApplicationsService = Depends(
         get_volunteer_applications_service
     ),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
 ):
-    volunteer_applications = (
+    if group_id is None and group_ids is None and not groups_selected:
+        group_ids = await admin_accounts_service.application_group_filter(current_user.user_account_id)
+    # An empty association means an empty default view, while None means all.
+    empty_default = group_ids == [] and not groups_selected and group_id is None
+    volunteer_applications = [] if empty_default else (
         await volunteer_applications_service.list_volunteer_applications(
             query=q,
             application_status=application_status,

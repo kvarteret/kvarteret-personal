@@ -32,6 +32,16 @@ from app.domain.groups.queries import (
 from app.shared.semester import get_current_semester_code
 from app.shared.slugs import slugify
 
+POSTGRES_INT_MIN = -(2**31)
+POSTGRES_INT_MAX = 2**31 - 1
+
+
+def _validate_role_storage_values(*, group_id: int, pingvin_points: int, role_id: int | None = None) -> None:
+    if not POSTGRES_INT_MIN <= pingvin_points <= POSTGRES_INT_MAX:
+        raise ValueError("Pingvinpoeng må være mellom -2147483648 og 2147483647.")
+    if not 1 <= group_id <= POSTGRES_INT_MAX or (role_id is not None and not 1 <= role_id <= POSTGRES_INT_MAX):
+        raise ValueError("Ugyldig gruppe- eller vervnummer.")
+
 __all__ = [
     "GroupBreakdownItem",
     "GroupDeleteBlockedError",
@@ -211,6 +221,7 @@ class GroupsService(GroupsQueries):
         return deleted_group_id == group_id
 
     async def create_group_role(self, group_id: int, *, role_name: str, pingvin_points: int) -> int | None:
+        _validate_role_storage_values(group_id=group_id, pingvin_points=pingvin_points)
         normalized_role_name = role_name.strip()
         if not normalized_role_name:
             raise ValueError("Role name is required.")
@@ -226,6 +237,7 @@ class GroupsService(GroupsQueries):
         return row["id"] if row is not None else None
 
     async def update_group_role(self, group_id: int, role_id: int, *, role_name: str, pingvin_points: int) -> bool:
+        _validate_role_storage_values(group_id=group_id, role_id=role_id, pingvin_points=pingvin_points)
         normalized_role_name = role_name.strip()
         if not normalized_role_name:
             raise ValueError("Role name is required.")
