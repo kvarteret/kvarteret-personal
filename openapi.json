@@ -1073,6 +1073,32 @@
         "title": "Body_volunteer_upload_photo_volunteers__volunteer_id__photo_post",
         "type": "object"
       },
+      "BookingReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "booking_request_id": {
+            "format": "uuid",
+            "title": "Booking Request Id",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "submission_id": {
+            "format": "uuid",
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "booking_request_id",
+          "submission_id",
+          "content_hash"
+        ],
+        "title": "BookingReceipt",
+        "type": "object"
+      },
       "ClientErrorReport": {
         "additionalProperties": false,
         "properties": {
@@ -2057,6 +2083,11 @@
       }
     },
     "securitySchemes": {
+      "BookingRequestHmac": {
+        "in": "header",
+        "name": "X-Kvarteret-Signature",
+        "type": "apiKey"
+      },
       "EventInterestHmac": {
         "in": "header",
         "name": "X-Kvarteret-Signature",
@@ -2566,6 +2597,44 @@
         "summary": "Get Now Playing",
         "tags": [
           "now-playing"
+        ]
+      }
+    },
+    "/api/v1/booking-requests": {
+      "post": {
+        "operationId": "storeBookingRequest",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid signature"
+          },
+          "413": {
+            "description": "Snapshot too large"
+          },
+          "429": {
+            "description": "Rate limited"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "BookingRequestHmac": []
+          }
+        ],
+        "summary": "Store Booking Request",
+        "tags": [
+          "booking-requests"
         ]
       }
     },

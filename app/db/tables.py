@@ -38,6 +38,7 @@ from app.domain.courses.tables import (
     group_course_requirements,
 )
 from app.domain.event_interest.tables import event_interest
+from app.domain.booking_requests.tables import booking_requests
 from app.domain.groups.tables import groups
 from app.domain.mobile_card.tables import (
     mobile_card_access_codes,
@@ -80,6 +81,7 @@ __all__ = [
     "email_delivery_attempts",
     "group_admin_memberships",
     "group_course_requirements",
+    "booking_requests",
     "groups",
     "integration_tokens",
     "mobile_card_access_codes",

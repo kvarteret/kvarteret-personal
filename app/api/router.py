@@ -9,7 +9,10 @@ from app.api.v1.volunteer_prospects import router as volunteer_prospects_router
 
 from app.api.v1.event_interest import router as event_interest_router
 
+from app.api.v1.booking_requests import router as booking_requests_router
+
 api_router = APIRouter()
+api_router.include_router(booking_requests_router, prefix="/api/v1/booking-requests", tags=["booking-requests"])
 api_router.include_router(event_interest_router, prefix="/api/v1/event-interest", tags=["event-interest"])
 api_router.include_router(now_playing_router, prefix="/api", tags=["now-playing"])
 api_router.include_router(feedback_router, prefix="/api/v1/feedback", tags=["feedback"])
