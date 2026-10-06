@@ -76,6 +76,7 @@ def test_request_code_uses_updated_confirmation(setup):
     client, *_ = setup
     response = client.post('/login/app/code', data={'email': 'example'}, headers=csrf_headers(client))
     assert response.status_code == 200
+    client.app.dependency_overrides[get_mobile_card_service]().request_access_code.assert_awaited_once_with('example', source_key='testclient', personal_login=True)
     assert 'Sjekk din e-post!' in response.text
     assert 'name="access_code"' in response.text
 

@@ -8,6 +8,7 @@ import ProfileCompletion from "../app/templates/emails/react/applicant-profile-c
 import FriendInvitation from "../app/templates/emails/react/applicant-friend-invitation"
 import AdminOnboarding from "../app/templates/emails/react/admin-account-onboarding"
 import MobileCardAccessCode from "../app/templates/emails/react/mobile-card-access-code"
+import PersonalAccessCode from "../app/templates/emails/react/personal-access-code"
 import PasswordReset from "../app/templates/emails/react/password-reset"
 
 // React authors use normal typed props. Only this build adapter knows about
@@ -22,6 +23,7 @@ const templates: Array<[string, ReactElement, string[]]> = [
   ["applicant_friend_invitation", <FriendInvitation invitation_url={invitation_url} inviter_name={variable("inviter_name")} />, ["invitation_url", "inviter_name"]],
   ["admin_account_onboarding", <AdminOnboarding setup_url={setup_url} display_name={variable("display_name")} username={variable("username")} role_name={variable("role_name")} />, ["setup_url", "display_name", "username", "role_name"]],
   ["mobile_card_access_code", <MobileCardAccessCode access_code={variable("access_code")} expires_in_minutes={variable("expires_in_minutes")} />, ["access_code", "expires_in_minutes"]],
+  ["personal_access_code", <PersonalAccessCode access_code={variable("access_code")} expires_in_minutes={variable("expires_in_minutes")} />, ["access_code", "expires_in_minutes"]],
   ["password_reset", <PasswordReset setup_url={setup_url} />, ["setup_url"]],
 ]
 

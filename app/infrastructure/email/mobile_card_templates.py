@@ -14,6 +14,10 @@ class MobileCardEmail:
 
 
 class MobileCardEmailTemplateRendererProtocol(Protocol):
+    def render_personal_access_code_email(
+        self, *, access_code: str, expires_in_minutes: int
+    ) -> MobileCardEmail: ...
+
     def render_access_code_email(
         self, *, access_code: str, expires_in_minutes: int
     ) -> MobileCardEmail: ...
@@ -33,9 +37,21 @@ class MobileCardEmailTemplateRenderer:
         self, *, access_code: str, expires_in_minutes: int
     ) -> MobileCardEmail:
         return MobileCardEmail(
-            subject="Din innlogging til Personal er klar",
+            subject="Samfunnet i Bergen Internkort is ready for you",
             html_body=self._render(
                 "mobile_card_access_code.html",
+                access_code=access_code,
+                expires_in_minutes=expires_in_minutes,
+            ),
+        )
+
+    def render_personal_access_code_email(
+        self, *, access_code: str, expires_in_minutes: int
+    ) -> MobileCardEmail:
+        return MobileCardEmail(
+            subject="Din innlogging til Personal er klar",
+            html_body=self._render(
+                "personal_access_code.html",
                 access_code=access_code,
                 expires_in_minutes=expires_in_minutes,
             ),

@@ -47,6 +47,7 @@ def build_previews() -> list[EmailPreview]:
         access_code="483921",
         expires_in_minutes=10,
     )
+    personal_email = mobile_card_renderer.render_personal_access_code_email(access_code="483921", expires_in_minutes=10)
     admin_account_email = admin_account_renderer.render_onboarding_email(
         setup_url="https://personal.samfunnetibergen.no/set-password#access_token=preview-token",
         display_name="New Admin",
@@ -90,10 +91,11 @@ def build_previews() -> list[EmailPreview]:
         ),
         EmailPreview(
             slug="mobile_card_access_code",
-            title="Innloggingskode",
+            title="Innloggingskode til Internkort",
             subject=mobile_card_email.subject,
             html_body=mobile_card_email.html_body,
         ),
+        EmailPreview(slug="personal_access_code", title="Innloggingskode til Personal", subject=personal_email.subject, html_body=personal_email.html_body),
         EmailPreview(
             slug="password_reset",
             title="Tilbakestill passord",

@@ -1554,7 +1554,8 @@ async def test_mobile_card_service_rate_limits_repeated_invalid_session_attempts
 
 
 @pytest.mark.asyncio
-async def test_mobile_card_service_sends_email_when_generating_access_code() -> None:
+@pytest.mark.parametrize("personal_login", [False, True])
+async def test_mobile_card_service_sends_email_when_generating_access_code(personal_login: bool) -> None:
     repository = FakeMobileCardRepository(
         volunteers_by_email=[
             {
@@ -1574,7 +1575,7 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
         rate_limiter=InMemoryRateLimiter(),
     )
 
-    await service.request_access_code("person@example.com")
+    await service.request_access_code("person@example.com", personal_login=personal_login)
 
     assert len(repository.stored_access_codes) == 1
     volunteer_id, code_hash, created_at = repository.stored_access_codes[0]
@@ -1582,13 +1583,14 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
     assert created_at.tzinfo == UTC
     assert len(code_hash) == 64  # SHA-256 hex digest
     assert email_sender.sent_emails[0]["recipient_email"] == "person@example.com"
-    assert email_sender.sent_emails[0]["subject"] == "Din innlogging til Personal er klar"
-    assert "Din innlogging til Personal er klar" in email_sender.sent_emails[0]["html_body"]
+    expected_subject = "Din innlogging til Personal er klar" if personal_login else "Samfunnet i Bergen Internkort is ready for you"
+    assert email_sender.sent_emails[0]["subject"] == expected_subject
+    assert ("Din innlogging til Personal er klar" if personal_login else "Your verification code") in email_sender.sent_emails[0]["html_body"]
     import re
 
     assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"]), "expected a 6-digit code in the email"
-    assert "Koden er gyldig i 10 minutter." in email_sender.sent_emails[0]["html_body"]
-    assert "Hvis du ikke ba om koden" in email_sender.sent_emails[0]["html_body"]
+    assert ("Koden er gyldig i 10 minutter." if personal_login else "This code expires in 10 minutes.") in email_sender.sent_emails[0]["html_body"]
+    assert ("Hvis du ikke ba om koden" if personal_login else "If you did not request this code") in email_sender.sent_emails[0]["html_body"]
 
 
 @pytest.mark.asyncio

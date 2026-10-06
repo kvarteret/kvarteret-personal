@@ -160,7 +160,7 @@ def test_admin_can_preview_all_templates_with_sample_data(monkeypatch) -> None:
 
     client, _service = _client(monkeypatch)
     listing = client.get(
-        "/email-templates?template=mobile_card_access_code&viewport=mobile"
+        "/email-templates?template=personal_access_code&viewport=mobile"
     )
     assert listing.status_code == 200
     assert "Din innlogging til Personal er klar" in listing.text
