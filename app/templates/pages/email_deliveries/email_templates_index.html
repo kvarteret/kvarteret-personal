@@ -1,0 +1,31 @@
+{% extends "layouts/base.html" %}
+{% from "components/shared/ui_macros.html" import page_header %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    {{ page_header("Administrasjon", "E-postmaler", "Se hvordan e-postene ser ut med eksempeldata.") }}
+    <nav class="flex justify-center gap-4" aria-label="E-post">
+      <a class="app-button-secondary" href="/email-deliveries">Leveranser</a>
+      <a class="app-button-secondary" href="/email-templates" aria-current="page">Maler</a>
+    </nav>
+    <div class="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <nav class="app-panel flex flex-col gap-2" aria-label="Velg e-postmal">
+        {% for preview in previews %}
+          <a class="block px-3 py-3 text-sm {% if preview.slug == selected.slug %}bg-stone-100 font-semibold text-kvarteret-red{% else %}text-stone-800 hover:bg-stone-100{% endif %}"
+             href="/email-templates?template={{ preview.slug }}&amp;viewport={{ viewport }}"{% if preview.slug == selected.slug %} aria-current="page"{% endif %}>{{ preview.title }}</a>
+        {% endfor %}
+      </nav>
+      <section class="app-panel min-w-0">
+        <h2 class="text-xl font-semibold">{{ selected.title }}</h2>
+        <p class="mt-2 text-sm text-stone-600">Emne: <span class="font-medium text-stone-900">{{ selected.subject }}</span></p>
+        <nav class="my-5 flex flex-wrap gap-3" aria-label="Visningsbredde">
+          <a class="app-button-secondary" href="/email-templates?template={{ selected.slug }}&amp;viewport=desktop"{% if viewport == 'desktop' %} aria-current="page"{% endif %}>Datamaskin</a>
+          <a class="app-button-secondary" href="/email-templates?template={{ selected.slug }}&amp;viewport=mobile"{% if viewport == 'mobile' %} aria-current="page"{% endif %}>Mobil</a>
+        </nav>
+        <iframe title="Forhåndsvisning: {{ selected.title }}" src="/email-templates/{{ selected.slug }}/preview"
+                sandbox referrerpolicy="no-referrer"
+                style="display:block;width:100%;max-width:{{ '375' if viewport == 'mobile' else '600' }}px;height:800px;margin:0 auto;border:1px solid #d6d3d1;background:#faf7f2;"></iframe>
+      </section>
+    </div>
+  </section>
+{% endblock %}

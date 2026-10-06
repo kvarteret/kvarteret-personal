@@ -2,7 +2,6 @@ from __future__ import annotations
 
 # ruff: noqa: E402
 
-from dataclasses import dataclass
 from pathlib import Path
 from shutil import rmtree
 import sys
@@ -11,106 +10,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.infrastructure.email.applicant_templates import (
-    ApplicantEmailTemplateRenderer,
-)
-from app.infrastructure.email.admin_account_templates import (
-    AdminAccountEmailTemplateRenderer,
-)
-from app.infrastructure.email.mobile_card_templates import (
-    MobileCardEmailTemplateRenderer,
-)
-from app.infrastructure.email.password_reset_templates import (
-    PasswordResetEmailTemplateRenderer,
-)
-
-
-@dataclass(frozen=True, slots=True)
-class EmailPreview:
-    slug: str
-    title: str
-    subject: str
-    html_body: str
-
+from app.email_template_previews import EmailPreview, build_previews
 
 PREVIEWS_DIR = PROJECT_ROOT / "app" / "templates" / "emails" / "previews"
-
-
-def build_previews() -> list[EmailPreview]:
-    applicant_renderer = ApplicantEmailTemplateRenderer()
-    admin_account_renderer = AdminAccountEmailTemplateRenderer()
-    mobile_card_renderer = MobileCardEmailTemplateRenderer()
-    password_reset_renderer = PasswordResetEmailTemplateRenderer()
-
-    applicant_invitation_email = applicant_renderer.render_invitation_email(
-        invitation_url="https://personal.samfunnetibergen.no/apply/invite-token-preview",
-    )
-    applicant_received_email = applicant_renderer.render_application_received_email()
-    applicant_profile_email = applicant_renderer.render_profile_completion_email(
-        invitation_url="https://personal.samfunnetibergen.no/apply/profile-token-preview",
-    )
-    applicant_friend_email = applicant_renderer.render_friend_invitation_email(
-        invitation_url="https://personal.samfunnetibergen.no/apply/friend-token-preview",
-        inviter_name="Inga Inviter",
-    )
-    mobile_card_email = mobile_card_renderer.render_access_code_email(
-        access_code="483921",
-        expires_in_minutes=10,
-    )
-    admin_account_email = admin_account_renderer.render_onboarding_email(
-        setup_url="https://personal.samfunnetibergen.no/set-password#access_token=preview-token",
-        display_name="New Admin",
-        username="new.admin",
-        role_name="Admin",
-    )
-    password_reset_email = password_reset_renderer.render_password_reset_email(
-        setup_url="https://personal.samfunnetibergen.no/set-password#token_hash=preview-token&type=recovery",
-    )
-
-    return [
-        EmailPreview(
-            slug="applicant_application_received",
-            title="Applicant Application Received",
-            subject=applicant_received_email.subject,
-            html_body=applicant_received_email.html_body,
-        ),
-        EmailPreview(
-            slug="applicant_invitation",
-            title="Applicant Invitation",
-            subject=applicant_invitation_email.subject,
-            html_body=applicant_invitation_email.html_body,
-        ),
-        EmailPreview(
-            slug="applicant_profile_completion",
-            title="Applicant Profile Completion",
-            subject=applicant_profile_email.subject,
-            html_body=applicant_profile_email.html_body,
-        ),
-        EmailPreview(
-            slug="applicant_friend_invitation",
-            title="Applicant Friend Invitation",
-            subject=applicant_friend_email.subject,
-            html_body=applicant_friend_email.html_body,
-        ),
-        EmailPreview(
-            slug="admin_account_onboarding",
-            title="Admin Account Onboarding",
-            subject=admin_account_email.subject,
-            html_body=admin_account_email.html_body,
-        ),
-        EmailPreview(
-            slug="mobile_card_access_code",
-            title="Mobile Card Access Code",
-            subject=mobile_card_email.subject,
-            html_body=mobile_card_email.html_body,
-        ),
-        EmailPreview(
-            slug="password_reset",
-            title="Password Reset",
-            subject=password_reset_email.subject,
-            html_body=password_reset_email.html_body,
-        ),
-    ]
 
 
 def write_previews(previews: list[EmailPreview]) -> None:
