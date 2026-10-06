@@ -228,6 +228,7 @@ class MobileCardService:
             extra={
                 "subject_type": subject_type,
                 "subject_id": subject_id,
+                "volunteer_id": subject_id if subject_type == "volunteer" else None,
             },
         )
         return None
@@ -312,6 +313,7 @@ class MobileCardService:
                 "subject_id": volunteer_row["id"]
                 if volunteer_row is not None
                 else trial_applicant.application_id,
+                "volunteer_id": volunteer_row["id"] if volunteer_row is not None else None,
             },
             after_commit=True,
         )

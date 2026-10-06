@@ -2111,3 +2111,39 @@ async def test_trial_session_is_exchanged_for_permanent_session_after_approval()
     assert decoded.trial_application_id is None
     permanent = await service.get_current_card(result.renewed_session_token)
     assert permanent.card.person_id == 12
+
+
+@pytest.mark.asyncio
+async def test_mobile_session_identity_connects_logout_by_diagnostic_session(caplog):
+    import logging
+    from app.observability import bind_request_context, reset_request_context, get_logger
+
+    service = MobileCardService(
+        Settings(app_secret_key="test-secret"),
+        repository=FakeMobileCardRepository(
+            volunteer_by_email_and_code={"id": 12},
+            card_snapshot=_build_mobile_card_snapshot(),
+        ),
+        email_sender=FakeEmailSender(),
+        rate_limiter=InMemoryRateLimiter(),
+    )
+    token = bind_request_context(session_id="a" * 32, request_id="login-request")
+    try:
+        with caplog.at_level(logging.INFO):
+            await service.create_session("person@example.com", "123456")
+    finally:
+        reset_request_context(token)
+    token = bind_request_context(session_id="a" * 32, request_id="logout-request")
+    try:
+        with caplog.at_level(logging.WARNING):
+            get_logger("app.audit").warning("mobile_card.session.invalidated", extra={"failure_stage": "reauthorization"})
+    finally:
+        reset_request_context(token)
+    login = next(r for r in caplog.records if getattr(r, "event", "") == "mobile_card.session.created")
+    logout = next(r for r in caplog.records if getattr(r, "event", "") == "mobile_card.session.invalidated")
+    assert login.event_data["volunteer_id"] == 12
+    assert login.event_data["subject_type"] == "volunteer"
+    assert login.event_data["session_id"] == logout.event_data["session_id"]
+    assert login.event_data["request_id"] != logout.event_data["request_id"]
+    assert "volunteer_id" not in logout.event_data
+    assert "person@example.com" not in str(login.event_data)
