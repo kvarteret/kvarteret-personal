@@ -42,10 +42,11 @@
           {% for admin_account in admin_accounts %}
             <tr class="border-b border-stone-300 align-top hover:bg-white/60">
               <td class="px-3 py-4">
-                <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/admin-accounts/{{ admin_account.user_account_id }}">
+                <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="{% if admin_account.volunteer_id and not admin_account.is_legacy_account %}/volunteers/{{ admin_account.volunteer_id }}{% else %}/admin-accounts/{{ admin_account.user_account_id }}{% endif %}">
                   {{ admin_account.display_name or admin_account.username }}
                 </a>
                 <div class="mt-1 text-xs text-stone-500">{{ admin_account.email }}</div>
+                <a class="mt-2 inline-block text-sm text-kvarteret-red" href="/admin-accounts/{{ admin_account.user_account_id }}">Administrer tilgang</a>
               </td>
               <td class="px-3 py-4 text-sm text-stone-700">{{ admin_account.role }}</td>
               <td class="px-3 py-4 text-sm text-stone-700">
