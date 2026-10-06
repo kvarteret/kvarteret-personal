@@ -114,6 +114,7 @@ class AdminAccountsRepository(SqlAlchemyRepository):
                 user_accounts.c.volunteer_id,
                 user_accounts.c.is_legacy_account,
             )
+            .where(user_accounts.c.is_legacy_account.is_(False))
             .order_by(user_accounts.c.role.asc(), user_accounts.c.username.asc())
             .limit(limit)
         )

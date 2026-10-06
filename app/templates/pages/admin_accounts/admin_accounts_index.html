@@ -19,7 +19,7 @@
             placeholder="Sir Nils Olav III"
           >
         </label>
-        <label class="grid gap-1"><span class="text-sm text-stone-500">Kontotype</span><select class="app-input" name="account_type">{% for value, label in [("personal", "Personlige kontoer"), ("legacy", "Gamle innlogginger"), ("unlinked", "Mangler frivilligprofil"), ("all", "Alle kontoer")] %}<option value="{{ value }}" {% if account_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        <label class="grid gap-1"><span class="text-sm text-stone-500">Kontotype</span><select class="app-input" name="account_type">{% for value, label in [("personal", "Personlige kontoer"), ("unlinked", "Mangler frivilligprofil"), ("all", "Alle personlige kontoer")] %}<option value="{{ value }}" {% if account_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
         <div class="flex flex-wrap gap-3">
           <button class="app-button" type="submit">Søk</button>
           <a class="app-button-secondary" href="/admin-accounts/new">Gi en frivillig tilgang</a>
