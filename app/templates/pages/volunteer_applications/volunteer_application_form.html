@@ -46,7 +46,7 @@
         </label>
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">{{ _("Birth date") }}</span>
-          <input class="app-input" name="birth_date" type="date" value="{{ form_values.get('birth_date', volunteer_application.birth_date.isoformat() if volunteer_application.birth_date else '') }}">
+          <input class="app-input" name="birth_date" type="date" value="{{ form_values.get('birth_date', volunteer_application.birth_date.isoformat() if volunteer_application.birth_date else '') }}" required>
         </label>
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">{{ _("Gender") }}</span>
@@ -58,11 +58,11 @@
         </label>
         <label class="grid gap-1 md:col-span-2">
           <span class="text-sm text-stone-500">{{ _("Address") }}</span>
-          <input class="app-input" name="address" type="text" value="{{ form_values.get('address', volunteer_application.address or '') }}">
+          <input class="app-input" name="address" type="text" value="{{ form_values.get('address', volunteer_application.address or '') }}" required>
         </label>
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">{{ _("Postal code") }}</span>
-          <input class="app-input" name="postal_code" type="text" pattern="\d{4}" maxlength="4" inputmode="numeric" value="{{ form_values.get('postal_code', volunteer_application.postal_code or '') }}">
+          <input class="app-input" name="postal_code" type="text" pattern="\d{4}" maxlength="4" inputmode="numeric" value="{{ form_values.get('postal_code', volunteer_application.postal_code or '') }}" required>
         </label>
         <section class="grid gap-4 rounded-3xl border border-stone-200 bg-stone-50/80 p-4 md:col-span-2 md:grid-cols-[9rem_minmax(0,1fr)] md:items-start">
           <div class="flex justify-center md:justify-start">

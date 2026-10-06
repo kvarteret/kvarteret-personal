@@ -26,6 +26,7 @@ from app.db.table_defs.auth import (
 )
 from app.db.table_defs.storage import storage_metadata, storage_objects
 from app.db.table_defs.email_delivery import email_deliveries, email_delivery_attempts
+from app.db.table_defs.warehouse import warehouse_volunteer_counts
 from app.domain.admin_accounts.tables import (
     group_admin_memberships,
     user_accounts,
@@ -36,6 +37,7 @@ from app.domain.courses.tables import (
     courses,
     group_course_requirements,
 )
+from app.domain.event_interest.tables import event_interest
 from app.domain.groups.tables import groups
 from app.domain.mobile_card.tables import (
     mobile_card_access_codes,
@@ -73,6 +75,7 @@ __all__ = [
     "course_completions",
     "courses",
     "domain_events",
+    "event_interest",
     "email_deliveries",
     "email_delivery_attempts",
     "group_admin_memberships",
@@ -98,4 +101,5 @@ __all__ = [
     "volunteer_photos",
     "volunteer_records",
     "web_sessions",
+    "warehouse_volunteer_counts",
 ]

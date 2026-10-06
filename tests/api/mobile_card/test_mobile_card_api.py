@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from fastapi.testclient import TestClient
 
 from app.dependencies import get_mobile_card_service
+from app.domain.mobile_card.errors import MobileCardDeliveryError
 from app.main import create_app
 from app.domain.mobile_card.service import MobileCardPersonNotFoundError
 from pydantic import BaseModel, ConfigDict
@@ -163,6 +164,19 @@ def _make_client() -> TestClient:
     app = create_app()
     app.dependency_overrides[get_mobile_card_service] = lambda: FakeMobileCardService()
     return TestClient(app)
+
+
+def test_access_code_delivery_failure_provides_recovery_guidance():
+    class UnavailableService:
+        async def request_access_code(self, *args, **kwargs):
+            raise MobileCardDeliveryError("private details")
+    app = create_app()
+    app.dependency_overrides[get_mobile_card_service] = lambda: UnavailableService()
+    response = TestClient(app).post("/api/v1/mobile-card/access-codes", json={"email": "person@example.com"})
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "60"
+    assert "Check your inbox" in response.json()["detail"]
+    assert "private" not in response.text
 
 
 def test_new_mobile_card_session_flow_returns_english_contract() -> None:

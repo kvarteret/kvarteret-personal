@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Path, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.dependencies import (
@@ -12,6 +12,8 @@ from app.dependencies import (
     require_management_user,
 )
 from app.domain.groups.service import (
+    POSTGRES_INT_MIN,
+    POSTGRES_INT_MAX,
     GroupDeleteBlockedError,
     GroupHistoryNotFoundError,
     GroupRoleDeleteBlockedError,
@@ -171,9 +173,9 @@ async def groups_archive(
 @router.post("/groups/{group_id}/roles")
 async def group_roles_create(
     request: Request,
-    group_id: int,
+    group_id: int = Path(..., ge=1, le=POSTGRES_INT_MAX),
     role_name: str = Form(...),
-    pingvin_points: int = Form(...),
+    pingvin_points: int = Form(..., ge=POSTGRES_INT_MIN, le=POSTGRES_INT_MAX),
     current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
@@ -273,10 +275,10 @@ def _redirect_group_assignment_error(group_id: int, message: str) -> RedirectRes
 @router.patch("/groups/{group_id}/roles/{role_id}")
 async def group_roles_update(
     request: Request,
-    group_id: int,
-    role_id: int,
+    group_id: int = Path(..., ge=1, le=POSTGRES_INT_MAX),
+    role_id: int = Path(..., ge=1, le=POSTGRES_INT_MAX),
     role_name: str = Form(...),
-    pingvin_points: int = Form(...),
+    pingvin_points: int = Form(..., ge=POSTGRES_INT_MIN, le=POSTGRES_INT_MAX),
     current_user=Depends(require_management_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):

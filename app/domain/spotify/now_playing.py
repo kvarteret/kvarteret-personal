@@ -173,9 +173,7 @@ class NowPlayingService:
         try:
             await self.repository.delete_token(_SPOTIFY_PROVIDER)
         except SQLAlchemyError as exc:
-            logger.warning(
-                "Failed to clear persisted Spotify refresh token", exc_info=exc
-            )
+            logger.warning("spotify.connection.delete_failed", exc_info=exc, extra={"event": "spotify.connection.delete_failed"})
             raise SpotifyOAuthError(
                 "Spotify token storage is unavailable. Apply the latest database migration."
             ) from exc
@@ -336,10 +334,7 @@ class NowPlayingService:
         try:
             stored_token = await self.repository.get_token(_SPOTIFY_PROVIDER)
         except SQLAlchemyError as exc:
-            logger.warning(
-                "Failed to load persisted Spotify refresh token; falling back to env",
-                exc_info=exc,
-            )
+            logger.warning("spotify.connection.load_failed", exc_info=exc, extra={"event": "spotify.connection.load_failed"})
             stored_token = None
         if stored_token is not None:
             self._refresh_token_cache = stored_token.refresh_token
@@ -362,7 +357,7 @@ class NowPlayingService:
                 updated_by_user_account_id=updated_by_user_account_id,
             )
         except SQLAlchemyError as exc:
-            logger.warning("Failed to persist Spotify refresh token", exc_info=exc)
+            logger.warning("spotify.connection.save_failed", exc_info=exc, extra={"event": "spotify.connection.save_failed"})
             raise SpotifyOAuthError(
                 "Spotify token storage is unavailable. Apply the latest database migration."
             ) from exc
@@ -448,7 +443,7 @@ class NowPlayingService:
     def _record_fetch_failure(self) -> None:
         self._failure_backoff_until = self._now_fn() + _FAILURE_BACKOFF_SECONDS
         if not self._failure_logged:
-            logger.exception("Failed to fetch now playing track")
+            logger.exception("spotify.now_playing.fetch_failed", extra={"event": "spotify.now_playing.fetch_failed"})
             self._failure_logged = True
 
     def _clear_fetch_failure(self) -> None:

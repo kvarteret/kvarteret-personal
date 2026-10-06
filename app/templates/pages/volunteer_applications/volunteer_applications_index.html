@@ -28,6 +28,7 @@
         hx-swap="outerHTML" hx-sync="this:replace" hx-replace-url="true"
         hx-indicator="#application-loading"
         action="/volunteer-applications" class="grid gap-4 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" method="get">
+        <input type="hidden" name="groups_selected" value="true">
         <label class="grid gap-1">
           <span class="text-sm text-stone-500">Søk i søknader</span>
           <input class="app-input" id="application-query" name="q" autocomplete="off" placeholder="Navn, e-post, telefon eller studiested" type="search" value="{{ application_query }}">

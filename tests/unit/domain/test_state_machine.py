@@ -71,12 +71,12 @@ def test_promote_emits_approval_effect():
     assert result.event.event_type == "application_approved"
 
 
-def test_promote_requires_submission():
-    with pytest.raises(IllegalTransition, match="submitted details"):
+def test_promote_requires_complete_profile():
+    with pytest.raises(IllegalTransition, match="full profile is complete"):
         application_transition(
             ApplicationState.TRIAL,
             ApplicationAction.PROMOTE,
-            context=TransitionContext(has_submission=False),
+            context=TransitionContext(has_complete_profile=False),
         )
 
 

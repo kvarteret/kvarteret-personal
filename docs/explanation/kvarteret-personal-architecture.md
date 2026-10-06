@@ -71,7 +71,7 @@ sequenceDiagram
     participant R as Route handler
     participant W as Workflow / service
     participant DB as AsyncSession (one per request)
-    participant SMTP as SMTP
+    participant Resend as Resend
 
     C->>M: HTTP request
     M->>DB: open lazy session (no connection yet)
@@ -80,7 +80,7 @@ sequenceDiagram
     W->>DB: repository writes (state change + domain_events row)
     W->>DB: commit_request_session()
     Note over W,DB: commit-before-effect: state is durable here
-    W->>SMTP: send email(s)
+    W->>Resend: send email(s)
     W-->>R: result
     R-->>M: response
     M->>DB: commit if a new transaction is open, else no-op
@@ -102,7 +102,7 @@ Four import-linter contracts run in CI and fail the build on violations:
 1. **Layers** — `web`/`api` → `domain` → `db`/`infrastructure`/`shared`; nothing imports upward.
 2. **Domain independence** — domain modules may not import each other's services, repositories, or workflows. The only allowed cross-module import is another module's `tables.py` (tables are the shared read seam).
 3. **Domain/infrastructure seams** — domain code may use only declared adapter
-   protocols and pure renderers; concrete SMTP, storage, and photo-processing
+   protocols and pure renderers; concrete Resend HTTPS, storage, and photo-processing
    implementations are selected in `app/runtime.py`.
 4. **Web/infrastructure seams** — routes compose domain services and may not
    reach directly into infrastructure except for declared upload error types

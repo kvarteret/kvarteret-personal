@@ -7,7 +7,10 @@ from app.api.v1.stats import router as stats_router
 from app.api.v1.telemetry import router as telemetry_router
 from app.api.v1.volunteer_prospects import router as volunteer_prospects_router
 
+from app.api.v1.event_interest import router as event_interest_router
+
 api_router = APIRouter()
+api_router.include_router(event_interest_router, prefix="/api/v1/event-interest", tags=["event-interest"])
 api_router.include_router(now_playing_router, prefix="/api", tags=["now-playing"])
 api_router.include_router(feedback_router, prefix="/api/v1/feedback", tags=["feedback"])
 api_router.include_router(

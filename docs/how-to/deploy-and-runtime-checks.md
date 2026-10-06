@@ -33,11 +33,11 @@ Check:
 
 Check health:
 
-    curl https://personal.kvarteret.no/health
+    curl https://personal.samfunnetibergen.no/health
 
 Check now-playing shape:
 
-    curl https://personal.kvarteret.no/api/now-playing
+    curl https://personal.samfunnetibergen.no/api/now-playing
 
 Do not paste secrets into terminal history. For authenticated checks, use short-lived test credentials and redact bearer tokens from shared logs.
 
@@ -51,7 +51,7 @@ missing or is not one of `development`, `test`, or `production`.
 Set `APP_SECRET_KEY` to a random value of at least 32 characters. The app refuses
 production startup when the secret is still `change-me` or is too short.
 
-Set `APP_PUBLIC_BASE_URL=https://personal.kvarteret.no` for production email links
+Set `APP_PUBLIC_BASE_URL=https://personal.samfunnetibergen.no` for production email links
 and OAuth callbacks. Production startup requires an HTTPS origin without embedded
 credentials, a path, query, or fragment.
 

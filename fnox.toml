@@ -1,0 +1,6 @@
+#:schema https://fnox.jdx.dev/schema.json
+# Secret references only. Use mise run secrets:exec -- COMMAND for bootstrap auth
+# and ordinary configuration; this does not alter the offline local profile.
+root = true
+env = "exec"
+import = ["../infra/secrets/personal-prod/fnox.toml"]

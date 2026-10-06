@@ -1,5 +1,5 @@
 {% extends "layouts/base.html" %}
-{% from "components/shared/ui_macros.html" import flash_notice, form_field, page_header %}
+{% from "components/shared/ui_macros.html" import flash_notice, form_field, page_header, volunteer_picker_card %}
 
 {% block page_content %}
   <section class="grid gap-7">
@@ -9,6 +9,22 @@
       {{ flash_notice(error_message, 'error') }}
       {{ flash_notice(password_error_message, 'error') }}
       {{ flash_notice(password_success_message, 'success') }}
+      {% if section == 'admin-accounts' and access_groups is defined %}
+        {% if admin_account.is_legacy_account %}
+          <p class="mb-6">Gammel innlogging beholdes under overgangen. Gi den frivillige individuell tilgang fra «Gi en frivillig tilgang».</p>
+        {% elif admin_account.volunteer_id %}
+          <form action="/admin-accounts/{{ admin_account.user_account_id }}/access" method="post" class="mb-8 grid gap-4">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+            <input type="hidden" name="volunteer_ids" value="{{ admin_account.volunteer_id }}">
+            <p class="text-sm text-stone-600">Personlig app-innlogging. Admin har tilgang til alle grupper; Gruppeadmin har tilgang til gruppene nedenfor.</p>
+            <h2 class="text-2xl">Tilgang i personaldatabasen</h2>
+            <p><a href="/volunteers/{{ admin_account.volunteer_id }}">Se frivilligprofil</a></p>
+            <label class="grid gap-1"><span>Tilgang</span><select class="app-input" name="role">{% for role in ['Admin','Gruppeadmin','Frivillig','Tilskuer'] %}<option value="{{ role }}" {% if admin_account.role == role %}selected{% endif %}>{{ role }}</option>{% endfor %}</select></label>
+            <fieldset><legend>Grupper (for gruppeadmin)</legend><div class="grid gap-2 md:grid-cols-2">{% for group in access_groups %}<label><input type="checkbox" name="group_ids" value="{{ group.id }}" {% if group.id in admin_account.group_admin_group_ids %}checked{% endif %}> {{ group.name }}</label>{% endfor %}</div></fieldset>
+            <button class="app-button" type="submit">Lagre tilgang</button>
+          </form>
+        {% endif %}
+      {% endif %}
       <form action="{{ save_action }}" class="grid gap-6" method="post">
         <div class="grid gap-5 md:grid-cols-2">
           {% call form_field("Brukernavn") %}
@@ -21,7 +37,7 @@
             <input class="app-input" name="display_name" type="text" value="{{ admin_account.display_name or '' }}" {% if not can_edit_profile %}disabled{% endif %}>
           {% endcall %}
           {% call form_field("Rolle") %}
-            {% if show_role_field %}
+            {% if show_role_field and not admin_account.volunteer_id %}
               <select class="app-input" name="role" {% if not can_edit_profile %}disabled{% endif %}>
                 {% for role_option in ["Admin", "Gruppeadmin", "Frivillig", "Tilskuer"] %}
                   <option value="{{ role_option }}" {% if admin_account.role == role_option %}selected{% endif %}>{{ role_option }}</option>
@@ -36,8 +52,8 @@
 
         <div class="grid gap-4 border-t border-stone-300 pt-6 md:grid-cols-2">
           <div class="border-b border-stone-300 pb-3">
-            <dt class="text-sm text-stone-500">Gammel bruker-ID</dt>
-            <dd class="mt-1 text-stone-900">{{ admin_account.legacy_user_id or "Direkte konto" }}</dd>
+            <dt class="text-sm text-stone-500">Kontotype</dt>
+            <dd class="mt-1 text-stone-900">{{ "Gammel innlogging" if admin_account.is_legacy_account else ("Personlig app-innlogging" if admin_account.volunteer_id else "Mangler frivilligprofil") }}</dd>
           </div>
           <div class="border-b border-stone-300 pb-3">
             <dt class="text-sm text-stone-500">Auth user id</dt>
@@ -84,7 +100,7 @@
         {% if can_edit_profile %}
           <div class="flex flex-wrap gap-3">
             <button class="app-button" type="submit">Lagre endringer</button>
-            {% if section == "admin-accounts" %}
+            {% if section == "admin-accounts" and not admin_account.volunteer_id %}
               <button
                 class="app-button-secondary"
                 formaction="/admin-accounts/{{ admin_account.user_account_id }}/onboarding"
