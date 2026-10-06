@@ -83,7 +83,7 @@ async def admin_accounts_index(
     except NotConfiguredError:
         raise not_configured_http_exception(_ADMIN_PAGES_NOT_CONFIGURED)
     for account in admin_accounts:
-        account.photo_url = media_token_service.build_photo_media_url(account.photo_path) if account.photo_path else None
+        account.photo_url = media_token_service.build_photo_media_url(account.photo_path, relative=True) if account.photo_path else None
     log_admin_activity(
         request=request,
         user=current_user,

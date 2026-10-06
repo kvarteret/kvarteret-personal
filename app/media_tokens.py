@@ -24,16 +24,16 @@ class MediaTokenService:
             return False
         return payload == {"kind": kind, "path": path}
 
-    def build_photo_media_url(self, path: str) -> str:
+    def build_photo_media_url(self, path: str, *, relative: bool = False) -> str:
         return self._build_media_url(
-            kind="photo", base_path=f"/media/photos/{path}", path=path
+            kind="photo", base_path=f"/media/photos/{path}", path=path, relative=relative
         )
 
-    def _build_media_url(self, *, kind: str, base_path: str, path: str) -> str:
+    def _build_media_url(self, *, kind: str, base_path: str, path: str, relative: bool = False) -> str:
         token = self.sign_media_token(kind=kind, path=path)
         prefix = (
             self.settings.app_public_base_url.rstrip("/")
-            if self.settings.app_public_base_url
+            if self.settings.app_public_base_url and not relative
             else ""
         )
         return f"{prefix}{base_path}?token={token}"
