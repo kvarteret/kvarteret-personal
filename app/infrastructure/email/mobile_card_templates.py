@@ -33,7 +33,7 @@ class MobileCardEmailTemplateRenderer:
         self, *, access_code: str, expires_in_minutes: int
     ) -> MobileCardEmail:
         return MobileCardEmail(
-            subject="Samfunnet i Bergen Internkort is ready for you",
+            subject="Din innlogging til Personal er klar",
             html_body=self._render(
                 "mobile_card_access_code.html",
                 access_code=access_code,

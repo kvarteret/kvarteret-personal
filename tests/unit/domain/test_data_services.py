@@ -1582,13 +1582,13 @@ async def test_mobile_card_service_sends_email_when_generating_access_code() -> 
     assert created_at.tzinfo == UTC
     assert len(code_hash) == 64  # SHA-256 hex digest
     assert email_sender.sent_emails[0]["recipient_email"] == "person@example.com"
-    assert email_sender.sent_emails[0]["subject"] == "Samfunnet i Bergen Internkort is ready for you"
-    assert "Your verification code" in email_sender.sent_emails[0]["html_body"]
+    assert email_sender.sent_emails[0]["subject"] == "Din innlogging til Personal er klar"
+    assert "Din innlogging til Personal er klar" in email_sender.sent_emails[0]["html_body"]
     import re
 
     assert re.search(r"\b\d{6}\b", email_sender.sent_emails[0]["html_body"]), "expected a 6-digit code in the email"
-    assert "This code expires in 10 minutes." in email_sender.sent_emails[0]["html_body"]
-    assert "If you did not request this code" in email_sender.sent_emails[0]["html_body"]
+    assert "Koden er gyldig i 10 minutter." in email_sender.sent_emails[0]["html_body"]
+    assert "Hvis du ikke ba om koden" in email_sender.sent_emails[0]["html_body"]
 
 
 @pytest.mark.asyncio
