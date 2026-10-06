@@ -121,6 +121,7 @@ class MobileCardSessionManager:
     ) -> None:
         logger.warning(
             "mobile-card session invalid",
+            stacklevel=2,
             extra={
                 "event": "mobile_card.session.invalid",
                 "event_data": {"reason": reason},

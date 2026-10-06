@@ -265,3 +265,15 @@ async def test_committed_logger_preserves_original_caller(caplog):
             assert record.lineno == expected_line
         finally:
             reset_request_session(token)
+
+
+def test_invalid_token_reports_decoding_function(caplog):
+    from app.config import Settings
+    from app.domain.mobile_card.errors import MobileCardInvalidSessionError
+    from app.domain.mobile_card.sessions import MobileCardSessionManager
+
+    with caplog.at_level(logging.WARNING), pytest.raises(MobileCardInvalidSessionError):
+        MobileCardSessionManager(Settings(_env_file=None)).decode_token("invalid")
+    record = caplog.records[-1]
+    assert record.funcName == "decode_token"
+    assert record.pathname.endswith("/domain/mobile_card/sessions.py")
