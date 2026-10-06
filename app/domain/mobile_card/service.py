@@ -150,7 +150,7 @@ class MobileCardService:
         self.sessions = MobileCardSessionManager(settings)
 
     async def request_access_code(
-        self, email: str, *, source_key: str | None = None
+        self, email: str, *, source_key: str | None = None, personal_login: bool = False
     ) -> None:
         normalized_email = email.strip().lower()
         if self._is_review_request(normalized_email, None):
@@ -201,7 +201,12 @@ class MobileCardService:
         # The code must be durably stored before the email announces it.
         await commit_request_session()
 
-        rendered_email = self.email_template_renderer.render_access_code_email(
+        render_email = (
+            self.email_template_renderer.render_personal_access_code_email
+            if personal_login
+            else self.email_template_renderer.render_access_code_email
+        )
+        rendered_email = render_email(
             access_code=access_code,
             expires_in_minutes=self.settings.mobile_card_access_code_ttl_minutes,
         )

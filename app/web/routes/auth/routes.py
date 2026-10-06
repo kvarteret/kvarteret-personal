@@ -68,7 +68,7 @@ async def request_app_login_code(
     service=Depends(get_mobile_card_service),
 ):
     try:
-        await service.request_access_code(email, source_key=client_ip_from_request(request))
+        await service.request_access_code(email, source_key=client_ip_from_request(request), personal_login=True)
     except (MobileCardPersonNotFoundError, MobileCardDuplicatePersonError):
         pass
     except MobileCardRateLimitedError:
