@@ -119,7 +119,7 @@ class MobileCardSessionManager:
     def _log_invalid(
         self, reason: Literal["bad_signature", "expired", "malformed"]
     ) -> None:
-        logger.debug(
+        logger.warning(
             "mobile-card session invalid",
             extra={
                 "event": "mobile_card.session.invalid",

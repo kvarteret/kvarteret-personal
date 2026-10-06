@@ -61,7 +61,10 @@ export function transform(records) {
     const message = typeof record.message === "string" ? record.message : ""
     const errorCode = message.match(/\b(?:E[A-Z_]{3,40}|UND_ERR_[A-Z_]+|FUNCTION_[A-Z_]+)\b/)?.[0]
     const errorType = message.match(/\b(?:TypeError|ReferenceError|SyntaxError|TimeoutError|RuntimeError)\b/)?.[0]
-    const event = typeof fields.event === "string" ? fields.event : message ? "vercel.runtime.log" : "vercel.request.completed"
+    const event = typeof fields.event === "string" ? fields.event
+      : record.source === "firewall" ? "http.request.blocked"
+      : status >= 400 ? "http.request.failed"
+      : "platform.runtime.failed"
     const log = {
       timeUnixNano: (BigInt(record.timestamp) * 1000000n).toString(),
       severityText: severity,

@@ -80,3 +80,11 @@ test("telemetry setup failure retains a platform fallback", () => {
  assert.equal(log.body.stringValue,"telemetry.configuration.failed")
  assert.equal(log.severityText,"WARN")
 })
+
+test("platform failures have actionable event names", () => {
+ for (const [input,event] of [
+  [{...record,source:"firewall",proxy:{statusCode:429}},"http.request.blocked"],
+  [{...record,proxy:{statusCode:404}},"http.request.failed"],
+  [{...record,proxy:{statusCode:200},level:"error",message:"TypeError"},"platform.runtime.failed"],
+ ]) assert.equal(transform([input]).resourceLogs[0].scopeLogs[0].logRecords[0].body.stringValue,event)
+})

@@ -354,3 +354,45 @@ def test_fastapi_instrumentation_joins_incoming_traceparent() -> None:
     # traceparent header (00f067aa0ba902b7), proving the join.
     assert server_span.parent is not None
     assert server_span.parent.span_id == 0x00F067AA0BA902B7
+
+
+def test_mobile_diagnostic_header_takes_precedence_over_browser_cookie() -> None:
+    from fastapi import Request
+    from itsdangerous import URLSafeSerializer
+    from app.config import Settings
+    from app.observability import diagnostic_session_id
+
+    settings = Settings(_env_file=None)
+    cookie = URLSafeSerializer(settings.app_secret_key, salt="kvarteret-csrf").dumps(
+        {"nonce": "browser"}
+    )
+    supplied = "a" * 32
+    request = Request(
+        {
+            "type": "http",
+            "path": "/api/v1/mobile-card/me",
+            "headers": [
+                (b"cookie", f"kvarteret_csrf={cookie}".encode()),
+                (b"x-session-id", supplied.encode()),
+            ],
+        }
+    )
+    assert diagnostic_session_id(request, settings) == supplied
+
+
+def test_invalid_mobile_token_retains_safe_failure_reason(caplog) -> None:
+    from app.config import Settings
+    from app.domain.mobile_card.sessions import MobileCardSessionManager
+    from app.domain.mobile_card.errors import MobileCardInvalidSessionError
+
+    with caplog.at_level(logging.WARNING), pytest.raises(MobileCardInvalidSessionError):
+        MobileCardSessionManager(Settings(_env_file=None)).decode_token(
+            "sentinel-invalid-token"
+        )
+    record = next(
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "mobile_card.session.invalid"
+    )
+    assert record.event_data == {"reason": "bad_signature"}
+    assert "sentinel-invalid-token" not in record.getMessage()
