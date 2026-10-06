@@ -291,6 +291,8 @@ def _requires_csrf_validation(request: Request) -> bool:
         return False
     if request.url.path.startswith("/api/"):
         return False
+    if request.url.path in {'/login/app', '/login/app/code'}:
+        return True
     session_cookie_name = request.app.state.container.settings.session_cookie_name
     return bool(request.cookies.get(session_cookie_name))
 

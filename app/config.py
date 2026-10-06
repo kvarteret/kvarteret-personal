@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     dev_admin_email: str | None = Field(default=None)
     dev_admin_password: str | None = Field(default=None)
     app_secret_key: str = Field(default="change-me")
+    legacy_admin_login_enabled: bool = Field(default=True)
     app_public_base_url: str | None = Field(default=None)
     event_interest_secret: str | None = Field(default=None)
     volunteer_prospect_hmac_secret: str | None = Field(default=None)

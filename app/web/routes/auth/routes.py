@@ -9,6 +9,7 @@ from itsdangerous import BadSignature
 from pydantic import ValidationError
 
 from app.auth.roles import UserRole
+from app.auth.models import AuthenticatedUser
 from app.auth.cookies import SessionCookieSigner
 from app.auth.login_service import LoginError, LoginService
 from app.auth.supabase_auth import RecoveryTokenError
@@ -23,6 +24,7 @@ from app.dependencies import (
     get_current_user,
     get_login_service,
     get_mobile_card_april_state_service,
+    get_mobile_card_service,
     get_admin_accounts_service,
     get_password_reset_service,
     get_rate_limiter,
@@ -36,6 +38,10 @@ from app.observability import client_ip_from_request
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
+from app.domain.mobile_card.errors import (
+    MobileCardError, MobileCardPersonNotFoundError, MobileCardDuplicatePersonError,
+    MobileCardRateLimitedError,
+)
 from app.web.cookies import resolve_cookie_domain
 from app.web.templates import templates
 
@@ -47,6 +53,62 @@ _PASSWORD_RESET_SENT_MESSAGE = (
 )
 
 router = APIRouter()
+
+
+def _app_login_response(request, *, error=None, message=None, next_path='/', code_email=None, status_code=200):
+    return templates.TemplateResponse(request, _LOGIN_TEMPLATE, dict(
+        title='Logg inn', section='login', error_message=error, message=message,
+        next_path=_safe_login_redirect(next_path), app_code_email=code_email), status_code=status_code)
+
+
+@router.post('/login/app/code')
+async def request_app_login_code(
+    request: Request, email: str = Form(...), next: str = Form(default='/'),
+    service=Depends(get_mobile_card_service),
+):
+    try:
+        await service.request_access_code(email, source_key=client_ip_from_request(request))
+    except (MobileCardPersonNotFoundError, MobileCardDuplicatePersonError):
+        pass
+    except MobileCardRateLimitedError:
+        return _app_login_response(request, error='For mange forsøk. Prøv igjen senere.', status_code=429, next_path=next)
+    except (MobileCardError, NotConfiguredError):
+        return _app_login_response(request, error='Kunne ikke sende kode. Prøv igjen senere.', status_code=503, next_path=next)
+    return _app_login_response(request, message='Sjekk din e-post!', code_email=email, next_path=next)
+
+
+@router.post('/login/app')
+async def app_login(
+    request: Request, email: str = Form(...), access_code: str = Form(...), next: str = Form(default='/'),
+    service=Depends(get_mobile_card_service), admin_accounts_service=Depends(get_admin_accounts_service),
+    session_store=Depends(get_session_store), settings=Depends(get_settings),
+    session_cookie_signer=Depends(get_session_cookie_signer),
+):
+    try:
+        mobile_session = await service.create_session(email, access_code, source_key=client_ip_from_request(request))
+        subject = service.sessions.decode_token(mobile_session.session_token)
+        # Store-review identities and trial applicants cannot establish admin sessions.
+        if subject.is_review or subject.person_id is None or subject.person_id <= 0 or subject.trial_application_id is not None:
+            raise ValueError('Denne app-brukeren har ikke tilgang til adminpanelet.')
+        account = await admin_accounts_service.get_individual_account(subject.person_id)
+        if account is None or account.is_legacy_account:
+            raise ValueError('Denne app-brukeren har ikke tilgang til adminpanelet.')
+        session = await session_store.create_session(auth_user_id=account.auth_user_id,
+            user_account_id=account.user_account_id, ip_address=client_ip_from_request(request),
+            user_agent=request.headers.get('user-agent'))
+    except MobileCardRateLimitedError:
+        return _app_login_response(request, error='For mange forsøk. Prøv igjen senere.', status_code=429, code_email=email, next_path=next)
+    except (MobileCardError, ValueError):
+        return _app_login_response(request, error='Ugyldig kode eller manglende tilgang til adminpanelet.', status_code=401, code_email=email, next_path=next)
+    except NotConfiguredError:
+        return _app_login_response(request, error='Innlogging er ikke tilgjengelig akkurat nå.', status_code=503, code_email=email, next_path=next)
+    response = RedirectResponse(_safe_login_redirect(next), status_code=303)
+    _set_session_cookie(response, request=request, settings=settings, session_cookie_signer=session_cookie_signer, session_id=session.session_id)
+    log_admin_activity(request=request, user=AuthenticatedUser(
+        auth_user_id=account.auth_user_id, user_account_id=account.user_account_id,
+        username=account.username, email=account.email, display_name=account.display_name, role=account.role),
+        action='auth.app_login', subject_type='admin_account', subject_id=account.user_account_id)
+    return response
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 logger = logging.getLogger(__name__)
 _ORAKEL_ORIGIN = "https://orakel.samfunnetibergen.no"
