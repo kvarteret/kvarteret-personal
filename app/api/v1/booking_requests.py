@@ -15,6 +15,14 @@ router = APIRouter()
     response_model=BookingReceipt,
     status_code=201,
     operation_id="storeBookingRequest",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {"schema": BookingSnapshot.model_json_schema()}
+            },
+        }
+    },
     responses={
         401: {"description": "Invalid signature"},
         413: {"description": "Snapshot too large"},

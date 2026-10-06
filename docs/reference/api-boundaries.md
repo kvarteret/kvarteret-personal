@@ -196,3 +196,13 @@ removal.
 ## Removed Legacy Boundary
 
 `POST /api/DigitalInternkort/RequestAccessTokenOnEmail` and `POST /api/DigitalInternkort/GetInternkortInformation` were permanently removed on 2026-06-10 as part of the legacy restructure (M4). The four-week traffic gate was waived by the product owner. Pre-v1 app installs that called these paths lose mobile-card access and must update to the v1 mobile-card API at `/api/v1/mobile-card/*`.
+
+## Booking request capture
+
+The website now calls `POST /api/v1/booking-requests` before forwarding room or
+karaoke requests to Crescat. Personal owns the private snapshot archive and
+migration; the website owns form validation, availability checks, request
+building, and Crescat dispatch. Public events continue to read from Sanity.
+
+See [Booking request storage](booking-requests.md) for the signed contract,
+deduplication, access, and deployment sequence.

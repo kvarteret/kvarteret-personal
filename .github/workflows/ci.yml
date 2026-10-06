@@ -131,4 +131,4 @@ jobs:
         run: uv run python scripts/check_schema_drift.py
 
       - name: Run end-to-end tests
-        run: uv run pytest tests/e2e
+        run: uv run pytest tests/e2e tests/api/booking_requests/test_postgres_storage.py

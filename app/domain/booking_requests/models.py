@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -22,7 +22,7 @@ class BookingSnapshot(BaseModel):
     event_name: str = Field(min_length=1, max_length=500)
     contact_name: str = Field(min_length=1, max_length=200)
     contact_email: EmailStr
-    room_ids: list[int] = Field(min_length=1, max_length=50)
+    room_ids: list[Annotated[int, Field(gt=0)]] = Field(min_length=1, max_length=50)
     schedule: list[BookingSchedule] = Field(min_length=1, max_length=366)
     form: dict[str, object]
     crescat_payload: dict[str, object]
