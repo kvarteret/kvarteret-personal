@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import hmac
-import logging
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from secrets import choice
@@ -57,7 +58,7 @@ __all__ = [
 ]
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TrialApplicantProviderProtocol(Protocol):

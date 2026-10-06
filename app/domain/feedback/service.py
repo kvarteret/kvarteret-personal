@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import json
-import logging
 import re
 from asyncio import to_thread
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from app.db.rate_limit import RateLimitExceeded, RateLimiter
 
 from app.observability import emit_event
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 EMAIL_PATTERN = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
 MAX_EMAIL_LENGTH = 254

@@ -5,16 +5,16 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.db.rate_limit import RateLimiter, RateLimitExceeded
 from app.dependencies import (
     get_rate_limiter,
     require_authenticated_user,
 )
-from app.db.rate_limit import RateLimitExceeded, RateLimiter
-from app.observability import emit_event
+from app.observability import get_logger
 
 router = APIRouter()
 
-logger = logging.getLogger("app.web.client_errors")
+logger = get_logger("app.web.client_errors")
 
 # Generous ceiling: this endpoint exists so frontend failures become visible
 # in PostHog logs, but a single page session can legitimately produce several
@@ -66,22 +66,6 @@ async def report_client_error(
 
     # Structured fields go through the observability sanitizer (redacts
     # emails, query strings, bearer tokens) before export to PostHog logs.
-    emit_event(
-        logger,
-        "web.client_error",
-        level=logging.WARNING,
-        fields={
-            "error_type": body.error_type[:120] or "Error",
-            "error_text": body.error_text[:1000],
-            "error_source": body.error_source[:250],
-            "route_template": request.url.path,
-            "form_id": body.form_id,
-            "attempt_count": body.attempt_count,
-            "validation_fields": body.validation_fields,
-            "validation_codes": body.validation_codes,
-            "status_code": body.status_code,
-        },
-    )
     if body.error_type == "RepeatedFormSubmissionFailure" and body.attempt_count == 3:
         error = RepeatedFormSubmissionFailure(
             "Three unsuccessful form submission attempts"
@@ -90,15 +74,28 @@ async def report_client_error(
             "form.submission.repeated_failure",
             exc_info=(type(error), error, None),
             extra={
-                "event": "form.submission.repeated_failure",
-                "event_data": {
-                    "form_id": body.form_id,
-                    "attempt_count": body.attempt_count,
-                    "validation_fields": body.validation_fields,
-                    "validation_codes": body.validation_codes,
-                    "error_source": body.error_source,
-                    "status_code": body.status_code,
-                },
+                "form_id": body.form_id,
+                "attempt_count": body.attempt_count,
+                "validation_fields": body.validation_fields,
+                "validation_codes": body.validation_codes,
+                "error_source": body.error_source,
+                "status_code": body.status_code,
+            },
+        )
+    else:
+        logger.log(
+            logging.WARNING,
+            "web.client_error",
+            extra={
+                "error_type": body.error_type[:120] or "Error",
+                "error_text": body.error_text[:1000],
+                "error_source": body.error_source[:250],
+                "route_template": request.url.path,
+                "form_id": body.form_id,
+                "attempt_count": body.attempt_count,
+                "validation_fields": body.validation_fields,
+                "validation_codes": body.validation_codes,
+                "status_code": body.status_code,
             },
         )
     return {"ok": True}

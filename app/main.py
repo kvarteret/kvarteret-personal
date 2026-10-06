@@ -22,6 +22,7 @@ from app.media.router import router as media_router
 from app.internal.router import router as internal_router
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.observability import (
+    get_logger,
     bind_request_context,
     build_request_id,
     clear_request_context,
@@ -43,7 +44,7 @@ from app.web.csrf import (
 )
 from app.web.router import web_router
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_app(container=None) -> FastAPI:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request, status
@@ -16,7 +17,7 @@ from app.web.templates import templates
 _SPOTIFY_OAUTH_LOGIN_CALLBACK = "spotify.oauth.login.callback"
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @router.get("/spotify/now-playing")

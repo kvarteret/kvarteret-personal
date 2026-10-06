@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import asyncio
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from secrets import token_urlsafe
@@ -19,7 +20,7 @@ from app.domain.spotify.repository import IntegrationTokensRepository
 
 
 _JSON_CONTENT_TYPE = "application/json"
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SPOTIFY_AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 _SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"

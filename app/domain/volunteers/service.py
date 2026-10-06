@@ -8,7 +8,8 @@ deletion. Writes invalidate the inherited per-volunteer detail cache.
 
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from asyncio import to_thread
 from pathlib import Path
 from secrets import token_hex
@@ -33,7 +34,7 @@ from app.infrastructure.media.protocols import PhotoProcessorProtocol
 from app.infrastructure.storage.protocols import StorageProtocol
 from app.media_tokens import MediaTokenService
 
-cleanup_logger = logging.getLogger(__name__)
+cleanup_logger = get_logger(__name__)
 
 
 class VolunteersService(VolunteersQueries):

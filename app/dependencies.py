@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request, status
@@ -28,7 +29,7 @@ from app.domain.search import VolunteerSearchService
 from app.domain.role_assignments.semester_transfer import SemesterTransferService
 from app.domain.admin_accounts.service import AdminAccountsService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True)

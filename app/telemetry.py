@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import logging
 import os
 import json
@@ -23,7 +25,7 @@ from app.config import Settings
 from app.error_tracking import configure_error_tracking
 from app.observability import JsonLogFormatter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 _httpx_instrumented = False
 
 
@@ -144,7 +146,7 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
             level=logging.INFO, logger_provider=logger_provider
         )
         log_handler.addFilter(DomainLogFilter())
-        logging.getLogger().addHandler(log_handler)
+        get_logger().addHandler(log_handler)
 
         configure_error_tracking(settings)
         FastAPIInstrumentor.instrument_app(app, tracer_provider=trace_provider)

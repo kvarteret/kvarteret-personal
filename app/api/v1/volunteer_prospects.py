@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import hashlib
 import hmac
 import json
@@ -36,7 +38,7 @@ from app.observability import emit_event, with_named_span
 from app.shared.phone_numbers import normalize_phone_number
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _log_public_prospect_validation(exc: VolunteerApplicationValidationError) -> str:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from asyncio import to_thread
 from typing import Any, Callable
 
 from app.infrastructure.storage.protocols import StorageProtocol
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VolunteerApplicationSideEffects:

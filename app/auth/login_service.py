@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from dataclasses import dataclass
 
 from app.auth.models import AuthenticatedUser, WebSession
@@ -8,7 +9,7 @@ from app.auth.repository import AuthRepositoryProtocol
 from app.auth.session_store import SessionStoreProtocol
 from app.auth.supabase_auth import SupabaseAuthGatewayProtocol
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LoginError(Exception):
