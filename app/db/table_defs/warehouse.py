@@ -7,6 +7,7 @@ from app.db.metadata import public_metadata
 warehouse_volunteer_counts = Table(
     "warehouse_volunteer_counts",
     public_metadata,
+    Column("metric", Text, primary_key=True),
     Column("semester", Integer, primary_key=True),
     Column("scope_key", Text, primary_key=True),
     Column("group_id", BigInteger),

@@ -1,12 +1,22 @@
 # Export volunteer counts to PostHog
 
-`public.warehouse_volunteer_counts` is an aggregate-only export table. It counts
+`public.warehouse_volunteer_counts` is an aggregate-only export table with two
+explicit metrics. `metric = 'assigned'` counts
 distinct volunteers with recorded role assignments, by semester and group, plus
 an organisation total deduplicated across groups. This follows
 `app/domain/groups/queries.py:get_org_stats_detailed`. It includes unsigned and
 trial assignments and historical groups, regardless of their current active flag.
-It is not the stricter current active-volunteer metric in
-`app/domain/volunteers/search_sql.py:current_active_volunteers_subquery`.
+
+`metric = 'active'` provides the current-semester organisation headcount using
+`app/domain/volunteers/search_sql.py:current_active_volunteers_subquery` and the
+same volunteer-record join as Personal's `count_volunteers(only_active=True)`.
+It includes current-semester signed assignments or assignments qualifying through
+an unexpired trial, excludes assigned volunteers linked to `not_volunteer`
+applications, and also includes linked unexpired trial volunteers without an
+assignment. Membership is deduplicated by the shared builder. Active rows always
+exist, including a zero count, and only cover the semester at refresh time.
+Historical active counts and group attribution for trials without assignments
+are not reconstructed. The `assigned` metric remains available for history.
 
 No names, contact information, volunteer IDs, contract statuses, application
 details, or tokens are exported. Group counts below five are NULL with
@@ -35,21 +45,26 @@ totals, and repeated refreshes can reveal small changes. Limit access accordingl
    deletions and an empty-table refresh before relying on erasure propagation.
 
 The migration creates an empty table. The command rebuilds it atomically in one
-transaction and serializes concurrent refreshers. Changes to assignments are
+transaction and serializes concurrent refreshers. Assignment/application changes
+and trial expiry are
 reflected on the next rebuild; PostHog then reflects them on its next successful
 full refresh. The table holds recomputed semester statistics, not daily snapshots.
 Semesters/groups with no recorded assignments have no row; the absence of a
-current semester row means zero only after a successful fresh rebuild.
+current assigned-semester row means zero only after a successful fresh rebuild.
+The active organisation row explicitly reports zero when no volunteers qualify.
 
 ## Query the counts
 
-Select `scope_key = 'organisation'` for the organisation total; never sum group
+Select `metric = 'active' AND scope_key = 'organisation'` for current active
+headcount. Select `metric = 'assigned'` for assignment history and its group
+breakdowns. Always filter the metric before aggregating to avoid combining two
+different populations. Select `scope_key = 'organisation'` for the organisation total; never sum group
 rows to derive that total. Use `group_id` for group breakdowns and exclude
 `is_suppressed = true` from exact-count charts. NULL means withheld, not zero.
 Semester codes use `YYYY1` for spring and `YYYY2` for autumn.
 
-For example, `20262 / organisation / NULL / 120` means 120 distinct assigned
-volunteers in autumn 2026. `20262 / group:7 / 7 / NULL` with suppression enabled
+For example, `assigned / 20262 / organisation / NULL / 120` means 120 distinct assigned
+volunteers in autumn 2026. `assigned / 20262 / group:7 / 7 / NULL` with suppression enabled
 means fewer than five assigned volunteers in group 7. One volunteer assigned to
 two groups contributes to both group counts but only once to the organisation.
 

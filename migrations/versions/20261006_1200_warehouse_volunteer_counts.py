@@ -16,6 +16,7 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "warehouse_volunteer_counts",
+        sa.Column("metric", sa.Text(), primary_key=True),
         sa.Column("semester", sa.Integer(), primary_key=True),
         sa.Column("scope_key", sa.Text(), primary_key=True),
         sa.Column("group_id", sa.BigInteger()),
