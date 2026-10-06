@@ -130,7 +130,9 @@ def test_retry_creates_successor_and_redirects(monkeypatch) -> None:
     assert service.retry_calls == [(DELIVERY_ID, 5)]
 
 
-def test_recipient_correction_passes_new_address_without_rendering_it(monkeypatch) -> None:
+def test_recipient_correction_passes_new_address_without_rendering_it(
+    monkeypatch,
+) -> None:
     client, service = _client(monkeypatch)
 
     response = client.post(
@@ -151,3 +153,45 @@ def test_session_backed_post_requires_csrf_token(monkeypatch) -> None:
 
     assert response.status_code == 403
     assert service.retry_calls == []
+
+
+def test_admin_can_preview_all_templates_with_sample_data(monkeypatch) -> None:
+    from app.email_template_previews import build_previews
+
+    client, _service = _client(monkeypatch)
+    listing = client.get(
+        "/email-templates?template=mobile_card_access_code&viewport=mobile"
+    )
+    assert listing.status_code == 200
+    assert "Din innlogging til Personal er klar" in listing.text
+    assert "max-width:375px" in listing.text
+    assert 'href="/email-templates"' in client.get("/email-deliveries").text
+    for preview in build_previews():
+        response = client.get(f"/email-templates/{preview.slug}/preview")
+        assert response.status_code == 200
+        assert response.text == preview.html_body
+        assert "{{" not in response.text
+        assert response.headers["cache-control"] == "no-store"
+        assert "form-action 'none'" in response.headers["content-security-policy"]
+    assert client.get("/email-templates/not-a-template/preview").status_code == 404
+    assert client.get("/email-templates?template=../../etc/passwd").status_code == 200
+
+
+def test_non_admin_cannot_view_template_page_or_html(monkeypatch) -> None:
+    client, _service = _client(monkeypatch, role=UserRole.GROUP_ADMIN)
+    assert client.get("/email-templates").status_code == 403
+    assert (
+        client.get("/email-templates/mobile_card_access_code/preview").status_code
+        == 403
+    )
+
+
+def test_signed_out_user_cannot_view_template_page_or_html(monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    client = TestClient(create_app())
+    for path in [
+        "/email-templates",
+        "/email-templates/mobile_card_access_code/preview",
+    ]:
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code in (303, 401)

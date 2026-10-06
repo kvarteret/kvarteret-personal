@@ -4,6 +4,7 @@
 {% block page_content %}
   <section class="grid gap-7">
     {{ page_header("Administrasjon", "E-postleveranser", "Postgres er den autoritative historikken for ventende, sendte og mislykkede e-poster.") }}
+    <nav class="flex justify-center gap-4" aria-label="E-post"><a class="app-button-secondary" href="/email-deliveries" aria-current="page">Leveranser</a><a class="app-button-secondary" href="/email-templates">Maler</a></nav>
     {{ flash_notice(error_message, "error") }}
 
     <form class="app-panel grid gap-4 md:grid-cols-4 md:items-end" method="get">

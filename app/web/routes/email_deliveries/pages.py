@@ -4,6 +4,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse
+
+from app.email_template_previews import build_previews
 
 from app.dependencies import get_email_outbox_service, require_admin_user
 from app.email_outbox_service import EmailOutboxService
@@ -24,9 +27,7 @@ async def email_deliveries_index(
     current_user=Depends(require_admin_user),
     service: EmailOutboxService = Depends(get_email_outbox_service),
 ):
-    selected_status = (
-        delivery_status if delivery_status in _VALID_STATUSES else None
-    )
+    selected_status = delivery_status if delivery_status in _VALID_STATUSES else None
     parsed_created_after = _parse_date(created_after)
     deliveries = await service.list_deliveries(
         status=selected_status,
@@ -100,3 +101,49 @@ def _parse_date(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed
+
+
+@router.get("/email-templates")
+async def email_templates_index(
+    request: Request,
+    template: str | None = None,
+    viewport: str = "desktop",
+    current_user=Depends(require_admin_user),
+):
+    previews = build_previews()
+    selected = next(
+        (preview for preview in previews if preview.slug == template), previews[0]
+    )
+    return templates.TemplateResponse(
+        request,
+        "pages/email_deliveries/email_templates_index.html",
+        {
+            "title": "E-postmaler",
+            "section": "email-deliveries",
+            "current_user": current_user,
+            "previews": previews,
+            "selected": selected,
+            "viewport": "mobile" if viewport == "mobile" else "desktop",
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/email-templates/{template_key}/preview", response_class=HTMLResponse)
+async def email_template_preview(
+    template_key: str,
+    current_user=Depends(require_admin_user),
+):
+    preview = next(
+        (item for item in build_previews() if item.slug == template_key), None
+    )
+    if preview is None:
+        raise HTTPException(status_code=404, detail="Email template was not found.")
+    return HTMLResponse(
+        preview.html_body,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src https:; font-src https:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+            "X-Frame-Options": "SAMEORIGIN",
+        },
+    )
