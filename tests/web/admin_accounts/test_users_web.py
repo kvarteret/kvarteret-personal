@@ -832,3 +832,18 @@ def test_admin_groups_show_permission_sources_in_bold():
     assert '<strong>Other Group</strong>' not in response.text
     assert 'Kontotype' not in response.text
     assert 'href="/volunteers/100"' in response.text
+
+
+def test_admin_photo_url_stays_on_current_host():
+    from unittest.mock import AsyncMock
+
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user(UserRole.ADMIN))
+    service = FakeAdminAccountsService()
+    items = __import__("asyncio").run(service.list_admin_accounts())
+    items[0].photo_path = "example.jpg"
+    service.list_admin_accounts = AsyncMock(return_value=items)
+    app.dependency_overrides[get_admin_accounts_service] = lambda: service
+    response = TestClient(app, base_url="https://personal.kvarteret.no").get("/admin-accounts")
+    assert response.status_code == 200
+    assert 'src="/media/photos/example.jpg?token=' in response.text
