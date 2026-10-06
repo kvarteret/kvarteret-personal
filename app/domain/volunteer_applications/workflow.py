@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from app.observability import get_logger
 
-import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
@@ -44,7 +43,7 @@ from app.domain.volunteer_applications.state_machine import (
     TransitionContext,
     application_transition,
 )
-from app.observability import current_trace_id, emit_event, with_named_span
+from app.observability import current_trace_id, with_named_span
 
 if TYPE_CHECKING:
     from app.domain.volunteer_applications.service import (
@@ -322,9 +321,14 @@ class VolunteerApplicationWorkflow:
             await rollback_request_session()
             raise
         for application in applications:
-            self._record_lifecycle(application.detail, status=(
-                "prospect_registered" if application.created else "application_invitation_resent"
-            ))
+            self._record_lifecycle(
+                application.detail,
+                status=(
+                    "prospect_registered"
+                    if application.created
+                    else "application_invitation_resent"
+                ),
+            )
         await self.side_effects.after_public_prospect_registered(
             result, base_url=base_url
         )
@@ -665,11 +669,9 @@ class VolunteerApplicationWorkflow:
         try:
             await self.email_outbox.dispatch_due(batch_size=10)
         except Exception:
-            emit_event(
-                get_logger(__name__),
+            get_logger(__name__).error(
                 "email.delivery",
-                level=logging.ERROR,
-                fields={
+                extra={
                     "outcome": "dispatch_deferred",
                     "error_category": "unexpected",
                 },
@@ -691,10 +693,9 @@ class VolunteerApplicationWorkflow:
                 span.set_attribute("origin_trace_id", origin_trace_id)
             if volunteer_id is not None:
                 span.set_attribute("volunteer_id", volunteer_id)
-        emit_event(
-            get_logger(__name__),
+        get_logger(__name__).info(
             "volunteer.lifecycle",
-            fields={
+            extra={
                 "registration_id": registration_id,
                 "origin_trace_id": origin_trace_id,
                 "volunteer_id": volunteer_id,

@@ -1,4 +1,3 @@
-import logging
 from time import perf_counter
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -34,7 +33,6 @@ from app.observability import (
     clear_request_context,
     configure_logging,
     diagnostic_session_id,
-    emit_event,
     log_request,
     log_request_exception,
     request_context_for_user,
@@ -261,11 +259,9 @@ def _install_http_exception_handler(app: FastAPI) -> None:
                 for error in errors
             }
         )
-        emit_event(
-            logger,
+        logger.warning(
             "http.validation.failed",
-            level=logging.WARNING,
-            fields={
+            extra={
                 "status_code": 422,
                 "http_method": request.method,
                 "route_template": getattr(

@@ -8,13 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.db.session import reset_request_session, set_request_session
-from app.observability import emit_committed_event, log_operation_timing, log_request
+from app.observability import log_operation_timing, log_request, get_logger
 from app.telemetry import DomainLogFilter
 
 
 @pytest.mark.parametrize("status", [200, 202, 303])
 def test_routine_http_responses_are_debug_only(caplog, status):
-    logger = logging.getLogger("app.test")
+    logger = get_logger("app.test")
     with caplog.at_level(logging.DEBUG):
         log_request(
             logger,
@@ -31,7 +31,7 @@ def test_routine_http_responses_are_debug_only(caplog, status):
 def test_failed_requests_always_have_fallback_diagnostics(caplog, status):
     with caplog.at_level(logging.DEBUG):
         log_request(
-            logging.getLogger("app.test"),
+            get_logger("app.test"),
             request=Request({"type": "http", "method": "POST"}),
             status_code=status,
             started_at=perf_counter(),
@@ -46,7 +46,7 @@ def test_failed_requests_always_have_fallback_diagnostics(caplog, status):
 def test_handled_server_failure_remains_searchable(caplog):
     with caplog.at_level(logging.DEBUG):
         log_request(
-            logging.getLogger("app.test"),
+            get_logger("app.test"),
             request=Request({"type": "http", "method": "GET"}),
             status_code=503,
             started_at=perf_counter(),
@@ -59,7 +59,7 @@ def test_handled_server_failure_remains_searchable(caplog):
 def test_operation_timing_is_debug_only(caplog):
     with caplog.at_level(logging.DEBUG):
         log_operation_timing(
-            logging.getLogger("app.performance"),
+            get_logger("app.performance"),
             operation="list_volunteers",
             started_at=perf_counter(),
         )
@@ -96,10 +96,10 @@ async def test_transaction_outcome_controls_domain_log(caplog, commit):
         try:
             await session.begin()
             with caplog.at_level(logging.INFO):
-                emit_committed_event(
-                    logging.getLogger("app.audit"),
+                get_logger("app.audit").info(
                     "admin.activity",
-                    fields={"subject_id": 42, "action": "volunteer.delete"},
+                    extra={"subject_id": 42, "action": "volunteer.delete"},
+                    after_commit=True,
                 )
                 assert not caplog.records
                 if commit:
@@ -123,7 +123,7 @@ async def test_savepoint_does_not_announce_outer_transaction(caplog):
         try:
             await session.begin()
             with caplog.at_level(logging.INFO):
-                emit_committed_event(logging.getLogger("app.audit"), "admin.activity")
+                get_logger("app.audit").info("admin.activity", after_commit=True)
                 async with session.begin_nested():
                     pass
                 assert not caplog.records
@@ -139,16 +139,12 @@ async def test_savepoint_rollback_discards_only_its_events(caplog):
         try:
             await session.begin()
             with caplog.at_level(logging.INFO):
-                emit_committed_event(
-                    logging.getLogger("app.audit"),
-                    "admin.activity",
-                    fields={"subject_id": 1},
+                get_logger("app.audit").info(
+                    "admin.activity", extra={"subject_id": 1}, after_commit=True
                 )
                 nested = await session.begin_nested()
-                emit_committed_event(
-                    logging.getLogger("app.audit"),
-                    "admin.activity",
-                    fields={"subject_id": 2},
+                get_logger("app.audit").info(
+                    "admin.activity", extra={"subject_id": 2}, after_commit=True
                 )
                 await nested.rollback()
                 assert not caplog.records
@@ -194,7 +190,7 @@ async def test_closed_transaction_does_not_leak_into_reused_session(caplog):
         try:
             with caplog.at_level(logging.INFO):
                 await session.begin()
-                emit_committed_event(logging.getLogger("app.audit"), "admin.activity")
+                get_logger("app.audit").info("admin.activity", after_commit=True)
                 await session.close()
                 await session.begin()
                 await session.commit()
@@ -236,3 +232,36 @@ def test_export_filter_blocks_successful_admin_reads_at_info():
     record.event = "admin.activity"
     record.event_data = {"action": "search.volunteers"}
     assert not DomainLogFilter().filter(record)
+
+@pytest.mark.parametrize("method", ["info", "warning", "error", "exception"])
+def test_standard_adapter_reports_real_caller(caplog, method):
+    import inspect
+
+    logger = get_logger("app.test")
+    with caplog.at_level(logging.INFO):
+        expected_line = inspect.currentframe().f_lineno + 1
+        getattr(logger, method)("auth.login.failed", extra={"reason": "expired"})
+    record = caplog.records[-1]
+    assert record.pathname == __file__
+    assert record.funcName == "test_standard_adapter_reports_real_caller"
+    assert record.lineno == expected_line
+
+
+async def test_committed_logger_preserves_original_caller(caplog):
+    import inspect
+
+    async with AsyncSession() as session:
+        token = set_request_session(session)
+        try:
+            await session.begin()
+            with caplog.at_level(logging.INFO):
+                expected_line = inspect.currentframe().f_lineno + 1
+                get_logger("app.audit").info("admin.activity", after_commit=True)
+                assert not caplog.records
+                await session.commit()
+            record = caplog.records[-1]
+            assert record.pathname == __file__
+            assert record.funcName == "test_committed_logger_preserves_original_caller"
+            assert record.lineno == expected_line
+        finally:
+            reset_request_session(token)

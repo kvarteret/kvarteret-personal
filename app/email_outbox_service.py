@@ -41,7 +41,7 @@ from app.email_message_preparation import (
     EmailPreparationFailure,
 )
 from app.email_outbox_repository import EmailOutboxRepository
-from app.observability import current_trace_id, emit_committed_event, emit_event
+from app.observability import current_trace_id
 
 logger = get_logger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -98,15 +98,15 @@ class EmailOutboxService:
             enqueued_trace_id=request.enqueued_trace_id or current_trace_id(),
         )
         if created:
-            emit_committed_event(
-                logger,
+            logger.info(
                 "email.delivery",
-                fields={
+                extra={
                     "email_delivery_id": delivery_id,
                     "registration_id": request.registration_id,
                     "template_key": request.template_key,
                     "status": "pending",
                 },
+                after_commit=True,
             )
         return delivery_id
 
@@ -247,10 +247,9 @@ class EmailOutboxService:
             duration_ms=duration_ms,
         )
         await commit_request_session()
-        emit_event(
-            logger,
+        logger.info(
             "email.delivery",
-            fields={
+            extra={
                 "email_delivery_id": delivery_id,
                 "registration_id": registration_id,
                 "status": "sent",
@@ -311,11 +310,10 @@ class EmailOutboxService:
             now=now,
         )
         await commit_request_session()
-        emit_event(
-            logger,
+        logger.log(
+            logging.WARNING if should_retry else logging.ERROR,
             "email.delivery",
-            level=logging.WARNING if should_retry else logging.ERROR,
-            fields={
+            extra={
                 "email_delivery_id": delivery_id,
                 "registration_id": registration_id,
                 "status": status,

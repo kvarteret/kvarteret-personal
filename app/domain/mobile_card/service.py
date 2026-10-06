@@ -37,7 +37,6 @@ from app.infrastructure.email.mobile_card_templates import (
 )
 from app.infrastructure.email.protocols import EmailDeliveryError, EmailSenderProtocol
 from app.media_tokens import MediaTokenService
-from app.observability import emit_committed_event, emit_event
 from app.shared.semester import get_current_semester_code
 
 # Re-export for backward compatibility
@@ -224,10 +223,9 @@ class MobileCardService:
             raise MobileCardDeliveryError(
                 "Could not send access code email. Check your inbox before requesting another code."
             ) from exc
-        emit_event(
-            logger,
+        logger.info(
             "mobile_card.access_code.sent",
-            fields={
+            extra={
                 "subject_type": subject_type,
                 "subject_id": subject_id,
             },
@@ -305,10 +303,9 @@ class MobileCardService:
                 {"trial_application_id": trial_applicant.application_id}
             )
             card = self._build_trial_card(trial_applicant)
-        emit_committed_event(
-            logger,
+        logger.info(
             "mobile_card.session.created",
-            fields={
+            extra={
                 "subject_type": "volunteer"
                 if volunteer_row is not None
                 else "trial_application",
@@ -316,6 +313,7 @@ class MobileCardService:
                 if volunteer_row is not None
                 else trial_applicant.application_id,
             },
+            after_commit=True,
         )
         return MobileCardSession(session_token=token, card=card)
 
