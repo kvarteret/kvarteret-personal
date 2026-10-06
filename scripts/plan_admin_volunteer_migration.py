@@ -21,15 +21,16 @@ def normalize(value: str | None) -> str:
 
 
 def build_plan(inventory: dict, decisions: dict, *, admin_group_id: int | None = None,
-               semester: int | None = None) -> dict:
+               board_group_id: int | None = None, semester: int | None = None) -> dict:
     """Return private proposals; explicit selections override automatic matches."""
     accounts = inventory['accounts']
     volunteers = {p['id']: p for p in inventory['volunteers']}
     groups = {g['id'] for g in inventory['groups']}
-    if (admin_group_id is None) != (semester is None):
-        raise ValueError('Administration group and current semester must be supplied together')
-    if admin_group_id is not None and (admin_group_id not in groups or semester <= 0):
-        raise ValueError('Invalid administration group or semester')
+    eligible_groups = {gid for gid in (admin_group_id, board_group_id) if gid is not None}
+    if bool(eligible_groups) != (semester is not None):
+        raise ValueError('Admin eligibility groups and current semester must be supplied together')
+    if eligible_groups and (eligible_groups - groups or semester <= 0):
+        raise ValueError('Invalid admin eligibility group or semester')
     if len({a['id'] for a in accounts}) != len(accounts):
         raise ValueError('Duplicate source account identifiers')
     if len(volunteers) != len(inventory['volunteers']):
@@ -98,20 +99,19 @@ def build_plan(inventory: dict, decisions: dict, *, admin_group_id: int | None =
             individual['issues'].extend(issues)
         rows.append(dict(account_id=account['id'], action=action,
                          volunteer_ids=proposed, basis=basis, issues=sorted(set(issues)), grants=grants))
-    administration_members = sorted({a['volunteer_id'] for a in inventory['assignments']
-                                     if admin_group_id is not None
-                                     and a.get('group_id') == admin_group_id
-                                     and a['semester'] == semester})
-    for pid in administration_members:
+    organization_grants = sorted({(a['volunteer_id'], a.get('group_id')) for a in inventory['assignments']
+                                  if a.get('group_id') in eligible_groups and a['semester'] == semester})
+    for pid, gid in organization_grants:
         if pid not in volunteers:
-            raise ValueError('Administration assignment references an unknown volunteer')
+            raise ValueError('Admin eligibility assignment references an unknown volunteer')
         p = volunteers[pid]
         individual = individuals.setdefault(pid, dict(
             volunteer_id=pid, name=' '.join(f"{p.get('first_name') or ''} {p['last_name']}".split()),
             personal_email=(p.get('email') or '').strip(), source_grants=[], issues=[]))
         individual['source_grants'].append(dict(
             account_id=None, role='Admin', group_ids=[], reviewed=True,
-            basis='current administration membership', group_id=admin_group_id, semester=semester))
+            basis='current administration membership' if gid == admin_group_id else 'current hovedstyret membership',
+            group_id=gid, semester=semester))
         if not individual['personal_email']:
             individual['issues'].append('personal_email_missing')
     emails = collections.defaultdict(list)
@@ -134,7 +134,8 @@ def build_plan(inventory: dict, decisions: dict, *, admin_group_id: int | None =
                 summary=dict(source_accounts=len(rows), individual_accounts=len(individuals),
                              removals=sum(r['action'] == 'remove' for r in rows),
                              no_recipients=sum(r['action'] == 'no_recipient' for r in rows),
-                             administration_admins=len(administration_members),
+                             administration_admins=sum(gid == admin_group_id for _, gid in organization_grants),
+                             hovedstyret_admins=sum(gid == board_group_id for _, gid in organization_grants),
                              unresolved_identities=sum('identity_unresolved' in r['issues'] for r in rows)))
 
 
@@ -161,12 +162,14 @@ def main() -> None:
     parser.add_argument('--decisions', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--administration-group-id', type=int)
+    parser.add_argument('--hovedstyret-group-id', type=int)
     parser.add_argument('--semester', type=int)
     args = parser.parse_args()
     try:
         inventory = json.loads(outside_checkout(args.inventory).read_text())
         decisions = json.loads(outside_checkout(args.decisions).read_text())
         plan = build_plan(inventory, decisions, admin_group_id=args.administration_group_id,
+                          board_group_id=args.hovedstyret_group_id,
                           semester=args.semester)
         write_private(args.output, plan)
     except (OSError, ValueError, KeyError, TypeError):

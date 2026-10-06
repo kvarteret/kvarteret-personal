@@ -15,7 +15,7 @@ Run from the Personal checkout:
 uv run python scripts/plan_admin_volunteer_migration.py \
   --inventory /private/tmp/admin-volunteer-inventory.json \
   --decisions /private/tmp/admin-volunteer-decisions.json \
-  --administration-group-id 263 --semester 20262 \
+  --administration-group-id 263 --hovedstyret-group-id 2 --semester 20262 \
   --output /private/tmp/admin-volunteer-plan.json
 ```
 
@@ -54,6 +54,10 @@ including people without an existing admin account. Historical assignments do
 not qualify. This organizational grant is separate from source-account migration:
 removing a legacy account does not remove a current member's eligibility.
 The administration grant takes precedence over a source account's lower role.
+`--hovedstyret-group-id` applies the same Admin eligibility rule to current
+Hovedstyret members. Either group rule can run independently, with an explicit
+semester. A member of both groups still produces one individual account, with
+separate evidence for both organizational grants.
 
 Review identity, preferred email, duplicate profiles, combined access, and
 removal decisions before implementing a production migration. This trial has no

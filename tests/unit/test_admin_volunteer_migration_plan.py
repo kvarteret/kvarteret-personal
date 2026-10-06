@@ -107,3 +107,27 @@ def test_administration_membership_overrides_group_role_reduction(inventory):
 def test_private_proposal_does_not_become_reviewed_selection(inventory):
     plan = build_plan(inventory, {'1': dict(action='map', volunteer_ids=[10], reviewed=False)})
     assert 'source_grant_pending_review' in plan['individual_accounts'][0]['issues']
+
+
+def test_current_hovedstyret_gets_admin_and_overlapping_members_are_consolidated(inventory):
+    inventory['groups'].append(dict(id=200))
+    inventory['assignments'].extend([
+        dict(volunteer_id=20, group_id=100, semester=20262),
+        dict(volunteer_id=20, group_id=200, semester=20262),
+        dict(volunteer_id=20, group_id=200, semester=20262),
+        dict(volunteer_id=10, group_id=200, semester=20261),
+    ])
+    plan = build_plan(inventory, {'1': dict(action='remove')},
+                      admin_group_id=100, board_group_id=200, semester=20262)
+    assert [p['volunteer_id'] for p in plan['individual_accounts']] == [20]
+    assert plan['individual_accounts'][0]['role'] == 'Admin'
+    assert len(plan['individual_accounts'][0]['source_grants']) == 2
+    assert plan['summary']['administration_admins'] == 1
+    assert plan['summary']['hovedstyret_admins'] == 1
+
+
+def test_hovedstyret_rule_can_run_without_administration_rule(inventory):
+    inventory['assignments'][0]['group_id'] = 100
+    plan = build_plan(inventory, {'1': dict(action='remove')}, board_group_id=100, semester=20262)
+    assert plan['individual_accounts'][0]['role'] == 'Admin'
+    assert plan['summary']['hovedstyret_admins'] == 1
