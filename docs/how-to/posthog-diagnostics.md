@@ -238,3 +238,21 @@ label declared by the caller; it grants no privileges and does not suppress
 logging or bypass rate limiting. Previous proof records can be identified by
 `logging-proof` / `prod-proof` request IDs; they cannot be retroactively marked
 by changing the application. Use the header on future controlled probes.
+
+
+## Connect mobile logout to a volunteer
+
+`mobile_card.session.created` and `mobile_card.access_code.sent` include a
+server-resolved `volunteer_id` for volunteer subjects. Trial applications keep
+`subject_type=trial_application` and their application `subject_id` instead.
+Session creation also carries the app's diagnostic `session_id`. Find a logout
+record, copy its `session_id`, then filter Personal logs by that ID and inspect
+the preceding `mobile_card.session.created` record's `volunteer_id`.
+
+This associates records without accepting a volunteer ID from signed-out
+clients or storing a new identity map. The session ID is caller supplied,
+so correlation is diagnostic evidence rather than proof of authorization.
+An app restart changes that ID; if no login occurred in the new process, the
+new logout's session ID may have no identity association. Historical login logs
+already have `subject_type=volunteer` and `subject_id` for the same lookup.
+Treat volunteer IDs as personal data and restrict access/retention accordingly.
