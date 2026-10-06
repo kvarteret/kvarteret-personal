@@ -2607,35 +2607,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "$defs": {
-                  "BookingSchedule": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "date": {
-                        "format": "date",
-                        "title": "Date",
-                        "type": "string"
-                      },
-                      "doors_close": {
-                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
-                        "title": "Doors Close",
-                        "type": "string"
-                      },
-                      "doors_open": {
-                        "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
-                        "title": "Doors Open",
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "date",
-                      "doors_open",
-                      "doors_close"
-                    ],
-                    "title": "BookingSchedule",
-                    "type": "object"
-                  }
-                },
                 "additionalProperties": false,
                 "properties": {
                   "contact_email": {
@@ -2685,7 +2656,31 @@
                   },
                   "schedule": {
                     "items": {
-                      "$ref": "#/$defs/BookingSchedule"
+                      "additionalProperties": false,
+                      "properties": {
+                        "date": {
+                          "format": "date",
+                          "title": "Date",
+                          "type": "string"
+                        },
+                        "doors_close": {
+                          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                          "title": "Doors Close",
+                          "type": "string"
+                        },
+                        "doors_open": {
+                          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                          "title": "Doors Open",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "date",
+                        "doors_open",
+                        "doors_close"
+                      ],
+                      "title": "BookingSchedule",
+                      "type": "object"
                     },
                     "maxItems": 366,
                     "minItems": 1,
