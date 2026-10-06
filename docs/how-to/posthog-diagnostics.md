@@ -38,8 +38,9 @@ be configured separately. Never use a personal PostHog API key for ingestion.
 
 `app/telemetry.py` exports named application events at INFO and warnings/errors.
 Successful HTTP responses, query timings, page views, searches, and
-mobile-card renewal/invalid-session diagnostics are DEBUG and are excluded from
-PostHog even when `LOG_LEVEL=DEBUG`. All 4xx/5xx responses retain a generic
+mobile-card renewal and cache diagnostics are DEBUG and are excluded from
+PostHog even when `LOG_LEVEL=DEBUG`. Invalid mobile sessions are WARN with safe
+reasons such as `expired` or `bad_signature`. All 4xx/5xx responses retain a generic
 `http.request.failed` fallback; unhandled exceptions retain sanitized diagnostics
 and Error Tracking. Request traces carry routine HTTP activity.
 
@@ -100,13 +101,24 @@ platform stream. Website runtime copies remain under its platform service.
 Search services `kvarteret-personal-platform` or `samfunnetibergen-platform`,
 then filter `vercel.request.id` using the request ID from Vercel. HTTP 4xx and
 5xx responses receive WARN and ERROR severity even when Vercel labels them INFO.
+Their event names are `http.request.failed`; firewall rejections are
+`http.request.blocked`; unstructured runtime errors are `platform.runtime.failed`.
+Known blocked firewall probes (`.git`, `.env`, WordPress/XML-RPC paths, and the
+observed HEAD wine-menu variants) are excluded from PostHog. Ambiguous GET wine
+paths, real app/API failures, and runtime errors remain. Original records remain
+in Vercel. Sanity API/CDN connection errors carry `dependency=sanity` plus safe
+error type/code, without exporting arbitrary messages.
 A platform rejection before application execution has no application span;
 the drain preserves that fact rather than inventing a trace ID.
 
-The BFF uses `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` for both analytics and OTLP.
-Its exporter wrapper retains the actual HTTP completion promise with Vercel
-`waitUntil`, including spans ending at request completion. Incoming server
-spans also produce structured `http.request.completed` log records.
+The BFF uses the shared `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` for analytics and OTLP.
+GitHub production release secrets explicitly supply it during the prebuilt release;
+Sensitive Vercel exports can contain placeholders and must not become build tokens.
+The release validates configuration and smoke-tests `/ingest/flags/?v=2` before promotion.
+`apps/web/src/instrumentation.node.ts` registers a `NodeTracerProvider` and batched
+OTLP logs. `apps/web/src/lib/telemetry-flush.ts` uses Next's built-in `after()`
+to await logger/tracer provider flushes when domain events/spans complete. Ordinary
+successful HTTP requests do not produce operational log records.
 
 References: [Python error tracking](https://posthog.com/docs/error-tracking/installation/python),
 [Python logs](https://posthog.com/docs/logs/installation/python),
@@ -137,9 +149,9 @@ arbitrary validator messages are added by this tracking.
 
 Next server hooks must live beside `src/app`, under `apps/web/src`. A compiled
 instrumentation file at the app root is insufficient for Next's production hook
-detection when using `src/app`. The server uses `@vercel/otel`, records all
+detection when using `src/app`. The server uses `NodeTracerProvider`, records all
 produced spans, propagates context to Personal, and retains export completion
-with `waitUntil`. Browser logs remain separate and need not carry a trace ID.
+with Next `after()`. Browser logs remain separate and need not carry a trace ID.
 The Logs severity facet named Trace is unrelated to the Tracing product.
 
 Platform counts include static assets, middleware, redirects, and the analytics
@@ -157,7 +169,11 @@ are separate from platform Logs and remain enabled.
 
 Personal uses the standard Python `logging.LoggerAdapter`, JSON formatter and
 an INFO export allowlist (`DOMAIN_OUTCOME_EVENTS` in `app/observability.py`).
-Domain outcomes and all WARN/ERROR records are exported. Reads, visits, query
+Call sites use standard `logger.info`, `logger.warning`, `logger.error` and
+`logger.exception` methods with allowlisted `extra` fields. Database outcomes use
+`after_commit=True` on the same adapter. Standard `stacklevel` preserves the
+emitting file/function/line through context-building helpers; there is no
+`emit_event` function. Domain outcomes and all WARN/ERROR records are exported. Reads, visits, query
 timings, session renewal, and cache fallback/recovery are DEBUG. Records have
 `schema_version=1` and `domain`; admin records use the action's domain. Database
 outcomes publish after commit, with captured request and trace context.
@@ -187,7 +203,9 @@ can produce duplicate log records, identifiable by `event_id` and `attempt_id`.
 
 The app attaches a random `X-Session-ID` to auth requests and diagnostics for the
 current app process; queued diagnostics preserve their original session ID.
-Personal writes `session_id` on logs and `session.id` on OTel server spans. Each
+For mobile-card API routes, a valid app diagnostic header takes precedence over
+an incidental browser CSRF cookie. Personal writes `session_id` on logs and
+`session.id` on OTel server spans. Each
 request has its own trace; `session_id` connects requests, including a rejected
 `/me` request followed by forced logout. The diagnostic ID grants no access.
 Browser correlation uses a purpose-specific keyed digest of the existing valid
