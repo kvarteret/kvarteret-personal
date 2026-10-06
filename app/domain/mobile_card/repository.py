@@ -60,10 +60,23 @@ class MobileCardSnapshot:
 class MobileCardRepository(SqlAlchemyRepository):
     @staticmethod
     def _not_blocked_volunteer(volunteer_id):
-        return ~select(volunteer_application_invites.c.id).where(
-            volunteer_application_invites.c.promoted_volunteer_id == volunteer_id,
-            volunteer_application_invites.c.status.in_(("not_volunteer", "trial")),
-        ).exists()
+        approved = (
+            select(volunteer_application_invites.c.id)
+            .where(
+                volunteer_application_invites.c.promoted_volunteer_id == volunteer_id,
+                volunteer_application_invites.c.status == "volunteer",
+            )
+            .exists()
+        )
+        created_by_application = (
+            select(volunteer_application_invites.c.id)
+            .where(
+                volunteer_application_invites.c.promoted_volunteer_id == volunteer_id,
+                volunteer_application_invites.c.owns_volunteer_profile.is_(True),
+            )
+            .exists()
+        )
+        return approved | ~created_by_application
 
     async def find_volunteers_by_email(self, email: str) -> list[dict]:
         stmt = (
@@ -114,23 +127,43 @@ class MobileCardRepository(SqlAlchemyRepository):
         code_hash: str,
         expires_after: datetime,
     ) -> bool:
-        found = await self.session.scalar(
-            select(mobile_card_trial_access_codes.c.application_id)
+        # Delete with all predicates so concurrent attempts cannot both consume it.
+        deleted = await self.session.scalar(
+            delete(mobile_card_trial_access_codes)
             .where(
                 mobile_card_trial_access_codes.c.application_id == application_id,
                 mobile_card_trial_access_codes.c.code_hash == code_hash,
                 mobile_card_trial_access_codes.c.created_at >= expires_after,
             )
+            .returning(mobile_card_trial_access_codes.c.application_id)
+        )
+        return deleted is not None
+
+    async def find_trial_application_for_code(
+        self,
+        *,
+        email: str,
+        code_hash: str,
+        expires_after: datetime,
+    ) -> int | None:
+        return await self.session.scalar(
+            select(mobile_card_trial_access_codes.c.application_id)
+            .join(
+                volunteer_application_invites,
+                volunteer_application_invites.c.id
+                == mobile_card_trial_access_codes.c.application_id,
+            )
+            .where(
+                func.lower(volunteer_application_invites.c.email)
+                == email.strip().lower(),
+                volunteer_application_invites.c.status == "trial",
+                volunteer_application_invites.c.trial_ends_at > func.now(),
+                mobile_card_trial_access_codes.c.code_hash == code_hash,
+                mobile_card_trial_access_codes.c.created_at >= expires_after,
+            )
+            .order_by(mobile_card_trial_access_codes.c.created_at.desc())
             .limit(1)
         )
-        if found is None:
-            return False
-        await self.session.execute(
-            delete(mobile_card_trial_access_codes).where(
-                mobile_card_trial_access_codes.c.application_id == application_id
-            )
-        )
-        return True
 
     async def find_volunteer_by_email_and_code(
         self,
@@ -147,10 +180,14 @@ class MobileCardRepository(SqlAlchemyRepository):
                     .select_from(
                         volunteer_records.join(
                             mobile_card_access_codes,
-                            mobile_card_access_codes.c.volunteer_id == volunteer_records.c.id,
+                            mobile_card_access_codes.c.volunteer_id
+                            == volunteer_records.c.id,
                         )
                     )
-                    .where(func.lower(func.coalesce(volunteer_records.c.email, "")) == email)
+                    .where(
+                        func.lower(func.coalesce(volunteer_records.c.email, ""))
+                        == email
+                    )
                     .where(self._not_blocked_volunteer(volunteer_records.c.id))
                     .where(mobile_card_access_codes.c.code_hash == code_hash)
                     .where(mobile_card_access_codes.c.created_at >= expires_after)
@@ -181,7 +218,12 @@ class MobileCardRepository(SqlAlchemyRepository):
         started_at = perf_counter()
         points_stmt = (
             select(func.coalesce(func.sum(assignment_roles.c.penguin_points), 0))
-            .select_from(role_assignments.outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.role_id))
+            .select_from(
+                role_assignments.outerjoin(
+                    assignment_roles,
+                    assignment_roles.c.id == role_assignments.c.role_id,
+                )
+            )
             .where(role_assignments.c.volunteer_id == volunteer_id)
             .scalar_subquery()
         )
@@ -204,19 +246,26 @@ class MobileCardRepository(SqlAlchemyRepository):
             )
             .select_from(
                 volunteer_records.outerjoin(
-                    volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
+                    volunteer_photos,
+                    volunteer_photos.c.volunteer_id == volunteer_records.c.id,
                 )
                 .outerjoin(
                     role_assignments,
                     (role_assignments.c.volunteer_id == volunteer_records.c.id)
                     & (role_assignments.c.semester == semester_code),
                 )
-                .outerjoin(assignment_roles, assignment_roles.c.id == role_assignments.c.role_id)
+                .outerjoin(
+                    assignment_roles,
+                    assignment_roles.c.id == role_assignments.c.role_id,
+                )
                 .outerjoin(groups, groups.c.id == role_assignments.c.group_id)
             )
             .where(volunteer_records.c.id == volunteer_id)
             .where(self._not_blocked_volunteer(volunteer_records.c.id))
-            .order_by(groups.c.name.asc().nullslast(), assignment_roles.c.name.asc().nullslast())
+            .order_by(
+                groups.c.name.asc().nullslast(),
+                assignment_roles.c.name.asc().nullslast(),
+            )
         )
         history_stmt = (
             select(
@@ -230,7 +279,9 @@ class MobileCardRepository(SqlAlchemyRepository):
                 role_assignments.c.contract_signed,
             )
             .select_from(
-                role_assignments.join(groups, groups.c.id == role_assignments.c.group_id).outerjoin(
+                role_assignments.join(
+                    groups, groups.c.id == role_assignments.c.group_id
+                ).outerjoin(
                     assignment_roles,
                     assignment_roles.c.id == role_assignments.c.role_id,
                 )

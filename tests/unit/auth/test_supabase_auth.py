@@ -152,3 +152,50 @@ async def test_expired_recovery_token_has_a_distinct_domain_error(
             )
     finally:
         await gateway.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code,code,invalid_password", [
+    (400, "invalid_credentials", True),
+    (401, "invalid_credentials", False),
+    (400, "email_not_confirmed", False),
+    (429, "over_request_rate_limit", False),
+    (503, "unexpected_failure", False),
+])
+async def test_password_login_distinguishes_credentials_from_provider_errors(
+    status_code: int, code: str, invalid_password: bool,
+) -> None:
+    from app.errors import NotConfiguredError
+
+    gateway = SupabaseAuthGateway(
+        Settings(supabase_url="https://project.supabase.co", supabase_secret_key="service-role-key"),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(status_code, json={"error_code": code})
+        )),
+    )
+    try:
+        if invalid_password:
+            assert await gateway.sign_in_with_password("admin@example.com", "wrong") is None
+        else:
+            with pytest.raises(NotConfiguredError):
+                await gateway.sign_in_with_password("admin@example.com", "password")
+    finally:
+        await gateway.aclose()
+
+
+@pytest.mark.asyncio
+async def test_password_login_transport_failure_is_not_invalid_credentials() -> None:
+    from app.errors import NotConfiguredError
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection failed", request=request)
+
+    gateway = SupabaseAuthGateway(
+        Settings(supabase_url="https://project.supabase.co", supabase_secret_key="service-role-key"),
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    try:
+        with pytest.raises(NotConfiguredError):
+            await gateway.sign_in_with_password("admin@example.com", "password")
+    finally:
+        await gateway.aclose()

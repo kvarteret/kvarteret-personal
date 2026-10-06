@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.domain.admin_accounts.service import AdminAccountsService
 
 from fastapi import Request
 from fastapi.testclient import TestClient
@@ -579,6 +584,22 @@ def test_volunteer_application_form_requires_photo_when_none_exists() -> None:
     assert 'name="profile_photo"' in response.text and "required" in response.text
 
 
+def test_volunteer_application_form_requires_core_profile_fields() -> None:
+    app = create_app()
+    override_authenticated_user(app, None)
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: (
+        FakeVolunteerApplicationsService()
+    )
+    client = TestClient(app)
+
+    response = client.get("/apply/token-123")
+
+    assert response.status_code == 200
+    for field_name in ("birth_date", "address", "postal_code"):
+        field = response.text.split(f'name="{field_name}"', 1)[1].split(">", 1)[0]
+        assert "required" in field
+
+
 def test_volunteer_application_detail_page_renders_full_preview() -> None:
     app = create_app()
     override_authenticated_user(app, make_authenticated_user())
@@ -611,6 +632,34 @@ def test_volunteer_application_detail_page_renders_full_preview() -> None:
     assert "Grøndahls" in response.text
     assert "Komitéønsker" not in response.text
     assert "Lenke" not in response.text
+
+
+def test_incomplete_profile_disables_promotion_control() -> None:
+    class IncompleteProfileService(FakeVolunteerApplicationsService):
+        async def get_volunteer_application_detail(
+            self, registration_id: int
+        ) -> VolunteerApplicationDetail | None:
+            detail = await super().get_volunteer_application_detail(registration_id)
+            assert detail is not None
+            detail.submitted = False
+            detail.photo_sha1 = None
+            detail.photo_filetype = None
+            return detail
+
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = IncompleteProfileService()
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_email_outbox_service] = lambda: FakeEmailOutboxService()
+    client = TestClient(app)
+
+    response = client.get("/volunteer-applications/7")
+
+    assert response.status_code == 200
+    button = response.text.split("Oppgrader til frivillig", 1)[0].rsplit("<button", 1)[1]
+    assert "disabled" in button
+    assert "Profilen må fullføres før personen kan oppgraderes" in response.text
 
 
 def test_promoted_application_uses_profile_badge_for_active_status() -> None:
@@ -1241,7 +1290,7 @@ def test_public_prospect_api_accepts_any_valid_group_slug() -> None:
     )
 
     assert response.status_code == 201
-    assert response.json() == {"registrationId": 55}
+    assert response.json() == {"registrationId": 55, "registrationIds": [55]}
     assert volunteer_applications_service.public_prospect_calls == [
         {
             "full_name": "Test Person",
@@ -1435,3 +1484,41 @@ def test_cancel_invitation_redirects_back_to_board() -> None:
     assert service.deleted_registration_ids == [7]
     assert calls == []
     assert response.headers["HX-Redirect"] == "/volunteer-applications"
+
+
+@pytest.fixture(autouse=True)
+def application_groups(monkeypatch):
+    resolver = AsyncMock(return_value=None)
+    monkeypatch.setattr(AdminAccountsService, "application_group_filter", resolver)
+    return resolver
+
+
+@pytest.mark.parametrize("association", [[3, 4], None, []])
+def test_applications_default_to_user_associations(application_groups, association):
+    application_groups.return_value = association
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    service.list_volunteer_applications = AsyncMock(return_value=[])
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    response = TestClient(app).get("/volunteer-applications", headers={"HX-Target": "section#volunteer-application-list-panel"})
+    assert response.status_code == 200
+    application_groups.assert_awaited_once()
+    if association == []:
+        service.list_volunteer_applications.assert_not_awaited()
+    else:
+        assert service.list_volunteer_applications.call_args.kwargs["group_ids"] == association
+
+
+@pytest.mark.parametrize("query, expected", [("group_ids=4", [4]), ("groups_selected=true", None)])
+def test_application_group_selection_overrides_default(application_groups, query, expected):
+    application_groups.return_value = [3]
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteerApplicationsService()
+    service.list_volunteer_applications = AsyncMock(return_value=[])
+    app.dependency_overrides[get_volunteer_applications_service] = lambda: service
+    response = TestClient(app).get("/volunteer-applications?" + query, headers={"HX-Target": "section#volunteer-application-list-panel"})
+    assert response.status_code == 200
+    application_groups.assert_not_awaited()
+    assert service.list_volunteer_applications.call_args.kwargs["group_ids"] == expected

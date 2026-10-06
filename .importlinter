@@ -27,6 +27,7 @@ modules =
     app.domain.admin_accounts
     app.domain.courses
     app.domain.feedback
+    app.domain.event_interest
     app.domain.groups
     app.domain.mobile_card
     app.domain.role_assignments

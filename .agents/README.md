@@ -4,6 +4,10 @@ This directory is the shared agent surface for Claude, Codex, and Pi. Keep
 generic workflow guidance here. Use tool-specific folders only for adapters,
 launch settings, or runtime wiring.
 
+Execution plans, handoff notes, and Ralph run state are temporary working
+artifacts. Use the current source and `docs/` for repository behavior and open
+work; consult git history when an old implementation plan is needed.
+
 ## Verified Repository Boundaries
 
 Verify cross-repo claims against code before editing durable docs.
@@ -19,7 +23,7 @@ Verify cross-repo claims against code before editing durable docs.
 - The credential-free local harness is owned by `docker-compose.dev.yml`,
   `scripts/dev/`, and adapter selection in `app/runtime.py`. Development auth
   credentials are invalid outside `APP_ENV=development`; configured Supabase,
-  SMTP, and Azure adapters always take precedence.
+  Resend, and Azure adapters always take precedence.
 - `seeds/dev-snapshot.sql` is deliberately gitignored. The snapshot builder
   excludes secret-bearing tables and verifies anonymization, but the resulting
   organizational history must still be distributed out of band.

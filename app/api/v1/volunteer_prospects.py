@@ -19,7 +19,9 @@ from app.dependencies import (
     get_settings,
     get_volunteer_applications_service,
 )
-from app.domain.volunteer_applications.models import VolunteerProspectIdempotencyConflictError
+from app.domain.volunteer_applications.models import (
+    VolunteerProspectIdempotencyConflictError,
+)
 from app.domain.volunteer_applications.service import (
     ActiveVolunteerRegistrationExistsError,
     PublicProspectRegistrationInput,
@@ -30,11 +32,55 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
-from app.observability import current_trace_id, emit_event, with_named_span
+from app.observability import emit_event, with_named_span
 from app.shared.phone_numbers import normalize_phone_number
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _log_public_prospect_validation(exc: VolunteerApplicationValidationError) -> str:
+    codes = {
+        "Én eller flere valgte grupper finnes ikke.": "group_not_found",
+        "Førstevalg og andrevalg må være ulike grupper.": "duplicate_group_choices",
+        "Velg et førstevalg.": "first_choice_required",
+        "Telefonnummer er påkrevd.": "phone_required",
+        "Skriv inn et gyldig telefonnummer.": "phone_invalid",
+    }
+    code = (
+        "field_validation"
+        if isinstance(exc, VolunteerApplicationFieldValidationError)
+        else codes.get(str(exc), "domain_validation")
+    )
+    fields = getattr(exc, "field_errors", {})
+    allowed = {
+        "email",
+        "phone",
+        "friendEmails",
+        "firstChoiceGroupSlug",
+        "secondChoiceGroupSlug",
+    }
+    names = sorted(key for key in fields if key in allowed)
+    if not names:
+        names = {
+            "group_not_found": ["firstChoiceGroupSlug", "secondChoiceGroupSlug"],
+            "duplicate_group_choices": ["secondChoiceGroupSlug"],
+            "first_choice_required": ["firstChoiceGroupSlug"],
+            "phone_required": ["phone"],
+            "phone_invalid": ["phone"],
+        }.get(code, [])
+    emit_event(
+        logger,
+        "volunteer.prospect.validation_failed",
+        level=logging.WARNING,
+        fields={
+            "status_code": 400,
+            "validation_codes": code,
+            "validation_fields": ",".join(names),
+            "validation_issue_count": len(names),
+        },
+    )
+    return code
 
 
 def _log_public_prospect_conflict(exc: VolunteerApplicationConflictError) -> None:
@@ -57,7 +103,10 @@ def _log_public_prospect_conflict(exc: VolunteerApplicationConflictError) -> Non
             fields["registration_id"] = exc.registration_id
     elif isinstance(exc, VolunteerProspectIdempotencyConflictError):
         fields["conflict_type"] = "idempotency_key_content_mismatch"
-    emit_event(logger, "volunteer.prospect.conflict", level=logging.WARNING, fields=fields)
+    emit_event(
+        logger, "volunteer.prospect.conflict", level=logging.WARNING, fields=fields
+    )
+
 
 EmailAddress = Annotated[EmailStr, Field(max_length=254)]
 
@@ -76,6 +125,7 @@ class PublicVolunteerProspectRequest(BaseModel):
         pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
     )
     second_choice_group_slug: str | None = Field(
+        description="Additional recruitment target; creates an independent application, not a fallback choice.",
         default=None,
         min_length=1,
         max_length=100,
@@ -88,6 +138,7 @@ class PublicVolunteerProspectResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     registrationId: int
+    registrationIds: list[int] = Field(default_factory=list)
 
 
 @router.post(
@@ -163,7 +214,7 @@ class PublicVolunteerProspectResponse(BaseModel):
                 ),
                 "schema": {"type": "string", "pattern": "^v1=[0-9a-f]{64}$"},
             },
-        ]
+        ],
     },
 )
 async def create_public_volunteer_prospect(
@@ -172,7 +223,9 @@ async def create_public_volunteer_prospect(
         require_signed_volunteer_prospect
     ),
     settings: Settings = Depends(get_settings),
-    volunteer_applications_service: VolunteerApplicationsService = Depends(get_volunteer_applications_service),
+    volunteer_applications_service: VolunteerApplicationsService = Depends(
+        get_volunteer_applications_service
+    ),
 ):
     try:
         payload = PublicVolunteerProspectRequest.model_validate_json(
@@ -207,9 +260,11 @@ async def create_public_volunteer_prospect(
                 request_hash=request_hash,
             )
     except VolunteerApplicationFieldValidationError as exc:
+        code = _log_public_prospect_validation(exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"message": str(exc), "fieldErrors": exc.field_errors},
+            headers={"X-Kvarteret-Rejection-Code": code},
         ) from exc
     except VolunteerApplicationFieldConflictError as exc:
         _log_public_prospect_conflict(exc)
@@ -230,24 +285,24 @@ async def create_public_volunteer_prospect(
             detail="En aktiv søknad med denne e-postadressen finnes allerede.",
         )
     except VolunteerApplicationValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        code = _log_public_prospect_validation(exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+            headers={"X-Kvarteret-Rejection-Code": code},
+        ) from exc
     except VolunteerApplicationConflictError as exc:
         _log_public_prospect_conflict(exc)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    trace_id = current_trace_id()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     span = trace.get_current_span()
     if span.is_recording():
         span.set_attribute("registration_id", detail.registration_id)
-    emit_event(
-        logger,
-        "volunteer.lifecycle",
-        fields={
-            "registration_id": detail.registration_id,
-            "origin_trace_id": trace_id,
-            "status": "prospect_registered",
-        },
+    return PublicVolunteerProspectResponse(
+        registrationId=detail.registration_id,
+        registrationIds=list(detail.registration_ids or (detail.registration_id,)),
     )
-    return PublicVolunteerProspectResponse(registrationId=detail.registration_id)
 
 
 def _normalized_payload_hash(

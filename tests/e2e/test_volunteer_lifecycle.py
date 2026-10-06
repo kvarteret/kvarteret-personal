@@ -9,6 +9,7 @@ contact, trial, profile submission, independent promotion, and deletion.
 from __future__ import annotations
 
 import asyncio
+import importlib
 from datetime import datetime, timezone
 import re
 from uuid import UUID, uuid4
@@ -16,6 +17,8 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from fastapi import Request
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import text
 
 from app.api.request_auth import (
@@ -230,15 +233,22 @@ async def test_public_prospect_resolves_both_group_choices(app, e2e_engine):
         e2e_engine,
         "SELECT first_choice_group_id, second_choice_group_id,"
         " first_choice_label, second_choice_label"
-        " FROM public.volunteer_application_invites",
+        " FROM public.volunteer_application_invites ORDER BY id",
     )
+    assert len(response.json()["registrationIds"]) == 2
     assert invites == [
         {
             "first_choice_group_id": first_group_id,
-            "second_choice_group_id": second_group_id,
+            "second_choice_group_id": None,
             "first_choice_label": "Debattkomiteen",
-            "second_choice_label": "Festkomiteen",
-        }
+            "second_choice_label": None,
+        },
+        {
+            "first_choice_group_id": second_group_id,
+            "second_choice_group_id": None,
+            "first_choice_label": "Festkomiteen",
+            "second_choice_label": None,
+        },
     ]
 
 
@@ -411,6 +421,17 @@ async def test_public_bar_choices_keep_distinct_metadata_and_route_primary_role(
             )
         ).scalar_one()
 
+        secondary_role_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO public.assignment_roles"
+                    " (name, group_id, penguin_points, created_at)"
+                    " VALUES ('Pubdyr', :group_id, 0, :now) RETURNING id"
+                ),
+                {"group_id": group_id, "now": datetime.now(timezone.utc)},
+            )
+        ).scalar_one()
+
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
@@ -433,17 +454,26 @@ async def test_public_bar_choices_keep_distinct_metadata_and_route_primary_role(
         e2e_engine,
         "SELECT initial_group_id, initial_role_id, first_choice_group_id,"
         " second_choice_group_id, first_choice_label, second_choice_label"
-        " FROM public.volunteer_application_invites",
+        " FROM public.volunteer_application_invites ORDER BY id",
     )
+    assert len(response.json()["registrationIds"]) == 2
     assert invites == [
         {
             "initial_group_id": group_id,
             "initial_role_id": role_id,
             "first_choice_group_id": group_id,
-            "second_choice_group_id": group_id,
+            "second_choice_group_id": None,
             "first_choice_label": "Halvtimen",
-            "second_choice_label": "Grøndahls",
-        }
+            "second_choice_label": None,
+        },
+        {
+            "initial_group_id": group_id,
+            "initial_role_id": secondary_role_id,
+            "first_choice_group_id": group_id,
+            "second_choice_group_id": None,
+            "first_choice_label": "Grøndahls",
+            "second_choice_label": None,
+        },
     ]
 
 
@@ -494,6 +524,11 @@ async def _submit_profile(client, token: str, *, first_name: str, last_name: str
 
 async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox):
     group_id = await _seed_group(e2e_engine)
+    async with e2e_engine.begin() as conn:
+        role_id = (await conn.execute(text(
+            "INSERT INTO public.assignment_roles (group_id, name, penguin_points) "
+            "VALUES (:group_id, 'Frivillig', 1) RETURNING id"
+        ), {"group_id": group_id})).scalar_one()
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="https://personal.e2e.test") as client:
@@ -566,7 +601,7 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
         await _submit_profile(client, inviter["token"], first_name="Inga", last_name="Inviter")
         response = await client.post(
             f"/volunteer-applications/{inviter['id']}/approval",
-            data={"accepted_group_id": str(group_id)},
+            data={"accepted_group_id": str(group_id), "accepted_role_id": str(role_id)},
         )
         assert response.status_code == 303, response.text
 
@@ -582,7 +617,7 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
         await _submit_profile(client, friend["token"], first_name="Frida", last_name="Friend")
         response = await client.post(
             f"/volunteer-applications/{friend['id']}/approval",
-            data={"accepted_group_id": str(group_id)},
+            data={"accepted_group_id": str(group_id), "accepted_role_id": str(role_id)},
             follow_redirects=False,
         )
         assert response.status_code == 303, response.text
@@ -606,7 +641,7 @@ async def test_two_friend_lifecycle_until_deletion(app, e2e_engine, email_outbox
         # application contract.
         response = await client.post(
             "/volunteer-applications/groups/1/approval",
-            data={"accepted_group_id": str(group_id)},
+            data={"accepted_group_id": str(group_id), "accepted_role_id": str(role_id)},
         )
         assert response.status_code == 404
 
@@ -761,6 +796,20 @@ async def test_active_trial_profile_gets_temporary_card_until_trial_expires(
         assert trial_assignments == [
             {"volunteer_id": trial_volunteer_id, "contract_signed": False}
         ]
+
+        incomplete_approval = await client.post(
+            f"/volunteer-applications/{application['id']}/approval",
+            follow_redirects=False,
+        )
+        assert incomplete_approval.status_code == 400
+        unchanged_application = await _fetch_all(
+            e2e_engine,
+            "SELECT status, promoted_at FROM public.volunteer_application_invites "
+            "WHERE id = :id",
+            id=application["id"],
+        )
+        assert unchanged_application == [{"status": "trial", "promoted_at": None}]
+
         await _submit_profile(
             client,
             application["token"],
@@ -803,3 +852,116 @@ async def test_active_trial_profile_gets_temporary_card_until_trial_expires(
         )
         assert response.status_code == 401
         assert response.json()["detail"] == "Trial access has expired."
+
+
+async def test_concurrent_admin_invitations_share_one_application(app, e2e_engine, email_outbox):
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://personal.e2e.test") as client:
+        responses = await asyncio.gather(*[
+            client.post("/volunteer-applications", data={"email": email}, follow_redirects=False)
+            for email in ["concurrent@example.com", "CONCURRENT@example.com"]
+        ])
+    assert [response.status_code for response in responses] == [303, 303]
+    applications = await _fetch_all(e2e_engine, "SELECT id FROM public.volunteer_application_invites")
+    assert len(applications) == 1
+    # An explicit repeat invitation sends the continuation link again.
+    assert len(email_outbox.sent) == 2
+    token = (await _fetch_all(e2e_engine, "SELECT token FROM public.volunteer_application_invites"))[0]["token"]
+    assert all(token in email.html_body for email in email_outbox.sent)
+    assert [response.headers["location"] for response in responses] == [
+        "/volunteer-applications", "/volunteer-applications",
+    ]
+
+
+async def test_trial_promotion_preserves_other_assignment_and_exchanges_session(app, e2e_engine, email_outbox):
+    group_id = await _seed_group(e2e_engine)
+    async with e2e_engine.begin() as conn:
+        await conn.execute(text("UPDATE public.groups SET discount_tier = 2 WHERE id = :id"), {"id": group_id})
+        role_id = (await conn.execute(text(
+            "INSERT INTO public.assignment_roles (group_id, name, penguin_points) "
+            "VALUES (:group_id, 'Frivillig', 1) RETURNING id"
+        ), {"group_id": group_id})).scalar_one()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://personal.e2e.test") as client:
+        response = await client.post("/volunteer-applications", data={
+            "email": "handoff@example.com", "group_id": str(group_id), "role_id": str(role_id),
+        })
+        assert response.status_code == 303, response.text
+        application = (await _fetch_all(e2e_engine, "SELECT id, token FROM public.volunteer_application_invites"))[0]
+        response = await client.post(f"/volunteer-applications/{application['id']}/contact")
+        assert response.status_code == 303, response.text
+        responses = await asyncio.gather(*[
+            client.post(f"/volunteer-applications/{application['id']}/trial") for _ in range(2)
+        ])
+        assert sorted(response.status_code for response in responses) == [303, 400]
+        application = (await _fetch_all(e2e_engine,
+            "SELECT id, token, promoted_volunteer_id, trial_assignment_id FROM public.volunteer_application_invites"
+        ))[0]
+        volunteer_id = application["promoted_volunteer_id"]
+        assignment_id = application["trial_assignment_id"]
+        assert assignment_id is not None
+        assert len(await _fetch_all(e2e_engine, "SELECT id FROM public.volunteer_records")) == 1
+        assert len(await _fetch_all(e2e_engine, "SELECT id FROM public.role_assignments")) == 1
+        response = await client.post("/api/v1/mobile-card/access-codes", json={"email": "handoff@example.com"})
+        assert response.status_code == 202, response.text
+        code = re.search(r">\s*(\d{6})\s*<", email_outbox.sent[-1].html_body).group(1)
+        response = await client.post("/api/v1/mobile-card/sessions", json={
+            "email": "handoff@example.com", "access_code": code,
+        })
+        assert response.status_code == 200, response.text
+        trial_session = response.json()
+        assert trial_session["card"].get("photo_url") is None
+        assert trial_session["card"]["active_roles"][0]["discount_level"] == 2
+        assert "Prøvetid" in trial_session["card"]["active_roles"][0]["name"]
+        await _submit_profile(client, application["token"], first_name="Trial", last_name="Handoff")
+        async with e2e_engine.begin() as conn:
+            other_id = (await conn.execute(text(
+                "INSERT INTO public.role_assignments (volunteer_id, group_id, role_id, semester, contract_signed) "
+                "VALUES (:volunteer_id, :group_id, :role_id, 20251, true) RETURNING id"
+            ), {"volunteer_id": volunteer_id, "group_id": group_id, "role_id": role_id})).scalar_one()
+        other_before = await _fetch_all(e2e_engine, "SELECT * FROM public.role_assignments WHERE id = :id", id=other_id)
+        response = await client.post(f"/volunteer-applications/{application['id']}/approval", data={"contract_signed": "true"})
+        assert response.status_code == 303, response.text
+        assert await _fetch_all(e2e_engine, "SELECT * FROM public.role_assignments WHERE id = :id", id=other_id) == other_before
+        assert (await _fetch_all(e2e_engine, "SELECT contract_signed FROM public.role_assignments WHERE id = :id", id=assignment_id))[0]["contract_signed"] is True
+        response = await client.get("/api/v1/mobile-card/me", headers={
+            "Authorization": f"Bearer {trial_session['session_token']}",
+        })
+        assert response.status_code == 200, response.text
+        assert response.json()["person_id"] == volunteer_id
+        assert response.json()["active_roles"][0]["signed_contract"] is True
+        assert "Prøvetid" not in response.json()["active_roles"][0]["name"]
+        replacement = response.headers["X-Mobile-Card-Session-Token"]
+        response = await client.get("/api/v1/mobile-card/me", headers={"Authorization": f"Bearer {replacement}"})
+        assert response.status_code == 200, response.text
+        assert response.json()["person_id"] == volunteer_id
+
+
+async def test_trial_assignment_migration_backfills_only_unambiguous_matches(clean_database, e2e_engine, monkeypatch):
+    group_id = await _seed_group(e2e_engine)
+    async with e2e_engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO public.volunteer_records (id, last_name, email, gender) VALUES "
+            "(11, 'Unique', 'unique@example.com', 'A'), (12, 'Ambiguous', 'ambiguous@example.com', 'A')"
+        ))
+        await conn.execute(text(
+            "INSERT INTO public.role_assignments (id, volunteer_id, group_id, role_id, semester, contract_signed) VALUES "
+            "(21, 11, :group_id, NULL, 20262, false), "
+            "(22, 12, :group_id, NULL, 20262, false), (23, 12, :group_id, NULL, 20262, false)"
+        ), {"group_id": group_id})
+        await conn.execute(text(
+            "INSERT INTO public.volunteer_application_invites "
+            "(id, token, email, source, status, first_choice_group_id, promoted_volunteer_id, trial_started_at) VALUES "
+            "(31, 'unique', 'unique@example.com', 'admin_invite', 'trial', :group_id, 11, now()), "
+            "(32, 'ambiguous', 'ambiguous@example.com', 'admin_invite', 'trial', :group_id, 12, now())"
+        ), {"group_id": group_id})
+        migration = importlib.import_module("migrations.versions.20261001_1200_track_trial_assignment")
+        def replay(connection):
+            monkeypatch.setattr(migration, "op", Operations(MigrationContext.configure(connection)))
+            migration.downgrade()
+            migration.upgrade()
+        await conn.run_sync(replay)
+    assert await _fetch_all(e2e_engine,
+        "SELECT id, trial_assignment_id FROM public.volunteer_application_invites ORDER BY id"
+    ) == [{"id": 31, "trial_assignment_id": 21}, {"id": 32, "trial_assignment_id": None}]
+    assert len(await _fetch_all(e2e_engine, "SELECT id FROM public.role_assignments")) == 3

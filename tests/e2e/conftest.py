@@ -5,7 +5,7 @@ that has been migrated to head (``alembic upgrade head``) with the
 Supabase compatibility stubs from ``.github/workflows/ci.yml`` applied.
 They exercise the real application stack — middleware, unit of work,
 repositories, state machine, Postgres rate limiter — with only the
-boundary adapters (SMTP, admin auth) faked.
+boundary adapters (Resend, admin auth) faked.
 """
 
 from __future__ import annotations
@@ -38,7 +38,8 @@ class CapturingEmailSender:
     sent: list[CapturedEmail] = field(default_factory=list)
 
     async def send_email(
-        self, *, recipient_email: str, subject: str, html_body: str
+        self, *, recipient_email: str, subject: str, html_body: str,
+        idempotency_key: str | None = None
     ) -> None:
         self.sent.append(
             CapturedEmail(
