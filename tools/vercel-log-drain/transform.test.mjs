@@ -48,9 +48,21 @@ test("Personal preserves platform failures and unstructured runtime warnings", (
   assert.equal(transform([input]).resourceLogs.length,1)
  }
 })
-test("website forwarding policy is unchanged", () => {
+test("website retains domain outcomes while dropping generic successes", () => {
  const website={...record,projectId:"prj_OHYAWhiMGYIYvZ2UaBqnVSLRRQQi",proxy:{statusCode:200},message:JSON.stringify({event:"booking.completed"})}
  assert.equal(transform([website]).resourceLogs.length,1)
+ assert.deepEqual(transform([{...website,message:undefined},{...website,message:"HTTP Request 200"}]),{resourceLogs:[]})
+})
+test("website structured failures retain severity and session context", () => {
+ const website={...record,projectId:"prj_OHYAWhiMGYIYvZ2UaBqnVSLRRQQi",proxy:{statusCode:200},message:JSON.stringify({event:"booking.failed",level:"ERROR",session_id:"session-123",trace_id:"1234567890abcdef1234567890abcdef",span_id:"1234567890abcdef",authorization:"secret"})}
+ const log=transform([website]).resourceLogs[0].scopeLogs[0].logRecords[0]
+ assert.equal(log.severityText,"ERROR")
+ assert.equal(log.traceId,"1234567890abcdef1234567890abcdef")
+ assert.ok(log.attributes.some(x=>x.key==="session_id" && x.value.stringValue==="session-123"))
+ assert.ok(!JSON.stringify(log).includes("secret"))
+ for (const statusCode of [400,401,403,404,429,500,502]) {
+  assert.equal(transform([{...website,message:undefined,proxy:{statusCode}}]).resourceLogs.length,1)
+ }
 })
 test("filtered batches are acknowledged without an ingestion request", async () => {
  process.env.VERCEL_DRAIN_SECRET="test-secret";process.env.POSTHOG_PROJECT_TOKEN="test-token"

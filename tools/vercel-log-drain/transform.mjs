@@ -7,7 +7,7 @@ const safeFields = new Set([
   "event", "request_id", "registration_id", "booking_submission_id", "outcome",
   "status", "status_code", "duration_ms", "http_method", "route_template",
   "error_category", "failure_stage", "operation", "count", "attempt_no",
-  "logger", "trace_id", "span_id", "origin_trace_id", "crescat_http_status",
+  "session_id", "logger", "trace_id", "span_id", "origin_trace_id", "crescat_http_status",
 ])
 export function redact(value) {
   return String(value).replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]")
@@ -37,12 +37,13 @@ export function transform(records) {
       : ({fatal:"FATAL",error:"ERROR",warning:"WARN",warn:"WARN",debug:"DEBUG",trace:"TRACE"}[record.level] || "INFO")
     let parsed = {}
     try { const v = JSON.parse(record.message); if (v && typeof v === "object" && !Array.isArray(v)) parsed = v } catch {}
+    const structuredSeverity = {fatal:"FATAL",error:"ERROR",warning:"WARN",warn:"WARN"}[String(parsed.level ?? "").toLowerCase()]
+    if (structuredSeverity && severity !== "ERROR" && severity !== "FATAL") severity = structuredSeverity
     const fields = Object.fromEntries(Object.entries(parsed).filter(([key, value]) =>
       safeFields.has(key) && ["string", "number", "boolean"].includes(typeof value)))
     // Personal exports application events directly via OTLP. Its stdout copies
     // must not be ingested again. Retain unstructured platform warnings/errors
     // and request failures (including rejections before application execution).
-    // The sibling website policy is intentionally unchanged in this round.
     if (record.projectId === "prj_vGMyB9GXNJZkwMCNEAJbzmxxCrZD") {
       if (fields.event === "telemetry.configuration.failed") {
         // The direct exporter may not exist when setup fails.
@@ -50,6 +51,11 @@ export function transform(records) {
       } else if (typeof fields.event === "string") return []
       if (!["WARN", "ERROR", "FATAL"].includes(severity)) return []
     }
+    // Keep website domain events until direct delivery is established. Generic
+    // successful requests/runtime records add volume without debugging context.
+    if (record.projectId === "prj_OHYAWhiMGYIYvZ2UaBqnVSLRRQQi"
+      && typeof fields.event !== "string"
+      && !["WARN", "ERROR", "FATAL"].includes(severity)) return []
     // Never export arbitrary console text: it may include names, bodies or secrets.
     // Keep safe exception types/codes and application fields as searchable attributes.
     const message = typeof record.message === "string" ? record.message : ""

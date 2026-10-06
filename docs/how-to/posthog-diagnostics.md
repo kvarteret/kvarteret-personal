@@ -74,8 +74,9 @@ accepts Vercel runtime, firewall, static, redirect, and external records. For
 Personal, `tools/vercel-log-drain/transform.mjs` drops successful request records,
 routine runtime output, and structured application logs already exported by OTLP.
 It retains unstructured WARN/ERROR/FATAL records and HTTP 4xx/5xx platform failures,
-including failures before application execution. The website's forwarding policy
-is unchanged in this round. Build logs are outside its scope. Vercel log drains send
+including failures before application execution. Website generic successful requests
+and runtime records are also dropped. Structured website domain events remain as
+a fallback while direct delivery is verified. Build logs are outside its scope. Vercel log drains send
 JSON/NDJSON, while PostHog Logs accepts OTLP; do not point a Vercel log drain at
 `/i/v1/logs` directly. PostHog's Vercel source webhook instead captures events,
 which is distinct from the Logs product.
@@ -147,7 +148,9 @@ request logs. Use application services for business diagnostics and platform
 services for Vercel failures and request IDs. Personal now filters these routine records at the collector rather than
 sampling domain events. This policy takes effect after deploying both Personal
 and the separate collector; changing source alone does not change production
-volume. The shared drain subscription and website logging are unchanged.
+volume. The shared drain subscription is unchanged; both source platform streams filter
+generic successful records. Website analytics events (pageviews and domain actions)
+are separate from platform Logs and remain enabled.
 
 
 ## Mobile logout diagnostics and correlation
