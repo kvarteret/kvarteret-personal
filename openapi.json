@@ -1073,6 +1073,76 @@
         "title": "Body_volunteer_upload_photo_volunteers__volunteer_id__photo_post",
         "type": "object"
       },
+      "BookingEventPrefill": {
+        "additionalProperties": false,
+        "properties": {
+          "contact_email": {
+            "format": "email",
+            "title": "Contact Email",
+            "type": "string"
+          },
+          "contact_name": {
+            "title": "Contact Name",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "free_or_paid": {
+            "default": "Gratis",
+            "enum": [
+              "Gratis",
+              "Betalt"
+            ],
+            "title": "Free Or Paid",
+            "type": "string"
+          },
+          "room_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Room Ids",
+            "type": "array"
+          },
+          "schedule": {
+            "items": {
+              "$ref": "#/components/schemas/BookingSchedule"
+            },
+            "title": "Schedule",
+            "type": "array"
+          },
+          "student_org_name": {
+            "default": "",
+            "title": "Student Org Name",
+            "type": "string"
+          },
+          "ticket_types": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Ticket Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "event_name",
+          "contact_name",
+          "contact_email",
+          "room_ids",
+          "schedule"
+        ],
+        "title": "BookingEventPrefill",
+        "type": "object"
+      },
       "BookingReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -1097,6 +1167,33 @@
           "content_hash"
         ],
         "title": "BookingReceipt",
+        "type": "object"
+      },
+      "BookingSchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "doors_close": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "Doors Close",
+            "type": "string"
+          },
+          "doors_open": {
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "Doors Open",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "doors_open",
+          "doors_close"
+        ],
+        "title": "BookingSchedule",
         "type": "object"
       },
       "ClientErrorReport": {
@@ -2747,6 +2844,63 @@
           }
         ],
         "summary": "Store Booking Request",
+        "tags": [
+          "booking-requests"
+        ]
+      }
+    },
+    "/api/v1/booking-requests/prefill": {
+      "post": {
+        "operationId": "getBookingEventPrefill",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "booking_request_id": {
+                    "format": "uuid",
+                    "title": "Booking Request Id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "booking_request_id"
+                ],
+                "title": "BookingPrefillLookup",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingEventPrefill"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid signature"
+          },
+          "404": {
+            "description": "Booking not found"
+          },
+          "503": {
+            "description": "Storage unavailable"
+          }
+        },
+        "security": [
+          {
+            "BookingRequestHmac": []
+          }
+        ],
+        "summary": "Get Booking Event Prefill",
         "tags": [
           "booking-requests"
         ]

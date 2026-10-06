@@ -1,5 +1,6 @@
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.db.repository import SqlAlchemyRepository
@@ -27,3 +28,11 @@ class BookingRequestsRepository(SqlAlchemyRepository):
             .returning(booking_requests.c.id)
         )
         return await self.fetch_scalar(statement)
+
+    async def get_snapshot(self, receipt_id: UUID, submission_id: UUID) -> dict | None:
+        return await self.fetch_scalar(
+            select(booking_requests.c.snapshot).where(
+                booking_requests.c.id == receipt_id,
+                booking_requests.c.submission_id == submission_id,
+            )
+        )
