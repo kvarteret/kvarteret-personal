@@ -19,7 +19,6 @@
             placeholder="Sir Nils Olav III"
           >
         </label>
-        <label class="grid gap-1"><span class="text-sm text-stone-500">Kontotype</span><select class="app-input" name="account_type">{% for value, label in [("personal", "Personlige kontoer"), ("legacy", "Gamle innlogginger"), ("unlinked", "Mangler frivilligprofil"), ("all", "Alle kontoer")] %}<option value="{{ value }}" {% if account_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
         <div class="flex flex-wrap gap-3">
           <button class="app-button" type="submit">Søk</button>
           <a class="app-button-secondary" href="/admin-accounts/new">Gi en frivillig tilgang</a>
@@ -28,12 +27,12 @@
     </form>
 
     <section class="app-panel overflow-x-auto">
+      <p class="mb-4 text-sm text-stone-500">Grupper som gir tilgang vises med fet skrift. Andre nåværende grupper vises med vanlig skrift.</p>
       <table class="min-w-full border-collapse">
         <thead>
           <tr class="border-b border-stone-300 text-left text-sm text-stone-500">
             <th class="px-3 py-4 font-medium">Bruker</th>
             <th class="px-3 py-4 font-medium">Rolle</th>
-            <th class="px-3 py-4 font-medium">Kontotype</th>
             <th class="px-3 py-4 font-medium">Grupper</th>
             <th class="px-3 py-4 font-medium">Siste innlogging</th>
           </tr>
@@ -42,27 +41,30 @@
           {% for admin_account in admin_accounts %}
             <tr class="border-b border-stone-300 align-top hover:bg-white/60">
               <td class="px-3 py-4">
-                <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/admin-accounts/{{ admin_account.user_account_id }}">
+                <div class="flex items-center gap-4">
+                  <div class="h-16 w-16 shrink-0 overflow-hidden bg-stone-100">
+                    {% if admin_account.photo_url %}<img class="h-full w-full object-cover" src="{{ admin_account.photo_url }}" alt="{{ admin_account.display_name or admin_account.username }}" loading="lazy" decoding="async">{% else %}<span class="flex h-full items-center justify-center text-2xl text-stone-500" aria-hidden="true">{{ (admin_account.display_name or admin_account.username)[:1] }}</span>{% endif %}
+                  </div>
+                  <div>
+                <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="{% if admin_account.volunteer_id and not admin_account.is_legacy_account %}/volunteers/{{ admin_account.volunteer_id }}{% else %}/admin-accounts/{{ admin_account.user_account_id }}{% endif %}">
                   {{ admin_account.display_name or admin_account.username }}
                 </a>
                 <div class="mt-1 text-xs text-stone-500">{{ admin_account.email }}</div>
+                <a class="mt-2 inline-block text-sm text-kvarteret-red" href="/admin-accounts/{{ admin_account.user_account_id }}">Administrer tilgang</a>
+                  </div>
+                </div>
               </td>
               <td class="px-3 py-4 text-sm text-stone-700">{{ admin_account.role }}</td>
               <td class="px-3 py-4 text-sm text-stone-700">
-                {% if admin_account.is_legacy_account %}
-                  Gammel innlogging
-                {% elif admin_account.volunteer_id %}
-                  <a class="hover:text-kvarteret-red" href="/volunteers/{{ admin_account.volunteer_id }}">Personlig · Frivilligprofil</a>
-                {% else %}
-                  Mangler frivilligprofil
-                {% endif %}
+                {% for group_id, name, grants_access in admin_account.associated_groups %}
+                  <a class="hover:text-kvarteret-red" href="/groups/{{ group_id }}">{% if grants_access %}<strong>{{ name }}</strong>{% else %}{{ name }}{% endif %}</a>{% if not loop.last %}, {% endif %}
+                {% else %}Ingen registrert gruppetilknytning{% endfor %}
               </td>
-              <td class="px-3 py-4 text-sm text-stone-700">{% if admin_account.role == 'Admin' %}Alle grupper{% else %}{% for group_id in admin_account.group_admin_group_ids %}{{ group_names.get(group_id, group_id) }}{% if not loop.last %}, {% endif %}{% else %}Ingen{% endfor %}{% endif %}</td>
               <td class="px-3 py-4 text-sm text-stone-700">{{ admin_account.last_login.strftime('%Y-%m-%d %H:%M') if admin_account.last_login else 'Aldri' }}</td>
             </tr>
           {% else %}
             <tr>
-              <td class="px-3 py-8 text-sm text-stone-600" colspan="5">Ingen admin-kontoer matchet dette søket.</td>
+              <td class="px-3 py-8 text-sm text-stone-600" colspan="4">Ingen admin-kontoer matchet dette søket.</td>
             </tr>
           {% endfor %}
         </tbody>

@@ -33,12 +33,12 @@
           <button class="app-button-secondary" type="submit">Send innloggingskode</button>
         </form>
         {% if app_code_email %}
-        <form action="/login/app" class="mt-4 grid gap-4" hx-boost="false" method="post">
+        <form action="/login/app" class="mt-4 grid gap-4" hx-boost="false" method="post" x-data="{ submitting: false }" @submit="if (submitting) { $event.preventDefault() } else { submitting = true }">
           <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
           <input type="hidden" name="next" value="{{ next_path or '/' }}">
           <input type="hidden" name="email" value="{{ app_code_email }}">
           <label class="grid gap-1"><span>Innloggingskode</span><input class="app-input" name="access_code" autocomplete="one-time-code" required inputmode="numeric"></label>
-          <button class="app-button" type="submit">Logg inn med kode</button>
+          <button class="app-button" type="submit" :disabled="submitting" x-text="submitting ? 'Logger inn …' : 'Logg inn med kode'">Logg inn med kode</button>
         </form>
         {% endif %}
       </section>

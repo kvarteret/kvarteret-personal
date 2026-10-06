@@ -78,3 +78,20 @@ def test_request_code_uses_updated_confirmation(setup):
     assert response.status_code == 200
     assert 'Sjekk din e-post!' in response.text
     assert 'name="access_code"' in response.text
+
+
+@pytest.mark.parametrize("same_account", [True, False])
+def test_repeated_submit_preserves_matching_authenticated_session(setup, same_account):
+    client, _, accounts, sessions = setup
+    service = client.app.dependency_overrides[get_mobile_card_service]()
+    user = SimpleNamespace(email="example" if same_account else "different", role=UserRole.VIEWER)
+    client.app.dependency_overrides[get_current_user] = lambda: user
+    response = client.post('/login/app', data={'email': 'EXAMPLE', 'access_code': 'used', 'next': '/groups'},
+        headers=csrf_headers(client), follow_redirects=False)
+    assert response.status_code == 303
+    if same_account:
+        assert response.headers['location'] == '/groups'
+        service.create_session.assert_not_awaited()
+        sessions.create_session.assert_not_awaited()
+    else:
+        service.create_session.assert_awaited_once()

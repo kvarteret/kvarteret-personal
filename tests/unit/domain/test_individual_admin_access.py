@@ -93,3 +93,13 @@ async def test_access_group_selector_queries_only_active_groups():
     repository.fetch_all_mappings = AsyncMock(return_value=[])
     await repository.access_groups()
     assert "groups.is_active IS true" in str(repository.fetch_all_mappings.call_args.args[0])
+
+
+@pytest.mark.parametrize("account_type", ["personal", "all", "unlinked", "legacy"])
+async def test_shared_accounts_are_never_fetched_for_admin_list(account_type):
+    repository = AdminAccountsRepository()
+    repository.fetch_all_mappings = AsyncMock(return_value=[])
+    repository._load_group_admin_ids = AsyncMock(return_value={})
+    repository.access_groups = AsyncMock(return_value=[])
+    await repository.list_admin_accounts(account_type=account_type)
+    assert "user_accounts.is_legacy_account IS false" in str(repository.fetch_all_mappings.call_args.args[0])
