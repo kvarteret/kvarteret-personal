@@ -1,6 +1,11 @@
 import os
 
-if os.environ.get('VERCEL_ENV') == 'preview' and not os.environ.get('APP_ENV'):
+def create_entrypoint():
+    if os.environ.get('VERCEL_ENV') != 'preview' or os.environ.get('APP_ENV'):
+        from app.main import create_app
+
+        return create_app()
+
     # This trial branch contains CLI tooling. Its unconfigured preview must not
     # load production credentials or weaken the application's startup checks.
     from fastapi import FastAPI
@@ -20,7 +25,7 @@ font:17px/1.65 system-ui,sans-serif; }
 main { max-width:720px; margin:7vh auto; padding:32px; }
 h1 { font-size:clamp(30px,5vw,44px); line-height:1.15; }
 .tag { font-size:13px; text-transform:uppercase; letter-spacing:.12em; }
-section { background:white; padding:24px; border-radius:12px; margin:24px 0; }
+section { background:white; padding:24px; border-radius:0; margin:24px 0; }
 code { overflow-wrap:anywhere; font-size:14px; }
 a { color:#225d42; }
 </style></head><body><main>
@@ -44,7 +49,7 @@ does not create accounts, grant production access, or send invitations.</p>
 database and authentication environment have not been configured.</p>
 <p><a href="https://github.com/kvarteret/kvarteret-personal/pull/76">Review draft PR #76</a></p>
 </main></body></html>''')
-else:
-    from app.main import create_app
+    return app
 
-    app = create_app()
+
+app = create_entrypoint()
