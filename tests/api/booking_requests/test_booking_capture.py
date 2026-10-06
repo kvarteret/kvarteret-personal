@@ -201,3 +201,12 @@ async def test_normalizes_snapshot_hash_for_retries_and_keeps_edited_submissions
     three = await service.store(BookingSnapshot.model_validate(data))
     assert three.submission_id == one.submission_id
     assert three.content_hash != one.content_hash
+
+
+def test_openapi_schedule_schema_has_no_unresolved_local_reference():
+    schema = app().openapi()["paths"]["/api/v1/booking-requests"]["post"][
+        "requestBody"
+    ]["content"]["application/json"]["schema"]
+    schedule = schema["properties"]["schedule"]["items"]
+    assert schedule["required"] == ["date", "doors_open", "doors_close"]
+    assert "$ref" not in schedule

@@ -9,6 +9,13 @@ from app.domain.booking_requests.service import BookingRequestsService
 
 router = APIRouter()
 
+# OpenAPI references resolve from the document root, not this nested schema.
+# Inline the only nested model rather than emitting unresolved #/$defs refs.
+snapshot_schema = BookingSnapshot.model_json_schema()
+snapshot_schema["properties"]["schedule"]["items"] = snapshot_schema.pop("$defs")[
+    "BookingSchedule"
+]
+
 
 @router.post(
     "",
@@ -19,7 +26,7 @@ router = APIRouter()
         "requestBody": {
             "required": True,
             "content": {
-                "application/json": {"schema": BookingSnapshot.model_json_schema()}
+                "application/json": {"schema": snapshot_schema}
             },
         }
     },
