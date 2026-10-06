@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import hashlib
 import hmac
-import logging
 import re
 import time
 from dataclasses import dataclass
@@ -24,7 +25,7 @@ VOLUNTEER_PROSPECT_CLIENT_KEY_HEADER = "X-Kvarteret-Client-Key"
 _SIGNATURE_PATTERN = re.compile(r"^v(?P<version>[12])=[0-9a-f]{64}$")
 _CLIENT_KEY_PATTERN = re.compile(r"^v1=[0-9a-f]{64}$")
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 volunteer_prospect_signature_header = APIKeyHeader(
     name="X-Kvarteret-Signature",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 import secrets
 from urllib.parse import quote_plus
 
@@ -99,7 +100,7 @@ async def create_individual_access(
         subject_type='admin_account',subject_id=account.user_account_id,details={'role':role_value.value,'group_ids':group_ids})
     return redirect_to(f'/admin-accounts/{account.user_account_id}')
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _redirect_with_error(path: str, message: str):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -11,7 +12,7 @@ from app.domain.mobile_card.models import DecodedMobileCardSession
 from app.domain.mobile_card.errors import MobileCardInvalidSessionError
 
 _UNKNOWN_SESSION_TOKEN = "Unknown session token."
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MobileCardSessionManager:

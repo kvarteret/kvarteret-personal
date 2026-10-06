@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
@@ -41,7 +43,7 @@ from app.email_message_preparation import (
 from app.email_outbox_repository import EmailOutboxRepository
 from app.observability import current_trace_id, emit_committed_event, emit_event
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
 _LEASE_DURATION = timedelta(minutes=5)

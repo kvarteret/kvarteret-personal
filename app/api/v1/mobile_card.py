@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -19,7 +20,7 @@ from app.domain.mobile_card.service import (
 )
 from app.observability import client_ip_from_request, emit_event, with_named_span
 
-logger = logging.getLogger("app.audit")
+logger = get_logger("app.audit")
 
 
 class AccessCodeRequest(BaseModel):

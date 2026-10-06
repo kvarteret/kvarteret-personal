@@ -221,6 +221,131 @@ def _sanitize_scalar(value: object) -> object:
     return _TOKEN_PATH_PATTERN.sub(r"\1[redacted]", redacted)
 
 
+class EventLoggerAdapter(logging.LoggerAdapter):
+    """Standard logging methods with safe domain fields and captured context."""
+
+    def process(self, msg, kwargs):
+        extra = dict(kwargs.get("extra") or {})
+        event = extra.pop("event", None)
+        if event is None:
+            event = (
+                msg
+                if isinstance(msg, str)
+                and re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+", msg)
+                else "log.message"
+            )
+        fields = {**extra.pop("event_data", {}), **extra}
+        context = dict(_request_context.get({}))
+        request = context.pop("_request", None)
+        if request is not None:
+            context["route_template"] = _route_template(request)
+        kwargs["extra"] = {
+            "event": event,
+            "event_data": sanitize_fields(
+                event, {**fields, **context, **current_trace_fields()}
+            ),
+            "_otel_context": trace.set_span_in_context(trace.get_current_span()),
+        }
+        kwargs["stacklevel"] = kwargs.get("stacklevel", 1) + 1
+        return msg, kwargs
+
+    def log(self, level, msg, *args, after_commit=False, **kwargs):
+        if not self.isEnabledFor(level):
+            return
+        msg, kwargs = self.process(msg, kwargs)
+        request = _request_context.get({}).get("_request")
+        if (
+            request is not None
+            and level >= logging.ERROR
+            and kwargs["extra"]["event"] not in {"http.request.failed", "log.message"}
+        ):
+            request.state.domain_error_logged = True
+        if not after_commit:
+            self.logger.log(level, msg, *args, **kwargs)
+            return
+        # Build the record now so commits retain the original caller and trace.
+        filename, lineno, func, stack = self.logger.findCaller(
+            kwargs.get("stack_info", False), kwargs.get("stacklevel", 2)
+        )
+        exc_info = kwargs.get("exc_info")
+        if isinstance(exc_info, BaseException):
+            exc_info = (type(exc_info), exc_info, exc_info.__traceback__)
+        elif exc_info and not isinstance(exc_info, tuple):
+            exc_info = sys.exc_info()
+        record = self.logger.makeRecord(
+            self.logger.name,
+            level,
+            filename,
+            lineno,
+            msg,
+            args,
+            exc_info,
+            func,
+            kwargs["extra"],
+            stack,
+        )
+        _log_after_commit(self.logger, record)
+
+
+def get_logger(name: str) -> EventLoggerAdapter:
+    return EventLoggerAdapter(logging.getLogger(name), {})
+
+
+def _log_after_commit(logger: logging.Logger, record: logging.LogRecord) -> None:
+    """Publish a captured record only when its transaction succeeds."""
+    from sqlalchemy import event as sqlalchemy_event
+
+    from app.db.session import current_session
+
+    session = current_session()
+    if session is None or not session.in_transaction():
+        logger.handle(record)
+        return
+    sync_session = session.sync_session
+    key = "observability.committed_events"
+    if key not in sync_session.info:
+        sync_session.info[key] = []
+
+        def committed(session):
+            if session.in_nested_transaction():
+                return
+            pending, session.info[key] = session.info[key], []
+            for event_logger, record, transaction in pending:
+                event_logger.handle(record)
+
+        def rolled_back(session, previous_transaction):
+            def belongs_to_rollback(item):
+                transaction = item[-1]
+                while transaction is not None:
+                    if transaction is previous_transaction:
+                        return True
+                    transaction = transaction.parent
+                return False
+
+            session.info[key] = [
+                item for item in session.info[key] if not belongs_to_rollback(item)
+            ]
+
+        def ended(session, transaction):
+            # Session.close() ends an uncommitted transaction without invoking
+            # after_rollback. Never carry its events into a reused session.
+            if transaction.parent is None:
+                session.info[key].clear()
+
+        sqlalchemy_event.listen(sync_session, "after_commit", committed)
+        sqlalchemy_event.listen(sync_session, "after_soft_rollback", rolled_back)
+        sqlalchemy_event.listen(sync_session, "after_transaction_end", ended)
+    sync_session.info[key].append(
+        (
+            logger,
+            record,
+            sync_session.get_nested_transaction() or sync_session.get_transaction(),
+        )
+    )
+
+
+
+
 def emit_event(
     logger: logging.Logger,
     event: str,

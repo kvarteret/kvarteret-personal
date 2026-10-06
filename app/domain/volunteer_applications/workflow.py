@@ -19,6 +19,8 @@ independently, so one applicant's lifecycle never controls another's.
 
 from __future__ import annotations
 
+from app.observability import get_logger
+
 import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
@@ -664,7 +666,7 @@ class VolunteerApplicationWorkflow:
             await self.email_outbox.dispatch_due(batch_size=10)
         except Exception:
             emit_event(
-                logging.getLogger(__name__),
+                get_logger(__name__),
                 "email.delivery",
                 level=logging.ERROR,
                 fields={
@@ -690,7 +692,7 @@ class VolunteerApplicationWorkflow:
             if volunteer_id is not None:
                 span.set_attribute("volunteer_id", volunteer_id)
         emit_event(
-            logging.getLogger(__name__),
+            get_logger(__name__),
             "volunteer.lifecycle",
             fields={
                 "registration_id": registration_id,

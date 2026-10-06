@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -110,7 +111,7 @@ async def app_login(
         action='auth.app_login', subject_type='admin_account', subject_id=account.user_account_id)
     return response
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 _ORAKEL_ORIGIN = "https://orakel.samfunnetibergen.no"
 _ORAKEL_HOST = urlsplit(_ORAKEL_ORIGIN).hostname
 

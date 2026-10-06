@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_rate_limiter, require_authenticated_user
 from app.db.rate_limit import InMemoryRateLimiter
+from app.dependencies import get_rate_limiter, require_authenticated_user
 from app.main import create_app
 from tests.support.helpers import make_authenticated_user
 
@@ -12,7 +12,9 @@ def _make_client() -> tuple[TestClient, InMemoryRateLimiter]:
     app = create_app()
     limiter = InMemoryRateLimiter()
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
-    app.dependency_overrides[require_authenticated_user] = lambda: make_authenticated_user()
+    app.dependency_overrides[require_authenticated_user] = lambda: (
+        make_authenticated_user()
+    )
     return TestClient(app), limiter
 
 
@@ -61,7 +63,9 @@ def test_client_error_report_rate_limits_runaway_reports() -> None:
     app = create_app()
     limiter = InMemoryRateLimiter()
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
-    app.dependency_overrides[require_authenticated_user] = lambda: make_authenticated_user()
+    app.dependency_overrides[require_authenticated_user] = lambda: (
+        make_authenticated_user()
+    )
     client = TestClient(app)
 
     # The endpoint ceiling is 60 reports per 60-second window per user.
@@ -79,18 +83,35 @@ def test_client_error_report_rate_limits_runaway_reports() -> None:
     assert response.status_code == 429
 
 
-def test_third_failed_submission_creates_exception_with_safe_diagnostics(caplog) -> None:
+def test_third_failed_submission_creates_exception_with_safe_diagnostics(
+    caplog,
+) -> None:
     import logging
+
     from app.observability import JsonLogFormatter
+
     client, _ = _make_client()
     logging.getLogger().addHandler(caplog.handler)
-    with caplog.at_level(logging.ERROR):
-        response = client.post("/api/v1/telemetry/client-errors", json={
-            "error_type": "RepeatedFormSubmissionFailure", "attempt_count": 3,
-            "form_id": "/volunteers/:id", "validation_fields": "body.role_id",
-            "validation_codes": "int_parsing", "status_code": 422,
-        })
+    with caplog.at_level(logging.WARNING):
+        response = client.post(
+            "/api/v1/telemetry/client-errors",
+            json={
+                "error_type": "RepeatedFormSubmissionFailure",
+                "attempt_count": 3,
+                "form_id": "/volunteers/:id",
+                "validation_fields": "body.role_id",
+                "validation_codes": "int_parsing",
+                "status_code": 422,
+            },
+        )
     assert response.status_code == 200
-    record = next(r for r in caplog.records if r.getMessage() == "form.submission.repeated_failure")
+    record = next(
+        r
+        for r in caplog.records
+        if r.getMessage() == "form.submission.repeated_failure"
+    )
     assert record.exc_info[0].__name__ == "RepeatedFormSubmissionFailure"
-    assert 'body.role_id' in JsonLogFormatter().format(record)
+    assert "body.role_id" in JsonLogFormatter().format(record)
+    assert [r.event for r in caplog.records if hasattr(r, "event")] == [
+        "form.submission.repeated_failure"
+    ]

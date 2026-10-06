@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+from app.observability import get_logger
+
 import mimetypes
 from asyncio import to_thread
 
@@ -29,7 +30,7 @@ from app.infrastructure.media.photo_processing import (
 from app.infrastructure.storage.protocols import StorageProtocol
 from app.domain.volunteers.service import VolunteersService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 _PHOTO_NOT_FOUND = "Photo not found."
 router = APIRouter()
 SECURE_MEDIA_HEADERS = {
