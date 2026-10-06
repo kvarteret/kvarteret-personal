@@ -5,7 +5,6 @@ from app.observability import get_logger
 import hashlib
 import hmac
 import json
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -34,7 +33,7 @@ from app.domain.volunteer_applications.service import (
     VolunteerApplicationValidationError,
     VolunteerApplicationsService,
 )
-from app.observability import emit_event, with_named_span
+from app.observability import with_named_span
 from app.shared.phone_numbers import normalize_phone_number
 
 router = APIRouter()
@@ -71,11 +70,9 @@ def _log_public_prospect_validation(exc: VolunteerApplicationValidationError) ->
             "phone_required": ["phone"],
             "phone_invalid": ["phone"],
         }.get(code, [])
-    emit_event(
-        logger,
+    logger.warning(
         "volunteer.prospect.validation_failed",
-        level=logging.WARNING,
-        fields={
+        extra={
             "status_code": 400,
             "validation_codes": code,
             "validation_fields": ",".join(names),
@@ -105,9 +102,7 @@ def _log_public_prospect_conflict(exc: VolunteerApplicationConflictError) -> Non
             fields["registration_id"] = exc.registration_id
     elif isinstance(exc, VolunteerProspectIdempotencyConflictError):
         fields["conflict_type"] = "idempotency_key_content_mismatch"
-    emit_event(
-        logger, "volunteer.prospect.conflict", level=logging.WARNING, fields=fields
-    )
+    logger.warning("volunteer.prospect.conflict", extra=fields)
 
 
 EmailAddress = Annotated[EmailStr, Field(max_length=254)]

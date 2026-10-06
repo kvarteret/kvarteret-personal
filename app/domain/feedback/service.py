@@ -13,7 +13,6 @@ from urllib import request as urllib_request
 from app.config import Settings
 from app.db.rate_limit import RateLimitExceeded, RateLimiter
 
-from app.observability import emit_event
 
 logger = get_logger(__name__)
 
@@ -307,10 +306,9 @@ def _create_linear_issue(submission: FeedbackSubmission, settings: Settings) -> 
         raise FeedbackDeliveryError("Linear issueCreate returned success=false.")
 
     issue = issue_create.get("issue") or {}
-    emit_event(
-        logger,
+    logger.info(
         "feedback.issue.created",
-        fields={
+        extra={
             "issue_identifier": issue.get("identifier"),
             "feedback_source": submission.source,
         },

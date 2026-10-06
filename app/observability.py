@@ -441,25 +441,6 @@ def _log_after_commit(logger: logging.Logger, record: logging.LogRecord) -> None
     )
 
 
-def emit_event(
-    logger: logging.Logger,
-    event: str,
-    *,
-    level: int = logging.INFO,
-    fields: Mapping[str, object] | None = None,
-) -> None:
-    event_fields = {
-        **_request_context.get({}),
-        **current_trace_fields(),
-        **(fields or {}),
-    }
-    logger.log(
-        level,
-        event,
-        extra={"event": event, "event_data": sanitize_fields(event, event_fields)},
-    )
-
-
 _ADMIN_DIAGNOSTIC_ACTIONS = frozenset(
     {
         "volunteer_application.list",
@@ -475,20 +456,6 @@ _ADMIN_DIAGNOSTIC_ACTIONS = frozenset(
         "spotify.oauth.login.start",
     }
 )
-
-
-def emit_committed_event(
-    logger: logging.Logger,
-    event: str,
-    *,
-    level: int = logging.INFO,
-    fields: Mapping[str, object] | None = None,
-) -> None:
-    """Use the built-in LoggerAdapter's transaction-aware logging path."""
-    adapter = (
-        logger if isinstance(logger, EventLoggerAdapter) else get_logger(logger.name)
-    )
-    adapter.log(level, event, after_commit=True, extra=dict(fields or {}))
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -572,19 +539,17 @@ def _route_template(request: Request) -> str:
 
 
 def log_request(
-    logger: logging.Logger, *, request: Request, status_code: int, started_at: float
+    logger: EventLoggerAdapter, *, request: Request, status_code: int, started_at: float
 ) -> None:
-    # Request traces carry routine traffic. All failed responses need a fallback
-    # even when a route has no domain-specific rejection diagnostic.
-    emit_event(
-        logger,
-        "http.request.failed" if status_code >= 400 else "http.request.completed",
-        level=logging.ERROR
+    logger.log(
+        logging.ERROR
         if status_code >= 500
         else logging.WARNING
         if status_code >= 400
         else logging.DEBUG,
-        fields={
+        "http.request.failed" if status_code >= 400 else "http.request.completed",
+        stacklevel=2,
+        extra={
             "status_code": status_code,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             "http_method": request.method,
@@ -595,10 +560,11 @@ def log_request(
 
 
 def log_request_exception(
-    logger: logging.Logger, *, request: Request, started_at: float
+    logger: EventLoggerAdapter, *, request: Request, started_at: float
 ) -> None:
     logger.exception(
         "http.request.failed",
+        stacklevel=2,
         extra={
             "event": "http.request.failed",
             "event_data": {
@@ -627,16 +593,16 @@ def log_admin_activity(
         safe_details["setup_url_created"] = bool(safe_details.pop("setup_url"))
     # Reads and OAuth initiation are diagnostics, not business changes.
     diagnostic = action in _ADMIN_DIAGNOSTIC_ACTIONS
-    emitter = emit_event if diagnostic or outcome != "success" else emit_committed_event
-    emitter(
-        logging.getLogger("app.audit"),
-        "admin.activity",
-        level=logging.WARNING
+    get_logger("app.audit").log(
+        logging.WARNING
         if outcome != "success"
         else logging.DEBUG
         if diagnostic
         else logging.INFO,
-        fields={
+        "admin.activity",
+        stacklevel=2,
+        after_commit=not diagnostic and outcome == "success",
+        extra={
             "action": action,
             "outcome": outcome,
             "subject_type": subject_type,
@@ -655,17 +621,16 @@ def redact_query_string(request: Request) -> str:
 
 
 def log_operation_timing(
-    logger: logging.Logger,
+    logger: EventLoggerAdapter,
     *,
     operation: str,
     started_at: float,
     details: dict[str, Any] | None = None,
 ) -> None:
-    emit_event(
-        logger,
+    logger.debug(
         "app.operation.timing",
-        level=logging.DEBUG,
-        fields={
+        stacklevel=2,
+        extra={
             "operation": operation,
             "duration_ms": round((perf_counter() - started_at) * 1000, 2),
             **(details or {}),
