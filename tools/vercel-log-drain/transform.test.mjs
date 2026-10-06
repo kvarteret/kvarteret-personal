@@ -88,3 +88,19 @@ test("platform failures have actionable event names", () => {
   [{...record,proxy:{statusCode:200},level:"error",message:"TypeError"},"platform.runtime.failed"],
  ]) assert.equal(transform([input]).resourceLogs[0].scopeLogs[0].logRecords[0].body.stringValue,event)
 })
+
+test("known blocked probes are excluded while user-facing failures remain", () => {
+ for (const path of ["/.git/config", "/%2egit/config", "/.env", "/wp-admin/admin-ajax.php", "/wp-json/wp/v2/media", "/wp-login.php", "/xmlrpc.php", "/wine-menu", "/menu/wine-list"]) {
+  assert.deepEqual(transform([{...record,source:"firewall",path,proxy:{statusCode:429,method:"HEAD"}}]),{resourceLogs:[]})
+ }
+ for (const path of ["/", "/nb/rom/book", "/api/v1/mobile-card/me", "/login", "/wine-menu"]) {
+  assert.equal(transform([{...record,source:"firewall",path,proxy:{statusCode:429,method:"GET"}}]).resourceLogs.length,1)
+ }
+ assert.equal(transform([{...record,source:"lambda",path:"/.git/config",proxy:{statusCode:500}}]).resourceLogs.length,1)
+})
+test("runtime dependency failures retain safe dependency identity", () => {
+ const output=transform([{...record,proxy:{statusCode:200},level:"error",message:"TypeError: fetch failed ECONNRESET host: 'mkjoahvv.apicdn.sanity.io' arbitrary person@example.com"}])
+ const log=output.resourceLogs[0].scopeLogs[0].logRecords[0]
+ assert.ok(log.attributes.some(x=>x.key==="dependency" && x.value.stringValue==="sanity"))
+ assert.ok(!JSON.stringify(log).includes("person@example.com"))
+})
