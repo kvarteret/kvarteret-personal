@@ -48,4 +48,3 @@ async def refresh_counts(session: AsyncSession) -> int:
         active_count,
     ))
     return result.rowcount + 1
-
