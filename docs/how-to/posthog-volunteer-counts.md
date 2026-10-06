@@ -28,9 +28,10 @@ totals, and repeated refreshes can reveal small changes. Limit access accordingl
 
 1. Apply migration `20261006_1200` through the normal Personal deployment.
 2. Run `uv run python -m scripts.refresh_warehouse_volunteer_counts` using the
-   backend database environment. Schedule it before each warehouse sync, for
-   example hourly with a six-hour PostHog sync. This PR supplies the command,
-   not a production scheduler; schedule failure makes the export stale.
+   backend database environment for an initial refresh. `vercel.json` schedules
+   `/internal/cron/refresh-warehouse-volunteer-counts` hourly at minute 17 (UTC).
+   The endpoint uses the existing `CRON_SECRET` bearer authentication and is
+   excluded from public OpenAPI. Schedule failure makes the export stale.
 3. Give a dedicated warehouse reader schema USAGE and SELECT on this export
    only. The table has RLS enabled and no public policies; `anon` and
    `authenticated` have no table grants. A dedicated non-owner reader needs a
@@ -69,5 +70,5 @@ means fewer than five assigned volunteers in group 7. One volunteer assigned to
 two groups contributes to both group counts but only once to the organisation.
 
 The migration and command must be deployed and the connector configured before
-counts appear in PostHog. No source grants, production schedule, or PostHog
-configuration are changed by creating or merging this PR.
+counts appear in PostHog. Merging/deploying this PR installs the Vercel refresh
+schedule; it does not grant a PostHog reader access or enable the connector sync.

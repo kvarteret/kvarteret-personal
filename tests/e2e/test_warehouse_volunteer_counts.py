@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.volunteers.queries import VolunteersQueries
 from app.db.session import reset_request_session, set_request_session
 from app.shared.semester import get_current_semester_code
-from scripts.refresh_warehouse_volunteer_counts import refresh_counts
+from app.warehouse_counts import refresh_counts
 from tests.e2e.conftest import requires_e2e_database
 
 pytestmark = requires_e2e_database
