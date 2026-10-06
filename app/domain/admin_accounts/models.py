@@ -35,3 +35,5 @@ class AdminAccountDetail:
     onboarding_status: str = "active"
     onboarding_last_sent_at: datetime | None = None
     activated_at: datetime | None = None
+    volunteer_id: int | None = None
+    is_legacy_account: bool = False

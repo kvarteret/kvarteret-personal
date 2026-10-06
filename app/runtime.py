@@ -165,7 +165,9 @@ def build_application_container(
     session_factory = database_runtime_manager.get_session_factory()
     session_cookie_signer = SessionCookieSigner(resolved_settings)
     media_token_service = MediaTokenService(resolved_settings)
-    auth_repository = DatabaseAuthRepository()
+    auth_repository = DatabaseAuthRepository(
+        legacy_login_enabled=resolved_settings.legacy_admin_login_enabled
+    )
     session_store = SessionStore(
         cast(SessionRepositoryProtocol, auth_repository), resolved_settings
     )

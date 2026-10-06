@@ -1,5 +1,5 @@
 {% extends "layouts/base.html" %}
-{% from "components/shared/ui_macros.html" import flash_notice, form_field, page_header %}
+{% from "components/shared/ui_macros.html" import flash_notice, form_field, page_header, volunteer_picker_card %}
 
 {% block page_content %}
   <section class="grid gap-7">
@@ -9,6 +9,11 @@
 
     <section class="app-panel">
       {{ flash_notice(error_message, 'error') }}
+      {% call volunteer_picker_card('/admin-accounts/from-volunteer', url_for('volunteer_search_typeahead_options'), 'Lagre tilgang', selection_mode='single', title='Gi en frivillig tilgang') %}
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <label class="grid gap-1"><span>Tilgang</span><select class="app-input" name="role"><option value="Gruppeadmin">Gruppeadmin</option><option value="Admin">Admin</option><option value="Frivillig">Frivillig</option><option value="Tilskuer">Tilskuer</option></select></label>
+        <fieldset><legend>Grupper (for gruppeadmin)</legend><div class="grid gap-2 md:grid-cols-2">{% for group in access_groups %}<label><input type="checkbox" name="group_ids" value="{{ group.id }}"> {{ group.name }}</label>{% endfor %}</div></fieldset>
+      {% endcall %}
       <p class="mb-5 text-sm text-stone-500">Det sendes en oppsettslenke på e-post. Brukeren setter sitt eget passord med lenken.</p>
       <form action="/admin-accounts" class="grid gap-6" method="post">
         <div class="grid gap-5 md:grid-cols-2">

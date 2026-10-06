@@ -1,6 +1,6 @@
 """Tables owned by the auth and admin_accounts modules."""
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String, Table, Text
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, String, Table, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.metadata import public_metadata
@@ -12,6 +12,8 @@ user_accounts = Table(
     "user_accounts",
     public_metadata,
     Column("id", BigInteger, primary_key=True),
+    Column("volunteer_id", BigInteger, ForeignKey("public.volunteer_records.id"), unique=True),
+    Column("is_legacy_account", Boolean, nullable=False, server_default="false"),
     Column("auth_user_id", UUID(as_uuid=True), nullable=False),
     Column("username", String(256), nullable=False),
     Column("email", String(320), nullable=False),

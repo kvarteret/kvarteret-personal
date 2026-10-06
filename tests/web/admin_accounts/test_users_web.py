@@ -18,6 +18,9 @@ from tests.support.helpers import make_authenticated_user, override_authenticate
 
 
 class FakeAdminAccountsService:
+    async def access_groups(self):
+        return [{'id': 2, 'name': 'Example group'}]
+
     def __init__(self) -> None:
         self.created_account = None
         self.deleted_account = None

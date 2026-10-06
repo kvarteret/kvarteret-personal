@@ -4,6 +4,14 @@ Use the trial planner to connect existing admin accounts to volunteer profiles
 before applying an account migration. It produces a private review artifact and
 does not connect to a database or change accounts.
 
+Individual accounts can be linked through `user_accounts.volunteer_id`.
+Legacy accounts are marked with `is_legacy_account`. The
+`LEGACY_ADMIN_LOGIN_ENABLED` setting defaults to `true`, preserving existing
+logins during transition. When set to `false`, legacy accounts cannot establish
+new web sessions or use existing ones, including impersonation sessions whose
+originating account is legacy. This requires running the PR's application code;
+older deployed code continues to accept existing logins.
+
 Store the inventory, decisions, and output **outside every Git checkout**.
 Never commit production names, emails, profile details, or mapping files.
 The planner rejects paths inside checkouts, creates output with owner-only

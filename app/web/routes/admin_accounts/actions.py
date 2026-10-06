@@ -32,6 +32,72 @@ _INVALID_ROLE = "Invalid role."
 _ADMIN_ACCOUNTS_NEW_PATH = "/admin-accounts/new"
 
 router = APIRouter()
+
+
+@router.post('/admin-accounts/{account_id}/access')
+async def configure_individual_access(
+    request: Request, account_id: int, volunteer_ids: list[int] = Form(...),
+    role: str = Form(...), group_ids: list[int] = Form(default=[]),
+    current_user=Depends(require_admin_user),
+    admin_accounts_service=Depends(get_admin_accounts_service),
+):
+    if len(volunteer_ids) != 1:
+        return _redirect_with_error(f'/admin-accounts/{account_id}', 'Velg én frivillig.')
+    try:
+        role_value = UserRole(role)
+        if current_user.user_account_id == account_id and role_value != UserRole.ADMIN:
+            raise ValueError('Du kan ikke fjerne din egen admin-tilgang.')
+        await admin_accounts_service.configure_access(account_id=account_id,
+            volunteer_id=volunteer_ids[0], role=role_value, group_ids=group_ids)
+    except ValueError as exc:
+        return _redirect_with_error(f'/admin-accounts/{account_id}', str(exc))
+    log_admin_activity(request=request, user=current_user, action='admin_account.access_configured',
+                       subject_type='admin_account', subject_id=account_id,
+                       details={'role': role_value.value, 'group_ids': group_ids, 'volunteer_id': volunteer_ids[0]})
+    return redirect_to(f'/admin-accounts/{account_id}')
+
+
+@router.post('/admin-accounts/from-volunteer')
+async def create_individual_access(
+    request: Request, volunteer_ids: list[int] = Form(...), role: str = Form(...),
+    group_ids: list[int] = Form(default=[]), current_user=Depends(require_admin_user),
+    admin_accounts_service=Depends(get_admin_accounts_service),
+    supabase_auth_gateway=Depends(get_supabase_auth_gateway),
+):
+    try:
+        role_value = UserRole(role)
+        if len(volunteer_ids) != 1:
+            raise ValueError('Velg én frivillig.')
+        volunteer = await admin_accounts_service.get_volunteer_identity(volunteer_ids[0])
+        if not volunteer or not volunteer['email']:
+            raise ValueError('Den frivillige må ha en personlig e-postadresse.')
+        if role_value == UserRole.GROUP_ADMIN and not group_ids:
+            raise ValueError('Velg minst én gruppe for gruppeadmin.')
+        valid_groups = {g['id'] for g in await admin_accounts_service.access_groups()}
+        if set(group_ids) - valid_groups:
+            raise ValueError('Ugyldig gruppe.')
+        email = volunteer['email'].strip().lower()
+        account = await admin_accounts_service.get_individual_account(volunteer_ids[0])
+        if account is None:
+            account = await admin_accounts_service.get_admin_account_detail_for_email(email)
+        if account is None:
+            uid = await supabase_auth_gateway.find_user_id_by_email(email)
+            if uid is None:
+                uid = await supabase_auth_gateway.create_user(email=email, password=secrets.token_urlsafe(48))
+            account = await admin_accounts_service.create_admin_account(auth_user_id=uid,
+                username=email, email=email, display_name=f"{volunteer['first_name'] or ''} {volunteer['last_name']}".strip(), role=role_value)
+        if current_user.user_account_id == account.user_account_id and role_value != UserRole.ADMIN:
+            raise ValueError('Du kan ikke fjerne din egen admin-tilgang.')
+        await admin_accounts_service.configure_access(account_id=account.user_account_id,
+            volunteer_id=volunteer_ids[0], role=role_value, group_ids=group_ids)
+    except ValueError as exc:
+        return _redirect_with_error('/admin-accounts/new', str(exc))
+    except Exception:
+        logger.exception('admin.volunteer_access.failed')
+        return _redirect_with_error('/admin-accounts/new', 'Kunne ikke opprette tilgang akkurat nå. Prøv igjen senere.')
+    log_admin_activity(request=request,user=current_user,action='admin_account.volunteer_access_configured',
+        subject_type='admin_account',subject_id=account.user_account_id,details={'role':role_value.value,'group_ids':group_ids})
+    return redirect_to(f'/admin-accounts/{account.user_account_id}')
 _APRIL_TOGGLE_EMAIL = "it.leder@kvarteret.no"
 logger = logging.getLogger(__name__)
 

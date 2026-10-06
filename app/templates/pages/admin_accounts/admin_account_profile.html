@@ -1,5 +1,5 @@
 {% extends "layouts/base.html" %}
-{% from "components/shared/ui_macros.html" import flash_notice, form_field, page_header %}
+{% from "components/shared/ui_macros.html" import flash_notice, form_field, page_header, volunteer_picker_card %}
 
 {% block page_content %}
   <section class="grid gap-7">
@@ -9,6 +9,21 @@
       {{ flash_notice(error_message, 'error') }}
       {{ flash_notice(password_error_message, 'error') }}
       {{ flash_notice(password_success_message, 'success') }}
+      {% if section == 'admin-accounts' and access_groups is defined %}
+        {% if admin_account.is_legacy_account %}
+          <p class="mb-6">Gammel innlogging beholdes under overgangen. Gi den frivillige individuell tilgang fra «Opprett admin-konto».</p>
+        {% elif admin_account.volunteer_id %}
+          <form action="/admin-accounts/{{ admin_account.user_account_id }}/access" method="post" class="mb-8 grid gap-4">
+            <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+            <input type="hidden" name="volunteer_ids" value="{{ admin_account.volunteer_id }}">
+            <h2 class="text-2xl">Tilgang i personaldatabasen</h2>
+            <p><a href="/volunteers/{{ admin_account.volunteer_id }}">Se frivilligprofil</a></p>
+            <label class="grid gap-1"><span>Tilgang</span><select class="app-input" name="role">{% for role in ['Admin','Gruppeadmin','Frivillig','Tilskuer'] %}<option value="{{ role }}" {% if admin_account.role == role %}selected{% endif %}>{{ role }}</option>{% endfor %}</select></label>
+            <fieldset><legend>Grupper (for gruppeadmin)</legend><div class="grid gap-2 md:grid-cols-2">{% for group in access_groups %}<label><input type="checkbox" name="group_ids" value="{{ group.id }}" {% if group.id in admin_account.group_admin_group_ids %}checked{% endif %}> {{ group.name }}</label>{% endfor %}</div></fieldset>
+            <button class="app-button" type="submit">Lagre tilgang</button>
+          </form>
+        {% endif %}
+      {% endif %}
       <form action="{{ save_action }}" class="grid gap-6" method="post">
         <div class="grid gap-5 md:grid-cols-2">
           {% call form_field("Brukernavn") %}

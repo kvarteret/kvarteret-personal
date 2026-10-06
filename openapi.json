@@ -99,6 +99,58 @@
         "title": "Body_admin_account_update_admin_accounts__account_id__patch",
         "type": "object"
       },
+      "Body_app_login_login_app_post": {
+        "properties": {
+          "access_code": {
+            "title": "Access Code",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "next": {
+            "default": "/",
+            "title": "Next",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "access_code"
+        ],
+        "title": "Body_app_login_login_app_post",
+        "type": "object"
+      },
+      "Body_configure_individual_access_admin_accounts__account_id__access_post": {
+        "properties": {
+          "group_ids": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Group Ids",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "volunteer_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Volunteer Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "volunteer_ids",
+          "role"
+        ],
+        "title": "Body_configure_individual_access_admin_accounts__account_id__access_post",
+        "type": "object"
+      },
       "Body_courses_add_completion_courses__course_id__completions_post": {
         "properties": {
           "term": {
@@ -171,6 +223,35 @@
           "name"
         ],
         "title": "Body_courses_update_courses__course_id__patch",
+        "type": "object"
+      },
+      "Body_create_individual_access_admin_accounts_from_volunteer_post": {
+        "properties": {
+          "group_ids": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Group Ids",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "volunteer_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Volunteer Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "volunteer_ids",
+          "role"
+        ],
+        "title": "Body_create_individual_access_admin_accounts_from_volunteer_post",
         "type": "object"
       },
       "Body_feedback_submit_feedback_post": {
@@ -579,6 +660,24 @@
           "role"
         ],
         "title": "Body_my_account_update_my_account_patch",
+        "type": "object"
+      },
+      "Body_request_app_login_code_login_app_code_post": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "next": {
+            "default": "/",
+            "title": "Next",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "Body_request_app_login_code_login_app_code_post",
         "type": "object"
       },
       "Body_set_password_submit_set_password_post": {
@@ -1915,6 +2014,42 @@
         "summary": "Admin Account Create"
       }
     },
+    "/admin-accounts/from-volunteer": {
+      "post": {
+        "operationId": "create_individual_access_admin_accounts_from_volunteer_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_individual_access_admin_accounts_from_volunteer_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Individual Access"
+      }
+    },
     "/admin-accounts/new": {
       "get": {
         "operationId": "admin_account_new_admin_accounts_new_get",
@@ -2090,6 +2225,53 @@
           }
         },
         "summary": "Admin Account Update"
+      }
+    },
+    "/admin-accounts/{account_id}/access": {
+      "post": {
+        "operationId": "configure_individual_access_admin_accounts__account_id__access_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_configure_individual_access_admin_accounts__account_id__access_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Individual Access"
       }
     },
     "/admin-accounts/{account_id}/impersonate": {
@@ -4259,6 +4441,78 @@
           }
         },
         "summary": "Login Submit"
+      }
+    },
+    "/login/app": {
+      "post": {
+        "operationId": "app_login_login_app_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_app_login_login_app_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "App Login"
+      }
+    },
+    "/login/app/code": {
+      "post": {
+        "operationId": "request_app_login_code_login_app_code_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_request_app_login_code_login_app_code_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request App Login Code"
       }
     },
     "/logout": {

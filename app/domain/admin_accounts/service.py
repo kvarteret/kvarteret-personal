@@ -80,6 +80,21 @@ class AdminAccountsServiceProtocol(Protocol):
 
 
 class AdminAccountsService:
+    async def access_groups(self):
+        return await self.repository.access_groups()
+
+    async def get_volunteer_identity(self, volunteer_id: int):
+        return await self.repository.volunteer_identity(volunteer_id)
+
+    async def get_individual_account(self, volunteer_id: int):
+        account_id = await self.repository.account_for_volunteer(volunteer_id)
+        return await self.repository.get_admin_account_detail(account_id) if account_id else None
+
+    async def configure_access(self, *, account_id: int, volunteer_id: int, role: UserRole, group_ids: list[int]):
+        await self.repository.configure_access(account_id, volunteer_id, role, group_ids)
+        self._detail_cache.pop(account_id)
+        self._list_cache.clear()
+
     def __init__(
         self,
         repository: AdminAccountsRepository,

@@ -102,6 +102,7 @@ async def admin_account_new(
     request: Request,
     error: str | None = None,
     current_user=Depends(require_admin_user),
+    admin_accounts_service=Depends(get_admin_accounts_service),
 ):
     return templates.TemplateResponse(
         request,
@@ -111,6 +112,7 @@ async def admin_account_new(
             "section": "admin-accounts",
             "current_user": current_user,
             "error_message": error,
+            "access_groups": await admin_accounts_service.access_groups(),
         },
     )
 
@@ -157,5 +159,6 @@ async def admin_account_detail(
             "error_message": error,
             "password_error_message": None,
             "password_success_message": None,
+            "access_groups": await admin_accounts_service.access_groups(),
         },
     )
