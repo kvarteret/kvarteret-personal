@@ -50,7 +50,7 @@ class VolunteersRepository(SqlAlchemyRepository):
             await self.execute(
                 update(volunteer_photos)
                 .where(volunteer_photos.c.volunteer_id == volunteer_id)
-                .values(filetype=extension)
+                .values(sha1=filename_hash, filetype=extension)
             )
         else:
             await self.execute(
