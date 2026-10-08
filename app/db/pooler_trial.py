@@ -55,15 +55,15 @@ def build_trial_connector(settings: Settings) -> Callable[[], Awaitable[asyncpg.
                 logger.warning(
                     "database.pooler_trial.fallback",
                     extra={"event": "database.pooler_trial.fallback", "event_data": {
-                        "error_type": type(exc).__name__,
-                        "connect_ms": round((time.monotonic() - started) * 1000),
+                        "error_category": type(exc).__name__,
+                        "duration_ms": round((time.monotonic() - started) * 1000),
                     }},
                 )
             else:
                 logger.info(
                     "database.pooler_trial.connected",
                     extra={"event": "database.pooler_trial.connected", "event_data": {
-                        "connect_ms": round((time.monotonic() - started) * 1000),
+                        "duration_ms": round((time.monotonic() - started) * 1000),
                     }},
                 )
                 return connection

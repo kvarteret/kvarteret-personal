@@ -97,7 +97,10 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
             engine_kwargs["async_creator"] = build_trial_connector(settings)
         except ValueError:
             # A mismatched production URL must not take the app down.
-            logging.getLogger(__name__).warning("database.pooler_trial.disabled_invalid_url")
+            logging.getLogger(__name__).warning(
+                "database.pooler_trial.disabled_invalid_url",
+                extra={"event": "database.pooler_trial.disabled_invalid_url"},
+            )
         # Never retain client connections during the trial, even outside Vercel.
         for key in ("pool_size", "max_overflow", "pool_timeout", "pool_recycle", "pool_use_lifo"):
             engine_kwargs.pop(key, None)
