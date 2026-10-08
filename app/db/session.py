@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 import os
+import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -14,6 +15,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.pool import NullPool
+
+from app.db.pooler_trial import build_trial_connector
 
 from app.config import Settings
 from app.errors import NotConfiguredError
@@ -88,6 +91,17 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
             engine_kwargs["pool_timeout"] = settings.database_pool_timeout_seconds
             engine_kwargs["pool_recycle"] = settings.database_pool_recycle_seconds
             engine_kwargs["pool_use_lifo"] = True
+
+    if settings.database_transaction_pooler_percent:
+        try:
+            engine_kwargs["async_creator"] = build_trial_connector(settings)
+        except ValueError:
+            # A mismatched production URL must not take the app down.
+            logging.getLogger(__name__).warning("database.pooler_trial.disabled_invalid_url")
+        # Never retain client connections during the trial, even outside Vercel.
+        for key in ("pool_size", "max_overflow", "pool_timeout", "pool_recycle", "pool_use_lifo"):
+            engine_kwargs.pop(key, None)
+        engine_kwargs["poolclass"] = NullPool
 
     engine = create_async_engine(settings.database_url, **engine_kwargs)
     return DatabaseRuntime(

@@ -56,3 +56,29 @@ and OAuth callbacks. Production startup requires an HTTPS origin without embedde
 credentials, a path, query, or fragment.
 
 Keep `.vercelignore` excluding local-only archives such as `data/`.
+
+## Transaction Pooler Trial
+
+`app/db/pooler_trial.py` provides an opt-in connection canary. Keep
+`DATABASE_URL` pointing to the Supabase session pooler on port 5432. Set
+`DATABASE_TRANSACTION_POOLER_PERCENT=5` to send approximately 5% of new
+connections to the same host, database and credentials on transaction-mode
+port 6543. The default is zero, preserving the existing runtime.
+
+Both paths use `NullPool` and disable prepared statement caching. A trial
+handshake has a two-second timeout. If it fails, the connector opens the
+original connection before any SQL runs, and skips trial attempts in that
+runtime for 60 seconds. Only one trial handshake runs at once per runtime.
+SQL and commit failures are never retried through the fallback; the canary
+cannot hide transaction-mode incompatibilities that occur after connection.
+
+Monitor `database.pooler_trial.connected` and `database.pooler_trial.fallback`,
+authentication 503s, request latency, and Supabase connection usage. Increase
+the percentage only after successful authenticated reads and writes and
+representative traffic. A local read-only test is not a production load test.
+
+To stop the trial, set `DATABASE_TRANSACTION_POOLER_PERCENT=0` in Vercel
+production and redeploy. For immediate rollback, restore the previous ready
+production deployment with Vercel rollback. Warm runtimes on the old deployment
+may continue briefly until retired. Do not enable persistent application pools
+as part of this trial.
