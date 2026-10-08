@@ -1,7 +1,16 @@
 {% extends "layouts/base.html" %}
 
 {% block page_content %}
-  <section class="grid gap-7">
+  <section
+    class="grid gap-7"
+    data-index-url="/volunteers/search-index"
+    data-initial-only-active="{{ 'true' if only_active else 'false' }}"
+    data-initial-query="{{ query }}"
+    data-photo-urls-url="/volunteers/photo-urls"
+    data-results-id="volunteer-results"
+    data-server-list-url="/volunteers/list"
+    data-volunteer-instant-search
+  >
     <header class="grid justify-items-center gap-3 pt-3 text-center">
       <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Frivillige</h1>
       <div class="flex flex-wrap justify-center gap-3">
@@ -17,7 +26,9 @@
         {% endif %}
       </div>
 
-      <form action="/volunteers" class="app-panel" id="volunteer-search" method="get">
+      {# Not boosted: instant search handles submit itself, and htmx 4 ignores
+         preventDefault on boosted forms. Without JavaScript it is a plain GET. #}
+      <form action="/volunteers" class="app-panel" hx-boost="false" id="volunteer-search" method="get">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div class="min-w-0 flex-1">
             <label class="grid gap-1" for="q">
@@ -26,12 +37,6 @@
                 <input
                   autocomplete="off"
                   class="app-input"
-                  hx-get="/volunteers/list"
-                  hx-include="#volunteer-search"
-                  hx-push-url="true"
-                  hx-target="#volunteer-results"
-                  hx-trigger="keyup changed delay:300ms, search"
-                  hx-vals='{"cursor": ""}'
                   id="q"
                   name="q"
                   placeholder="Sir Nils Olav III"
@@ -47,12 +52,6 @@
               <label class="inline-flex items-center gap-3 text-sm text-stone-700" for="only_active">
                 <input
                   class="h-4 w-4 accent-kvarteret-red"
-                  hx-get="/volunteers/list"
-                  hx-include="#volunteer-search"
-                  hx-push-url="true"
-                  hx-target="#volunteer-results"
-                  hx-trigger="change"
-                  hx-vals='{"cursor": ""}'
                   id="only_active"
                   name="only_active"
                   type="checkbox"

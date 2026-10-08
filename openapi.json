@@ -6503,6 +6503,45 @@
         "summary": "Volunteers Results"
       }
     },
+    "/volunteers/photo-urls": {
+      "get": {
+        "description": "Signed photo URLs for the rows the instant search is showing.",
+        "operationId": "volunteers_photo_urls_volunteers_photo_urls_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Volunteers Photo Urls"
+      }
+    },
     "/volunteers/search": {
       "get": {
         "operationId": "search_volunteers_page_volunteers_search_get",
@@ -6681,6 +6720,23 @@
           }
         },
         "summary": "Search Volunteers Page"
+      }
+    },
+    "/volunteers/search-index": {
+      "get": {
+        "description": "Compact index of every volunteer for instant, in-browser filtering.",
+        "operationId": "volunteers_search_index_volunteers_search_index_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Volunteers Search Index"
       }
     },
     "/volunteers/search/options/courses": {

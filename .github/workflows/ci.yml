@@ -41,6 +41,9 @@ jobs:
           DATABASE_URL: sqlite+aiosqlite:////tmp/kvarteret-personal-tests.db
         run: uv run pytest
 
+      - name: JavaScript tests
+        run: node --test tests/js/
+
       - name: OpenAPI contract
         env:
           DATABASE_URL: sqlite+aiosqlite:////tmp/kvarteret-personal-openapi.db

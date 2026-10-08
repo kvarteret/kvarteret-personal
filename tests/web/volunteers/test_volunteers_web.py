@@ -81,6 +81,20 @@ class FakeVolunteersService:
             next_cursor="cursor-2" if cursor is None else None,
         )
 
+    async def get_search_index(self) -> dict:
+        return {
+            "semester": 20262,
+            "groups": {"9": "Bar"},
+            "roles": {},
+            "volunteers": [
+                [12, "Sample", "Person", "person.one@example.test", "00000000", 1, 20262, 3, 1, [9], [], [9], []]
+            ],
+        }
+
+    async def get_photo_urls(self, volunteer_ids: list[int]) -> dict[int, str]:
+        self.photo_url_requests = volunteer_ids
+        return {12: "/media/photos/abc123.jpg?token=test"} if 12 in volunteer_ids else {}
+
     async def count_volunteers(self, query: str | None = None, only_active: bool = False) -> int:
         return len((await self.list_volunteers_page(query=query, limit=50, cursor=None, only_active=only_active)).items)
 
@@ -371,7 +385,12 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Søk bare aktive frivillige" in list_response.text
     assert "Sir Nils Olav III" in list_response.text
     assert 'href="/volunteers/stats"' in list_response.text
-    assert 'hx-trigger="keyup changed delay:300ms, search"' in list_response.text
+    # Typing filters a client-side index instead of a request per keystroke.
+    assert "data-volunteer-instant-search" in list_response.text
+    assert 'data-index-url="/volunteers/search-index"' in list_response.text
+    assert "volunteer-instant-search.js?v=" in list_response.text
+    assert 'hx-trigger="keyup changed delay:300ms, search"' not in list_response.text
+    assert 'hx-boost="false" id="volunteer-search"' in list_response.text
     assert "Laster flere frivillige" in list_response.text
     assert detail_response.status_code == 200
     assert detail_response.headers["cache-control"] == "no-store"
@@ -981,3 +1000,44 @@ def test_role_fragment_accepts_empty_optional_selections_and_logs_invalid_input(
     assert len(records) == 1
     assert records[0].event_data["validation_fields"] == "query.role_id"
     assert "private-value" not in str(records[0].event_data)
+
+
+def test_volunteer_search_index_is_private_and_revalidated() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app)
+
+    response = client.get("/volunteers/search-index")
+    etag = response.headers["etag"]
+    revalidated = client.get("/volunteers/search-index", headers={"If-None-Match": etag})
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-cache"
+    assert response.json()["volunteers"][0][:3] == [12, "Sample", "Person"]
+    assert revalidated.status_code == 304
+    assert revalidated.content == b""
+
+
+def test_volunteer_search_index_requires_login() -> None:
+    app = create_app()
+    app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
+    client = TestClient(app, follow_redirects=False)
+
+    response = client.get("/volunteers/search-index")
+
+    assert response.status_code in {303, 401}
+
+
+def test_volunteer_photo_urls_ignore_junk_ids() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    service = FakeVolunteersService()
+    app.dependency_overrides[get_volunteers_service] = lambda: service
+    client = TestClient(app)
+
+    response = client.get("/volunteers/photo-urls?ids=12,abc,,7")
+
+    assert response.status_code == 200
+    assert response.json() == {"12": "/media/photos/abc123.jpg?token=test"}
+    assert service.photo_url_requests == [12, 7]

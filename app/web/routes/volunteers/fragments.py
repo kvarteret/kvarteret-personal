@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+from hashlib import sha256
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BeforeValidator
 
 from app.dependencies import (
@@ -34,6 +37,56 @@ def _to_checkbox_bool(value: str | None, *, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() == "on"
+
+
+PHOTO_URL_BATCH_LIMIT = 100
+
+
+@router.get("/volunteers/search-index")
+async def volunteers_search_index(
+    request: Request,
+    current_user=Depends(require_authenticated_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    """Compact index of every volunteer for instant, in-browser filtering."""
+    body, etag = _encoded_search_index(await volunteers_service.get_search_index())
+    # Personal data: never shared caches, and always revalidated so edits
+    # show up; an unchanged index costs a 304 instead of the payload.
+    headers = {"Cache-Control": "private, no-cache", "ETag": etag, "Vary": "Cookie"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
+
+
+_encoded_index: tuple[dict, bytes, str] | None = None
+
+
+def _encoded_search_index(index: dict) -> tuple[bytes, str]:
+    # The service hands back the same cached dict until it rebuilds, so
+    # encode and hash it once per build rather than per request. Holding the
+    # dict (not its id) keeps a rebuilt index from matching a stale encoding.
+    global _encoded_index
+    if _encoded_index is None or _encoded_index[0] is not index:
+        body = json.dumps(index, ensure_ascii=False, separators=(",", ":")).encode()
+        _encoded_index = (index, body, f'"{sha256(body).hexdigest()[:20]}"')
+    return _encoded_index[1], _encoded_index[2]
+
+
+@router.get("/volunteers/photo-urls")
+async def volunteers_photo_urls(
+    ids: str = "",
+    current_user=Depends(require_authenticated_user),
+    volunteers_service: VolunteersService = Depends(get_volunteers_service),
+):
+    """Signed photo URLs for the rows the instant search is showing."""
+    volunteer_ids = [
+        int(part) for part in ids.split(",") if part.strip().isdigit()
+    ][:PHOTO_URL_BATCH_LIMIT]
+    urls = await volunteers_service.get_photo_urls(volunteer_ids)
+    return JSONResponse(
+        {str(volunteer_id): url for volunteer_id, url in urls.items()},
+        headers={"Cache-Control": "private, max-age=600"},
+    )
 
 
 @router.get("/volunteers/list")

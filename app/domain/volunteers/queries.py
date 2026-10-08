@@ -53,6 +53,7 @@ from app.domain.volunteers.tables import (
     volunteer_records,
 )
 from app.media_tokens import MediaTokenService
+from app.shared.semester import get_current_semester_code
 from app.observability import log_operation_timing
 from app.shared.text import normalize_search_query
 
@@ -73,6 +74,11 @@ class VolunteersQueries(SqlAlchemyRepository):
         self._cache: TTLCache[int, dict[str, Any]] = TTLCache(
             ttl_seconds=self.detail_cache_ttl_seconds,
             max_entries=2048,
+        )
+        # The client-side search index is rebuilt at most once a minute per
+        # instance, and immediately after a write on this instance.
+        self._search_index_cache: TTLCache[str, dict[str, Any]] = TTLCache(
+            ttl_seconds=60, max_entries=1
         )
 
     # ── List and search ────────────────────────────────────────────
@@ -367,6 +373,155 @@ class VolunteersQueries(SqlAlchemyRepository):
 
     def invalidate_volunteer_cache(self, volunteer_id: int) -> None:
         self._cache.pop(volunteer_id)
+        self._search_index_cache.pop("index")
+
+    # ── Client-side search index ───────────────────────────────────
+
+    async def get_search_index(self) -> dict[str, Any]:
+        """Every volunteer in a compact shape the list page filters in the browser.
+
+        Rows are positional to keep the payload small:
+        ``[id, first_name, last_name, email, phone, has_photo, last_semester,
+        pingvin_points, is_active, current_group_ids, current_role_ids,
+        group_ids, role_ids]``. "Current" means signed assignments in the
+        current semester, matching the server search's active-only mode.
+        Group and role names travel once, in ``groups`` and ``roles``.
+        """
+        cached = self._search_index_cache.get("index")
+        if cached is not None:
+            return cached
+        started_at = perf_counter()
+        semester_code = get_current_semester_code()
+        volunteer_rows = await self.fetch_all_mappings(
+            select(
+                volunteer_records.c.id,
+                volunteer_records.c.first_name,
+                volunteer_records.c.last_name,
+                volunteer_records.c.email,
+                volunteer_records.c.phone,
+                volunteer_photos.c.sha1,
+            )
+            .select_from(
+                volunteer_records.outerjoin(
+                    volunteer_photos,
+                    volunteer_photos.c.volunteer_id == volunteer_records.c.id,
+                )
+            )
+            .order_by(
+                func.coalesce(volunteer_records.c.last_name, "").asc(),
+                func.coalesce(volunteer_records.c.first_name, "").asc(),
+                volunteer_records.c.id.asc(),
+            )
+        )
+        assignment_rows = await self.fetch_all_mappings(
+            select(
+                role_assignments.c.volunteer_id,
+                role_assignments.c.group_id,
+                role_assignments.c.role_id,
+                role_assignments.c.semester,
+                role_assignments.c.contract_signed,
+                assignment_roles.c.penguin_points,
+            ).select_from(
+                role_assignments.outerjoin(
+                    assignment_roles,
+                    assignment_roles.c.id == role_assignments.c.role_id,
+                )
+            )
+        )
+        active_rows = await self.fetch_all_mappings(
+            select(current_active_volunteers_subquery(semester_code=semester_code))
+        )
+        group_rows = await self.fetch_all_mappings(select(groups.c.id, groups.c.name))
+        role_rows = await self.fetch_all_mappings(
+            select(assignment_roles.c.id, assignment_roles.c.name)
+        )
+
+        per_volunteer: dict[int, dict[str, Any]] = {}
+        for row in assignment_rows:
+            entry = per_volunteer.setdefault(
+                row["volunteer_id"],
+                {
+                    "points": 0,
+                    "last_semester": None,
+                    "groups": set(),
+                    "roles": set(),
+                    "current_groups": set(),
+                    "current_roles": set(),
+                },
+            )
+            entry["points"] += row["penguin_points"] or 0
+            if entry["last_semester"] is None or row["semester"] > entry["last_semester"]:
+                entry["last_semester"] = row["semester"]
+            entry["groups"].add(row["group_id"])
+            if row["role_id"] is not None:
+                entry["roles"].add(row["role_id"])
+            if row["semester"] == semester_code and row["contract_signed"]:
+                entry["current_groups"].add(row["group_id"])
+                if row["role_id"] is not None:
+                    entry["current_roles"].add(row["role_id"])
+
+        active_ids = {row["volunteer_id"] for row in active_rows}
+        empty: dict[str, Any] = {
+            "points": 0,
+            "last_semester": None,
+            "groups": (),
+            "roles": (),
+            "current_groups": (),
+            "current_roles": (),
+        }
+        volunteers = []
+        for row in volunteer_rows:
+            entry = per_volunteer.get(row["id"], empty)
+            volunteers.append(
+                [
+                    row["id"],
+                    row["first_name"] or "",
+                    row["last_name"] or "",
+                    row["email"] or "",
+                    row["phone"] or "",
+                    1 if row["sha1"] else 0,
+                    entry["last_semester"],
+                    entry["points"],
+                    1 if row["id"] in active_ids else 0,
+                    sorted(entry["current_groups"]),
+                    sorted(entry["current_roles"]),
+                    sorted(entry["groups"]),
+                    sorted(entry["roles"]),
+                ]
+            )
+        index = {
+            "semester": semester_code,
+            "groups": {str(row["id"]): row["name"] for row in group_rows},
+            "roles": {
+                str(row["id"]): row["name"] for row in role_rows if row["name"]
+            },
+            "volunteers": volunteers,
+        }
+        self._search_index_cache.set("index", index)
+        log_operation_timing(
+            logger,
+            operation="volunteers.search_index",
+            started_at=started_at,
+            details={"volunteers": len(volunteers)},
+        )
+        return index
+
+    async def get_photo_urls(self, volunteer_ids: list[int]) -> dict[int, str]:
+        if not volunteer_ids:
+            return {}
+        rows = await self.fetch_all_mappings(
+            select(
+                volunteer_photos.c.volunteer_id,
+                volunteer_photos.c.sha1,
+                volunteer_photos.c.filetype,
+            ).where(volunteer_photos.c.volunteer_id.in_(volunteer_ids))
+        )
+        urls = {}
+        for row in rows:
+            url = build_photo_url(self.media_token_service, row["sha1"], row["filetype"])
+            if url:
+                urls[row["volunteer_id"]] = url
+        return urls
 
     def _cache_get(self, volunteer_id: int, key: str):
         namespace = self._cache.get(volunteer_id)
