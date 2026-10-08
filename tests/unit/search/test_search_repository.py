@@ -34,11 +34,14 @@ def test_volunteer_search_stmt_includes_group_role_and_email_matching() -> None:
         )
     )
 
-    assert "string_agg(distinct(public.groups.name)" in compiled
-    assert "string_agg(distinct(public.assignment_roles.name)" in compiled
+    assert "lower(public.groups.name) LIKE '%%' || 'bar' || '%%'" in compiled
+    assert "lower(public.assignment_roles.name) LIKE '%%' || 'bar' || '%%'" in compiled
     assert "public.volunteer_records.email" in compiled
-    assert "anon_3.group_names" in compiled
-    assert "anon_3.role_names" in compiled
+    # Group/role names match in one pass over matching assignments, not by
+    # aggregating every volunteer's assignment names into a string.
+    assert "bool_or((lower(public.groups.name) LIKE" in compiled
+    assert "assignment_name_matches.group_0" in compiled
+    assert "string_agg" not in compiled
     assert "public.role_assignments.contract_signed IS true" not in compiled
     assert "public.role_assignments.semester =" not in compiled
 
@@ -56,3 +59,18 @@ def test_volunteer_search_stmt_can_require_active_signed_contract() -> None:
     assert "public.role_assignments.contract_signed IS true" in compiled
     assert "public.role_assignments.semester =" in compiled
     assert "public.volunteer_application_invites.status = 'not_volunteer'" in compiled
+
+
+def test_volunteer_search_stmt_can_carry_the_total_match_count() -> None:
+    stmt = build_volunteer_search_stmt(
+        normalized_query="bar", limit=20, offset=0, with_total=True
+    )
+
+    compiled = str(
+        stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+
+    assert "count(*) OVER () AS total_count" in compiled

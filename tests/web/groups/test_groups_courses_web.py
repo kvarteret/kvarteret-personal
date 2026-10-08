@@ -125,25 +125,39 @@ class FakeGroupsService:
         self.deleted_role = (group_id, role_id)
         return True
 
-    async def get_group_history_by_semester(self, group_id: int) -> list[SemesterGroup]:
+    async def get_group_history_by_semester(
+        self, group_id: int, *, expanded_semesters: int | None = None
+    ) -> list[SemesterGroup]:
+        self.history_expanded_semesters = expanded_semesters
         return [
+            await self.get_group_history_semester(group_id, 20262),
             SemesterGroup(
-                semester_code=20262,
-                semester_label="Fall 2026",
-                members=[
-                    GroupMemberItem(
-                        history_id=9,
-                        volunteer_id=12,
-                        volunteer_name="Sample Person",
-                        photo_url="/media/photos/abc123.jpg?token=test",
-                        role_name="Shift lead",
-                        semester_code=20262,
-                        semester_label="Fall 2026",
-                        contract_signed=True,
-                    )
-                ],
-            )
+                semester_code=20261,
+                semester_label="Spring 2026",
+                members=None,
+                member_count=4,
+            ),
         ]
+
+    async def get_group_history_semester(
+        self, group_id: int, semester_code: int
+    ) -> SemesterGroup:
+        member = GroupMemberItem(
+            history_id=9,
+            volunteer_id=12,
+            volunteer_name="Sample Person",
+            photo_url="/media/photos/abc123.jpg?token=test",
+            role_name="Shift lead",
+            semester_code=semester_code,
+            semester_label="Fall 2026",
+            contract_signed=True,
+        )
+        return SemesterGroup(
+            semester_code=semester_code,
+            semester_label="Fall 2026",
+            members=[member],
+            member_count=1,
+        )
 
     async def get_group_semester_stats(self, group_id: int) -> list[SemesterStats]:
         return [
@@ -357,7 +371,7 @@ def test_groups_and_courses_pages_render() -> None:
     assert "disabled" in group_detail_response.text
     assert 'hx-boost:inherited="true"' in group_detail_response.text
     assert "htmx-ext-preload" not in group_detail_response.text
-    assert 'htmx.org@4.0.0/dist/htmx.min.js' in group_detail_response.text
+    assert "/static/vendor/htmx-4.0.0.min.js?v=" in group_detail_response.text
     assert 'hx-swap:inherited="innerMorph"' in group_detail_response.text
     assert 'hx-select="#page-shell"' not in group_detail_response.text
     assert 'hx-target="#page-shell"' not in group_detail_response.text
@@ -378,6 +392,10 @@ def test_groups_and_courses_pages_render() -> None:
     assert "Totalt beholdt" in group_stats_response.text
     assert group_history_response.status_code == 200
     assert "Gruppehistorikk" in group_history_response.text
+    # Older semesters load their members only when expanded.
+    assert 'hx-get="/groups/7/history/semesters/20261"' in group_history_response.text
+    assert 'hx-trigger="toggle once"' in group_history_response.text
+    assert "4 medlemmer" in group_history_response.text
     assert 'href="/volunteers/12"' in group_history_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in group_history_response.text
     assert '/groups/7/history/9?_method=DELETE' in group_history_response.text
@@ -398,13 +416,14 @@ def test_groups_and_courses_pages_render() -> None:
     assert "volunteerPicker({" in course_detail_response.text
     assert "/volunteers/search/options/typeahead" in course_detail_response.text
     assert "Valgte frivillige" in course_detail_response.text
-    assert "dist/ext/hx-alpine-compat.js" in course_detail_response.text
+    assert "/static/vendor/hx-alpine-compat-4.0.0.js?v=" in course_detail_response.text
     assert 'action="/courses/4/completions"' in course_detail_response.text
     assert '/courses/4/completions/11?_method=DELETE' in course_detail_response.text
     assert 'href="/groups/7"' in course_detail_response.text
     assert 'href="/volunteers/12"' in course_detail_response.text
-    assert "cdn.jsdelivr.net/npm/@alpinejs/csp" in course_detail_response.text
-    assert "cdn.jsdelivr.net/npm/alpinejs@3.x.x" not in course_detail_response.text
+    # The CSP build of Alpine is self-hosted and pinned.
+    assert "/static/vendor/alpinejs-csp-3.17.4.min.js?v=" in course_detail_response.text
+    assert "alpinejs@3.x.x" not in course_detail_response.text
     assert "js/volunteer-picker.js" in course_detail_response.text
     assert "js/client-error-reporting.js" in course_detail_response.text
     assert "js/htmx-error-feedback.js" in course_detail_response.text
@@ -742,3 +761,17 @@ def test_out_of_range_role_points_do_not_reach_service(method, path, points):
     assert response.json()["detail"][0]["loc"] == ["body", "pingvin_points"]
     assert service.created_role is None
     assert service.updated_role is None
+
+
+def test_group_history_semester_members_load_on_demand() -> None:
+    app = create_app()
+    override_authenticated_user(app, make_authenticated_user())
+    app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
+    client = TestClient(app)
+
+    response = client.get("/groups/7/history/semesters/20261")
+
+    assert response.status_code == 200
+    assert 'href="/volunteers/12"' in response.text
+    assert 'hx-confirm="Slette denne historikkraden?"' in response.text
+    assert "<section" not in response.text

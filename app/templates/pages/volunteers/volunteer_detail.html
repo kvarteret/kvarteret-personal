@@ -1,5 +1,4 @@
 {% extends "layouts/base.html" %}
-{% from "components/shared/ui_macros.html" import lazy_panel %}
 
 {% block page_content %}
   <section class="grid gap-7">
@@ -185,9 +184,9 @@
       </div>
 
       <div class="grid gap-6">
-        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/role-assignments/panel', 'Laster historikk...') }}
-        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/course-completions/panel', 'Laster kurs...') }}
-        {{ lazy_panel('/volunteers/' ~ volunteer.volunteer_id ~ '/relations/panel', 'Laster relasjoner...') }}
+        {% for panel in detail_panels %}
+          {{ panel }}
+        {% endfor %}
       </div>
     </div>
   </section>

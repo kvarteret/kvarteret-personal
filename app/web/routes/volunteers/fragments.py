@@ -51,9 +51,10 @@ async def volunteers_results(
         limit=20,
         cursor=cursor,
         only_active=only_active_bool,
+        include_total=not cursor,
     )
-    total_count = None
-    if not cursor:
+    total_count = page.total_count
+    if total_count is None and not cursor:
         total_count = await volunteers_service.count_volunteers(
             query=q, only_active=only_active_bool
         )

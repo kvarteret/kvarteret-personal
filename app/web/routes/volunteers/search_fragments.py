@@ -21,6 +21,32 @@ _GROUP_OPTIONS_CACHE: TTLCache[str, list] = TTLCache(ttl_seconds=300, max_entrie
 _COURSE_OPTIONS_CACHE: TTLCache[str, list] = TTLCache(ttl_seconds=300, max_entries=4)
 # These module-level caches are not invalidated on group/course edits.
 # That is acceptable for this low-volume admin UI because entries expire quickly.
+GROUP_FILTER_LABELS = {
+    "include_groups": "Inkluder grupper",
+    "include_current_groups": "Inkluder aktive grupper",
+    "exclude_groups": "Ekskluder grupper",
+    "exclude_current_groups": "Ekskluder aktive grupper",
+}
+COURSE_FILTER_LABELS = {
+    "include_courses": "Inkluder kurs",
+    "exclude_courses": "Ekskluder kurs",
+}
+
+
+async def cached_group_options(groups_service: GroupsService) -> list:
+    groups = _GROUP_OPTIONS_CACHE.get("all")
+    if groups is None:
+        groups = await groups_service.list_groups(limit=200)
+        _GROUP_OPTIONS_CACHE.set("all", groups)
+    return groups
+
+
+async def cached_course_options(courses_service: CoursesService) -> list:
+    courses = _COURSE_OPTIONS_CACHE.get("all")
+    if courses is None:
+        courses = await courses_service.list_courses(limit=200)
+        _COURSE_OPTIONS_CACHE.set("all", courses)
+    return courses
 
 
 @router.get("/volunteers/search/options/groups")
@@ -31,18 +57,10 @@ async def volunteer_search_group_options(
     current_user=Depends(require_authenticated_user),
     groups_service: GroupsService = Depends(get_groups_service),
 ):
-    labels = {
-        "include_groups": "Inkluder grupper",
-        "include_current_groups": "Inkluder aktive grupper",
-        "exclude_groups": "Ekskluder grupper",
-        "exclude_current_groups": "Ekskluder aktive grupper",
-    }
+    labels = GROUP_FILTER_LABELS
     if field not in labels:
         return Response(status_code=400)
-    groups = _GROUP_OPTIONS_CACHE.get("all")
-    if groups is None:
-        groups = await groups_service.list_groups(limit=200)
-        _GROUP_OPTIONS_CACHE.set("all", groups)
+    groups = await cached_group_options(groups_service)
     return templates.TemplateResponse(
         request,
         "components/volunteers/search_filter_select.html",
@@ -51,7 +69,7 @@ async def volunteer_search_group_options(
             "field": field,
             "label": labels[field],
             "options": groups,
-            "selected_ids": _parse_selected_ids(selected),
+            "selected_ids": parse_selected_ids(selected),
             "value_attr": "group_id",
             "label_attr": "name",
         },
@@ -66,16 +84,10 @@ async def volunteer_search_course_options(
     current_user=Depends(require_authenticated_user),
     courses_service: CoursesService = Depends(get_courses_service),
 ):
-    labels = {
-        "include_courses": "Inkluder kurs",
-        "exclude_courses": "Ekskluder kurs",
-    }
+    labels = COURSE_FILTER_LABELS
     if field not in labels:
         return Response(status_code=400)
-    courses = _COURSE_OPTIONS_CACHE.get("all")
-    if courses is None:
-        courses = await courses_service.list_courses(limit=200)
-        _COURSE_OPTIONS_CACHE.set("all", courses)
+    courses = await cached_course_options(courses_service)
     return templates.TemplateResponse(
         request,
         "components/volunteers/search_filter_select.html",
@@ -84,7 +96,7 @@ async def volunteer_search_course_options(
             "field": field,
             "label": labels[field],
             "options": courses,
-            "selected_ids": _parse_selected_ids(selected),
+            "selected_ids": parse_selected_ids(selected),
             "value_attr": "course_id",
             "label_attr": "name",
         },
@@ -114,7 +126,7 @@ async def volunteer_search_typeahead_options(
     )
 
 
-def _parse_selected_ids(value: str | None) -> list[int]:
+def parse_selected_ids(value: str | None) -> list[int]:
     if not value:
         return []
     selected_ids: list[int] = []

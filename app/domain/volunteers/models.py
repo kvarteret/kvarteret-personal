@@ -102,6 +102,7 @@ class VolunteerListPage:
     limit: int
     cursor: str | None
     next_cursor: str | None
+    total_count: int | None = None
 
 
 @dataclass(slots=True)

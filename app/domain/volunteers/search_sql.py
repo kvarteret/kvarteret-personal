@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from sqlalchemy import (
     Float,
-    Text,
     and_,
     case,
     func,
@@ -27,7 +26,7 @@ from app.shared.semester import get_current_semester_code
 
 
 class _SearchColumns:
-    def __init__(self, assignment_search_text=None) -> None:
+    def __init__(self) -> None:
         self.first_name = func.lower(func.coalesce(volunteer_records.c.first_name, ""))
         self.last_name = func.lower(func.coalesce(volunteer_records.c.last_name, ""))
         self.full_name = func.lower(
@@ -39,22 +38,6 @@ class _SearchColumns:
         )
         self.email = func.lower(func.coalesce(volunteer_records.c.email, ""))
         self.phone = func.lower(func.coalesce(volunteer_records.c.phone, ""))
-        self.group_names = func.lower(
-            func.coalesce(
-                assignment_search_text.c.group_names
-                if assignment_search_text is not None
-                else literal("", type_=Text()),
-                "",
-            )
-        )
-        self.role_names = func.lower(
-            func.coalesce(
-                assignment_search_text.c.role_names
-                if assignment_search_text is not None
-                else literal("", type_=Text()),
-                "",
-            )
-        )
 
 
 class _NameSortColumns:
@@ -63,17 +46,20 @@ class _NameSortColumns:
         self.first_name = func.coalesce(volunteer_records.c.first_name, "")
 
 
-def search_columns(assignment_search_text=None) -> _SearchColumns:
-    return _SearchColumns(assignment_search_text)
+def search_columns() -> _SearchColumns:
+    return _SearchColumns()
 
 
 def name_sort_columns() -> _NameSortColumns:
     return _NameSortColumns()
 
 
-def volunteer_list_base_stmt(*, rank_score=None, active_volunteers=None):
-    points = pingvin_points_subquery()
-    last_semester = _last_semester_subquery()
+def volunteer_list_base_stmt(
+    *, rank_score=None, active_volunteers=None, with_total: bool = False
+):
+    # Points and last semester are correlated per row rather than aggregated
+    # over every assignment and joined: Postgres evaluates output expressions
+    # after ORDER BY/LIMIT, so only the rows on the page pay for them.
     columns = [
         volunteer_records.c.id,
         volunteer_records.c.first_name,
@@ -82,11 +68,14 @@ def volunteer_list_base_stmt(*, rank_score=None, active_volunteers=None):
         volunteer_records.c.phone,
         volunteer_photos.c.sha1,
         volunteer_photos.c.filetype,
-        last_semester.c.last_semester,
-        func.coalesce(points.c.pingvin_points, 0).label("pingvin_points"),
+        _last_semester_for_row().label("last_semester"),
+        func.coalesce(_pingvin_points_for_row(), 0).label("pingvin_points"),
     ]
     if rank_score is not None:
         columns.append(rank_score)
+    if with_total:
+        # Total matches before LIMIT, so the first page needs no count query.
+        columns.append(func.count().over().label("total_count"))
     base_from = volunteer_records
     if active_volunteers is not None:
         base_from = base_from.join(
@@ -96,8 +85,27 @@ def volunteer_list_base_stmt(*, rank_score=None, active_volunteers=None):
         base_from.outerjoin(
             volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
         )
-        .outerjoin(points, points.c.volunteer_id == volunteer_records.c.id)
-        .outerjoin(last_semester, last_semester.c.volunteer_id == volunteer_records.c.id)
+    )
+
+
+def _pingvin_points_for_row():
+    return (
+        select(func.sum(assignment_roles.c.penguin_points))
+        .select_from(
+            role_assignments.outerjoin(
+                assignment_roles, assignment_roles.c.id == role_assignments.c.role_id
+            )
+        )
+        .where(role_assignments.c.volunteer_id == volunteer_records.c.id)
+        .scalar_subquery()
+    )
+
+
+def _last_semester_for_row():
+    return (
+        select(func.max(role_assignments.c.semester))
+        .where(role_assignments.c.volunteer_id == volunteer_records.c.id)
+        .scalar_subquery()
     )
 
 
@@ -113,17 +121,6 @@ def pingvin_points_subquery():
             role_assignments.outerjoin(
                 assignment_roles, assignment_roles.c.id == role_assignments.c.role_id
             )
-        )
-        .group_by(role_assignments.c.volunteer_id)
-        .subquery()
-    )
-
-
-def _last_semester_subquery():
-    return (
-        select(
-            role_assignments.c.volunteer_id.label("volunteer_id"),
-            func.max(role_assignments.c.semester).label("last_semester"),
         )
         .group_by(role_assignments.c.volunteer_id)
         .subquery()
@@ -184,64 +181,92 @@ def current_active_volunteers_subquery(*, semester_code: int | None = None):
     return union(assigned_volunteers, trial_volunteers).subquery()
 
 
-def _assignment_search_text_subquery(*, only_current_semester: bool = True):
-    base = (
-        select(
-            role_assignments.c.volunteer_id.label("volunteer_id"),
-            func.coalesce(
-                func.lower(func.string_agg(func.distinct(groups.c.name), literal(" "))),
-                "",
-            ).label("group_names"),
-            func.coalesce(
-                func.lower(
-                    func.string_agg(
-                        func.distinct(assignment_roles.c.name), literal(" ")
-                    )
-                ),
-                "",
-            ).label("role_names"),
-        )
-        .select_from(
-            role_assignments.outerjoin(
-                groups, groups.c.id == role_assignments.c.group_id
-            ).outerjoin(
-                assignment_roles,
-                assignment_roles.c.id == role_assignments.c.role_id,
+class _AssignmentNameMatches:
+    """Per-volunteer flags for "holds a group/role whose name contains X".
+
+    One pass over only the assignments whose group or role name matches some
+    search needle, grouped per volunteer, replaces aggregating every
+    volunteer's assignment names into a string and pattern-matching that.
+    """
+
+    def __init__(self, needles: list[str], *, only_current_semester: bool) -> None:
+        self._index = {needle: i for i, needle in enumerate(dict.fromkeys(needles))}
+        group_name = func.lower(groups.c.name)
+        role_name = func.lower(assignment_roles.c.name)
+        flags = []
+        likes = []
+        for needle, i in self._index.items():
+            group_like = group_name.contains(needle)
+            role_like = role_name.contains(needle)
+            flags.append(func.bool_or(group_like).label(f"group_{i}"))
+            flags.append(func.bool_or(role_like).label(f"role_{i}"))
+            likes.extend([group_like, role_like])
+        matches = (
+            select(role_assignments.c.volunteer_id.label("volunteer_id"), *flags)
+            .select_from(
+                role_assignments.outerjoin(
+                    groups, groups.c.id == role_assignments.c.group_id
+                ).outerjoin(
+                    assignment_roles,
+                    assignment_roles.c.id == role_assignments.c.role_id,
+                )
             )
+            .where(or_(*likes))
+            .group_by(role_assignments.c.volunteer_id)
         )
-        .group_by(role_assignments.c.volunteer_id)
-    )
-    if only_current_semester:
-        base = base.where(
-            role_assignments.c.semester == get_current_semester_code()
-        ).where(role_assignments.c.contract_signed.is_(True))
-    return base.subquery()
+        if only_current_semester:
+            matches = matches.where(
+                role_assignments.c.semester == get_current_semester_code()
+            ).where(role_assignments.c.contract_signed.is_(True))
+        self.subquery = matches.subquery("assignment_name_matches")
+
+    def join_onto(self, stmt):
+        return stmt.outerjoin(
+            self.subquery, self.subquery.c.volunteer_id == volunteer_records.c.id
+        )
+
+    def group(self, needle: str):
+        return func.coalesce(self.subquery.c[f"group_{self._index[needle]}"], False)
+
+    def role(self, needle: str):
+        return func.coalesce(self.subquery.c[f"role_{self._index[needle]}"], False)
 
 
-def build_volunteer_search_stmt(
-    *, normalized_query: str, limit: int, offset: int, only_active: bool = False
-):
-    assignment_search_text = _assignment_search_text_subquery(
-        only_current_semester=only_active
-    )
-    active_volunteers = current_active_volunteers_subquery() if only_active else None
-    search = search_columns(assignment_search_text)
-    tokens = normalized_query.split()
-    token_filters = [
+def _search_token_filters(search, tokens, name_matches: _AssignmentNameMatches):
+    return [
         or_(
             search.full_name.contains(token),
             search.first_name.contains(token),
             search.last_name.contains(token),
             search.email.contains(token),
             search.phone.contains(token),
-            search.group_names.contains(token),
-            search.role_names.contains(token),
+            name_matches.group(token),
+            name_matches.role(token),
             func.word_similarity(search.full_name, token) >= 0.55,
             func.similarity(search.first_name, token) >= 0.40,
             func.similarity(search.last_name, token) >= 0.40,
         )
         for token in tokens
     ]
+
+
+def build_volunteer_search_stmt(
+    *,
+    normalized_query: str,
+    limit: int,
+    offset: int,
+    only_active: bool = False,
+    with_total: bool = False,
+):
+    active_volunteers = current_active_volunteers_subquery() if only_active else None
+    search = search_columns()
+    tokens = normalized_query.split()
+    name_matches = _AssignmentNameMatches(
+        [normalized_query, *tokens], only_current_semester=only_active
+    )
+    token_filters = _search_token_filters(search, tokens, name_matches)
+    group_match = name_matches.group
+    role_match = name_matches.role
 
     rank_score = literal(0.0, type_=Float())
     rank_score = rank_score + case(
@@ -260,10 +285,10 @@ def build_volunteer_search_stmt(
         (search.full_name.contains(normalized_query), 16.0), else_=0.0
     )
     rank_score = rank_score + case(
-        (search.group_names.contains(normalized_query), 14.0), else_=0.0
+        (group_match(normalized_query), 14.0), else_=0.0
     )
     rank_score = rank_score + case(
-        (search.role_names.contains(normalized_query), 14.0), else_=0.0
+        (role_match(normalized_query), 14.0), else_=0.0
     )
     rank_score = rank_score + case(
         (search.email.contains(normalized_query), 10.0), else_=0.0
@@ -292,21 +317,20 @@ def build_volunteer_search_stmt(
             (search.last_name.startswith(token), 6.0), else_=0.0
         )
         rank_score = rank_score + case(
-            (search.group_names.contains(token), 3.0), else_=0.0
+            (group_match(token), 3.0), else_=0.0
         )
         rank_score = rank_score + case(
-            (search.role_names.contains(token), 3.0), else_=0.0
+            (role_match(token), 3.0), else_=0.0
         )
         rank_score = rank_score + case((search.email.contains(token), 2.5), else_=0.0)
 
     stmt = (
-        volunteer_list_base_stmt(
-            rank_score=rank_score.label("rank_score"),
-            active_volunteers=active_volunteers,
-        )
-        .outerjoin(
-            assignment_search_text,
-            assignment_search_text.c.volunteer_id == volunteer_records.c.id,
+        name_matches.join_onto(
+            volunteer_list_base_stmt(
+                rank_score=rank_score.label("rank_score"),
+                active_volunteers=active_volunteers,
+                with_total=with_total,
+            )
         )
         .where(and_(*token_filters))
         .order_by(
@@ -324,45 +348,22 @@ def build_volunteer_search_stmt(
 def build_volunteer_search_count_stmt(
     *, normalized_query: str, only_active: bool = False
 ):
-    assignment_search_text = _assignment_search_text_subquery(
-        only_current_semester=only_active
-    )
     active_volunteers = current_active_volunteers_subquery() if only_active else None
-    search = search_columns(assignment_search_text)
     tokens = normalized_query.split()
-    token_filters = [
-        or_(
-            search.full_name.contains(token),
-            search.first_name.contains(token),
-            search.last_name.contains(token),
-            search.email.contains(token),
-            search.phone.contains(token),
-            search.group_names.contains(token),
-            search.role_names.contains(token),
-            func.word_similarity(search.full_name, token) >= 0.55,
-            func.similarity(search.first_name, token) >= 0.40,
-            func.similarity(search.last_name, token) >= 0.40,
-        )
-        for token in tokens
-    ]
-    subq = (
-        select(volunteer_records.c.id)
-        .select_from(
-            volunteer_records
-            if active_volunteers is None
-            else volunteer_records.join(
-                active_volunteers,
-                active_volunteers.c.volunteer_id == volunteer_records.c.id,
+    name_matches = _AssignmentNameMatches(tokens, only_current_semester=only_active)
+    token_filters = _search_token_filters(search_columns(), tokens, name_matches)
+    matching = (
+        name_matches.join_onto(
+            select(volunteer_records.c.id).select_from(
+                volunteer_records
+                if active_volunteers is None
+                else volunteer_records.join(
+                    active_volunteers,
+                    active_volunteers.c.volunteer_id == volunteer_records.c.id,
+                )
             )
-        )
-        .outerjoin(
-            volunteer_photos, volunteer_photos.c.volunteer_id == volunteer_records.c.id
-        )
-        .outerjoin(
-            assignment_search_text,
-            assignment_search_text.c.volunteer_id == volunteer_records.c.id,
         )
         .where(and_(*token_filters))
         .subquery()
     )
-    return select(func.count()).select_from(subq)
+    return select(func.count()).select_from(matching)

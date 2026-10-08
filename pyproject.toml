@@ -27,6 +27,7 @@ dependencies = [
     "sqlalchemy>=2.0.48",
     "starlette>=1.0.1",
     "posthog>=7.0,<8",
+    "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
 ]
 
 [dependency-groups]

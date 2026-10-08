@@ -4,15 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.roles import UserRole
 from app.dependencies import (
+    get_courses_service,
     get_groups_service,
     get_volunteers_service,
     require_authenticated_user,
 )
 from app.errors import NotConfiguredError
 from app.observability import log_admin_activity
+from app.domain.courses.service import CoursesService
 from app.domain.groups.service import GroupsService
 from app.domain.volunteers.options import GENDER_OPTIONS
 from app.domain.volunteers.service import VolunteersService
+from app.web.routes.volunteers.helpers import render_detail_panels
 from app.web.templates import templates
 
 router = APIRouter()
@@ -70,10 +73,14 @@ async def volunteers_index(
             limit=VOLUNTEERS_PAGE_SIZE,
             cursor=cursor,
             only_active=only_active_enabled,
+            # A cursor page's window count would only cover rows after it.
+            include_total=not cursor,
         )
-        total_count = await volunteers_service.count_volunteers(
-            query=q, only_active=only_active_enabled
-        )
+        total_count = page.total_count
+        if total_count is None:
+            total_count = await volunteers_service.count_volunteers(
+                query=q, only_active=only_active_enabled
+            )
     except NotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -102,6 +109,7 @@ async def volunteer_detail(
     volunteer_id: int,
     current_user=Depends(require_authenticated_user),
     volunteers_service: VolunteersService = Depends(get_volunteers_service),
+    courses_service: CoursesService = Depends(get_courses_service),
 ):
     try:
         volunteer = await volunteers_service.get_volunteer_detail(volunteer_id)
@@ -124,6 +132,13 @@ async def volunteer_detail(
             subject_type="volunteer",
             subject_id=volunteer_id,
         )
+    detail_panels = await render_detail_panels(
+        request,
+        current_user=current_user,
+        volunteers_service=volunteers_service,
+        courses_service=courses_service,
+        volunteer=volunteer,
+    )
     response = templates.TemplateResponse(
         request,
         "pages/volunteers/volunteer_detail.html",
@@ -134,6 +149,7 @@ async def volunteer_detail(
             "volunteer": volunteer,
             "can_manage_volunteer_profile": can_manage_profile,
             "can_manage_volunteer_photo": can_manage_photo,
+            "detail_panels": detail_panels,
             "gender_options": GENDER_OPTIONS,
             "duplicate_application_id": request.query_params.get(
                 "duplicate_application_id"

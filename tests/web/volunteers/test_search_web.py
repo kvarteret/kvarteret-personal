@@ -63,6 +63,10 @@ def test_search_page_renders_with_fake_services() -> None:
     assert 'name="has_active_signed_contract" type="checkbox" value="on" checked' in response.text
     assert search_service.last_query is not None
     assert search_service.last_query.has_active_signed_contract is True
+    # Filter selects render with the page instead of six lazy requests.
+    assert "Laster..." not in response.text
+    assert '<option value="7" selected>Bar</option>' in response.text
+    assert '<option value="4" >Fire safety</option>' in response.text
     assert options_response.status_code == 200
     assert "Bar" in options_response.text
 

@@ -43,7 +43,7 @@ Do not paste secrets into terminal history. For authenticated checks, use short-
 
 ## Deployment Configuration Notes
 
-Use `DATABASE_USE_NULL_POOL=true` in serverless production to avoid exhausting the Supabase session pooler.
+On Vercel each warm instance keeps one idle database connection (overflowing to at most `DATABASE_MAX_OVERFLOW` more under load), which removes a new TLS and pooler handshake from every request. If the Supabase session pooler runs out of client slots, set `DATABASE_USE_NULL_POOL=true` to fall back to one connection per request.
 
 Set `APP_ENV=production` explicitly. The app refuses to start when `APP_ENV` is
 missing or is not one of `development`, `test`, or `production`.

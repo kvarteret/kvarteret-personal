@@ -73,7 +73,9 @@ class GroupMemberItem:
 class SemesterGroup:
     semester_code: int
     semester_label: str
-    members: list[GroupMemberItem]
+    # None when the semester's members load on demand (history overview).
+    members: list[GroupMemberItem] | None
+    member_count: int = 0
 
 
 @dataclass(slots=True)
@@ -334,7 +336,58 @@ class GroupsQueries(SqlAlchemyRepository):
             delete_blockers=delete_blockers,
         )
 
-    async def get_group_history_by_semester(self, group_id: int) -> list[SemesterGroup]:
+    async def get_group_history_by_semester(
+        self, group_id: int, *, expanded_semesters: int | None = None
+    ) -> list[SemesterGroup]:
+        """Group history newest semester first.
+
+        With *expanded_semesters*, only that many recent semesters carry their
+        members; older ones carry a count and load on demand. Rendering every
+        member of a long-lived group made this page several megabytes.
+        """
+        if expanded_semesters is None:
+            grouped = await self._group_history_members(group_id)
+            return [
+                _semester_group(semester_code, members)
+                for semester_code, members in sorted(grouped.items(), reverse=True)
+            ]
+        count_rows = await self.fetch_all_mappings(
+            select(
+                role_assignments.c.semester,
+                func.count().label("member_count"),
+            )
+            .where(role_assignments.c.group_id == group_id)
+            .group_by(role_assignments.c.semester)
+            .order_by(role_assignments.c.semester.desc())
+        )
+        expanded = [row["semester"] for row in count_rows[:expanded_semesters]]
+        grouped = (
+            await self._group_history_members(group_id, semesters=expanded)
+            if expanded
+            else {}
+        )
+        return [
+            SemesterGroup(
+                semester_code=row["semester"],
+                semester_label=format_semester_code(row["semester"])
+                or str(row["semester"]),
+                members=grouped.get(row["semester"], [])
+                if row["semester"] in expanded
+                else None,
+                member_count=row["member_count"],
+            )
+            for row in count_rows
+        ]
+
+    async def get_group_history_semester(
+        self, group_id: int, semester_code: int
+    ) -> SemesterGroup:
+        grouped = await self._group_history_members(group_id, semesters=[semester_code])
+        return _semester_group(semester_code, grouped.get(semester_code, []))
+
+    async def _group_history_members(
+        self, group_id: int, *, semesters: list[int] | None = None
+    ) -> dict[int, list[GroupMemberItem]]:
         stmt = (
             select(
                 role_assignments.c.id,
@@ -362,6 +415,8 @@ class GroupsQueries(SqlAlchemyRepository):
                 role_assignments.c.id.asc(),
             )
         )
+        if semesters is not None:
+            stmt = stmt.where(role_assignments.c.semester.in_(semesters))
         rows = await self.fetch_all_mappings(stmt)
         grouped_members: dict[int, list[GroupMemberItem]] = defaultdict(list)
         for row in rows:
@@ -383,15 +438,7 @@ class GroupsQueries(SqlAlchemyRepository):
                     contract_signed=row["contract_signed"],
                 )
             )
-        return [
-            SemesterGroup(
-                semester_code=semester_code,
-                semester_label=format_semester_code(semester_code)
-                or str(semester_code),
-                members=members,
-            )
-            for semester_code, members in sorted(grouped_members.items(), reverse=True)
-        ]
+        return grouped_members
 
     async def get_group_semester_stats(self, group_id: int) -> list[SemesterStats]:
         stmt = (
@@ -740,3 +787,12 @@ def _build_group_member_photo_url(sha1: str | None, filetype: str | None) -> str
     if not sha1 or not filetype:
         return None
     return build_photo_media_url(f"{sha1}.{filetype}")
+
+
+def _semester_group(semester_code: int, members: list[GroupMemberItem]) -> SemesterGroup:
+    return SemesterGroup(
+        semester_code=semester_code,
+        semester_label=format_semester_code(semester_code) or str(semester_code),
+        members=members,
+        member_count=len(members),
+    )

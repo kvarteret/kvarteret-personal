@@ -74,7 +74,7 @@ def test_media_photo_route_returns_backend_bytes(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
     assert len(response.content) > 0
-    assert response.headers["cache-control"] == "private, max-age=900"
+    assert response.headers["cache-control"] == "private, max-age=3600, immutable"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["etag"] == '"photo-abc123-512"'
 

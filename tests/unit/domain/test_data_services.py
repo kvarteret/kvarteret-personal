@@ -66,6 +66,7 @@ class FakeVolunteersRepository:
         after_first_name: str | None = None,
         after_volunteer_id: int | None = None,
         only_active: bool = False,
+        with_total: bool = False,
     ):
         self.calls.append(
             {
@@ -780,6 +781,7 @@ async def test_volunteers_service_search_queries_use_ranked_database_path(
         cursor: str | None,
         *,
         only_active: bool = False,
+        include_total: bool = False,
     ):
         assert normalized_query == "martin kleiven"
         assert limit == 10

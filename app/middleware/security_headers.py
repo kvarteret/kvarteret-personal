@@ -9,9 +9,9 @@ Headers added in all environments:
 - ``Referrer-Policy: strict-origin-when-cross-origin``
 
 On HTML responses (text/html content-type):
-- ``Content-Security-Policy`` allowing self-hosted assets, unpkg (htmx),
-  jsdelivr (Alpine.js, ECharts), and inline scripts/styles required by
-  the admin UI templates.
+- ``Content-Security-Policy`` allowing self-hosted assets (including the
+  vendored htmx, Alpine.js and SortableJS), jsdelivr (ECharts), and inline
+  scripts/styles required by the admin UI templates.
 
 In production only:
 - ``Strict-Transport-Security: max-age=31536000; includeSubDomains``
@@ -23,12 +23,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-# The admin UI loads HTMX and Alpine.js inline scripts plus ECharts from CDN.
+# The admin UI self-hosts HTMX and Alpine.js and loads ECharts from a CDN.
 # 'unsafe-inline' is required until templates are refactored to use nonces or
 # external script files.
 _ADMIN_CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; "
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "connect-src 'self'; "

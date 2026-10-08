@@ -6,12 +6,15 @@ import logging
 import os
 import json
 
+from typing import TYPE_CHECKING
+
 from fastapi import FastAPI
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
@@ -22,6 +25,9 @@ from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
 from app.error_tracking import configure_error_tracking
 from app.observability import (
     DOMAIN_OUTCOME_EVENTS,
@@ -112,7 +118,9 @@ def _build_trace_provider(resource: Resource) -> TracerProvider:
     )
 
 
-def configure_telemetry(app: FastAPI, settings: Settings) -> None:
+def configure_telemetry(
+    app: FastAPI, settings: Settings, *, database_engine: AsyncEngine | None = None
+) -> None:
     """Install best-effort OTLP logs and traces for the current process."""
     global _httpx_instrumented
     if not settings.posthog_observability_enabled:
@@ -167,6 +175,14 @@ def configure_telemetry(app: FastAPI, settings: Settings) -> None:
         if not _httpx_instrumented:
             HTTPXClientInstrumentor().instrument(tracer_provider=trace_provider)
             _httpx_instrumented = True
+        if database_engine is not None:
+            # Statement spans carry the SQL text (bound values stay out), so
+            # request traces show where database time goes.
+            SQLAlchemyInstrumentor().instrument(
+                engine=database_engine.sync_engine,
+                tracer_provider=trace_provider,
+                enable_commenter=False,
+            )
     except Exception:
         # Telemetry is never authoritative and must not prevent app startup.
         logger.warning(
