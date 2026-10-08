@@ -61,9 +61,14 @@ Keep `.vercelignore` excluding local-only archives such as `data/`.
 
 `app/db/pooler_trial.py` provides an opt-in connection canary. Keep
 `DATABASE_URL` pointing to the Supabase session pooler on port 5432. Set
-`DATABASE_TRANSACTION_POOLER_PERCENT=5` to send approximately 5% of new
-connections to the same host, database and credentials on transaction-mode
-port 6543. The default is zero, preserving the existing runtime.
+`DATABASE_TRANSACTION_POOLER_ENABLED=true` and configure the PostHog server-only remote flag
+`personal-database-transaction-pooler` with payload `{"percentage":5}`
+to send approximately 5% of new connections to the same host, database and credentials on transaction-mode
+port 6543. The environment switch defaults to false. Flag values are cached for 30 seconds
+per runtime; missing, disabled, invalid or failed flag evaluation selects zero.
+`POSTHOG_FEATURE_FLAGS_TOKEN` selects the feature flag project, falling back to
+`POSTHOG_PROJECT_TOKEN` when absent. Evaluation uses a fixed infrastructure ID
+and never sends volunteer identities. See https://posthog.com/docs/api/flags.
 
 Both paths use `NullPool` and disable prepared statement caching. A trial
 handshake has a two-second timeout. If it fails, the connector opens the
@@ -77,8 +82,10 @@ authentication 503s, request latency, and Supabase connection usage. Increase
 the percentage only after successful authenticated reads and writes and
 representative traffic. A local read-only test is not a production load test.
 
-To stop the trial, set `DATABASE_TRANSACTION_POOLER_PERCENT=0` in Vercel
-production and redeploy. For immediate rollback, restore the previous ready
+To stop the trial, disable the flag in PostHog (applies to new connections
+within 30 seconds of each runtime’s last refresh). The emergency switch is
+`DATABASE_TRANSACTION_POOLER_ENABLED=false` in Vercel production; redeploy
+after changing it. For immediate rollback, restore the previous ready
 production deployment with Vercel rollback. Warm runtimes on the old deployment
 may continue briefly until retired. Do not enable persistent application pools
 as part of this trial.

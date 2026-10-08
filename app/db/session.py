@@ -92,7 +92,7 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
             engine_kwargs["pool_recycle"] = settings.database_pool_recycle_seconds
             engine_kwargs["pool_use_lifo"] = True
 
-    if settings.database_transaction_pooler_percent:
+    if settings.database_transaction_pooler_enabled:
         try:
             engine_kwargs["async_creator"] = build_trial_connector(settings)
         except ValueError:

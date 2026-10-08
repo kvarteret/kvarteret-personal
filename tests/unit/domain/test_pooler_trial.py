@@ -9,11 +9,16 @@ from app.db.pooler_trial import build_trial_connector
 from app.db.session import build_database_runtime
 
 
+@pytest.fixture(autouse=True)
+def enabled_flag(monkeypatch):
+    monkeypatch.setattr("app.db.pooler_trial.build_percentage_provider", lambda _: AsyncMock(return_value=100))
+
+
 def trial_settings(**kwargs):
     return Settings(
         _env_file=None,
         database_url="postgresql+asyncpg://user:secret@aws-1-eu-north-1.pooler.supabase.com:5432/postgres",
-        database_transaction_pooler_percent=100,
+        database_transaction_pooler_enabled=True,
         **kwargs,
     )
 
@@ -54,7 +59,7 @@ async def test_disabled_sampling_uses_fallback(monkeypatch):
     monkeypatch.setattr("app.db.pooler_trial.asyncpg.connect", connect)
     monkeypatch.setattr("app.db.pooler_trial.random.randrange", lambda _: 50)
     settings = trial_settings()
-    settings.database_transaction_pooler_percent = 5
+    monkeypatch.setattr("app.db.pooler_trial.build_percentage_provider", lambda _: AsyncMock(return_value=5))
     await build_trial_connector(settings)()
     assert connect.call_args.kwargs["port"] == 5432
 

@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql.asyncpg import PGDialect_asyncpg
 from sqlalchemy.engine import make_url
 
 from app.config import Settings
+from app.db.pooler_flag import build_percentage_provider
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def build_trial_connector(settings: Settings) -> Callable[[], Awaitable[asyncpg.
         "port": 6543,
         "timeout": settings.database_transaction_pooler_connect_timeout_seconds,
     }
+    get_percentage = build_percentage_provider(settings)
     retry_after = 0.0
     connecting_trial = False
 
@@ -42,7 +44,7 @@ def build_trial_connector(settings: Settings) -> Callable[[], Awaitable[asyncpg.
         if (
             not connecting_trial
             and time.monotonic() >= retry_after
-            and random.randrange(100) < settings.database_transaction_pooler_percent
+            and random.randrange(100) < await get_percentage()
         ):
             # One trial handshake at a time per runtime limits failure bursts.
             connecting_trial = True

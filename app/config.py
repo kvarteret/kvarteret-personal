@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     photo_default_size: int = Field(default=512)
     database_url: str | None = Field(default=None)
     # Canary connections use the same Supabase host/credentials on port 6543.
-    # Zero disables the trial; DATABASE_URL remains the fallback.
-    database_transaction_pooler_percent: int = Field(default=0, ge=0, le=100)
+    # Emergency off switch; rollout percentage lives in PostHog.
+    database_transaction_pooler_enabled: bool = Field(default=False)
     database_transaction_pooler_connect_timeout_seconds: float = Field(default=2, gt=0, le=10)
     database_transaction_pooler_cooldown_seconds: float = Field(default=60, gt=0)
     database_use_null_pool: bool = Field(default=False)
@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     posthog_observability_enabled: bool = Field(default=False)
     posthog_project_token: str | None = Field(default=None)
+    posthog_feature_flags_token: str | None = Field(default=None, repr=False)
     posthog_host: str = Field(default="https://eu.i.posthog.com")
     otel_service_name: str = Field(default="kvarteret-personal")
     email_dispatch_enabled: bool = Field(default=True)
@@ -137,6 +138,7 @@ class Settings(BaseSettings):
         "review_bypass_token",
         "log_level",
         "posthog_project_token",
+        "posthog_feature_flags_token",
         "posthog_host",
         "otel_service_name",
         "cron_secret",
