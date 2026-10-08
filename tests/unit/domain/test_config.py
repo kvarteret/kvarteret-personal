@@ -204,7 +204,7 @@ def test_build_database_runtime_uses_queue_pool_by_default(monkeypatch) -> None:
     }
 
 
-def test_build_database_runtime_keeps_one_idle_connection_on_vercel(monkeypatch) -> None:
+def test_build_database_runtime_uses_null_pool_on_vercel(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_create_async_engine(database_url: str, **kwargs):
@@ -220,11 +220,7 @@ def test_build_database_runtime_keeps_one_idle_connection_on_vercel(monkeypatch)
     assert captured["kwargs"] == {
         "connect_args": {},
         "pool_pre_ping": True,
-        "pool_size": 1,
-        "max_overflow": 5,
-        "pool_timeout": 10,
-        "pool_recycle": 300,
-        "pool_use_lifo": True,
+        "poolclass": NullPool,
     }
 
 

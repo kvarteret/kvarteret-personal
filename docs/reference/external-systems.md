@@ -16,7 +16,7 @@ This page documents third-party systems used by `kvarteret-personal` and related
 
 ## Supabase
 
-Supabase Postgres is the primary database. The app connects through SQLAlchemy Core using `DATABASE_URL`. On Vercel each warm instance keeps one idle pooled connection; `DATABASE_USE_NULL_POOL=true` switches back to a fresh connection per request.
+Supabase Postgres is the primary database. The app connects through SQLAlchemy Core using `DATABASE_URL`. On Vercel the app uses a fresh connection per request (`NullPool`); idle pooled connections across many instances exhaust the Supabase session pooler.
 
 Supabase Auth is not the mobile-card auth provider. It is used for admin-user lifecycle and password flows. The app bridges old auth state into Supabase Auth and stores web sessions separately.
 

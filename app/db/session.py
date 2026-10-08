@@ -75,19 +75,13 @@ def build_database_runtime(settings: Settings) -> DatabaseRuntime:
         "pool_pre_ping": True,
     }
     if not is_sqlite:
-        if settings.database_use_null_pool:
+        # Serverless instances must not hold idle connections: Vercel runs
+        # many instances at once and the Supabase session pooler has a small,
+        # fixed number of client slots. Keeping one connection per warm
+        # instance exhausted them and took production down (2026-10-08).
+        use_null_pool = settings.database_use_null_pool or bool(os.getenv("VERCEL"))
+        if use_null_pool:
             engine_kwargs["poolclass"] = NullPool
-        elif os.getenv("VERCEL"):
-            # Fluid compute reuses warm instances (and their event loop), so
-            # keep one idle connection per instance instead of paying TCP, TLS
-            # and pooler authentication (~100 ms) on every request. Bursts
-            # overflow to short-lived connections; pre-ping discards a
-            # connection that died while the instance was frozen.
-            engine_kwargs["pool_size"] = 1
-            engine_kwargs["max_overflow"] = settings.database_max_overflow
-            engine_kwargs["pool_timeout"] = settings.database_pool_timeout_seconds
-            engine_kwargs["pool_recycle"] = 300
-            engine_kwargs["pool_use_lifo"] = True
         else:
             engine_kwargs["pool_size"] = settings.database_pool_size
             engine_kwargs["max_overflow"] = settings.database_max_overflow
