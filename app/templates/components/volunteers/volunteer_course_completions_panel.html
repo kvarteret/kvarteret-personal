@@ -58,7 +58,7 @@
               hx-swap="outerHTML"
               hx-target="closest section"
               method="post"
-              onsubmit="return window.confirm('Slette denne kursfullføringen?');"
+              hx-confirm="Slette denne kursfullføringen?"
             >
               <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
             </form>

@@ -23,7 +23,7 @@
             </div>
           </form>
           <div class="mt-3 flex flex-wrap gap-3">
-            <form action="/courses/{{ course.course_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette dette kurset?');">
+            <form action="/courses/{{ course.course_id }}?_method=DELETE" method="post" hx-confirm="Slette dette kurset?">
               <button class="inline-flex min-h-12 items-center justify-center bg-white px-5 font-semibold text-stone-900 shadow-md hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50" type="submit" {% if course.delete_blockers %}disabled{% endif %}>Slett kurs</button>
             </form>
           </div>
@@ -75,7 +75,7 @@
               <div class="text-sm text-stone-600">{{ completion.completed_semester_label }}</div>
               {% if can_manage_course %}
                 <div class="flex md:justify-end">
-                  <form action="/courses/{{ course.course_id }}/completions/{{ completion.completion_id }}?_method=DELETE" method="post" onsubmit="return window.confirm('Slette denne kursfullføringen?');">
+                  <form action="/courses/{{ course.course_id }}/completions/{{ completion.completion_id }}?_method=DELETE" method="post" hx-confirm="Slette denne kursfullføringen?">
                     <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
                   </form>
                 </div>
