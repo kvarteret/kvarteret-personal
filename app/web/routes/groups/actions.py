@@ -30,6 +30,7 @@ from app.domain.role_assignments.models import (
 )
 from app.domain.role_assignments.service import RoleAssignmentsService
 from app.web.route_helpers import blocked_http_exception, log_and_redirect
+from app.web.routes.groups.pages import GROUP_HISTORY_EXPANDED_SEMESTERS
 from app.web.templates import templates
 
 _GROUP_NOT_FOUND = "Group not found."
@@ -350,7 +351,9 @@ async def group_history_delete(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=_GROUP_NOT_FOUND
             )
-        history = await groups_service.get_group_history_by_semester(group_id)
+        history = await groups_service.get_group_history_by_semester(
+            group_id, expanded_semesters=GROUP_HISTORY_EXPANDED_SEMESTERS
+        )
         stats = await groups_service.get_group_semester_stats(group_id)
         retention = await groups_service.get_group_retention_stats(group_id)
         return templates.TemplateResponse(

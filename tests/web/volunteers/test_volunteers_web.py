@@ -54,6 +54,7 @@ class FakeVolunteersService:
         limit: int = 10,
         cursor: str | None = None,
         only_active: bool = False,
+        include_total: bool = False,
     ) -> VolunteerListPage:
         self.list_page_calls.append(
             {
@@ -374,10 +375,13 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert "Laster flere frivillige" in list_response.text
     assert detail_response.status_code == 200
     assert detail_response.headers["cache-control"] == "no-store"
-    assert "Laster historikk" in detail_response.text
-    assert "Laster kurs" in detail_response.text
-    # Documents panel removed — "Laster filer" no longer rendered
-    assert detail_response.text.count("Laster relasjoner") == 1
+    # History, courses and relations render with the page instead of lazily.
+    assert "Laster historikk" not in detail_response.text
+    assert "Laster kurs" not in detail_response.text
+    assert "Laster relasjoner" not in detail_response.text
+    assert "Shift lead" in detail_response.text
+    assert "CARD-42" in detail_response.text
+    assert "Legg til nytt verv" in detail_response.text
     assert "name=\"gender\"" in detail_response.text
     assert 'type="file"' in detail_response.text
     assert 'enctype="multipart/form-data"' in detail_response.text
@@ -386,7 +390,6 @@ def test_volunteer_pages_render_with_fake_service() -> None:
     assert 'onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"' in detail_response.text
     assert 'src="/media/photos/abc123.jpg?token=test"' in detail_response.text
     assert 'class="grid h-52 w-52 cursor-pointer place-items-center overflow-hidden rounded-sm bg-stone-300 text-5xl font-semibold text-stone-600 shadow-md transition hover:shadow-lg"' in detail_response.text
-    assert 'hx-trigger="intersect once"' in detail_response.text
     assert "Slett frivillig" in detail_response.text
     assert "Registreringslogg" in detail_response.text
     assert "#44" in detail_response.text
@@ -409,6 +412,7 @@ def test_volunteer_page_can_disable_only_active_filter() -> None:
     service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: service
     app.dependency_overrides[get_role_assignments_service] = lambda: service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     response = client.get("/volunteers?only_active=")
@@ -423,6 +427,7 @@ def test_management_user_can_delete_volunteer() -> None:
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     response = client.post("/volunteers/12?_method=DELETE", follow_redirects=False)
@@ -438,6 +443,7 @@ def test_group_admin_can_upload_photo_for_volunteer_in_their_group() -> None:
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     detail_response = client.get("/volunteers/12")
@@ -468,6 +474,7 @@ def test_group_admin_can_upload_photo_with_csrf_token_inside_multipart_form() ->
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
     session_cookie_name = app.state.container.settings.session_cookie_name
     session_cookie_value = "test-session"
@@ -503,6 +510,7 @@ def test_group_admin_can_upload_photo_with_csrf_header_and_multipart_form() -> N
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
     session_cookie_name = app.state.container.settings.session_cookie_name
     session_cookie_value = "test-session"
@@ -538,6 +546,7 @@ def test_group_admin_can_update_profile_for_any_volunteer() -> None:
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     detail_response = client.get("/volunteers/12")
@@ -581,6 +590,7 @@ def test_group_admin_can_upload_photo_for_any_volunteer() -> None:
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     detail_response = client.get("/volunteers/12")
@@ -609,6 +619,7 @@ def test_group_admin_photo_upload_rejects_files_over_40mb() -> None:
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     response = client.post(
@@ -628,6 +639,7 @@ def test_group_admin_photo_upload_rejects_missing_file_without_422() -> None:
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     response = client.post("/volunteers/12/photo", follow_redirects=False)
@@ -643,6 +655,7 @@ def test_group_admin_can_update_profile_for_any_volunteer_even_without_shared_gr
     volunteers_service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: volunteers_service
     app.dependency_overrides[get_role_assignments_service] = lambda: volunteers_service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     detail_response = client.get("/volunteers/12")
@@ -679,6 +692,7 @@ def test_volunteer_list_fragment_renders_with_fake_service() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
     client = TestClient(app)
 
@@ -694,6 +708,7 @@ def test_volunteer_html_responses_revalidate_after_preload() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
     client = TestClient(app)
 
@@ -711,6 +726,7 @@ def test_volunteer_detail_panels_render_with_fake_service() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
     client = TestClient(app)
 
@@ -737,6 +753,7 @@ def test_volunteer_detail_page_renders_discount_level_label() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     app.dependency_overrides[get_groups_service] = lambda: FakeGroupsService()
     client = TestClient(app)
 
@@ -796,6 +813,7 @@ def test_volunteer_relations_update_route_uses_service_for_htmx() -> None:
     service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: service
     app.dependency_overrides[get_role_assignments_service] = lambda: service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     response = client.post(
@@ -862,6 +880,7 @@ def test_volunteer_role_assignment_panel_renders_edit_state() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     response = client.get("/volunteers/12/role-assignments/panel?edit_assignment_id=5")
@@ -882,6 +901,7 @@ def test_volunteer_role_assignment_update_route_uses_service_for_htmx() -> None:
     service = FakeVolunteersService()
     app.dependency_overrides[get_volunteers_service] = lambda: service
     app.dependency_overrides[get_role_assignments_service] = lambda: service
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     response = client.post(
@@ -936,6 +956,7 @@ def test_volunteer_upload_endpoints_are_not_available() -> None:
     override_authenticated_user(app, make_authenticated_user())
     app.dependency_overrides[get_volunteers_service] = lambda: FakeVolunteersService()
     app.dependency_overrides[get_role_assignments_service] = lambda: FakeVolunteersService()
+    app.dependency_overrides[get_courses_service] = lambda: FakeCoursesService()
     client = TestClient(app)
 
     assert client.put("/volunteers/12/photo").status_code == 405

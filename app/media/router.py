@@ -33,8 +33,10 @@ from app.domain.volunteers.service import VolunteersService
 logger = get_logger(__name__)
 _PHOTO_NOT_FOUND = "Photo not found."
 router = APIRouter()
+# Photo paths are content hashes and token URLs are stable for a token window,
+# so a cached response can never go stale.
 SECURE_MEDIA_HEADERS = {
-    "Cache-Control": "private, max-age=900",
+    "Cache-Control": "private, max-age=3600, immutable",
     "X-Content-Type-Options": "nosniff",
     "Vary": "Accept",
 }

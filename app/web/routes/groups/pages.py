@@ -108,6 +108,10 @@ async def groups_detail(
     )
 
 
+# Recent semesters render with their members; older ones load when expanded.
+GROUP_HISTORY_EXPANDED_SEMESTERS = 2
+
+
 @router.get("/groups/{group_id}/history")
 async def groups_detail_history(
     request: Request,
@@ -116,7 +120,9 @@ async def groups_detail_history(
     groups_service: GroupsService = Depends(get_groups_service),
 ):
     try:
-        history = await groups_service.get_group_history_by_semester(group_id)
+        history = await groups_service.get_group_history_by_semester(
+            group_id, expanded_semesters=GROUP_HISTORY_EXPANDED_SEMESTERS
+        )
     except NotConfiguredError:
         raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
     can_manage = current_user.role in {UserRole.ADMIN, UserRole.GROUP_ADMIN}
@@ -128,6 +134,33 @@ async def groups_detail_history(
             "history": history,
             "group_id": group_id,
             "can_manage_group": can_manage,
+        },
+    )
+
+
+@router.get("/groups/{group_id}/history/semesters/{semester_code}")
+async def groups_detail_history_semester(
+    request: Request,
+    group_id: int,
+    semester_code: int,
+    current_user=Depends(require_authenticated_user),
+    groups_service: GroupsService = Depends(get_groups_service),
+):
+    try:
+        semester_group = await groups_service.get_group_history_semester(
+            group_id, semester_code
+        )
+    except NotConfiguredError:
+        raise not_configured_http_exception(_GROUP_PAGES_NOT_CONFIGURED)
+    return templates.TemplateResponse(
+        request,
+        "components/groups/group_history_members.html",
+        {
+            "current_user": current_user,
+            "members": semester_group.members,
+            "group_id": group_id,
+            "can_manage_group": current_user.role
+            in {UserRole.ADMIN, UserRole.GROUP_ADMIN},
         },
     )
 

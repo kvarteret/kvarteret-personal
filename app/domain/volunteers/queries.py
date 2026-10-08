@@ -132,6 +132,7 @@ class VolunteersQueries(SqlAlchemyRepository):
         limit: int = 10,
         cursor: str | None = None,
         only_active: bool = False,
+        include_total: bool = False,
     ) -> VolunteerListPage:
         # Browsing and free-text search need different cursor strategies:
         # browse uses stable name-based cursors, while search falls back to
@@ -146,6 +147,7 @@ class VolunteersQueries(SqlAlchemyRepository):
                     safe_limit,
                     cursor,
                     only_active=only_active,
+                    include_total=include_total,
                 )
             else:
                 decoded = _decode_cursor(cursor)
@@ -161,6 +163,7 @@ class VolunteersQueries(SqlAlchemyRepository):
                     if decoded.get("mode") == "browse"
                     else None,
                     only_active=only_active,
+                    with_total=include_total,
                 )
                 has_more = len(rows) > safe_limit
                 visible_rows = rows[:safe_limit]
@@ -176,6 +179,7 @@ class VolunteersQueries(SqlAlchemyRepository):
                     next_cursor=_encode_browse_cursor(visible_rows[-1])
                     if has_more and visible_rows
                     else None,
+                    total_count=_total_from_rows(rows) if include_total else None,
                 )
             return page
         finally:
@@ -199,6 +203,7 @@ class VolunteersQueries(SqlAlchemyRepository):
         cursor: str | None,
         *,
         only_active: bool = False,
+        include_total: bool = False,
     ) -> VolunteerListPage:
         # Search pagination intentionally uses a bounded offset cursor
         # instead of reusing browse cursors, because query-shaped result
@@ -210,6 +215,7 @@ class VolunteersQueries(SqlAlchemyRepository):
             limit=limit + 1,
             offset=max(0, min(offset, 10_000)),
             only_active=only_active,
+            with_total=include_total,
         )
         has_more = len(rows) > limit
         visible_rows = rows[:limit]
@@ -227,6 +233,7 @@ class VolunteersQueries(SqlAlchemyRepository):
             next_cursor=_encode_cursor({"mode": "search", "offset": offset + limit})
             if has_more
             else None,
+            total_count=_total_from_rows(rows) if include_total else None,
         )
 
     # ── Detail-page panels (cached per volunteer) ──────────────────
@@ -380,13 +387,16 @@ class VolunteersQueries(SqlAlchemyRepository):
         after_first_name: str | None = None,
         after_volunteer_id: int | None = None,
         only_active: bool = False,
+        with_total: bool = False,
     ) -> list[dict[str, Any]]:
         name_sort = name_sort_columns()
         active_volunteers = (
             current_active_volunteers_subquery() if only_active else None
         )
         stmt = (
-            volunteer_list_base_stmt(active_volunteers=active_volunteers)
+            volunteer_list_base_stmt(
+                active_volunteers=active_volunteers, with_total=with_total
+            )
             .order_by(
                 name_sort.last_name.asc(),
                 name_sort.first_name.asc(),
@@ -422,6 +432,7 @@ class VolunteersQueries(SqlAlchemyRepository):
         limit: int,
         offset: int = 0,
         only_active: bool = False,
+        with_total: bool = False,
     ) -> list[dict[str, Any]]:
         return await self.fetch_all_mappings(
             build_volunteer_search_stmt(
@@ -429,6 +440,7 @@ class VolunteersQueries(SqlAlchemyRepository):
                 limit=limit,
                 offset=offset,
                 only_active=only_active,
+                with_total=with_total,
             )
         )
 
@@ -603,6 +615,11 @@ def require_media_token_service(
             "A media token service must be configured before building media URLs."
         )
     return media_token_service
+
+
+def _total_from_rows(rows: list[dict[str, Any]]) -> int:
+    # The window count rides on every row; an empty page means no matches.
+    return int(rows[0]["total_count"]) if rows else 0
 
 
 def build_photo_url(

@@ -5,9 +5,23 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.auth.roles import UserRole
-from app.dependencies import get_volunteer_search_service, require_authenticated_user
+from app.dependencies import (
+    get_courses_service,
+    get_groups_service,
+    get_volunteer_search_service,
+    require_authenticated_user,
+)
+from app.domain.courses.service import CoursesService
+from app.domain.groups.service import GroupsService
 from app.observability import log_admin_activity
 from app.domain.search import SearchFilterList, SearchQuery, VolunteerSearchService
+from app.web.routes.volunteers.search_fragments import (
+    COURSE_FILTER_LABELS,
+    GROUP_FILTER_LABELS,
+    cached_course_options,
+    cached_group_options,
+    parse_selected_ids,
+)
 from app.web.templates import templates
 
 router = APIRouter()
@@ -53,6 +67,8 @@ async def search_volunteers_page(
     volunteer_search_service: VolunteerSearchService = Depends(
         get_volunteer_search_service
     ),
+    groups_service: GroupsService = Depends(get_groups_service),
+    courses_service: CoursesService = Depends(get_courses_service),
 ):
     should_run_search = bool(request.query_params)
     params = request.query_params
@@ -82,6 +98,26 @@ async def search_volunteers_page(
                 },
             )
 
+    # Render the filter selects with the page; loading each one lazily cost six
+    # extra requests on every visit.
+    group_options = await cached_group_options(groups_service)
+    course_options = await cached_course_options(courses_service)
+    filter_selects = [
+        {
+            "field": field,
+            "label": label,
+            "options": options,
+            "selected_ids": parse_selected_ids(",".join(params.getlist(field))),
+            "value_attr": value_attr,
+            "label_attr": "name",
+        }
+        for labels, options, value_attr in (
+            (GROUP_FILTER_LABELS, group_options, "group_id"),
+            (COURSE_FILTER_LABELS, course_options, "course_id"),
+        )
+        for field, label in labels.items()
+    ]
+
     return templates.TemplateResponse(
         request,
         "pages/volunteers/volunteers_search.html",
@@ -90,6 +126,7 @@ async def search_volunteers_page(
             "section": "volunteer-search",
             "current_user": current_user,
             "results": results,
+            "filter_selects": filter_selects,
             "form": {
                 "birth_date_after": params.get("birth_date_after", ""),
                 "birth_date_before": params.get("birth_date_before", ""),

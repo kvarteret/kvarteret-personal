@@ -94,6 +94,7 @@ class FakeVolunteersService:
         limit: int = 10,
         cursor: str | None = None,
         only_active: bool = False,
+        include_total: bool = False,
     ) -> VolunteerListPage:
         return VolunteerListPage(
             items=[

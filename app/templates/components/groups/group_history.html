@@ -9,41 +9,19 @@
   {% else %}
     <div class="grid gap-6">
       {% for semester_group in history %}
-        <details class="group/semester">
+        <details class="group/semester"{% if semester_group.members is none %} hx-get="/groups/{{ group_id }}/history/semesters/{{ semester_group.semester_code }}" hx-swap="innerHTML" hx-target="find .group-history-members" hx-trigger="toggle once"{% endif %}>
           <summary class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 hover:bg-stone-100">
             <span class="font-medium text-stone-900">{{ semester_group.semester_label }}</span>
-            <span class="app-badge">{{ semester_group.members|length }} medlemmer</span>
+            <span class="app-badge">{{ semester_group.member_count }} medlemmer</span>
           </summary>
-          <div class="mt-2 grid gap-0 rounded-b-lg border border-t-0 border-stone-200">
-            {% for member in semester_group.members %}
-              <div class="grid gap-3 border-b border-stone-200 px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1.8fr)_minmax(8rem,0.8fr)_minmax(9rem,0.9fr)_auto] md:items-center">
-                <div class="flex min-w-0 items-center gap-3">
-                  <div class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-sm bg-stone-300 text-sm font-semibold text-stone-600">
-                    {% if member.photo_url %}
-                      <img alt="{{ member.volunteer_name }}" class="h-full w-full object-cover" decoding="async" fetchpriority="low" loading="lazy" src="{{ member.photo_url }}">
-                    {% else %}
-                      {{ member.volunteer_name[:1] }}
-                    {% endif %}
-                  </div>
-                  <a class="font-medium text-stone-900 hover:text-kvarteret-red" href="/volunteers/{{ member.volunteer_id }}">{{ member.volunteer_name }}</a>
-                </div>
-                <span class="text-sm text-stone-500">{{ member.role_name or "Ingen rolle" }}</span>
-                <span class="text-sm text-stone-500">{% if member.contract_signed %}Signert kontrakt{% else %}Ikke signert{% endif %}</span>
-                {% if can_manage_group %}
-                  <div class="flex md:justify-end">
-                    <form
-                      action="/groups/{{ group_id }}/history/{{ member.history_id }}?_method=DELETE"
-                      hx-delete="/groups/{{ group_id }}/history/{{ member.history_id }}"
-                      hx-swap="none"
-                      method="post"
-                      hx-confirm="Slette denne historikkraden?"
-                    >
-                      <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
-                    </form>
-                  </div>
-                {% endif %}
-              </div>
-            {% endfor %}
+          <div class="group-history-members mt-2 grid gap-0 rounded-b-lg border border-t-0 border-stone-200">
+            {% if semester_group.members is none %}
+              <p class="px-4 py-3 text-sm text-stone-500">Laster medlemmer...</p>
+            {% else %}
+              {% with members=semester_group.members %}
+                {% include "components/groups/group_history_members.html" %}
+              {% endwith %}
+            {% endif %}
           </div>
         </details>
       {% endfor %}

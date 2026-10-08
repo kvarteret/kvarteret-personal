@@ -1,7 +1,11 @@
 from datetime import UTC, datetime
+from functools import lru_cache
+from hashlib import sha256
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 
 from app.web.i18n import get_template_gettext, get_template_ngettext
 
@@ -18,6 +22,25 @@ def format_datetime_oslo(value: datetime | None) -> str:
     return value.astimezone(OSLO_TIMEZONE).strftime("%d.%m.%Y %H:%M")
 
 
+STATIC_ROOT = Path("app/static")
+
+
+@lru_cache(maxsize=256)
+def _static_asset_version(path: str) -> str | None:
+    try:
+        return sha256((STATIC_ROOT / path).read_bytes()).hexdigest()[:12]
+    except OSError:
+        return None
+
+
+@pass_context
+def asset_url(context, path: str) -> str:
+    """Static URL with a content-hash query, cached as immutable on Vercel."""
+    url = str(context["request"].url_for("static", path=path))
+    version = _static_asset_version(path)
+    return f"{url}?v={version}" if version else url
+
+
 templates = Jinja2Templates(directory="app/templates")
 templates.env.add_extension("jinja2.ext.i18n")
 templates.env.install_gettext_callables(
@@ -26,3 +49,4 @@ templates.env.install_gettext_callables(
     newstyle=True,
 )
 templates.env.globals["format_datetime_oslo"] = format_datetime_oslo
+templates.env.globals["asset_url"] = asset_url

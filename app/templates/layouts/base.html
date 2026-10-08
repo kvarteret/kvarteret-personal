@@ -5,18 +5,18 @@
     <meta content="{{ request.state.csrf_token }}" name="csrf-token">
     <meta content="width=device-width, initial-scale=1" name="viewport">
     <title>{{ title }}</title>
-    <link href="{{ url_for('static', path='css/output.css') }}" rel="stylesheet">
+    <link href="{{ asset_url('css/output.css') }}" rel="stylesheet">
     <meta name="htmx-config" content='{"noSwap":[204,304,"4xx","5xx"]}'>
-    <script src="https://unpkg.com/htmx.org@4.0.0/dist/htmx.min.js"></script>
-    <script src="https://unpkg.com/htmx.org@4.0.0/dist/ext/hx-alpine-compat.js"></script>
-    <script defer src="{{ url_for('static', path='js/vercel-observability.js') }}" type="module"></script>
-    <script defer src="{{ url_for('static', path='js/client-error-reporting.js') }}"></script>
-    <script defer src="{{ url_for('static', path='js/htmx-error-feedback.js') }}"></script>
-    <script defer src="{{ url_for('static', path='js/volunteer-picker.js') }}"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
-    <script defer src="{{ url_for('static', path='js/application-group-filter.js') }}"></script>
-    <script defer src="{{ url_for('static', path='js/application-board.js') }}"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="{{ asset_url('vendor/htmx-4.0.0.min.js') }}"></script>
+    <script defer src="{{ asset_url('vendor/hx-alpine-compat-4.0.0.js') }}"></script>
+    <script defer src="{{ asset_url('js/vercel-observability.js') }}" type="module"></script>
+    <script defer src="{{ asset_url('js/client-error-reporting.js') }}"></script>
+    <script defer src="{{ asset_url('js/htmx-error-feedback.js') }}"></script>
+    <script defer src="{{ asset_url('js/volunteer-picker.js') }}"></script>
+    <script defer src="{{ asset_url('vendor/sortablejs-1.15.6.min.js') }}"></script>
+    <script defer src="{{ asset_url('js/application-group-filter.js') }}"></script>
+    <script defer src="{{ asset_url('js/application-board.js') }}"></script>
+    <script defer src="{{ asset_url('vendor/alpinejs-csp-3.17.4.min.js') }}"></script>
     <script>
       (() => {
         function currentCsrfToken() {
@@ -81,7 +81,7 @@
     </script>
   </head>
   <body class="min-h-screen bg-kvarteret-background text-kvarteret-ink" hx-boost:inherited="true" hx-swap:inherited="innerMorph">
-    {% set header_logo = url_for('static', path='images/internbevis-header.png') %}
+    {% set header_logo = asset_url('images/internbevis-header.png') %}
     {% set rendered_content %}
       {% block page_content %}{% endblock %}
     {% endset %}

@@ -69,8 +69,22 @@ def create_app(container=None) -> FastAPI:
     _install_http_exception_handler(app)
     _include_routers(app)
     app.add_middleware(CanonicalWebMiddleware)
-    configure_telemetry(app, resolved_container.settings)
+    configure_telemetry(
+        app,
+        resolved_container.settings,
+        database_engine=_database_engine(resolved_container),
+    )
     return app
+
+
+def _database_engine(container):
+    manager = getattr(container, "database_runtime_manager", None)
+    if manager is None:
+        return None
+    try:
+        return manager.get_runtime().engine
+    except NotConfiguredError:
+        return None
 
 
 def _install_method_override_middleware(app: FastAPI) -> None:
