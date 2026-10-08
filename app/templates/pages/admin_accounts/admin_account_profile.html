@@ -125,7 +125,7 @@
       </form>
 
       {% if section == "admin-accounts" and current_user.role == "Admin" and current_user.user_account_id != admin_account.user_account_id %}
-        <form action="/admin-accounts/{{ admin_account.user_account_id }}?_method=DELETE" class="mt-6 border-t border-stone-300 pt-6" method="post" onsubmit="return window.confirm('Fjerne lokal admin-tilgang? Auth-brukeren beholdes.');">
+        <form action="/admin-accounts/{{ admin_account.user_account_id }}?_method=DELETE" class="mt-6 border-t border-stone-300 pt-6" method="post" hx-confirm="Fjerne lokal admin-tilgang? Auth-brukeren beholdes.">
           <button class="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 text-sm font-semibold text-red-700 shadow-md transition hover:bg-red-50" type="submit">
             Fjern admin-tilgang
           </button>

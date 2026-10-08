@@ -79,7 +79,7 @@
                 hx-swap="outerHTML"
                 hx-target="closest section"
                 method="post"
-                onsubmit="return window.confirm('Slette dette vervet?');"
+                hx-confirm="Slette dette vervet?"
               >
                 <button class="inline-flex items-center justify-center rounded-full bg-white px-3 py-2 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
               </form>

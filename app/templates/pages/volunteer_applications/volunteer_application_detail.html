@@ -142,7 +142,7 @@
         {% endif %}
 
         {% if volunteer_application.status in ["new", "contacted", "trial", "volunteer"] %}
-          <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/reject" class="grid" method="post" onsubmit="return window.confirm('Avvise denne søknaden?');">
+          <form action="/volunteer-applications/{{ volunteer_application.registration_id }}/reject" class="grid" method="post" hx-confirm="Avvise denne søknaden?">
             <button class="app-button-secondary min-h-20" type="submit">{% if volunteer_application.status == "volunteer" %}Sett som inaktiv{% else %}Avslå søknad{% endif %}</button>
           </form>
         {% else %}

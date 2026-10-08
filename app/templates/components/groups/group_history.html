@@ -36,7 +36,7 @@
                       hx-delete="/groups/{{ group_id }}/history/{{ member.history_id }}"
                       hx-swap="none"
                       method="post"
-                      onsubmit="return window.confirm('Slette denne historikkraden?');"
+                      hx-confirm="Slette denne historikkraden?"
                     >
                       <button class="inline-flex min-h-9 items-center justify-center bg-white px-3 text-sm font-semibold text-stone-900 shadow-sm hover:bg-stone-100" type="submit">Slett</button>
                     </form>
