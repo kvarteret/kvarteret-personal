@@ -39,7 +39,7 @@ opentelemetry-instrumentation-sqlalchemy==0.65b0
 opentelemetry-proto==1.44.0
 opentelemetry-sdk==1.44.0
 opentelemetry-semantic-conventions==0.65b0
-opentelemetry-util-http==0.65b0
+opentelemetry-util-http==0.66b1
 packaging==26.0
 passlib==1.7.4
 phonenumbers==9.0.39
