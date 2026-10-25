@@ -73,7 +73,7 @@ class EmailMessagePreparer:
     async def _prepare_recruiter_digest(
         self, delivery: Mapping[str, Any]
     ) -> PreparedEmail:
-        from app.domain.recruitment_digest.service import render_digest_sections
+        from app.domain.recruitment_digest.service import render_digest
 
         base_url = (self.settings.app_public_base_url or "").rstrip("/")
         if not base_url:
@@ -83,21 +83,22 @@ class EmailMessagePreparer:
             raise EmailPreparationFailure("business_record_missing")
         context = json.loads(bytes(raw))
         dry_run_for = context.pop("_dry_run_for", None)
-        sections_html, count = await render_digest_sections(
+        sections_html, group_name, first_name, count = await render_digest(
             context, base_url=base_url, now=datetime.now(UTC)
         )
+        if count == 0 and not context.get("_missing_groups"):
+            # Every listed application was deleted since enqueue.
+            raise EmailPreparationFailure("business_record_missing")
         if dry_run_for:
             sections_html = (
                 '<p style="background:#fff3cd;padding:12px;margin:0 0 16px">'
                 f"Prøvekjøring: denne e-posten ville gått til {escape(dry_run_for)}."
                 "</p>" + sections_html
             )
-        if count == 0 and not context.get("_missing_groups"):
-            # Every listed application was deleted since enqueue.
-            raise EmailPreparationFailure("business_record_missing")
-        rendered = self.applicant_renderer.render_recruiter_daily_digest_email(
+        rendered = self.applicant_renderer.render_recruiter_digest_email(
+            heading=f"Rekruttering for {group_name}" if group_name else "Grupper uten mottaker",
+            greeting=f"Hei {first_name}," if first_name else "Hei,",
             sections_html=sections_html,
-            item_count=count,
             subject_prefix=f"[Prøvekjøring for {dry_run_for}] " if dry_run_for else "",
         )
         return PreparedEmail(

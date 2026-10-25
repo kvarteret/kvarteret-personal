@@ -42,4 +42,5 @@ def test_snapshot_lists_everyone_currently_waiting_or_on_trial():
     assert classify_snapshot(old_waiting, NOW) == ["waiting"]
     assert classify_snapshot(active, NOW) == ["trial_active"]
     assert classify_snapshot(done, NOW) == ["trial_done"]
-    assert classify_snapshot(contacted, NOW) == []
+    assert classify_snapshot(contacted, NOW) == ["contacted"]
+    assert classify_snapshot(_candidate(status="volunteer"), NOW) == []
