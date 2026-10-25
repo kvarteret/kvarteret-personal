@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from html import escape
 from collections.abc import Mapping
 from typing import Any
@@ -82,14 +83,16 @@ class EmailMessagePreparer:
             raise EmailPreparationFailure("business_record_missing")
         context = json.loads(bytes(raw))
         dry_run_for = context.pop("_dry_run_for", None)
-        sections_html, count = await render_digest_sections(context, base_url=base_url)
+        sections_html, count = await render_digest_sections(
+            context, base_url=base_url, now=datetime.now(UTC)
+        )
         if dry_run_for:
             sections_html = (
                 '<p style="background:#fff3cd;padding:12px;margin:0 0 16px">'
                 f"Prøvekjøring: denne e-posten ville gått til {escape(dry_run_for)}."
                 "</p>" + sections_html
             )
-        if count == 0:
+        if count == 0 and not context.get("_missing_groups"):
             # Every listed application was deleted since enqueue.
             raise EmailPreparationFailure("business_record_missing")
         rendered = self.applicant_renderer.render_recruiter_daily_digest_email(

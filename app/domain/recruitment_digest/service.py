@@ -51,6 +51,7 @@ SECTION_TITLES = {
 
 MAX_LISTED_PER_SECTION = 5
 DRY_RUN_KEY = "_dry_run_for"
+MISSING_KEY = "_missing_groups"
 
 _DAY = timedelta(days=1)
 
@@ -114,7 +115,7 @@ class RecruitmentDigestService:
     async def enqueue_daily_digests(self, *, now: datetime | None = None) -> int:
         """Queue one digest per recipient. Caller commits and dispatches."""
         now = now or datetime.now(UTC)
-        digests = await self._collect(now, snapshot=False)
+        digests, _missing = await self._collect(now, snapshot=False)
         today = now.date().isoformat()
         for recipient, per_section in digests.items():
             await self._enqueue(
@@ -125,21 +126,27 @@ class RecruitmentDigestService:
 
     async def enqueue_status_digests(
         self, *, now: datetime | None = None, redirect_to: str | None = None
-    ) -> dict[str, dict[str, int]]:
+    ) -> tuple[dict[str, dict[str, int]], list[dict]]:
         """Queue a current-status digest per recipient (a one-off, not a cron).
 
         With ``redirect_to`` every digest is sent to that address instead and
-        marked as a dry run for the real recipient. Returns recipient ->
-        section -> applicant count so the caller can report what was queued.
+        marked as a dry run for the real recipient, and carries a note about
+        groups that have applicants but nobody to send to. Returns the queued
+        counts per recipient and those groups.
         """
         now = now or datetime.now(UTC)
-        digests = await self._collect(now, snapshot=True)
+        digests, missing = await self._collect(now, snapshot=True)
+        missing_groups = await self._group_names(missing)
         stamp = now.strftime("%Y-%m-%dT%H%M")
         for recipient, per_section in digests.items():
             if redirect_to:
                 await self._enqueue(
                     redirect_to,
-                    {**per_section, DRY_RUN_KEY: recipient},
+                    {
+                        **per_section,
+                        DRY_RUN_KEY: recipient,
+                        MISSING_KEY: missing_groups,
+                    },
                     key=f"recruiter-status-dryrun:{stamp}:{recipient}",
                     business_id=stamp,
                 )
@@ -148,7 +155,23 @@ class RecruitmentDigestService:
                     recipient, per_section,
                     key=f"recruiter-status:{stamp}:{recipient}", business_id=stamp,
                 )
-        return {r: {k: len(v) for k, v in s.items()} for r, s in digests.items()}
+        return (
+            {r: {k: len(v) for k, v in s.items()} for r, s in digests.items()},
+            missing_groups,
+        )
+
+    async def _group_names(self, counts: dict[int, int]) -> list[dict]:
+        if not counts:
+            return []
+        rows = (
+            await _session().execute(
+                select(groups.c.id, groups.c.name).where(groups.c.id.in_(list(counts)))
+            )
+        ).all()
+        return sorted(
+            ({"group_id": g, "name": n, "applicants": counts[g]} for g, n in rows),
+            key=lambda item: item["name"].lower(),
+        )
 
     async def _enqueue(
         self, recipient: str, context: dict, *, key: str, business_id: str
@@ -169,11 +192,13 @@ class RecruitmentDigestService:
 
     async def _collect(
         self, now: datetime, *, snapshot: bool
-    ) -> dict[str, dict[str, list[int]]]:
+    ) -> tuple[dict[str, dict[str, list[list]]], dict[int, int]]:
+        """Return recipient -> section -> [[registration_id, [group_ids]]] and
+        the applicant count per group that has no recipient at all."""
         candidates = await self._load_candidates(now, snapshot=snapshot)
-        # recipient -> section -> registration ids
-        digests: dict[str, dict[str, list[int]]] = {}
+        digests: dict[str, dict[str, dict[int, list[int]]]] = {}
         recipients_by_group: dict[int, list[str]] = {}
+        missing: dict[int, int] = {}
         for candidate in candidates:
             sections = (
                 classify_snapshot(candidate, now) if snapshot else classify(candidate, now)
@@ -183,13 +208,25 @@ class RecruitmentDigestService:
             for group_id in candidate.group_ids:
                 if group_id not in recipients_by_group:
                     recipients_by_group[group_id] = await self._recipients(group_id)
+                if not recipients_by_group[group_id]:
+                    missing[group_id] = missing.get(group_id, 0) + 1
                 for recipient in recipients_by_group[group_id]:
                     per_section = digests.setdefault(recipient, {})
                     for section in sections:
-                        ids = per_section.setdefault(section, [])
-                        if candidate.registration_id not in ids:
-                            ids.append(candidate.registration_id)
-        return digests
+                        group_map = per_section.setdefault(section, {})
+                        group_ids = group_map.setdefault(candidate.registration_id, [])
+                        if group_id not in group_ids:
+                            group_ids.append(group_id)
+        return (
+            {
+                recipient: {
+                    section: [[reg, gids] for reg, gids in group_map.items()]
+                    for section, group_map in per_section.items()
+                }
+                for recipient, per_section in digests.items()
+            },
+            missing,
+        )
 
     async def _load_candidates(
         self, now: datetime, *, snapshot: bool = False
@@ -322,26 +359,67 @@ class RecruitmentDigestService:
         return recipients
 
 
+_INK = "#26211e"
+_MUTED = "#6f655e"
+_BORDER = "#e4ddd3"
+_RED = "#db242a"
+_FONT = "DM Sans, Arial, Helvetica, sans-serif"
+_LABEL = (
+    f"font-family:{_FONT};font-size:11px;letter-spacing:1px;font-weight:700;"
+    f"text-transform:uppercase;color:{_RED};margin:0 0 6px"
+)
+
+# Section -> one-line explanation shown under its title.
+_SECTION_HINTS = {
+    "new": "Søkte siden i går",
+    "waiting_3d": "Ikke kontaktet etter 3 dager",
+    "waiting_7d": "Ikke kontaktet etter 7 dager",
+    "trial_7d": "Prøvetiden slutter om 7 dager",
+    "trial_done": "Prøvetiden er over, men søkeren er ikke avklart",
+    "waiting": "Ikke kontaktet ennå, eldste først",
+    "trial_active": "Prøvetid pågår, de som slutter først øverst",
+}
+
+
+def _days_ago(moment: datetime, now: datetime) -> int:
+    return max(0, (now - _aware(moment)).days)
+
+
+def _plural(count: int, one: str, many: str) -> str:
+    return f"{count} {one if count == 1 else many}"
+
+
+def _age_text(days: int) -> str:
+    return "i dag" if days == 0 else "for 1 dag siden" if days == 1 else f"for {days} dager siden"
+
+
 async def render_digest_sections(
-    per_section: dict[str, list[int]], *, base_url: str
+    per_section: dict, *, base_url: str, now: datetime | None = None
 ) -> tuple[str, int]:
-    """Build escaped section markup and the number of listed applications."""
-    ids = sorted(
-        {
-            i
-            for values in per_section.values()
-            if isinstance(values, list)
-            for i in values
-        }
-    )
-    names: dict[int, str] = {}
+    """Build the digest body (cards, stats, rows) and the applicant count.
+
+    Every applicant links to their application, and every group chip links to
+    the application list filtered to that group.
+    """
+    now = now or datetime.now(UTC)
+    base = escape(base_url, quote=True)
+    sections = {
+        key: [(int(reg), [int(g) for g in gids]) for reg, gids in per_section.get(key, [])]
+        for key in SECTION_TITLES
+    }
+    ids = sorted({reg for items in sections.values() for reg, _ in items})
+    group_ids = sorted({g for items in sections.values() for _, gids in items for g in gids})
+    people: dict[int, dict] = {}
+    group_names: dict[int, str] = {}
     if ids:
-        rows = (
+        for row in (
             (
                 await _session().execute(
                     select(
                         volunteer_application_invites.c.id,
                         volunteer_application_invites.c.email,
+                        volunteer_application_invites.c.created_at,
+                        volunteer_application_invites.c.trial_ends_at,
                         volunteer_application_submissions.c.first_name,
                         volunteer_application_submissions.c.last_name,
                     )
@@ -357,30 +435,132 @@ async def render_digest_sections(
             )
             .mappings()
             .all()
-        )
-        for row in rows:
+        ):
             full = " ".join(filter(None, [row["first_name"], row["last_name"]])).strip()
-            names[row["id"]] = full or row["email"]
-    parts: list[str] = []
+            people[row["id"]] = {
+                "name": full or row["email"],
+                "created_at": row["created_at"],
+                "trial_ends_at": row["trial_ends_at"],
+            }
+    if group_ids:
+        group_names = dict(
+            (await _session().execute(select(groups.c.id, groups.c.name).where(groups.c.id.in_(group_ids)))).all()
+        )
+
+    def row_meta(key: str, person: dict) -> tuple[str, int | None]:
+        if key.startswith("trial") and person["trial_ends_at"] is not None:
+            ends = _aware(person["trial_ends_at"])
+            if ends > now:
+                days = max(0, (ends - now).days)
+                return f"{_plural(days, 'dag', 'dager')} igjen av prøvetiden", days
+            days = _days_ago(ends, now)
+            return f"Prøvetiden utløp {_age_text(days)}", days
+        days = _days_ago(person["created_at"], now)
+        return f"Søkte {_age_text(days)}", days
+
+    def sort_key(key: str, item: tuple[int, list[int]]):
+        person = people.get(item[0])
+        if person is None:
+            return (0, 0)
+        if key in ("trial_active", "trial_7d") and person["trial_ends_at"]:
+            return (0, _aware(person["trial_ends_at"]).timestamp())
+        # Longest waiting first.
+        return (0, _aware(person["created_at"]).timestamp())
+
+    cards: list[str] = []
     listed: set[int] = set()
+    counts: list[tuple[str, int]] = []
+    oldest_waiting = 0
     for key, title in SECTION_TITLES.items():
-        items = [i for i in per_section.get(key, []) if i in names]
+        items = sorted(
+            [item for item in sections[key] if item[0] in people],
+            key=lambda item: sort_key(key, item),
+        )
         if not items:
             continue
-        listed.update(items)
-        links = "".join(
-            f'<li style="margin:0 0 6px"><a href="{escape(base_url, quote=True)}'
-            f'/volunteer-applications/{i}">{escape(names[i])}</a></li>'
-            for i in items[:MAX_LISTED_PER_SECTION]
-        )
-        if len(items) > MAX_LISTED_PER_SECTION:
-            links += (
-                f'<li style="margin:0 0 6px;list-style:none">'
-                f"Og {len(items) - MAX_LISTED_PER_SECTION} til</li>"
+        listed.update(reg for reg, _ in items)
+        counts.append((title, len(items)))
+        rows = []
+        for reg, gids in items[:MAX_LISTED_PER_SECTION]:
+            person = people[reg]
+            meta, days = row_meta(key, person)
+            if key in ("waiting", "waiting_3d", "waiting_7d") and days is not None:
+                oldest_waiting = max(oldest_waiting, days)
+            chips = " ".join(
+                f'<a href="{base}/volunteer-applications?groups_selected=true&amp;q=&amp;group_ids={g}"'
+                f' style="color:{_RED};text-decoration:none">{escape(group_names.get(g, "Gruppe"))}</a>'
+                for g in gids
             )
+            rows.append(
+                f'<tr><td style="padding:12px 16px;border-top:1px solid {_BORDER};font-family:{_FONT}">'
+                f'<a href="{base}/volunteer-applications/{reg}" style="color:{_INK};font-weight:700;'
+                f'font-size:15px;text-decoration:none">{escape(person["name"])}</a>'
+                f'<div style="font-size:13px;color:{_MUTED};margin-top:2px">{escape(meta)}'
+                f"{' · ' + chips if chips else ''}</div></td>"
+                f'<td style="padding:12px 16px;border-top:1px solid {_BORDER};text-align:right;'
+                f'font-family:{_FONT};font-size:18px;font-weight:700;color:{_INK};white-space:nowrap">'
+                f'{"" if days is None else days}</td></tr>'
+            )
+        if len(items) > MAX_LISTED_PER_SECTION:
+            rows.append(
+                f'<tr><td colspan="2" style="padding:12px 16px;border-top:1px solid {_BORDER};'
+                f'font-family:{_FONT};font-size:14px;color:{_MUTED}">'
+                f"Og {len(items) - MAX_LISTED_PER_SECTION} til</td></tr>"
+            )
+        cards.append(
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="border:1px solid {_BORDER};border-radius:8px;border-collapse:separate;margin:0 0 16px">'
+            f'<tr><td colspan="2" style="padding:16px;font-family:{_FONT}">'
+            f'<div style="font-size:16px;font-weight:700;color:{_INK}">{escape(title)}</div>'
+            f'<div style="font-size:13px;color:{_MUTED};margin-top:2px">{escape(_SECTION_HINTS.get(key, ""))}</div>'
+            f"</td></tr>{''.join(rows)}</table>"
+        )
+
+    parts: list[str] = []
+    missing = per_section.get(MISSING_KEY) or []
+    if cards:
+        summary = f"{_plural(len(listed), 'søker trenger', 'søkere trenger')} oppfølging."
+        if oldest_waiting:
+            summary += f" Den som har ventet lengst, har ventet {_plural(oldest_waiting, 'dag', 'dager')}."
         parts.append(
-            f'<h2 style="font-size:20px;margin:24px 0 8px">{escape(title)}</h2>'
-            f'<ul style="padding-left:20px;margin:0">{links}</ul>'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="background:#fdf3e3;border-radius:8px;margin:0 0 16px"><tr>'
+            f'<td style="padding:16px;font-family:{_FONT}">'
+            f'<div style="{_LABEL}">Start her</div>'
+            f'<div style="font-size:17px;font-weight:700;color:{_INK};line-height:24px">{escape(summary)}</div>'
+            f'<div style="margin-top:12px"><a href="{base}/volunteer-applications" '
+            f'style="color:{_RED};font-weight:700;font-size:14px;text-decoration:none">Åpne søknadene →</a></div>'
+            f"</td></tr></table>"
+        )
+        stat_cells = "".join(
+            f'<td width="{100 // min(len(counts), 3)}%" style="padding:0 {"8px" if n < min(len(counts), 3) - 1 else "0"} 0 0">'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="border:1px solid {_BORDER};border-radius:8px"><tr><td style="padding:12px 16px;font-family:{_FONT}">'
+            f'<div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:{_MUTED}">{escape(title)}</div>'
+            f'<div style="font-size:28px;font-weight:700;color:{_INK};margin-top:4px">{count}</div>'
+            f"</td></tr></table></td>"
+            for n, (title, count) in enumerate(counts[:3])
+        )
+        parts.append(
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="margin:0 0 16px"><tr>{stat_cells}</tr></table>'
+        )
+    parts.extend(cards)
+    if missing:
+        rows = "".join(
+            f'<li style="margin:0 0 4px"><a href="{base}/groups/{int(m["group_id"])}" '
+            f'style="color:{_INK}">{escape(m["name"])}</a> '
+            f'({_plural(int(m["applicants"]), "søker", "søkere")})</li>'
+            for m in missing
+        )
+        parts.append(
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="border:1px solid #e8b35a;background:#fff7e6;border-radius:8px;margin:0 0 16px">'
+            f'<tr><td style="padding:16px;font-family:{_FONT};font-size:14px;color:{_INK}">'
+            f'<div style="font-weight:700;font-size:16px;margin-bottom:6px">Grupper uten mottaker</div>'
+            f"Disse gruppene har søkere, men verken kontakt-e-post, valgt person eller gruppeleder "
+            f"dette semesteret, så ingen får e-post for dem."
+            f'<ul style="padding-left:20px;margin:8px 0 0">{rows}</ul></td></tr></table>'
         )
     return "".join(parts), len(listed)
 
