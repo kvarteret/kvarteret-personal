@@ -38,7 +38,16 @@ logger = get_logger(__name__)
 # Leaders have many titles ("Leder", "Finansleder", "Revysjef", "President",
 # "Leder Padde"), so match on the title rather than one exact name. Deputies
 # and assistants never count.
-LEADER_ROLE_LIKE = ("%leder%", "%sjef%", "president")
+LEADER_ROLE_LIKE = (
+    "%leder%",
+    "%sjef%",
+    "president",
+    "rittmester",
+    "sirenedronning",
+)
+# Roles that own applications; the previous semester still counts because
+# holders are often not re-registered right away.
+RECRUITER_ROLE_LIKE = ("%rekrutter%", "%søknad%")
 NOT_LEADER_ROLE_LIKE = ("%nestleder%", "vise%", "assisterende%")
 BUSINESS_TYPE = "recruitment_digest"
 
@@ -130,6 +139,11 @@ def classify_snapshot(candidate: DigestCandidate, now: datetime) -> list[str]:
         ends = _aware(candidate.trial_ends_at)
         return ["trial_active"] if ends > now else ["trial_done"]
     return []
+
+
+def _previous_semester(code: int) -> int:
+    year, term = divmod(code, 10)
+    return year * 10 + 1 if term == 2 else (year - 1) * 10 + 2
 
 
 def _aware(value: datetime) -> datetime:
@@ -396,8 +410,34 @@ class RecruitmentDigestService:
             people[person_email] = contact.get("person_first_name") or people.get(person_email)
         if people:
             return sorted(people.items())
+        # Ideal recipients first: whoever owns applications/recruiting, then
+        # the group's leaders.
+        current = get_current_semester_code()
+        for patterns, not_patterns, min_semester in (
+            (RECRUITER_ROLE_LIKE, (), _previous_semester(current)),
+            (LEADER_ROLE_LIKE, NOT_LEADER_ROLE_LIKE, current),
+        ):
+            holders = await self._role_holders(
+                group_id, patterns, not_patterns, min_semester
+            )
+            if holders:
+                return holders
+        logger.warning(
+            "recruitment_digest.no_recipient",
+            extra={"event": "recruitment_digest.no_recipient", "group_id": group_id},
+        )
+        return []
+
+    async def _role_holders(
+        self,
+        group_id: int,
+        patterns: tuple[str, ...],
+        not_patterns: tuple[str, ...],
+        min_semester: int,
+    ) -> list[tuple[str, str | None]]:
+        name = func.lower(func.trim(assignment_roles.c.name))
         rows = (
-            await session.execute(
+            await _session().execute(
                 select(volunteer_records.c.email, volunteer_records.c.first_name)
                 .select_from(
                     role_assignments.join(
@@ -410,32 +450,20 @@ class RecruitmentDigestService:
                 )
                 .where(
                     role_assignments.c.group_id == group_id,
-                    role_assignments.c.semester == get_current_semester_code(),
-                    or_(
-                        *(
-                            func.lower(func.trim(assignment_roles.c.name)).like(pattern)
-                            for pattern in LEADER_ROLE_LIKE
-                        )
-                    ),
-                    *(
-                        ~func.lower(func.trim(assignment_roles.c.name)).like(pattern)
-                        for pattern in NOT_LEADER_ROLE_LIKE
-                    ),
+                    role_assignments.c.semester >= min_semester,
+                    or_(*(name.like(pattern) for pattern in patterns)),
+                    *(~name.like(pattern) for pattern in not_patterns),
                     volunteer_records.c.email.is_not(None),
                 )
             )
         ).all()
-        leaders = {
-            email.strip().lower(): first_name
-            for email, first_name in rows
-            if email and email.strip()
-        }
-        if not leaders:
-            logger.warning(
-                "recruitment_digest.no_recipient",
-                extra={"event": "recruitment_digest.no_recipient", "group_id": group_id},
-            )
-        return sorted(leaders.items())
+        return sorted(
+            {
+                email.strip().lower(): first_name
+                for email, first_name in rows
+                if email and email.strip()
+            }.items()
+        )
 
 
 _INK = "#26211e"

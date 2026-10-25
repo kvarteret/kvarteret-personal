@@ -44,3 +44,10 @@ def test_snapshot_lists_everyone_currently_waiting_or_on_trial():
     assert classify_snapshot(done, NOW) == ["trial_done"]
     assert classify_snapshot(contacted, NOW) == ["contacted"]
     assert classify_snapshot(_candidate(status="volunteer"), NOW) == []
+
+
+def test_previous_semester_wraps_the_year():
+    from app.domain.recruitment_digest.service import _previous_semester
+
+    assert _previous_semester(20262) == 20261
+    assert _previous_semester(20261) == 20252
