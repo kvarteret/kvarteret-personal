@@ -79,6 +79,9 @@ TRIAL_SECTIONS = frozenset({"trial_7d", "trial_done", "trial_active"})
 
 # Long sections show the first five and "Og X til", but only when more than
 # ten would be hidden; otherwise everyone is listed.
+# Safety fuse: a normal day queues a handful of digests. If a bug or bad data
+# ever produces far more, queue nothing and log an error instead of spamming.
+MAX_DIGESTS_PER_RUN = 60
 MAX_LISTED_PER_SECTION = 5
 MAX_HIDDEN_BEFORE_COLLAPSE = 10
 DRY_RUN_KEY = "_dry_run_for"
@@ -161,6 +164,15 @@ class RecruitmentDigestService:
         """Queue one digest per recipient and group. Caller commits and dispatches."""
         now = now or datetime.now(UTC)
         digests, _missing = await self._collect(now, snapshot=False)
+        if len(digests) > MAX_DIGESTS_PER_RUN:
+            logger.error(
+                "recruitment_digest.fuse_tripped",
+                extra={
+                    "event": "recruitment_digest.fuse_tripped",
+                    "digest_count": len(digests),
+                },
+            )
+            return 0
         today = now.date().isoformat()
         for (recipient, group_id), item in digests.items():
             await self._enqueue(

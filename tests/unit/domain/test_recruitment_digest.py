@@ -81,3 +81,22 @@ async def test_no_digest_is_queued_when_there_is_nothing_to_report(monkeypatch):
     assert await service.enqueue_daily_digests(now=NOW) == 0
     assert await service.enqueue_status_digests(now=NOW) == ([], [])
     assert Outbox.queued == []
+
+
+@pytest.mark.asyncio
+async def test_fuse_queues_nothing_when_an_implausible_number_of_digests_would_go_out(monkeypatch):
+    from app.domain.recruitment_digest.service import MAX_DIGESTS_PER_RUN, RecruitmentDigestService
+
+    class Outbox:
+        queued: list = []
+
+        async def enqueue(self, request):
+            self.queued.append(request)
+
+    async def flood(self, now, *, snapshot):
+        return {(f"r{i}@example.com", 1): {"name": None, "sections": {"new": [i]}} for i in range(MAX_DIGESTS_PER_RUN + 1)}, {}
+
+    monkeypatch.setattr(RecruitmentDigestService, "_collect", flood)
+
+    assert await RecruitmentDigestService(email_outbox=Outbox()).enqueue_daily_digests(now=NOW) == 0
+    assert Outbox.queued == []
