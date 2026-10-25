@@ -87,8 +87,9 @@ class EmailMessagePreparer:
             context, base_url=base_url, now=datetime.now(UTC)
         )
         if count == 0 and not context.get("_missing_groups"):
-            # Every listed application was deleted since enqueue.
-            raise EmailPreparationFailure("business_record_missing")
+            # Everything listed was deleted since enqueue: nothing to report,
+            # so end the delivery quietly instead of sending an empty email.
+            raise EmailPreparationFailure("nothing_to_report", expired=True)
         if dry_run_for:
             sections_html = (
                 '<p style="background:#fff3cd;padding:12px;margin:0 0 16px">'

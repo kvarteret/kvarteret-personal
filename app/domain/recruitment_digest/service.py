@@ -77,7 +77,10 @@ SECTION_COLORS = {
 }
 TRIAL_SECTIONS = frozenset({"trial_7d", "trial_done", "trial_active"})
 
+# Long sections show the first five and "Og X til", but only when more than
+# ten would be hidden; otherwise everyone is listed.
 MAX_LISTED_PER_SECTION = 5
+MAX_HIDDEN_BEFORE_COLLAPSE = 10
 DRY_RUN_KEY = "_dry_run_for"
 MISSING_KEY = "_missing_groups"
 GROUP_KEY = "_group_id"
@@ -579,7 +582,8 @@ async def render_digest(
         listed.update(items)
         color = SECTION_COLORS[key]
         rows = []
-        for reg in items[:MAX_LISTED_PER_SECTION]:
+        collapse = len(items) > MAX_LISTED_PER_SECTION + MAX_HIDDEN_BEFORE_COLLAPSE
+        for reg in items[:MAX_LISTED_PER_SECTION] if collapse else items:
             person = people[reg]
             meta, days = row_meta(key, person)
             rows.append(
@@ -591,7 +595,7 @@ async def render_digest(
                 f'font-family:{_FONT};font-size:18px;font-weight:700;color:{color};white-space:nowrap">'
                 f'{"" if days is None else days}</td></tr>'
             )
-        if len(items) > MAX_LISTED_PER_SECTION:
+        if collapse:
             rows.append(
                 f'<tr><td colspan="2" style="padding:12px 16px;border-top:1px solid {_BORDER};'
                 f'font-family:{_FONT};font-size:14px;color:{_MUTED}">'
@@ -599,19 +603,22 @@ async def render_digest(
             )
         cards.append(
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-            f'style="border:1px solid {_BORDER};border-left:4px solid {color};border-radius:8px;'
-            f'border-collapse:separate;margin:0 0 16px">'
+            f'style="border-left:4px solid {color};background:#faf8f4;margin:0 0 16px">'
             f'<tr><td colspan="2" style="padding:16px;font-family:{_FONT};font-size:16px;'
             f'font-weight:700;color:{color}">{escape(title)}</td></tr>{"".join(rows)}</table>'
         )
 
     parts = list(cards)
     if cards and group_id is not None:
-        parts.append(
-            f'<p style="margin:8px 0 24px;font-family:{_FONT}"><a href="{base}/volunteer-applications'
-            f'?groups_selected=true&amp;q=&amp;group_ids={int(group_id)}" '
-            f'style="color:#db242a;font-weight:700;font-size:15px;text-decoration:none">Til søknadene →</a></p>'
+        list_url = (
+            f"{base}/volunteer-applications?groups_selected=true&amp;q=&amp;group_ids={int(group_id)}"
         )
+        link = (
+            f'<a href="{list_url}" style="color:#db242a;font-weight:700;font-size:15px;'
+            f'text-decoration:none">%s →</a>'
+        )
+        parts.insert(0, f'<p style="margin:0 0 16px;font-family:{_FONT}">{link % "Til søknadsside"}</p>')
+        parts.append(f'<p style="margin:8px 0 24px;font-family:{_FONT}">{link % "Til søknadene"}</p>')
     missing = context.get(MISSING_KEY) or []
     if missing:
         rows_html = "".join(
@@ -622,7 +629,7 @@ async def render_digest(
         )
         parts.append(
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-            f'style="border:1px solid #e8b35a;background:#fff7e6;border-radius:8px;margin:0 0 16px">'
+            f'style="border-left:4px solid #e8b35a;background:#fff7e6;margin:0 0 16px">'
             f'<tr><td style="padding:16px;font-family:{_FONT};font-size:14px;color:{_INK}">'
             f'<div style="font-weight:700;font-size:16px;margin-bottom:6px">Grupper uten mottaker</div>'
             f'<ul style="padding-left:20px;margin:8px 0 0">{rows_html}</ul></td></tr></table>'

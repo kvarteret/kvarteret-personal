@@ -1,3 +1,4 @@
+import pytest
 from datetime import UTC, datetime, timedelta
 
 from app.domain.recruitment_digest.service import DigestCandidate, classify
@@ -51,3 +52,32 @@ def test_previous_semester_wraps_the_year():
 
     assert _previous_semester(20262) == 20261
     assert _previous_semester(20261) == 20252
+
+
+def test_long_sections_collapse_only_when_more_than_ten_would_be_hidden():
+    from app.domain.recruitment_digest.service import MAX_HIDDEN_BEFORE_COLLAPSE, MAX_LISTED_PER_SECTION
+
+    assert MAX_LISTED_PER_SECTION == 5
+    assert MAX_HIDDEN_BEFORE_COLLAPSE == 10
+
+
+@pytest.mark.asyncio
+async def test_no_digest_is_queued_when_there_is_nothing_to_report(monkeypatch):
+    from app.domain.recruitment_digest.service import RecruitmentDigestService
+
+    class Outbox:
+        queued: list = []
+
+        async def enqueue(self, request):
+            self.queued.append(request)
+
+    service = RecruitmentDigestService(email_outbox=Outbox())
+
+    async def nothing(self, now, *, snapshot):
+        return {}, {}
+
+    monkeypatch.setattr(RecruitmentDigestService, "_collect", nothing)
+
+    assert await service.enqueue_daily_digests(now=NOW) == 0
+    assert await service.enqueue_status_digests(now=NOW) == ([], [])
+    assert Outbox.queued == []
