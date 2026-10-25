@@ -30,7 +30,7 @@ class ApplicantEmailTemplateRendererProtocol(Protocol):
     ) -> ApplicantEmail: ...
 
     def render_recruiter_daily_digest_email(
-        self, *, sections_html: str, item_count: int
+        self, *, sections_html: str, item_count: int, subject_prefix: str = ""
     ) -> ApplicantEmail: ...
 
 
@@ -84,10 +84,10 @@ class ApplicantEmailTemplateRenderer:
         )
 
     def render_recruiter_daily_digest_email(
-        self, *, sections_html: str, item_count: int
+        self, *, sections_html: str, item_count: int, subject_prefix: str = ""
     ) -> ApplicantEmail:
         return ApplicantEmail(
-            subject=f"Rekruttering: {item_count} {'sak' if item_count == 1 else 'saker'} trenger oppfølging",
+            subject=f"{subject_prefix}Rekruttering: {item_count} {'sak' if item_count == 1 else 'saker'} trenger oppfølging",
             html_body=self._render(
                 "recruiter_daily_digest.html", sections_html=sections_html
             ),

@@ -44,7 +44,13 @@ SECTION_TITLES = {
     "waiting_7d": "Søkere som har ventet i 7 dager",
     "trial_7d": "Prøvetid: 7 dager igjen",
     "trial_done": "Prøvetid: ferdig (0 dager igjen)",
+    # Snapshot digest: where things stand right now.
+    "waiting": "Søkere som venter på svar",
+    "trial_active": "På prøvetid nå",
 }
+
+MAX_LISTED_PER_SECTION = 5
+DRY_RUN_KEY = "_dry_run_for"
 
 _DAY = timedelta(days=1)
 
@@ -87,6 +93,16 @@ def classify(candidate: DigestCandidate, now: datetime) -> list[str]:
     return sections
 
 
+def classify_snapshot(candidate: DigestCandidate, now: datetime) -> list[str]:
+    """Sections for the current-status digest, independent of day windows."""
+    if candidate.status == "new":
+        return ["waiting"]
+    if candidate.status == "trial" and candidate.trial_ends_at is not None:
+        ends = _aware(candidate.trial_ends_at)
+        return ["trial_active"] if ends > now else ["trial_done"]
+    return []
+
+
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
@@ -98,12 +114,70 @@ class RecruitmentDigestService:
     async def enqueue_daily_digests(self, *, now: datetime | None = None) -> int:
         """Queue one digest per recipient. Caller commits and dispatches."""
         now = now or datetime.now(UTC)
-        candidates = await self._load_candidates(now)
+        digests = await self._collect(now, snapshot=False)
+        today = now.date().isoformat()
+        for recipient, per_section in digests.items():
+            await self._enqueue(
+                recipient, per_section, key=f"recruiter-digest:{today}:{recipient}",
+                business_id=today,
+            )
+        return len(digests)
+
+    async def enqueue_status_digests(
+        self, *, now: datetime | None = None, redirect_to: str | None = None
+    ) -> dict[str, dict[str, int]]:
+        """Queue a current-status digest per recipient (a one-off, not a cron).
+
+        With ``redirect_to`` every digest is sent to that address instead and
+        marked as a dry run for the real recipient. Returns recipient ->
+        section -> applicant count so the caller can report what was queued.
+        """
+        now = now or datetime.now(UTC)
+        digests = await self._collect(now, snapshot=True)
+        stamp = now.strftime("%Y-%m-%dT%H%M")
+        for recipient, per_section in digests.items():
+            if redirect_to:
+                await self._enqueue(
+                    redirect_to,
+                    {**per_section, DRY_RUN_KEY: recipient},
+                    key=f"recruiter-status-dryrun:{stamp}:{recipient}",
+                    business_id=stamp,
+                )
+            else:
+                await self._enqueue(
+                    recipient, per_section,
+                    key=f"recruiter-status:{stamp}:{recipient}", business_id=stamp,
+                )
+        return {r: {k: len(v) for k, v in s.items()} for r, s in digests.items()}
+
+    async def _enqueue(
+        self, recipient: str, context: dict, *, key: str, business_id: str
+    ) -> None:
+        await self.email_outbox.enqueue(
+            EmailDeliveryRequest(
+                template_key=RECRUITER_DAILY_DIGEST,
+                template_version=1,
+                recipient_email=recipient,
+                business_type=BUSINESS_TYPE,
+                business_id=business_id,
+                idempotency_key=key,
+                # Only application ids; names are loaded when the email is
+                # prepared so the outbox holds no applicant PII.
+                encrypted_context=json.dumps(context).encode(),
+            )
+        )
+
+    async def _collect(
+        self, now: datetime, *, snapshot: bool
+    ) -> dict[str, dict[str, list[int]]]:
+        candidates = await self._load_candidates(now, snapshot=snapshot)
         # recipient -> section -> registration ids
         digests: dict[str, dict[str, list[int]]] = {}
         recipients_by_group: dict[int, list[str]] = {}
         for candidate in candidates:
-            sections = classify(candidate, now)
+            sections = (
+                classify_snapshot(candidate, now) if snapshot else classify(candidate, now)
+            )
             if not sections:
                 continue
             for group_id in candidate.group_ids:
@@ -115,24 +189,11 @@ class RecruitmentDigestService:
                         ids = per_section.setdefault(section, [])
                         if candidate.registration_id not in ids:
                             ids.append(candidate.registration_id)
-        today = now.date().isoformat()
-        for recipient, per_section in digests.items():
-            await self.email_outbox.enqueue(
-                EmailDeliveryRequest(
-                    template_key=RECRUITER_DAILY_DIGEST,
-                    template_version=1,
-                    recipient_email=recipient,
-                    business_type=BUSINESS_TYPE,
-                    business_id=today,
-                    idempotency_key=f"recruiter-digest:{today}:{recipient}",
-                    # Only application ids; names are loaded when the email is
-                    # prepared so the outbox holds no applicant PII.
-                    encrypted_context=json.dumps(per_section).encode(),
-                )
-            )
-        return len(digests)
+        return digests
 
-    async def _load_candidates(self, now: datetime) -> list[DigestCandidate]:
+    async def _load_candidates(
+        self, now: datetime, *, snapshot: bool = False
+    ) -> list[DigestCandidate]:
         invites = volunteer_application_invites
         trial_group = (
             select(role_assignments.c.group_id)
@@ -152,7 +213,9 @@ class RecruitmentDigestService:
                         invites.c.initial_group_id,
                         trial_group.label("trial_group_id"),
                     ).where(
-                        (invites.c.created_at > now - 8 * _DAY)
+                        invites.c.status.in_(("new", "trial"))
+                        if snapshot
+                        else (invites.c.created_at > now - 8 * _DAY)
                         | (
                             (invites.c.status == "trial")
                             & (invites.c.trial_ends_at > now - _DAY)
@@ -263,7 +326,14 @@ async def render_digest_sections(
     per_section: dict[str, list[int]], *, base_url: str
 ) -> tuple[str, int]:
     """Build escaped section markup and the number of listed applications."""
-    ids = sorted({i for values in per_section.values() for i in values})
+    ids = sorted(
+        {
+            i
+            for values in per_section.values()
+            if isinstance(values, list)
+            for i in values
+        }
+    )
     names: dict[int, str] = {}
     if ids:
         rows = (
@@ -301,8 +371,13 @@ async def render_digest_sections(
         links = "".join(
             f'<li style="margin:0 0 6px"><a href="{escape(base_url, quote=True)}'
             f'/volunteer-applications/{i}">{escape(names[i])}</a></li>'
-            for i in items
+            for i in items[:MAX_LISTED_PER_SECTION]
         )
+        if len(items) > MAX_LISTED_PER_SECTION:
+            links += (
+                f'<li style="margin:0 0 6px;list-style:none">'
+                f"Og {len(items) - MAX_LISTED_PER_SECTION} til</li>"
+            )
         parts.append(
             f'<h2 style="font-size:20px;margin:24px 0 8px">{escape(title)}</h2>'
             f'<ul style="padding-left:20px;margin:0">{links}</ul>'

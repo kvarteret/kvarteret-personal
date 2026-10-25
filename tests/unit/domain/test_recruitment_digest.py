@@ -30,3 +30,16 @@ def test_trial_seven_days_left_and_done():
     assert classify(seven, NOW) == ["trial_7d"]
     assert classify(done, NOW) == ["trial_done"]
     assert classify(_candidate(status="trial", created=NOW - timedelta(days=30), ends=NOW + timedelta(days=3)), NOW) == []
+
+
+def test_snapshot_lists_everyone_currently_waiting_or_on_trial():
+    from app.domain.recruitment_digest.service import classify_snapshot
+
+    old_waiting = _candidate(created=NOW - timedelta(days=40))
+    active = _candidate(status="trial", ends=NOW + timedelta(days=3))
+    done = _candidate(status="trial", ends=NOW - timedelta(days=2))
+    contacted = _candidate(status="contacted")
+    assert classify_snapshot(old_waiting, NOW) == ["waiting"]
+    assert classify_snapshot(active, NOW) == ["trial_active"]
+    assert classify_snapshot(done, NOW) == ["trial_done"]
+    assert classify_snapshot(contacted, NOW) == []

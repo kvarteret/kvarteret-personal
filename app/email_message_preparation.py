@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from html import escape
 from collections.abc import Mapping
 from typing import Any
 
@@ -79,14 +80,22 @@ class EmailMessagePreparer:
         raw = delivery["encrypted_context"]
         if not raw:
             raise EmailPreparationFailure("business_record_missing")
-        sections_html, count = await render_digest_sections(
-            json.loads(bytes(raw)), base_url=base_url
-        )
+        context = json.loads(bytes(raw))
+        dry_run_for = context.pop("_dry_run_for", None)
+        sections_html, count = await render_digest_sections(context, base_url=base_url)
+        if dry_run_for:
+            sections_html = (
+                '<p style="background:#fff3cd;padding:12px;margin:0 0 16px">'
+                f"Prøvekjøring: denne e-posten ville gått til {escape(dry_run_for)}."
+                "</p>" + sections_html
+            )
         if count == 0:
             # Every listed application was deleted since enqueue.
             raise EmailPreparationFailure("business_record_missing")
         rendered = self.applicant_renderer.render_recruiter_daily_digest_email(
-            sections_html=sections_html, item_count=count
+            sections_html=sections_html,
+            item_count=count,
+            subject_prefix=f"[Prøvekjøring for {dry_run_for}] " if dry_run_for else "",
         )
         return PreparedEmail(
             delivery["recipient_email"], rendered.subject, rendered.html_body
