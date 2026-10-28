@@ -42,7 +42,7 @@ opentelemetry-proto==1.45.1
 opentelemetry-sdk==1.45.1
 opentelemetry-semantic-conventions==0.66b1
 opentelemetry-util-http==0.66b1
-packaging==26.0
+packaging==26.3
 passlib==1.7.4
 phonenumbers==9.0.39
 pillow==13.0.0
