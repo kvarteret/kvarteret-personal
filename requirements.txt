@@ -2,7 +2,7 @@
 #    uv export --format requirements-txt --no-hashes --no-dev --no-annotate -o requirements.txt
 -e .
 aiosqlite==0.22.1
-annotated-doc==0.0.4
+annotated-doc==0.0.5
 annotated-types==0.7.0
 anyio==4.14.2
 asgiref==3.12.1
