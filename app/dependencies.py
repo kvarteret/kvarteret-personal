@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request, status
 
 from app.auth.cookies import SessionCookieSigner
+from app.auth.demo_guard import DemoDatabaseGuard
 from app.auth.login_service import LoginService
 from app.auth.password_reset_service import PasswordResetService
+from app.auth.repository import DatabaseAuthRepository
 from app.db.rate_limit import RateLimiter
 from app.auth.models import AuthenticatedUser, WebSession
 from app.auth.roles import UserRole
@@ -19,6 +21,10 @@ from app.domain.event_interest.repository import EventInterestRepository
 from app.domain.event_interest.service import EventInterestService
 from app.domain.feedback.service import FeedbackService
 from app.domain.courses.service import CoursesService
+from app.domain.shifts.app_service import ShiftsAppService
+from app.domain.shifts.permissions import GroupScope
+from app.domain.shifts.service import ShiftsService
+from app.domain.shifts.setup_service import ShiftsSetupService
 from app.domain.groups.service import GroupsService
 from app.domain.mobile_card.service import MobileCardService
 from app.domain.mobile_card.april_state import MobileCardAprilStateService
@@ -112,6 +118,14 @@ def get_password_reset_service(request: Request) -> PasswordResetService:
     return get_container(request).password_reset_service
 
 
+def get_auth_repository(request: Request) -> DatabaseAuthRepository:
+    return get_container(request).auth_repository
+
+
+def get_demo_guard(request: Request) -> DemoDatabaseGuard:
+    return get_container(request).demo_guard
+
+
 def get_rate_limiter(request: Request) -> RateLimiter:
     return get_container(request).rate_limiter
 
@@ -142,6 +156,26 @@ def get_groups_service(request: Request) -> GroupsService:
 
 def get_courses_service(request: Request) -> CoursesService:
     return get_container(request).courses_service
+
+
+def get_shifts_service(request: Request) -> ShiftsService:
+    return get_container(request).shifts_service
+
+
+def get_shifts_setup_service(request: Request) -> ShiftsSetupService:
+    return get_container(request).shifts_setup_service
+
+
+async def get_shift_scope(
+    current_user: AuthenticatedUser = Depends(require_management_user),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+) -> GroupScope:
+    """The groups the signed-in leader may plan shifts for."""
+    return await shifts_service.manageable_scope(current_user.role, current_user.auth_user_id)
+
+
+def get_shifts_app_service(request: Request) -> ShiftsAppService:
+    return get_container(request).shifts_app_service
 
 
 def get_volunteer_search_service(request: Request) -> VolunteerSearchService:

@@ -16,6 +16,7 @@
     <script defer src="{{ asset_url('vendor/sortablejs-1.15.6.min.js') }}"></script>
     <script defer src="{{ asset_url('js/application-group-filter.js') }}"></script>
     <script defer src="{{ asset_url('js/application-board.js') }}"></script>
+    <script defer src="{{ asset_url('js/shift-board.js') }}"></script>
     <script defer src="{{ asset_url('js/agent-chat.js') }}"></script>
     <script defer src="{{ asset_url('vendor/alpinejs-csp-3.17.4.min.js') }}"></script>
     <script>
@@ -82,6 +83,11 @@
     </script>
   </head>
   <body class="min-h-screen bg-kvarteret-background text-kvarteret-ink" hx-boost:inherited="true" hx-swap:inherited="innerMorph">
+    {% if demo_login_on() %}
+      <div class="border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-semibold text-amber-900" data-demo-banner role="status">
+        Demo, falske data. Ingen ekte personer.
+      </div>
+    {% endif %}
     {% set header_logo = asset_url('images/internbevis-header.png') %}
     {% set rendered_content %}
       {% block page_content %}{% endblock %}
@@ -136,6 +142,9 @@
                 <a class="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-medium whitespace-nowrap {% if section == 'volunteers' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)]{% else %}bg-kvarteret-red/10 text-kvarteret-night hover:bg-[#e2d0b3]{% endif %}" href="/volunteers">Frivillige</a>
                 <a class="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-medium whitespace-nowrap {% if section == 'groups' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)]{% else %}bg-kvarteret-red/10 text-kvarteret-night hover:bg-[#e2d0b3]{% endif %}" href="/groups">Grupper</a>
                 <a class="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-medium whitespace-nowrap {% if section == 'courses' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)]{% else %}bg-kvarteret-red/10 text-kvarteret-night hover:bg-[#e2d0b3]{% endif %}" href="/courses">Kurs</a>
+                {% if request.state.show_management_tools %}
+                  <a class="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-medium whitespace-nowrap {% if section == 'shifts' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)]{% else %}bg-kvarteret-red/10 text-kvarteret-night hover:bg-[#e2d0b3]{% endif %}" href="/shifts">Skiftplan</a>
+                {% endif %}
                 {% if current_user and current_user.role == "Admin" %}
                   <a class="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-medium whitespace-nowrap {% if section == 'spotify' %}bg-kvarteret-red text-kvarteret-surface shadow-[0_14px_28px_-18px_rgba(245,75,75,0.55)]{% else %}bg-kvarteret-red/10 text-kvarteret-night hover:bg-[#e2d0b3]{% endif %}" href="/spotify/now-playing">Spotify</a>
                 {% endif %}

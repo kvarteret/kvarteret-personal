@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import insert, select
@@ -39,7 +40,8 @@ from app.db.tables import (
     volunteer_application_submissions,
     volunteer_records,
 )
-from app.shared.semester import get_current_semester_code
+from seed_target import CONFIRM_ENV, SeedRefused, check_database_target, ensure_only_fake_people
+from app.shared.semester import get_current_semester_code, get_previous_semester_code
 from app.shared.slugs import slugify
 
 DEV_ADMIN_EMAIL = os.environ.get("DEV_ADMIN_EMAIL", "dev@kvarteret.dev")
@@ -126,10 +128,14 @@ async def seed(database_url: str) -> None:
     runtime = build_database_runtime(settings)
     now = datetime.now(UTC)
     current_semester = get_current_semester_code()
-    semesters = sorted({current_semester - 10, current_semester - 9, current_semester})
+    previous_semester = get_previous_semester_code(current_semester)
+    semesters = sorted(
+        {get_previous_semester_code(previous_semester), previous_semester, current_semester}
+    )
 
     try:
         async with session_scope(runtime) as session:
+            await ensure_only_fake_people(session)
             existing = await session.scalar(select(groups.c.id).limit(1))
             if existing is not None:
                 print("Database already seeded; skipping (use make dev-reset to start over).")
@@ -349,4 +355,8 @@ if __name__ == "__main__":
         "DEV_DATABASE_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:55432/kvarteret_personal_dev",
     )
+    try:
+        check_database_target(url, os.environ.get(CONFIRM_ENV))
+    except SeedRefused as refusal:
+        raise SystemExit(f"Refused: {refusal}") from None
     asyncio.run(seed(url))

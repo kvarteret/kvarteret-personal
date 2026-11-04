@@ -17,6 +17,12 @@ PRODUCTION_DEFAULTS = {
 }
 
 
+# Demo login (app/auth/demo_login.py) refuses to start with a shorter code.
+DEMO_ACCESS_CODE_MIN_LENGTH = 12
+# The app's code box only takes the normal 6-digit code, so the app login has its own.
+DEMO_APP_CODE_LENGTH = 6
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # The infra profile resolver sets this guard for every managed
@@ -36,6 +42,9 @@ class Settings(BaseSettings):
     app_secret_key: str = Field(default="change-me")
     legacy_admin_login_enabled: bool = Field(default=True)
     app_public_base_url: str | None = Field(default=None)
+    # Origins (scheme and host, no path) that may send cookie-authenticated writes to the
+    # leader API from a browser, comma separated. Empty means no leader app may write.
+    leader_app_origins: str = Field(default="")
     website_base_url: str = Field(default="https://www.samfunnetibergen.no")
     # One key signs every website -> Personal request; the previous key is
     # accepted during zero-downtime rotation.
@@ -86,6 +95,10 @@ class Settings(BaseSettings):
     review_bypass_enabled: bool = Field(default=False)
     review_bypass_email: str | None = Field(default=None)
     review_bypass_token: str | None = Field(default=None)
+    # Hosted demo with fake data only (app/auth/demo_login.py). Never on for real data.
+    demo_login_enabled: bool = Field(default=False)
+    demo_access_code: str | None = Field(default=None, repr=False)
+    demo_app_code: str | None = Field(default=None, repr=False)
     # Admin agent chat (Azure OpenAI "skonk" deployment).
     azure_openai_endpoint: str | None = Field(default=None)
     azure_openai_api_key: str | None = Field(default=None, repr=False)
@@ -94,6 +107,8 @@ class Settings(BaseSettings):
     posthog_project_token: str | None = Field(default=None)
     posthog_feature_flags_token: str | None = Field(default=None, repr=False)
     posthog_host: str = Field(default="https://eu.i.posthog.com")
+    # Off: nothing is sent to PostHog at all (hosted demo).
+    posthog_enabled: bool = Field(default=True)
     otel_service_name: str = Field(default="kvarteret-personal")
     email_dispatch_enabled: bool = Field(default=True)
     cron_secret: str | None = Field(default=None)
@@ -145,6 +160,8 @@ class Settings(BaseSettings):
         "spotify_refresh_token",
         "review_bypass_email",
         "review_bypass_token",
+        "demo_access_code",
+        "demo_app_code",
         "azure_openai_endpoint",
         "azure_openai_api_key",
         "azure_openai_agent_deployment",
@@ -165,7 +182,9 @@ class Settings(BaseSettings):
             return stripped or None if value is not None else value
         return value
 
-    @field_validator("review_bypass_enabled", mode="before")
+    @field_validator(
+        "review_bypass_enabled", "demo_login_enabled", "posthog_enabled", mode="before"
+    )
     @classmethod
     def strip_boolean_settings(cls, value):
         if isinstance(value, str):
@@ -182,8 +201,15 @@ class Settings(BaseSettings):
 
     @property
     def posthog_observability_enabled(self) -> bool:
-        """OTLP logs/traces and exception issues: always on in production only."""
-        return self.app_env == "production"
+        """OTLP logs/traces and exception issues: on in production unless PostHog is off."""
+        return self.app_env == "production" and self.posthog_enabled
+
+    @property
+    def posthog_flags_token(self) -> str | None:
+        """Token for server-side flag lookups; None when PostHog is off."""
+        if not self.posthog_enabled:
+            return None
+        return self.posthog_feature_flags_token or self.posthog_project_token
 
     @property
     def personal_signing_secrets(self) -> tuple[str, ...]:
@@ -203,7 +229,32 @@ def _signing_secrets(*secrets: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(secret for secret in secrets if secret))
 
 
+def parse_origins(value: str) -> tuple[str, ...]:
+    """"https://a.example, http://localhost:3190/" -> ("https://a.example", "http://localhost:3190")."""
+    return tuple(dict.fromkeys(part.strip().rstrip("/") for part in value.split(",") if part.strip()))
+
+
+def _check_leader_app_origins(settings: Settings) -> None:
+    for origin in parse_origins(settings.leader_app_origins):
+        parts = urlsplit(origin)
+        plain = (
+            parts.netloc
+            and parts.username is None
+            and parts.password is None
+            and parts.path == ""
+            and not parts.query
+            and not parts.fragment
+        )
+        if parts.scheme not in {"http", "https"} or not plain:
+            msg = f"LEADER_APP_ORIGINS must hold plain origins like https://host, got {origin!r}."
+            raise ValueError(msg)
+        if settings.app_env == "production" and parts.scheme != "https":
+            msg = "LEADER_APP_ORIGINS must be HTTPS origins in production."
+            raise ValueError(msg)
+
+
 def validate_production_secrets(settings: Settings) -> Settings:
+    _check_leader_app_origins(settings)
     if settings.app_env is None:
         msg = "APP_ENV must be explicitly set to development, test, or production."
         raise ValueError(msg)
@@ -211,6 +262,23 @@ def validate_production_secrets(settings: Settings) -> Settings:
         settings.dev_admin_email or settings.dev_admin_password
     ):
         msg = "DEV_ADMIN_EMAIL/DEV_ADMIN_PASSWORD are development-only settings."
+        raise ValueError(msg)
+    if settings.demo_login_enabled and (
+        not settings.demo_access_code
+        or len(settings.demo_access_code) < DEMO_ACCESS_CODE_MIN_LENGTH
+    ):
+        msg = (
+            "DEMO_LOGIN_ENABLED needs DEMO_ACCESS_CODE of at least "
+            f"{DEMO_ACCESS_CODE_MIN_LENGTH} characters."
+        )
+        raise ValueError(msg)
+    if settings.demo_login_enabled and not (
+        settings.demo_app_code
+        and len(settings.demo_app_code) == DEMO_APP_CODE_LENGTH
+        and settings.demo_app_code.isascii()
+        and settings.demo_app_code.isdigit()
+    ):
+        msg = f"DEMO_LOGIN_ENABLED needs DEMO_APP_CODE of exactly {DEMO_APP_CODE_LENGTH} digits."
         raise ValueError(msg)
     if settings.app_env == "production":
         if settings.app_secret_key == "change-me" or len(settings.app_secret_key) < 32:

@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.cookies import SessionCookieSigner
+from app.auth.demo_guard import DemoDatabaseGuard
+from app.auth.demo_login import demo_login_enabled
 from app.auth.dev_auth import DevAuthGateway
 from app.auth.login_service import LoginService
 from app.auth.password_reset_service import PasswordResetService
@@ -49,6 +51,11 @@ from app.domain.volunteers.repository import VolunteersRepository
 from app.domain.volunteer_applications.repository import VolunteerApplicationsRepository
 from app.domain.courses.service import CoursesService
 from app.domain.courses.repository import CoursesRepository
+from app.domain.shifts.app_repository import ShiftsAppRepository
+from app.domain.shifts.app_service import ShiftsAppService
+from app.domain.shifts.repository import ShiftsRepository
+from app.domain.shifts.service import ShiftsService
+from app.domain.shifts.setup_service import ShiftsSetupService
 from app.domain.agent_chat.repository import AgentChatRepository
 from app.domain.agent_chat.service import AgentChatService
 from app.domain.groups.service import GroupsService
@@ -139,6 +146,9 @@ class ApplicationContainer:
     role_assignments_service: RoleAssignmentsService
     groups_service: GroupsService
     courses_service: CoursesService
+    shifts_service: ShiftsService
+    shifts_setup_service: ShiftsSetupService
+    shifts_app_service: ShiftsAppService
     volunteer_search_service: VolunteerSearchService
     admin_accounts_service: AdminAccountsService
     mobile_card_service: MobileCardService
@@ -149,6 +159,7 @@ class ApplicationContainer:
     semester_transfer_service: SemesterTransferService
     feedback_service: FeedbackService
     agent_chat_service: AgentChatService
+    demo_guard: DemoDatabaseGuard
 
     async def aclose(self) -> None:
         if self.storage_service is not None:
@@ -187,6 +198,7 @@ def build_application_container(
         applicant_renderer=applicant_email_renderer,
     )
     rate_limiter = PostgresRateLimiter(session_factory=session_factory)
+    demo_guard = DemoDatabaseGuard()
     mobile_card_april_state_service = MobileCardAprilStateService(
         repository=MobileCardAprilStateRepository()
     )
@@ -243,6 +255,9 @@ def build_application_container(
         role_assignments_service=role_assignments_service,
         groups_service=GroupsService(),
         courses_service=CoursesService(repository=CoursesRepository()),
+        shifts_service=ShiftsService(repository=ShiftsRepository()),
+        shifts_setup_service=ShiftsSetupService(repository=ShiftsRepository()),
+        shifts_app_service=ShiftsAppService(repository=ShiftsAppRepository()),
         volunteer_search_service=VolunteerSearchService(VolunteerSearchRepository()),
         admin_accounts_service=AdminAccountsService(
             repository=AdminAccountsRepository(),
@@ -260,6 +275,7 @@ def build_application_container(
             april_state_service=mobile_card_april_state_service,
             email_template_renderer=mobile_card_email_renderer,
             trial_applicant_provider=volunteer_applications_service,
+            demo_guard=demo_guard,
         ),
         rate_limiter=rate_limiter,
         now_playing_service=NowPlayingService(
@@ -278,6 +294,7 @@ def build_application_container(
             role_assignments_service,
             session_scope=lambda: session_scope(database_runtime_manager.get_runtime()),
         ),
+        demo_guard=demo_guard,
     )
 
     return container
@@ -287,10 +304,19 @@ def build_application_container(
 async def app_lifespan(app: FastAPI):
     if not hasattr(app.state, "container"):
         app.state.container = build_application_container()
+    await check_demo_database(app.state.container)
     try:
         yield
     finally:
         await app.state.container.aclose()
+
+
+async def check_demo_database(container: ApplicationContainer) -> None:
+    """With demo login on, refuse to start unless every person in the database is fake."""
+    if not demo_login_enabled(container.settings):
+        return
+    async with session_scope(container.database_runtime_manager.get_runtime()):
+        await container.demo_guard.ensure_only_fake_people()
 
 
 def _build_storage_service(settings: Settings):

@@ -1,0 +1,293 @@
+"""Drag-and-drop writes for the shift plan (see static/js/shift-board.js).
+
+Each action returns JSON ``{"message": ...}`` on success. A broken rule
+is a 400 with the reason in ``detail``, which the board shows as is.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from urllib.parse import parse_qsl, urlencode, urlsplit
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+
+from app.dependencies import get_shift_scope, get_shifts_service, require_management_user
+from app.domain.shifts.errors import (
+    ShiftForbiddenError,
+    ShiftNotFoundError,
+    ShiftPlacementError,
+)
+from app.domain.shifts.permissions import GroupScope
+from app.domain.shifts.models import PlacementResult
+from app.domain.shifts.service import ShiftsService
+from app.observability import log_admin_activity
+from app.web.route_helpers import redirect_to
+
+router = APIRouter()
+
+
+def _result(result: PlacementResult) -> dict[str, str]:
+    return {"message": result.message}
+
+
+@router.post("/shifts/assignments")
+async def shift_assignment_create(
+    request: Request,
+    slot_id: int = Form(...),
+    volunteer_id: int = Form(...),
+    current_user=Depends(require_management_user),
+    scope: GroupScope = Depends(get_shift_scope),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+):
+    try:
+        result = await shifts_service.assign(
+            slot_id=slot_id, volunteer_id=volunteer_id, scope=scope
+        )
+    except ShiftForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ShiftNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ShiftPlacementError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="shift.assign",
+        subject_type="shift_slot",
+        subject_id=slot_id,
+        details={"volunteer_id": volunteer_id},
+    )
+    return _result(result)
+
+
+@router.post("/shifts/assignments/{assignment_id}/move")
+async def shift_assignment_move(
+    request: Request,
+    assignment_id: int,
+    slot_id: int = Form(...),
+    current_user=Depends(require_management_user),
+    scope: GroupScope = Depends(get_shift_scope),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+):
+    try:
+        result = await shifts_service.move(
+            assignment_id=assignment_id, slot_id=slot_id, scope=scope
+        )
+    except ShiftForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ShiftNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ShiftPlacementError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="shift.move",
+        subject_type="shift_assignment",
+        subject_id=assignment_id,
+        details={"slot_id": slot_id},
+    )
+    return _result(result)
+
+
+@router.post("/shifts/assignments/{assignment_id}/delete")
+async def shift_assignment_delete(
+    request: Request,
+    assignment_id: int,
+    current_user=Depends(require_management_user),
+    scope: GroupScope = Depends(get_shift_scope),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+):
+    try:
+        result = await shifts_service.remove(assignment_id=assignment_id, scope=scope)
+    except ShiftForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ShiftNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="shift.unassign",
+        subject_type="shift_assignment",
+        subject_id=assignment_id,
+    )
+    return _result(result)
+
+
+def _back(path: str, **params: str | int | None) -> str:
+    query = urlencode({key: value for key, value in params.items() if value not in (None, "")})
+    return f"{path}?{query}" if query else path
+
+
+async def _shift_form_action(call, request, *, shift_id, action, week, view_group, current_user):
+    board = "/shifts"
+    try:
+        message = await call
+    except ShiftForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ShiftNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ShiftPlacementError as exc:
+        return redirect_to(_back(board, week=week, group=view_group, error=str(exc)))
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action=action,
+        subject_type="shift",
+        subject_id=shift_id,
+    )
+    return redirect_to(_back(board, week=week, group=view_group, notice=message))
+
+
+@router.post("/shifts/shifts/{shift_id}/delete")
+async def shift_delete(
+    request: Request,
+    shift_id: int,
+    week: str = Form(""),
+    view_group: int | None = Form(None),
+    current_user=Depends(require_management_user),
+    scope: GroupScope = Depends(get_shift_scope),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+):
+    return await _shift_form_action(
+        shifts_service.remove_shift(shift_id=shift_id, scope=scope),
+        request,
+        shift_id=shift_id,
+        action="shift.deleted",
+        week=week,
+        view_group=view_group,
+        current_user=current_user,
+    )
+
+
+@router.post("/shifts/shifts/{shift_id}/closed")
+async def shift_set_closed(
+    request: Request,
+    shift_id: int,
+    closed: bool = Form(...),
+    week: str = Form(""),
+    view_group: int | None = Form(None),
+    current_user=Depends(require_management_user),
+    scope: GroupScope = Depends(get_shift_scope),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+):
+    return await _shift_form_action(
+        shifts_service.set_shift_closed(shift_id=shift_id, closed=closed, scope=scope),
+        request,
+        shift_id=shift_id,
+        action="shift.closed" if closed else "shift.reopened",
+        week=week,
+        view_group=view_group,
+        current_user=current_user,
+    )
+
+
+@router.post("/shifts/settings/{group_id}")
+async def shift_settings_save(
+    request: Request,
+    group_id: int,
+    app_enabled: bool = Form(False),
+    samf_enabled: bool = Form(False),
+    meeting_point: str = Form(""),
+    courses_enabled: bool = Form(False),
+    current_user=Depends(require_management_user),
+    scope: GroupScope = Depends(get_shift_scope),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+):
+    try:
+        message = await shifts_service.save_group_settings(
+            group_id,
+            app_enabled=app_enabled,
+            samf_enabled=samf_enabled,
+            meeting_point=meeting_point,
+            courses_enabled=courses_enabled,
+            scope=scope,
+        )
+    except ShiftForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ShiftNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ShiftPlacementError as exc:
+        return redirect_to(_back("/shifts/settings", error=str(exc)))
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="shift.settings",
+        subject_type="group",
+        subject_id=group_id,
+        details={
+            "app_enabled": app_enabled,
+            "samf_enabled": samf_enabled,
+            "courses_enabled": courses_enabled,
+        },
+    )
+    return redirect_to(_back("/shifts/settings", notice=message))
+
+
+BOARD_PATH = "/shifts"
+
+
+def safe_return_path(value: str | None) -> str:
+    """A relative path inside /shifts (query allowed), else the board.
+
+    No scheme, no host, no "//" at the start, no backslash, no control characters and no ".."
+    segments. ``/shifts`` and ``/shifts/...`` only, so ``/shiftsfoo`` is refused.
+    """
+    if not value or "\\" in value or value.startswith("//") or any(ord(c) < 32 or c == "\x7f" for c in value):
+        return BOARD_PATH
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc or parts.fragment:
+        return BOARD_PATH
+    path = parts.path
+    if path != BOARD_PATH and not path.startswith(BOARD_PATH + "/"):
+        return BOARD_PATH
+    if ".." in path.split("/"):
+        return BOARD_PATH
+    return f"{path}?{parts.query}" if parts.query else path
+
+
+def _status_redirect(
+    return_to: str | None, week: date, view_group: int | None, **message: str
+) -> str:
+    """Back to where the action came from. Without a valid return_to the board, as before."""
+    target = safe_return_path(return_to)
+    if target == BOARD_PATH:
+        return _back(BOARD_PATH, week=week.isoformat(), group=view_group, **message)
+    parts = urlsplit(target)
+    params = dict(parse_qsl(parts.query))
+    params.update(message)
+    return _back(parts.path, **params)
+
+
+@router.post("/shifts/weeks/status")
+async def shift_week_status_save(
+    request: Request,
+    group_id: int = Form(...),
+    week: date = Form(...),
+    new_status: str = Form(..., alias="status"),
+    whole_month: bool = Form(False),
+    view_group: int | None = Form(None),
+    return_to: str = Form(""),
+    current_user=Depends(require_management_user),
+    scope: GroupScope = Depends(get_shift_scope),
+    shifts_service: ShiftsService = Depends(get_shifts_service),
+):
+    try:
+        message = await shifts_service.set_week_status(
+            group_id=group_id, week=week, status=new_status, whole_month=whole_month, scope=scope
+        )
+    except ShiftForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ShiftNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ShiftPlacementError as exc:
+        return redirect_to(_status_redirect(return_to, week, view_group, error=str(exc)))
+    log_admin_activity(
+        request=request,
+        user=current_user,
+        action="shift.week_status",
+        subject_type="group",
+        subject_id=group_id,
+        details={"week": week.isoformat(), "status": new_status, "whole_month": whole_month},
+    )
+    return redirect_to(_status_redirect(return_to, week, view_group, notice=message))

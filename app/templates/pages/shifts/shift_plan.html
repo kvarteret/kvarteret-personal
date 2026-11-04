@@ -1,0 +1,245 @@
+{% extends "layouts/base.html" %}
+{% from "components/shared/ui_macros.html" import flash_notice %}
+
+{% block page_content %}
+  <section class="grid gap-7">
+    {% for banner in plan.banners %}
+      <form action="/shifts/weeks/status" class="flex w-full flex-wrap items-center justify-between gap-4 border-4 px-6 py-5 text-lg font-medium {% if banner.urgent %}border-red-700 bg-red-100 text-red-950{% else %}border-amber-500 bg-amber-100 text-amber-950{% endif %}" data-week-banner data-banner-level="{{ 'strong' if banner.urgent else 'warning' }}" method="post" role="{{ 'alert' if banner.urgent else 'status' }}">
+        <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+        <input type="hidden" name="group_id" value="{{ banner.group_id }}">
+        <input type="hidden" name="week" value="{{ banner.week_start.isoformat() }}">
+        <input type="hidden" name="status" value="published">
+        {% if plan.selected_group_id %}<input type="hidden" name="view_group" value="{{ plan.selected_group_id }}">{% endif %}
+        <span>{% if plan.groups | length > 1 %}<strong>{{ banner.group_name }}:</strong> {% endif %}{{ banner.text }}</span>
+        <button class="app-button" type="submit">Publiser</button>
+      </form>
+    {% endfor %}
+
+    <header class="grid justify-items-center gap-3 pt-3 text-center">
+      <h1 class="text-5xl leading-none font-light tracking-tight text-stone-900 md:text-7xl">Skiftplan</h1>
+      <p class="text-sm text-stone-700">Dra en frivillig fra lista til en ledig plass, eller mellom plasser. Dra tilbake til lista for å ta personen av skiftet.</p>
+    </header>
+
+    {% if not no_groups %}
+      <p class="flex flex-wrap justify-center gap-x-5 gap-y-1 text-center text-sm">
+        <a href="/shifts/settings">Innstillinger og stengte perioder</a>
+        <a href="/shifts/templates">Maler</a>
+        <a href="/shifts/generate">Lag skift for semesteret</a>
+      </p>
+    {% endif %}
+    {{ flash_notice(notice, 'success', 'mb-0') }}
+    {{ flash_notice(error, 'error', 'mb-0') }}
+
+    <form action="/shifts" class="app-panel" method="get">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end">
+        <div class="flex items-end gap-2">
+          <a aria-label="Forrige uke" class="app-button-secondary" href="/shifts?week={{ plan.previous_week.isoformat() }}{% if plan.selected_group_id %}&amp;group={{ plan.selected_group_id }}{% endif %}">←</a>
+          <label class="grid gap-1" for="week">
+            <span class="text-sm text-stone-500">Uke</span>
+            <input class="app-input" id="week" name="week" type="date" value="{{ plan.week_start.isoformat() }}">
+          </label>
+          <a aria-label="Neste uke" class="app-button-secondary" href="/shifts?week={{ plan.next_week.isoformat() }}{% if plan.selected_group_id %}&amp;group={{ plan.selected_group_id }}{% endif %}">→</a>
+        </div>
+        <label class="grid flex-1 gap-1" for="group">
+          <span class="text-sm text-stone-500">Gruppe</span>
+          <select class="app-input" id="group" name="group">
+            <option value="">Alle grupper</option>
+            {% for option in plan.groups %}
+              <option value="{{ option.group_id }}" {% if option.group_id == plan.selected_group_id %}selected{% endif %}>{{ option.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="app-button" type="submit">Vis</button>
+      </div>
+    </form>
+
+    {% if plan.statuses %}
+      <section class="app-panel grid gap-3" aria-label="Status for uka" data-week-statuses>
+        <h2 class="text-lg font-semibold text-stone-900">Status for {{ plan.week_label }}</h2>
+        {% for item in plan.statuses %}
+          <div class="grid gap-2 border-b border-stone-300 pb-3 last:border-b-0 last:pb-0" data-week-status data-group-id="{{ item.group_id }}">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-semibold text-stone-900">{{ item.group_name }}</span>
+              <span class="app-badge" data-status="{{ item.status }}">{{ item.label }}</span>
+              {% if not item.explicit %}<span class="text-xs text-stone-500">(satt automatisk etter datoen)</span>{% endif %}
+            </div>
+            {% if item.is_past %}<p class="text-xs text-amber-800">Uka er allerede over. Du kan fortsatt endre status.</p>{% endif %}
+            <div class="flex flex-wrap gap-2">
+              {% for form_status, form_label, primary in [('open', 'Åpne for ønsker', false), ('published', 'Publiser uka', true)] %}
+                <form action="/shifts/weeks/status" method="post">
+                  <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+                  <input type="hidden" name="group_id" value="{{ item.group_id }}">
+                  <input type="hidden" name="week" value="{{ plan.week_start.isoformat() }}">
+                  <input type="hidden" name="status" value="{{ form_status }}">
+                  {% if plan.selected_group_id %}<input type="hidden" name="view_group" value="{{ plan.selected_group_id }}">{% endif %}
+                  <button class="{{ 'app-button' if primary else 'app-button-secondary' }}" type="submit" {% if (item.status == form_status and item.explicit) or (form_status == 'open' and not item.can_open) %}disabled{% endif %}{% if form_status == 'open' and not item.can_open %} title="Bare kommende uker kan åpnes for ønsker."{% endif %}>{{ form_label }}</button>
+                </form>
+              {% endfor %}
+              <form action="/shifts/weeks/status" method="post">
+                <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+                <input type="hidden" name="group_id" value="{{ item.group_id }}">
+                <input type="hidden" name="week" value="{{ plan.week_start.isoformat() }}">
+                <input type="hidden" name="status" value="published">
+                <input type="hidden" name="whole_month" value="true">
+                {% if plan.selected_group_id %}<input type="hidden" name="view_group" value="{{ plan.selected_group_id }}">{% endif %}
+                <button class="app-button-secondary" type="submit" data-publish-month>Publiser måneden</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    {% if plan.answered %}
+      <section class="app-panel grid gap-3" aria-label="Har svart" data-answered>
+        <h2 class="text-lg font-semibold text-stone-900">Ønsker for {{ plan.answered[0].month_label | lower }}</h2>
+        {% for item in plan.answered %}
+          <div class="grid gap-1 border-b border-stone-300 pb-3 last:border-b-0 last:pb-0" data-answered-group data-group-id="{{ item.group_id }}">
+            <p class="text-sm text-stone-900">
+              {% if plan.answered | length > 1 %}<strong>{{ item.group_name }}:</strong> {% endif %}
+              <span data-answered-count>Har svart {{ item.answered }} av {{ item.total }}</span>
+            </p>
+            {% if item.missing %}
+              <details data-answered-missing>
+                <summary class="cursor-pointer text-sm font-semibold text-stone-700">Vis hvem ({{ item.missing | length }} har ikke svart)</summary>
+                <ul class="mt-2 grid gap-1 text-sm text-stone-800">
+                  {% for name in item.missing %}<li>{{ name }}</li>{% endfor %}
+                </ul>
+              </details>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    <div id="shift-board-root" class="grid items-start gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+      <aside class="app-panel grid gap-3 lg:sticky lg:top-4" aria-label="Frivillige">
+        <div class="flex items-baseline justify-between gap-2">
+          <h2 class="text-lg font-semibold text-stone-900">Frivillige</h2>
+          <span class="text-xs text-stone-500">{{ plan.pool | length }} personer</span>
+        </div>
+        <p class="text-xs text-stone-600">Dra noen hit fra et skift for å ta dem av.</p>
+        <ul class="grid max-h-[70vh] gap-2 overflow-y-auto p-1" data-shift-pool>
+          {% for person in plan.pool %}
+            <li class="cursor-grab border-2 border-stone-300 bg-white px-3 py-2" data-draggable data-pool-person data-volunteer-id="{{ person.volunteer_id }}" data-allowed="{{ person.allowed_tokens | join(' ') }}">
+              <div class="text-sm font-semibold text-stone-900">{{ person.name }}</div>
+              <div class="text-xs text-stone-600">{{ person.group_name }} · {{ person.role_name }} · {{ person.shifts_this_week }} skift denne uka</div>
+            </li>
+          {% else %}
+            <li class="text-sm text-stone-600">Ingen medlemmer dette semesteret.</li>
+          {% endfor %}
+        </ul>
+      </aside>
+
+      <div class="grid gap-6" id="shift-board">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-2xl font-medium tracking-tight text-stone-900">{{ plan.week_label }}</h2>
+          <div class="flex flex-wrap gap-2">
+            <span class="app-badge">{{ plan.open_places }} {{ "ledig plass" if plan.open_places == 1 else "ledige plasser" }}</span>
+            {% if plan.swap_requests %}
+              <span class="app-badge">{{ plan.swap_requests }} ønsker bytte</span>
+            {% endif %}
+          </div>
+        </div>
+        <p class="border-2 border-stone-300 bg-white px-4 py-3 text-sm text-stone-800" id="shift-board-feedback" role="status" hidden></p>
+
+        {% for day in plan.days %}
+          <section class="grid gap-3">
+            <h3 class="text-lg font-semibold text-stone-900">{{ day.label }}</h3>
+            <div class="grid items-start gap-4 2xl:grid-cols-2">
+              {% for venue in day.venues %}
+                <article class="app-panel grid content-start gap-0 p-0">
+                  <header class="border-b-2 border-stone-300 px-5 py-3">
+                    <h4 class="text-lg font-medium tracking-tight text-stone-900">{{ venue.label }}</h4>
+                  </header>
+                  {% for shift in venue.shifts %}
+                    <div class="grid gap-3 border-b border-stone-300 px-5 py-4 last:border-b-0 {% if shift.is_closed %}bg-stone-100{% endif %}">
+                      <div class="flex flex-wrap items-baseline gap-2">
+                        <span class="font-semibold text-stone-900">{{ shift.title }}</span>
+                        <span class="text-sm text-stone-600">{{ shift.time_label }}</span>
+                        <span class="text-xs text-stone-500">{{ shift.group_name }}</span>
+                        {% if shift.is_closed %}<span class="app-badge">Stengt</span>{% endif %}
+                      </div>
+                      <div class="flex flex-wrap items-center gap-2" data-shift-controls data-shift-id="{{ shift.shift_id }}">
+                        <form action="/shifts/shifts/{{ shift.shift_id }}/closed" method="post">
+                          <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+                          <input type="hidden" name="closed" value="{{ 'false' if shift.is_closed else 'true' }}">
+                          <input type="hidden" name="week" value="{{ plan.week_start.isoformat() }}">
+                          {% if plan.selected_group_id %}<input type="hidden" name="view_group" value="{{ plan.selected_group_id }}">{% endif %}
+                          <button class="app-button-secondary" type="submit" data-shift-toggle-closed>{{ 'Åpne skift' if shift.is_closed else 'Steng skift' }}</button>
+                        </form>
+                        {% if shift.people_count == 0 %}
+                          <form action="/shifts/shifts/{{ shift.shift_id }}/delete" method="post">
+                            <input type="hidden" name="csrf_token" value="{{ request.state.csrf_token }}">
+                            <input type="hidden" name="week" value="{{ plan.week_start.isoformat() }}">
+                            {% if plan.selected_group_id %}<input type="hidden" name="view_group" value="{{ plan.selected_group_id }}">{% endif %}
+                            <button class="app-button-secondary" type="submit" data-shift-delete onclick="return confirm('Fjerne dette skiftet? Det kan ikke angres.')">Fjern skift</button>
+                          </form>
+                        {% elif shift.is_closed %}
+                          <span class="text-xs text-stone-500">{{ shift.people_count }} {{ 'person' if shift.people_count == 1 else 'personer' }} står på skiftet</span>
+                        {% endif %}
+                      </div>
+                      {% if shift.wishes %}
+                        {% set w = shift.wishes %}
+                        <details class="text-sm text-stone-800" data-shift-wishes data-shift-id="{{ shift.shift_id }}">
+                          <summary class="cursor-pointer">Ønsker: {{ w.vil | length }} vil · {{ w.kan | length }} kan · {{ w.nei | length }} nei · {{ w.ikke_satt | length }} ikke satt</summary>
+                          <dl class="mt-2 grid gap-2">
+                            {% for key, label, names in [('vil', 'Vil', w.vil), ('kan', 'Kan', w.kan), ('nei', 'Nei', w.nei), ('ikke_satt', 'Ikke satt', w.ikke_satt)] %}
+                              {% if names %}
+                                <div data-wish-group="{{ key }}">
+                                  <dt class="font-semibold">{{ label }} ({{ names | length }})</dt>
+                                  <dd class="text-stone-700">{{ names | join(', ') }}</dd>
+                                </div>
+                              {% endif %}
+                            {% endfor %}
+                          </dl>
+                        </details>
+                      {% endif %}
+                      {% if shift.note %}
+                        <p class="bg-amber-50 px-3 py-2 text-sm text-stone-800">{{ shift.note }}</p>
+                      {% endif %}
+                      {% if not shift.is_closed %}
+                        <div class="grid gap-3">
+                          {% for slot in shift.slots %}
+                            <div class="grid gap-1">
+                              <div class="flex flex-wrap items-center gap-2 text-sm">
+                                <span class="font-semibold text-stone-900">{{ slot.label }}</span>
+                                <span class="text-stone-500">{{ slot.filled_text }}</span>
+                                <span class="text-xs text-stone-500">· {{ slot.tag }}</span>
+                              </div>
+                              <ul class="flex min-h-11 flex-wrap items-start gap-2 p-0.5" data-shift-slot data-slot-id="{{ slot.slot_id }}" data-group-id="{{ slot.group_id }}" data-kind="{{ slot.kind }}" data-open="{{ 1 if slot.open_for_samf else 0 }}" data-free="{{ slot.open_places }}" aria-label="{{ slot.label }}, {{ shift.title }} {{ day.label }}">
+                                {% for person in slot.people %}
+                                  <li class="flex cursor-grab items-center gap-2 border-2 {% if person.cannot_attend %}border-red-400 bg-red-50{% elif person.swap_requested %}border-amber-400 bg-amber-50{% else %}border-stone-300 bg-white{% endif %} px-3 py-1 text-sm text-stone-900" data-draggable data-assignment-id="{{ person.assignment_id }}" data-volunteer-id="{{ person.volunteer_id }}">
+                                    <span>{{ person.name }}{% if person.cannot_attend %} <span class="text-xs font-semibold text-red-800">· kan ikke i dag</span>{% elif person.swap_requested %} <span class="text-xs font-semibold text-amber-800">· ønsker bytte</span>{% endif %}{% for warning in person.warnings %} <span class="text-xs font-semibold text-amber-800" data-person-warning>· {{ warning | capitalize }}</span>{% endfor %}</span>
+                                    <button aria-label="Ta {{ person.name }} av {{ slot.label | lower }}" class="text-stone-500 hover:text-kvarteret-red" data-remove-assignment="{{ person.assignment_id }}" type="button">×</button>
+                                  </li>
+                                {% endfor %}
+                                {% for _ in range(slot.training_places) %}
+                                  <li class="border-2 border-sky-200 bg-sky-50 px-3 py-1 text-sm text-sky-900">Brukt til opplæring</li>
+                                {% endfor %}
+                                {% for _ in range(slot.open_places) %}
+                                  <li class="border-2 border-dashed border-stone-400 px-3 py-1 text-sm text-stone-500">{{ slot.open_label }}</li>
+                                {% endfor %}
+                              </ul>
+                              {% if slot.blocked_by_training %}
+                                <p class="text-xs text-stone-500">Ingen ledig plass til opplæring: de vanlige plassene er fylt.</p>
+                              {% endif %}
+                            </div>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+                </article>
+              {% endfor %}
+            </div>
+          </section>
+        {% else %}
+          <section class="app-panel">
+            <div class="py-10 text-center text-sm text-stone-600">{% if no_groups %}Du er ikke gruppeadmin for noen grupper med skift. Be en administrator om tilgang.{% else %}Ingen skift denne uka.{% endif %}</div>
+          </section>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+{% endblock %}
